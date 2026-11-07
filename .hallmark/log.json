@@ -1,5 +1,16 @@
 [
   {
+    "date": "2026-10-25",
+    "scope": "website",
+    "macrostructure": "Long Document",
+    "theme": "restrained iOpenPod",
+    "theme_axes": "light and dark / retained sans pairing / muted blue",
+    "nav": "N6 compact masthead",
+    "footer": "Ft2 inline",
+    "enrichment": "Existing application screenshots at reading scale",
+    "brief": "Plain, practical product copy and quieter shared website styling, as requested"
+  },
+  {
     "date": "2026-10-01",
     "scope": "website",
     "macrostructure": "Workbench",

@@ -16,13 +16,20 @@ from iPodDB.ArtworkDB.shared.artwork_index import (
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.iTunesDB.cdb import decompress_iTunesCDB, is_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.library._artwork_geometry import geometry_requirements
+from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library._photo_projection import project_photos
 from iPodDB.library._playlist_projection import project_playlists
 from iPodDB.library._projection import link_artwork, project_tracks
-from iPodDB.library._sidecar_projection import project_sidecars
+from iPodDB.library._sidecar_projection import (
+    PlaybackDateUpdate,
+    project_sidecars,
+)
 from iPodDB.library._write_logging import log_plan
 from iPodDB.library.artwork import ArtworkRead, CoverFormat, select_artwork
 from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.phase import resolve_phase_playlist
 from iPodDB.library.photos import (
     PhotoRead,
     PhotoThumbnailFormat,
@@ -51,6 +58,7 @@ if TYPE_CHECKING:
     from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
     from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
     from iPodDB.library._resolved_write import ResolvedWrite
+    from iPodDB.library.genius import GeniusUpdate
     from iPodDB.library.writing import RetainedArtworkFile
     from iPodDB.PhotosDB.parser.repair_PhotosDB import PhotosDBCountRepair
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
@@ -79,8 +87,10 @@ class IPodLibrary:
         "_database_snapshot",
         "_device_time",
         "_document",
+        "_phase_playlist_id",
         "_photos_document",
         "_photos_repairs",
+        "_playback_dates",
         "_sidecar_issues",
         "_sidecars",
         "_snapshot",
@@ -109,11 +119,15 @@ class IPodLibrary:
             frozenset(track.track_id for track in tracks),
             self._device_time,
         )
-        self._snapshot = LibrarySnapshot(tracks, playlists, device_name)
+        self._phase_playlist_id: int | None = None
+        self._snapshot = resolve_phase_playlist(
+            LibrarySnapshot(tracks, playlists, device_name), None
+        )
         self._database_snapshot = self._snapshot
         self._sidecars: tuple[PlaybackSidecar, ...] = ()
         self._consumed_sidecars: tuple[PlaybackSidecar, ...] = ()
         self._sidecar_issues: tuple[WriteIssue, ...] = ()
+        self._playback_dates: tuple[PlaybackDateUpdate, ...] = ()
         self._artwork_document: DatabaseDocument[MhfdHeader] | None = None
         self._source_artwork: bytes | None = None
         self._artwork_repairs: tuple[ArtworkDBCountRepair, ...] = ()
@@ -153,12 +167,24 @@ class IPodLibrary:
         return updated
 
     def _refresh_sidecars(self) -> None:
+        self._database_snapshot = resolve_phase_playlist(
+            self._database_snapshot, self._phase_playlist_id
+        )
         projection = project_sidecars(
             self._database_snapshot, self._sidecars, self._device_time
         )
         self._snapshot = projection.snapshot
         self._consumed_sidecars = projection.consumed
         self._sidecar_issues = projection.issues
+        self._playback_dates = projection.dates
+
+    def with_phase_playlist(self, playlist_id: int | None) -> IPodLibrary:
+        """Apply the captured game index ID, falling back to the exact name Phase."""
+        updated = copy(self)
+        updated._phase_playlist_id = playlist_id
+        updated._refresh_sidecars()
+        updated._source_revision = uuid4().hex
+        return updated
 
     @classmethod
     def parse(
@@ -282,6 +308,9 @@ class IPodLibrary:
         regenerate_sqlite: bool = False,
         rebuild_album_indexes: bool = False,
         repair_podcast_links: bool = False,
+        normalize_podcasts: bool = False,
+        refresh_smart_playlists: tuple[int, ...] = (),
+        genius_update: GeniusUpdate | None = None,
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -296,10 +325,23 @@ class IPodLibrary:
         desired Library is unchanged. It does not authorize file publication.
         ``rebuild_album_indexes`` repairs retained Albums browse indexes without
         requiring metadata edits. Other indexes and Master occurrences remain.
+        ``normalize_podcasts`` converges Podcast relationships, albums, Playlist
+        settings and traversal indexes on the 12.6 authoring policy (ADR-0152).
+        ``refresh_smart_playlists`` identifies caller-evaluated live Smart
+        Playlists whose matching native copies must receive the desired entries.
+        ``genius_update`` replaces the native graph and Track assignments.
+        Its ``mixes=None`` preserves native Mixes, while an explicit tuple
+        replaces them. Omission preserves all Genius state. Classic preparation
+        requires captured
+        Extras bytes when changing existing Genius identities; callers publish
+        the resulting companion together with iTunesDB (ADR-0176).
         """
+        desired = self.snapshot if snapshot is None else snapshot
+        if delete_omissions:
+            desired = reconcile_genius_playlists(self.snapshot, desired)
         return LibraryDraft(
             self._source_revision,
-            self.snapshot if snapshot is None else snapshot,
+            desired,
             delete_omissions=delete_omissions,
             replace_media=tuple(replace_media),
             replace_photos=tuple(replace_photos),
@@ -307,6 +349,9 @@ class IPodLibrary:
             regenerate_sqlite=regenerate_sqlite,
             rebuild_album_indexes=rebuild_album_indexes,
             repair_podcast_links=repair_podcast_links,
+            normalize_podcasts=normalize_podcasts,
+            refresh_smart_playlists=tuple(refresh_smart_playlists),
+            genius_update=genius_update,
         )
 
     def analyze(
@@ -334,6 +379,118 @@ class IPodLibrary:
             self._device_time,
         )
         additional_issues = self.time_warnings
+        if self._playback_dates:
+            from iPodDB.library._track_header_expansion import optional_field_available
+
+            projected = {t.track_id: t for t in self.snapshot.tracks}
+            requested_tracks = {t.track_id: t for t in draft.snapshot.tracks}
+            desired_tracks = {t.track_id: t for t in resolved.desired.tracks}
+            retained = {
+                s.chunk.header.track_id: s.chunk
+                for s in self._document.find_chunks(MhitHeader)
+            }
+            updates: list[PlaybackDateUpdate] = []
+            date_issues: list[WriteIssue] = []
+            changes = list(resolved.plan.changes)
+            change_indexes = {
+                change.record_id: index
+                for index, change in enumerate(changes)
+                if change.subject == "track" and change.action == "update"
+            }
+            for dates in self._playback_dates:
+                track = desired_tracks.get(dates.track_id)
+                if track is None:
+                    continue
+                values: dict[str, int | None] = {}
+                for field in ("last_played", "last_skipped"):
+                    raw = getattr(dates, field)
+                    if (
+                        raw is None
+                        or raw == getattr(retained[dates.track_id].header, field)
+                        or getattr(requested_tracks[dates.track_id].metadata, field)
+                        != getattr(projected[dates.track_id].metadata, field)
+                    ):
+                        values[field] = None
+                        continue
+                    if not optional_field_available(
+                        retained[dates.track_id], field, target.database_version
+                    ):
+                        date_issues.append(
+                            WriteIssue(
+                                "date.approximated",
+                                "This iPod layout cannot store the playback date; the original sidecar will be archived.",
+                                IssueSeverity.WARNING,
+                                "resolution",
+                                "track",
+                                dates.track_id,
+                                "metadata." + field,
+                            )
+                        )
+                        values[field] = None
+                        continue
+                    values[field] = raw
+                if any(value is not None for value in values.values()):
+                    updates.append(PlaybackDateUpdate(dates.track_id, **values))
+                    fields = tuple(
+                        "metadata." + field
+                        for field, value in values.items()
+                        if value is not None
+                    )
+                    if (index := change_indexes.get(dates.track_id)) is not None:
+                        change = changes[index]
+                        changes[index] = replace(
+                            change,
+                            fields=tuple(dict.fromkeys((*change.fields, *fields))),
+                        )
+                    else:
+                        change_indexes[dates.track_id] = len(changes)
+                        changes.append(
+                            LibraryChange(
+                                "track", dates.track_id, "update", track.title, fields
+                            )
+                        )
+            additional_issues += tuple(date_issues)
+            if updates:
+                resolved = replace(
+                    resolved,
+                    playback_dates=tuple(updates),
+                    affected_datasets=resolved.affected_datasets | {1},
+                    plan=replace(resolved.plan, changes=tuple(changes)),
+                )
+        if draft.genius_update is not None:
+            from iPodDB.SQLiteDB.genius_projection import validate_genius_update
+
+            try:
+                validate_genius_update(
+                    draft.genius_update,
+                    {
+                        t.track_id: t.ipod.db_track_id if t.ipod else t.track_id
+                        for t in draft.snapshot.tracks
+                    },
+                )
+            except ValueError as error:
+                additional_issues += (WriteIssue("genius.invalid_update", str(error)),)
+            resolved = replace(
+                resolved,
+                plan=replace(
+                    resolved.plan,
+                    changes=(
+                        *resolved.plan.changes,
+                        LibraryChange("genius", None, "update", "Native Genius data"),
+                    ),
+                ),
+            )
+            if (
+                draft.genius_update.mixes
+                or draft.genius_update.mix_additions
+                or draft.genius_update.mix_removals
+            ) and not target.sqlite_database:
+                additional_issues += (
+                    WriteIssue(
+                        "genius.mix_requires_sqlite",
+                        "Native Genius Mix authoring requires a SQLite artifact target.",
+                    ),
+                )
         if self._photos_repairs:
             resolved = replace(
                 resolved,
@@ -365,6 +522,36 @@ class IPodLibrary:
                 )
                 for repair in self._photos_repairs
             )
+        repair_geometry, geometry_paths = geometry_requirements(
+            self._artwork_document, target
+        )
+        if repair_geometry:
+            resolved = replace(
+                resolved,
+                plan=replace(
+                    resolved.plan,
+                    changes=(
+                        *resolved.plan.changes,
+                        LibraryChange(
+                            "artwork_database",
+                            None,
+                            "repair",
+                            "Native F1061 artwork geometry",
+                            ("thumbnail_geometry",),
+                        ),
+                    ),
+                    requires_artwork_inventory=True,
+                    repair_artwork_geometry=True,
+                    artwork_geometry_paths=geometry_paths,
+                ),
+            )
+            if target.artwork_checksum is not WriteChecksum.NONE:
+                additional_issues += (
+                    WriteIssue(
+                        "target.unsupported_artwork_signature",
+                        "The ArtworkDB artifact requires an unsupported signature.",
+                    ),
+                )
         if self._artwork_repairs:
             resolved = replace(
                 resolved,
@@ -420,18 +607,6 @@ class IPodLibrary:
                 if playlist.playlist_id not in persisted
                 and playlist.playlist_id not in desired
             )
-        if resolved.plan.changes_sqlite and any(
-            issue.code == "source.unavailable_dates" and issue.artifact == "iTunesDB"
-            for issue in additional_issues
-        ):
-            additional_issues = (
-                *additional_issues,
-                WriteIssue(
-                    "source.sqlite_unavailable_dates",
-                    "SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.",
-                    phase="source",
-                ),
-            )
         return replace(
             resolved,
             plan=replace(
@@ -481,6 +656,33 @@ class IPodLibrary:
         """List retained group keys, including groups without a readable raster."""
         item = self._artwork_index.item_for_image_id(artwork_id)
         return item.display_times if item is not None else ()
+
+    def artwork_geometry_repairs_pending(
+        self, formats: tuple[CoverFormat, ...]
+    ) -> bool:
+        """Whether a normal save can examine legacy native artwork geometry."""
+        return geometry_requirements(
+            self._artwork_document, WriteTarget(cover_formats=formats)
+        )[0]
+
+    def artwork_file_paths(self) -> tuple[str, ...]:
+        """Return validated known source filenames for write-time inventory.
+
+        Include typed location containers even when their images are orphaned,
+        non-thumbnail metadata or omitted from display projection. This uses the
+        writer's reservation rules; unsupported tokens raise ValueError. The
+        result grants no filesystem access and says nothing about file existence,
+        raster validity or whether full file content needs to be captured.
+        """
+        from iPodDB.library._artwork_writing import retained_artwork_extents
+
+        if self._artwork_document is None:
+            return ()
+        return tuple(
+            dict.fromkeys(
+                path for _, path, _ in retained_artwork_extents(self._artwork_document)
+            )
+        )
 
     def artwork_read(
         self,

@@ -3,6 +3,9 @@
 - Status: Accepted
 - Date: 2026-08-20
 
+The Pylance-only-for-navigation decision below is superseded by
+[ADR-0170](0170-correct-development-qt-typing.md). Both Pylance and Mypy are enabled.
+
 ## Context
 
 The project uses terminal commands, VS Code, and Codex Desktop on multiple machines.

@@ -127,38 +127,6 @@ class TagNormalizerDialog(QDialog):
         heading = QLabel(self.tr("Normalize iPod Tags"), self)
         heading.setObjectName("pageTitle")
         outer.addWidget(heading)
-        introduction = QLabel(
-            self.tr(
-                "A little tidying for your Library. Keep names, album grouping, "
-                "and sorting consistent on your iPod."
-            ),
-            self,
-        )
-        introduction.setObjectName("pageDescription")
-        introduction.setWordWrap(True)
-        outer.addWidget(introduction)
-
-        overview = QFrame(self)
-        overview.setObjectName("normalizationOverview")
-        overview_layout = QVBoxLayout(overview)
-        overview_layout.setContentsMargins(*([LAYOUT.space_md] * 4))
-        overview_layout.setSpacing(LAYOUT.space_2xs)
-        self._summary = QLabel(self)
-        self._summary.setObjectName("sectionTitle")
-        self._summary.setWordWrap(True)
-        self._summary.setTextFormat(Qt.TextFormat.PlainText)
-        overview_layout.addWidget(self._summary)
-        self._profile_label = QLabel(self)
-        self._profile_label.setObjectName("pageDescription")
-        self._profile_label.setTextFormat(Qt.TextFormat.PlainText)
-        self._profile_label.setWordWrap(True)
-        overview_layout.addWidget(self._profile_label)
-        outer.addWidget(overview)
-        self._warnings = QLabel(self)
-        self._warnings.setObjectName("normalizationWarnings")
-        self._warnings.setWordWrap(True)
-        self._warnings.setTextFormat(Qt.TextFormat.PlainText)
-        outer.addWidget(self._warnings)
         self._search = QLineEdit(self)
         self._search.setPlaceholderText(self.tr("Track, artist, album, or tag value…"))
         self._search.setAccessibleName(self.tr("Search suggested changes"))
@@ -309,23 +277,6 @@ class TagNormalizerDialog(QDialog):
         )
         self._search.setEnabled(suggestion is not None and bool(suggestion.updates))
         self._fields.setEnabled(self._search.isEnabled())
-        if controller.scanning:
-            summary = self.tr("Checking your Library…")
-        elif suggestion is not None and suggestion.updates:
-            summary = (
-                self.tr("Tag changes: %1 · Tracks: %2")
-                .replace("%1", f"{suggestion.field_count:,}")
-                .replace("%2", f"{len(suggestion.updates):,}")
-            )
-        elif suggestion is not None:
-            summary = self.tr("Your tags are in good shape")
-        else:
-            summary = self.tr("Consistent tags, easier browsing")
-        self._summary.setText(summary)
-        profile = suggestion.profile if suggestion is not None else self._profile
-        self._profile_label.setText(
-            self.tr("Tailored to %1").replace("%1", profile.label)
-        )
         self._apply.setText(
             english_count_fallback(
                 "Apply all %Ln change(s)",
@@ -335,12 +286,6 @@ class TagNormalizerDialog(QDialog):
             if suggestion is not None and suggestion.updates
             else QCoreApplication.translate("CommonActions", "Apply")
         )
-        self._warnings.setText(
-            ""
-            if suggestion is None
-            else "\n".join(workflow_text(warning) for warning in suggestion.warnings)
-        )
-        self._warnings.setVisible(bool(self._warnings.text()))
         if suggestion is not self._shown:
             self._shown = suggestion
             self._populate(suggestion)
@@ -417,34 +362,33 @@ class TagNormalizerDialog(QDialog):
         self._content.setCurrentWidget(self.table if visible else self._empty)
         self._clear_filters.setVisible(total > 0 and visible == 0)
         if controller.scanning:
-            title = self.tr("Finding the finishing touches")
-            detail = self.tr(
-                "Checking names, album grouping, and sort tags. You can keep browsing while we work."
-            )
+            title = self.tr("Checking tags…")
+            detail = self.tr("Checking names, album grouping, and sort tags.")
         elif total:
             title = self.tr("No matching changes")
             detail = self.tr(
-                "Try another search or clear the filters to see every suggestion."
+                "Change the search or clear the filters to show all changes."
             )
         elif suggestion is not None:
-            title = self.tr("All tidy")
-            detail = self.tr("No tag changes are needed.")
+            title = self.tr("No changes needed")
+            detail = ""
         elif controller.workspace.locked:
-            title = self.tr("Your Library is busy")
+            title = self.tr("Library in use")
             detail = self.tr(
                 "Wait for the current operation to finish before checking tags."
             )
         elif controller.workspace.snapshot is None:
-            title = self.tr("Choose an iPod to get started")
-            detail = self.tr("Load its Library to check for suggested tag changes.")
+            title = self.tr("No iPod selected")
+            detail = self.tr("Select an iPod and load its Library to check tags.")
         elif controller.failed:
-            title = self.tr("We couldn't check your tags")
+            title = self.tr("Tag scan failed")
             detail = self.tr("Try scanning again.")
         else:
-            title = self.tr("Ready for a fresh look")
-            detail = self.tr("Scan your Library to preview suggested tag changes.")
+            title = self.tr("Ready to scan")
+            detail = self.tr("Scan the Library to review suggested tag changes.")
         self._empty_title.setText(title)
         self._empty_detail.setText(detail)
+        self._empty_detail.setVisible(bool(detail))
         self._state_icon.setPixmap(
             glyph_icon(
                 "check-circle" if suggestion is not None and not total else "search",

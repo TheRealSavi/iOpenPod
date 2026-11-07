@@ -9,6 +9,7 @@ from iOpenPod.app.core.settings.definitions import (
     APPEARANCE_LIGHT_THEME,
     APPEARANCE_MODE,
     COLORFUL_MODE,
+    ITUNES_107_ARTWORK,
     TRACK_TITLE_BAR_STYLE,
     AppearanceMode,
     DarkTheme,
@@ -35,6 +36,7 @@ class ThemeManager(QObject):
     darkThemeChanged = Signal(str)
     effectiveThemeChanged = Signal(str)
     colorfulModeChanged = Signal(bool)
+    deviceArtworkChanged = Signal(bool)
     trackTitleBarStyleChanged = Signal(str)
 
     def __init__(
@@ -86,6 +88,10 @@ class ThemeManager(QObject):
     @property
     def colorful_mode(self) -> bool:
         return self._settings.get(COLORFUL_MODE)
+
+    @property
+    def itunes_107_artwork(self) -> bool:
+        return self._settings.get(ITUNES_107_ARTWORK)
 
     @property
     def track_title_bar_style(self) -> TrackTitleBarStyle:
@@ -161,6 +167,8 @@ class ThemeManager(QObject):
             self.apply()
         elif key == COLORFUL_MODE.key and isinstance(value, bool):
             self.colorfulModeChanged.emit(value)
+        elif key == ITUNES_107_ARTWORK.key and isinstance(value, bool):
+            self.deviceArtworkChanged.emit(value)
         elif key == TRACK_TITLE_BAR_STYLE.key and isinstance(value, str):
             self.trackTitleBarStyleChanged.emit(value)
 

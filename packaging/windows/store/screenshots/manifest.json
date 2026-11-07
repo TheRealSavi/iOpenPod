@@ -1,5 +1,191 @@
 {
   "resolution": "1920x1080",
+  "artwork": [
+    {
+      "file": "25 blimps back.png",
+      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79",
+      "album": "25 Blimps",
+      "artist": "Airship Club",
+      "genre": "Ambient"
+    },
+    {
+      "file": "ADMIT IT space.png",
+      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66",
+      "album": "Admit It",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
+    },
+    {
+      "file": "all i need.png",
+      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9",
+      "album": "All I Need",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
+    },
+    {
+      "file": "baby blue.png",
+      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f",
+      "album": "Baby Blue",
+      "artist": "June Aviary",
+      "genre": "Indie Pop"
+    },
+    {
+      "file": "CD.png",
+      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5",
+      "album": "Compact Disc",
+      "artist": "Prism Relay",
+      "genre": "Electronic"
+    },
+    {
+      "file": "coachella wave.png",
+      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f",
+      "album": "Desert Wave",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "color way.png",
+      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f",
+      "album": "Colorway",
+      "artist": "Chromatic Bloom",
+      "genre": "Psychedelic Pop"
+    },
+    {
+      "file": "daylight.png",
+      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b",
+      "album": "Daylight",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "ECLIPSE.png",
+      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a",
+      "album": "Eclipse",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
+    },
+    {
+      "file": "GHOSTS VHS glow.png",
+      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5",
+      "album": "Ghosts on VHS",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
+    },
+    {
+      "file": "highs and lows.png",
+      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225",
+      "album": "Highs and Lows",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
+    },
+    {
+      "file": "KIDS SEE GHOSTS.png",
+      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d",
+      "album": "Kids See Ghosts",
+      "artist": "Cloud Parade",
+      "genre": "Psychedelic Pop"
+    },
+    {
+      "file": "love story.png",
+      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d",
+      "album": "Love Story",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "OCEAN WAVES.png",
+      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441",
+      "album": "Ocean Waves",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
+    },
+    {
+      "file": "peaceful.png",
+      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f",
+      "album": "Peaceful",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
+    },
+    {
+      "file": "REFLECT.png",
+      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6",
+      "album": "Reflect",
+      "artist": "Glass District",
+      "genre": "Electronic"
+    },
+    {
+      "file": "risky.png",
+      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8",
+      "album": "Risky",
+      "artist": "Velvet Signal",
+      "genre": "Alternative"
+    },
+    {
+      "file": "RUNAWAY ORCHESTRATED ALBM ART.png",
+      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b",
+      "album": "Runaway Orchestrated",
+      "artist": "The Northlight Orchestra",
+      "genre": "Orchestral"
+    },
+    {
+      "file": "SO GOOD TO ME.png",
+      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b",
+      "album": "So Good to Me",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "STARS.png",
+      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247",
+      "album": "Stars",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "stay in touch.png",
+      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878",
+      "album": "Stay in Touch",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
+    },
+    {
+      "file": "sunday mail.png",
+      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0",
+      "album": "Sunday Mail",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "sunset DE.png",
+      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed",
+      "album": "Sunset: Deluxe Edition",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
+    },
+    {
+      "file": "TDK.png",
+      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe",
+      "album": "Type II",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
+    },
+    {
+      "file": "thank god for drugs.png",
+      "sha256": "07dd29a2760a66bd2f75ac05718cddfd1fab4ddc99f612888f2f6d4736bba5e1"
+    },
+    {
+      "file": "Tropical satellite.png",
+      "sha256": "6ffac1657c152ac01ff070aff6100a2ed43f393f1cbc336fc7a158b79705f29e"
+    },
+    {
+      "file": "Untitled-1.png",
+      "sha256": "437b186e4aeef0afb177a621a64ffbdc9ae77a3dc1dded3f3a93a7167012b489"
+    },
+    {
+      "file": "WALK ON WATER.png",
+      "sha256": "2e48f12a18f944ab40cd677747f855a0900eb695808eef3d5b469a0a5ed96a38"
+    }
+  ],
   "source": "Unmodified iOpenPod application widgets rendered by Qt on Windows with deterministic synthetic data.",
   "screenshots": [
     {
@@ -7,48 +193,64 @@
       "caption": "Browse your iPod music by album, artist, genre, or track. Shown with a fictional sample library.",
       "width": 1920,
       "height": 1080,
-      "bytes": 276311,
-      "sha256": "cc72ab49d7bd66082380ab714e72aa65dd22e7308ac4e2952fa409be3b40bf69"
+      "bytes": 1280063,
+      "sha256": "00ae61730269e5a99c2e431e3d60986c72749ca001245544590de019f959dd64"
     },
     {
       "file": "02-album-details.png",
       "caption": "Open an album to browse its tracks, metadata, ratings, and artwork.",
       "width": 1920,
       "height": 1080,
-      "bytes": 131509,
-      "sha256": "bdddf65cae9579eff7f72f1ae74c12b212ed96331021f98c079e5d99bee94ce4"
+      "bytes": 126625,
+      "sha256": "1fac7ab83dd2f8fa46b88d7fbe32681f284198c65441b210823788adc39ee8dd"
     },
     {
       "file": "03-playlists.png",
       "caption": "Browse and organize playlists with track details and a cover-art overview.",
       "width": 1920,
       "height": 1080,
-      "bytes": 233517,
-      "sha256": "ec9122845214100a4ee57bec202ad2ea18eb486f3d5b1113bd5e438cdfac8a62"
+      "bytes": 419360,
+      "sha256": "9ec59919ed0a26cba428c6a9f05db4d621e1a6a135d5bfba3df307abb913ba0c"
     },
     {
       "file": "04-photo-library.png",
       "caption": "Browse photo albums and inspect the image representations stored on a supported iPod. Sample illustrations shown.",
       "width": 1920,
       "height": 1080,
-      "bytes": 146962,
-      "sha256": "700443a24ad96e3d0050eb3e6e307264ea9d36c02a9cc71efbc7bb478628d5e3"
+      "bytes": 837782,
+      "sha256": "5a103e007ed4b8d9f40e536e976820727d896208a49fe191ebe41a65047f2378"
     },
     {
       "file": "05-sync-review.png",
       "caption": "Review selected changes before syncing media from your computer to your iPod. No changes are applied in this sample.",
       "width": 1920,
       "height": 1080,
-      "bytes": 105328,
-      "sha256": "0ce62e6ad180994116c6794ca927428537095b2dde444ffbd2371fc4248d936d"
+      "bytes": 107333,
+      "sha256": "494ac7c17d3a4beffb9dd64b3099a43e45b69c9d95ac74c37b92cf05f28c1125"
+    },
+    {
+      "file": "07-sync-selection.png",
+      "caption": "Select media from a fictional Host library before reviewing the Sync Plan.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 1194739,
+      "sha256": "839284c3c2240fe6f71942ac69e62d2a079b5f131e3b797bb6eaebce9e1c7180"
     },
     {
       "file": "06-about-and-credits.png",
       "caption": "Free and open source, with optional donations and acknowledgements for the projects that make iOpenPod possible.",
       "width": 1920,
       "height": 1080,
-      "bytes": 101595,
-      "sha256": "8561196c725af506357550cf5e3695ee69a9fa1f59053f814221a64009541fd3"
+      "bytes": 98589,
+      "sha256": "baf1befa4adae40ec8d185c03d6c952a73df291c9b14a11c6241816968d32ff3"
+    },
+    {
+      "file": "08-transcoding-settings.png",
+      "caption": "Choose audio and video conversion settings in the real iOpenPod Settings page.",
+      "width": 1920,
+      "height": 1080,
+      "bytes": 122227,
+      "sha256": "dde833da5fd187ebaebb3f3ad12a7e4af53dddd7eaa6a5b7a7f9466946baceb1"
     }
   ]
 }

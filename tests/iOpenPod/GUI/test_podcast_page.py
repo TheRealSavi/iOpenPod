@@ -12,9 +12,18 @@ from PySide6.QtCore import (
     QRect,
     QRectF,
     Qt,
+    QUrl,
     Signal,
 )
-from PySide6.QtGui import QAction, QColor, QImage, QPainter, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QFontMetrics,
+    QImage,
+    QPainter,
+    QPixmap,
+)
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -47,8 +56,11 @@ from iOpenPod.app.podcasts.models import (
     PodcastClearAge,
     PodcastClearMethod,
     PodcastEpisode,
+    PodcastEpisodeType,
     PodcastFillMode,
+    PodcastLink,
     PodcastSearchResult,
+    PodcastShowType,
     PodcastSnapshot,
     PodcastSubscription,
     PodcastSyncSettings,
@@ -85,7 +97,7 @@ if TYPE_CHECKING:
     from iOpenPod.GUI.widgets.track_actions import TrackActions
 
 
-class _Controller(QObject):
+class PodcastControllerStub(QObject):
     changed = Signal()
     busyChanged = Signal(bool)
     operationFailed = Signal(object)
@@ -104,6 +116,7 @@ class _Controller(QObject):
         self.can_sync = True
         self.listened_calls: list[tuple[tuple[tuple[str, str], ...], bool]] = []
         self.refresh_calls: list[str | None] = []
+        self.automatic_refresh_calls: list[str | None] = []
         self.subscribe_calls: list[str] = []
         self.sync_calls: list[str | None] = []
         self.add_episode_calls: list[tuple[tuple[str, str], ...]] = []
@@ -111,8 +124,12 @@ class _Controller(QObject):
         self.unsubscribe_calls: list[str] = []
         self.settings_calls: list[tuple[str, PodcastSyncSettings]] = []
 
-    def refresh(self, subscription_id: str | None = None) -> None:
+    def refresh(
+        self, subscription_id: str | None = None, *, only_if_stale: bool = False
+    ) -> None:
         self.refresh_calls.append(subscription_id)
+        if only_if_stale:
+            self.automatic_refresh_calls.append(subscription_id)
 
     def unsubscribe(self, subscription_id: str) -> None:
         self.unsubscribe_calls.append(subscription_id)
@@ -199,10 +216,10 @@ class _DeviceArtwork:
         )
 
 
-def test_podcast_directory_is_textual_and_subscribes_using_the_feed_url() -> None:
+def test_podcast_directory_subscribes_using_the_feed_url() -> None:
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     theme = ThemeManager(APPLICATION, settings)
-    controller = _Controller(PodcastSnapshot(writable=True))
+    controller = PodcastControllerStub(PodcastSnapshot(writable=True))
     dialog = PodcastSearchDialog(cast("PodcastController", controller), theme)
     result = PodcastSearchResult(
         "Example Show",
@@ -336,7 +353,7 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         ),
     )
     device_track = Track(42, "Designing for the device in your hand", "", "", 1)
-    controller = _Controller(
+    controller = PodcastControllerStub(
         PodcastSnapshot(subscriptions=(subscription,), writable=True),
         (device_track,),
     )
@@ -360,10 +377,11 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
 
     try:
         assert controller.refresh_calls == []
-        page.resize(1180, 900)
+        page.resize(1440, 900)
         page.show()
         APPLICATION.processEvents()
         assert controller.refresh_calls == [None]
+        assert controller.automatic_refresh_calls == [None]
 
         show_shelf = page.findChild(QListView, "podcastShowShelf")
         assert show_shelf is not None
@@ -384,6 +402,10 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         show_shelf.setCurrentIndex(show_shelf.model().index(1, 0))
         APPLICATION.processEvents()
         assert controller.refresh_calls == [None, subscription.subscription_id]
+        assert controller.automatic_refresh_calls == [
+            None,
+            subscription.subscription_id,
+        ]
 
         controller.busy = True
         controller.can_edit = False
@@ -404,6 +426,9 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         directory_results = page.findChild(QListView, "podcastDirectoryResults")
         show_description = page.findChild(ElidedLabel, "podcastShowDescription")
         hero = page.findChild(QFrame, "podcastHero")
+        sync_show = page.findChild(QPushButton, "podcastSyncShow")
+        sync_settings = page.findChild(QPushButton, "podcastSyncSettings")
+        website = page.findChild(QPushButton, "podcastShowWebsite")
         refresh_show = page.findChild(QPushButton, "podcastRefreshShow")
         unsubscribe = page.findChild(QPushButton, "podcastUnsubscribe")
         toolbar = page.findChild(QFrame, "podcastsToolbar")
@@ -424,6 +449,13 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         assert artwork_stack.currentWidget() is page.findChild(ArtworkView)
         assert show_description is not None
         assert hero is not None
+        assert sync_show is not None and sync_settings is not None
+        assert website is not None
+        assert all(
+            hero.isAncestorOf(button)
+            for button in (sync_show, sync_settings, website, refresh_show, unsubscribe)
+            if button is not None
+        )
         assert refresh_show is not None
         assert unsubscribe is not None
         assert isinstance(toolbar, PageHeader)
@@ -502,14 +534,26 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         hero_origin = hero.mapTo(page, QPoint())
         assert show_origin.x() < hero_origin.x()
         assert show_shelf.height() > show_shelf.width()
-        assert hero.minimumHeight() == 240
-        assert hero.maximumHeight() == 240
-        assert hero.height() == 240
+        assert hero.minimumHeight() == 208
+        assert hero.maximumHeight() == 208
+        assert hero.height() == 208
         artwork_origin = artwork_stack.mapTo(hero, QPoint())
         assert artwork_origin.x() == 24
-        assert artwork_origin.y() - hero.contentsRect().top() == 24
+        assert artwork_stack.width() == artwork_stack.height() == 158
         refresh_origin = refresh_show.mapTo(hero, QPoint())
         unsubscribe_origin = unsubscribe.mapTo(hero, QPoint())
+        sync_origin = sync_show.mapTo(hero, QPoint())
+        settings_origin = sync_settings.mapTo(hero, QPoint())
+        assert sync_origin.y() == settings_origin.y() == refresh_origin.y()
+        assert sync_origin.x() < settings_origin.x() < refresh_origin.x()
+        assert sync_origin.x() == show_description.mapTo(hero, QPoint()).x()
+        assert (
+            artwork_origin.y() + artwork_stack.height()
+            == sync_origin.y() + sync_show.height()
+            == settings_origin.y() + sync_settings.height()
+            == refresh_origin.y() + refresh_show.height()
+            == unsubscribe_origin.y() + unsubscribe.height()
+        )
         assert refresh_origin.y() == unsubscribe_origin.y()
         assert refresh_origin.x() < unsubscribe_origin.x()
         assert (
@@ -517,9 +561,12 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
             - (unsubscribe_origin.y() + unsubscribe.height() - 1)
             == 24
         )
-        assert show_description.maximum_lines == 4
+        assert show_description.maximum_lines == 2
+        assert show_description.contentsRect().height() >= (
+            QFontMetrics(show_description.font()).lineSpacing() * 2
+        )
         assert show_description.is_elided
-        assert show_description.toolTip() == show_description_text
+        assert not show_description.toolTip()
         assert show_shelf.model().rowCount() == 2
         assert episode_list.model().rowCount() == 2
         assert episode_status_text(subscription.episodes[0]) == "Add to iPod"
@@ -692,6 +739,11 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
             second.subscription_id,
             None,
         ]
+        automatic_calls = list(controller.automatic_refresh_calls)
+        refresh_show.click()
+        assert controller.refresh_calls[-1] is None
+        assert len(controller.refresh_calls) == len(automatic_calls) + 1
+        assert controller.automatic_refresh_calls == automatic_calls
     finally:
         page.close()
         page.deleteLater()
@@ -700,6 +752,119 @@ def test_podcast_page_uses_artwork_catalogue_and_episode_stream() -> None:
         artwork_controller.shutdown()
         device_provider.shutdown()
         device_artwork_controller.shutdown()
+        theme.close()
+
+
+def test_publisher_metadata_and_links_are_available_in_the_podcast_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    episode = PodcastEpisode(
+        "ep",
+        title="Episode",
+        author="Guest",
+        episode_type=PodcastEpisodeType.BONUS,
+        links=(PodcastLink("https://publisher.test/notes#chapter", "Episode notes"),),
+    )
+    subscription = PodcastSubscription(
+        "show",
+        "https://publisher.test/feed",
+        "Show",
+        SubscriptionSource.USER,
+        categories=("Technology", "Education"),
+        description="A short show description.",
+        copyright="Copyright Studio",
+        website_url="https://publisher.test/show",
+        show_type=PodcastShowType.SERIAL,
+        episodes=(episode,),
+    )
+    controller = PodcastControllerStub(
+        PodcastSnapshot(subscriptions=(subscription,), writable=True)
+    )
+    status = ApplicationStatus(APPLICATION)
+    theme = ThemeManager(
+        APPLICATION, SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    )
+    artwork_controller = PodcastArtworkController(_NoArtwork())
+    provider = PodcastArtworkPixmapProvider(artwork_controller)
+    page = PodcastPage(cast("PodcastController", controller), status, theme, provider)
+    opened: list[str] = []
+
+    def record_url(url: QUrl) -> bool:
+        opened.append(url.toString())
+        return True
+
+    monkeypatch.setattr(
+        QDesktopServices,
+        "openUrl",
+        record_url,
+    )
+    try:
+        page.resize(1180, 900)
+        page.show()
+        APPLICATION.processEvents()
+        shelf = page.findChild(QListView, "podcastShowShelf")
+        assert shelf is not None
+        shelf.setCurrentIndex(shelf.model().index(1, 0))
+        APPLICATION.processEvents()
+        meta = page.findChild(ElidedLabel, "podcastShowMeta")
+        description = page.findChild(ElidedLabel, "podcastShowDescription")
+        website = page.findChild(QPushButton, "podcastShowWebsite")
+        assert (
+            meta is not None
+            and "Technology, Education" in meta.text()
+            and "Serial" in meta.text()
+        )
+        assert description is not None and "Copyright Studio" in description.text()
+        assert description.heightForWidth(description.width()) == (
+            QFontMetrics(description.font()).lineSpacing() * 2
+        )
+        assert description.contentsRect().height() >= description.heightForWidth(
+            description.width()
+        )
+        assert not description.is_elided
+        description.setStyleSheet("font-size: 16pt")
+        hero = page.findChild(QFrame, "podcastHero")
+        assert hero is not None
+        for width in (1180, 1440):
+            page.resize(width, 900)
+            APPLICATION.processEvents()
+            assert description.maximumHeight() == (
+                QFontMetrics(description.font()).lineSpacing() * 2
+            )
+            assert hero.minimumHeight() == hero.maximumHeight() == hero.height() == 208
+            assert (
+                description.contentsRect().height()
+                >= QFontMetrics(description.font()).lineSpacing()
+            )
+            assert description.is_elided
+        assert website is not None and website.isVisible()
+        website.click()
+        assert opened == [subscription.website_url]
+        assert "Guest" in episode_meta_text(episode) and "Bonus" in episode_meta_text(
+            episode
+        )
+        episodes = page.findChild(QListView, "podcastEpisodeList")
+        assert episodes is not None
+        episodes.customContextMenuRequested.emit(
+            episodes.visualRect(episodes.model().index(0, 0)).center()
+        )
+        APPLICATION.processEvents()
+        submenu = next(
+            menu for menu in page.findChildren(QMenu) if menu.title() == "Episode links"
+        )
+        submenu.actions()[0].trigger()
+        assert opened[-1] == episode.links[0].url
+        for menu in page.findChildren(QMenu):
+            menu.hide()
+        shelf.setCurrentIndex(shelf.model().index(0, 0))
+        APPLICATION.processEvents()
+        assert not website.isVisible()
+    finally:
+        page.close()
+        page.deleteLater()
+        APPLICATION.processEvents()
+        provider.shutdown()
+        artwork_controller.shutdown()
         theme.close()
 
 
@@ -741,7 +906,7 @@ def test_unsubscribe_confirms_episode_removal_only_when_needed(
         SubscriptionSource.USER,
         episodes=(PodcastEpisode("saved", on_device=True, track_id=42),),
     )
-    controller = _Controller(PodcastSnapshot((subscription,), writable=True))
+    controller = PodcastControllerStub(PodcastSnapshot((subscription,), writable=True))
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     theme = ThemeManager(APPLICATION, settings)
     artwork_controller = PodcastArtworkController(_NoArtwork())
@@ -832,7 +997,7 @@ def test_podcast_sync_actions_preserve_show_identity_and_filter_membership() -> 
         )
         for show_id, track_id in (("First", 1), ("Second", 2))
     )
-    controller = _Controller(
+    controller = PodcastControllerStub(
         PodcastSnapshot(subscriptions=subscriptions, writable=True)
     )
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
@@ -955,7 +1120,7 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
         age = dialog.findChild(QComboBox, "podcastSyncClearAge")
         method = dialog.findChild(QComboBox, "podcastSyncClearMethod")
         listened = dialog.findChild(QCheckBox, "podcastSyncClearListened")
-        assert slots is not None and (slots.minimum(), slots.maximum()) == (1, 50)
+        assert slots is not None and (slots.minimum(), slots.maximum()) == (0, 50)
         assert slots.accessibleName() == "Episodes to keep"
         assert slots.text() == "12 episodes"
         assert "extra episodes yourself" in slots.toolTip()
@@ -998,7 +1163,33 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
             fill_mode=PodcastFillMode.NEXT,
             clear_older_than=PodcastClearAge.IMMEDIATE,
         )
+        slots.setValue(0)
+        assert slots.text() == "0 episodes"
+        assert dialog.selected_settings.episode_slots == 0
+        assert all(not control.isEnabled() for control in (fill, age, method, listened))
+        explanation = " ".join(label.text() for label in descriptions)
+        assert "Automatic sync is disabled for this podcast" in explanation
+        slots.setValue(12)
+        assert all(control.isEnabled() for control in (fill, age, method, listened))
+        assert dialog.selected_settings == PodcastSyncSettings(
+            episode_slots=12,
+            fill_mode=PodcastFillMode.NEXT,
+            clear_older_than=PodcastClearAge.IMMEDIATE,
+        )
         assert not dialog.grab().isNull()
+    finally:
+        dialog.close()
+
+
+def test_podcast_sync_settings_open_with_zero_slots() -> None:
+    settings = PodcastSyncSettings(episode_slots=0)
+    dialog = PodcastSyncSettingsDialog("Example Podcast", settings)
+    try:
+        assert dialog.selected_settings == settings
+        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        fill = dialog.findChild(QComboBox, "podcastSyncFillMode")
+        assert slots is not None and slots.value() == 0
+        assert fill is not None and not fill.isEnabled()
     finally:
         dialog.close()
 
@@ -1026,7 +1217,7 @@ def test_episode_badge_click_adds_only_that_episode_and_play_circle_plays() -> N
         ),
     )
     track = Track(42, "Saved", "", "", 1)
-    controller = _Controller(
+    controller = PodcastControllerStub(
         PodcastSnapshot(subscriptions=subscriptions, writable=True), (track,)
     )
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())

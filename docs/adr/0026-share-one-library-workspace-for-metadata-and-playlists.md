@@ -44,6 +44,10 @@ explicit Apply to Draft action. Edits, reloads, locking, or cancellation invalid
 the preview. Fourteen captured Original results provide independent parity evidence;
 the Original project is not a runtime or test dependency.
 
+ADR-0163 amends these rules to preserve supplied credits and custom sorts and to
+require explicit evidence for compilation and album inference. The original
+captures remain intact, with deliberate safety corrections recorded separately.
+
 The same revision-bound scan also supplies the Normalize Tags Sidebar badge. It
 counts proposed field edits rather than affected Tracks, hides zero or unavailable
 counts, and refreshes after a short debounce when the Library Workspace changes.

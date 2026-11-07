@@ -1,4 +1,4 @@
-"""Stable Host-authored Track fields used by Sync comparison and provenance."""
+"""Host tag comparison and lossless, compatible retained Track provenance."""
 
 from __future__ import annotations
 
@@ -69,21 +69,34 @@ METADATA_TAG_FIELDS = (
 
 
 def track_tag_values(track: Track) -> tuple[object, ...]:
-    """The single projection for comparing and applying Host-authored fields."""
+    """Compare Host-owned tags; EQ is edited only in the iPod Library."""
     return (
         *(getattr(track, name) for name in TRACK_TAG_FIELDS),
-        *(getattr(track.metadata, name) for name in METADATA_TAG_FIELDS),
+        *(
+            getattr(track.metadata, name)
+            for name in METADATA_TAG_FIELDS
+            if name != "equalizer"
+        ),
     )
 
 
 def apply_track_tags(target: Track, source: Track) -> Track:
-    """Apply that projection while retaining identity, payload and playback state."""
+    """Apply Host tags while retaining identity, media facts and playback state."""
+    # Scanned chapters are not removal intent. Keep their existing comparison and
+    # digest representation, but only captured media preparation or explicit
+    # Library edits may replace the retained Track's chapter evidence.
+    # EQ has no Host tag mapping or clear intent; only explicit Library edits
+    # author its value, including choosing Use iPod setting.
     return replace(
         target,
         **{name: getattr(source, name) for name in TRACK_TAG_FIELDS},
         metadata=replace(
             target.metadata,
-            **{name: getattr(source.metadata, name) for name in METADATA_TAG_FIELDS},
+            **{
+                name: getattr(source.metadata, name)
+                for name in METADATA_TAG_FIELDS
+                if name not in ("chapters", "equalizer")
+            },
         ),
     )
 
@@ -91,7 +104,13 @@ def apply_track_tags(target: Track, source: Track) -> Track:
 def track_tag_sha256(track: Track) -> str:
     """Fingerprint the semantic iPod Track fields recorded at verified Sync."""
 
-    values = track_tag_values(track)
+    # Keep the persisted v1 digest byte-for-byte compatible, including retained
+    # EQ. This fingerprints committed iPod state, unlike the Host-owned comparison
+    # above. Removing a field here would invalidate existing Sync baselines.
+    values = (
+        *(getattr(track, name) for name in TRACK_TAG_FIELDS),
+        *(getattr(track.metadata, name) for name in METADATA_TAG_FIELDS),
+    )
     chapters = tuple(
         (chapter.title, chapter.start_ms) for chapter in track.metadata.chapters
     )

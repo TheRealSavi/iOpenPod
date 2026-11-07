@@ -12,7 +12,7 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QScrollArea,
     QSizePolicy,
     QTabWidget,
     QVBoxLayout,
@@ -32,15 +31,19 @@ from iOpenPod.app.core.settings.definitions import (
     BACKUP_LOCATION,
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
+    ITUNES_107_ARTWORK,
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
+    NAVIGATION_STYLE,
+    PLAYER_AUTO_MINIMIZE,
     PLAYER_POSITION,
     AppearanceMode,
     DarkTheme,
     IPodLibraryViewMode,
     LibraryDoubleClickShortcut,
     LightTheme,
+    NavigationStyle,
     PlayerPosition,
     TrackTitleBarStyle,
 )
@@ -56,9 +59,11 @@ from iOpenPod.app.services.linux_identity import (
 )
 from iOpenPod.app.services.media_tools import MediaToolSetup
 from iOpenPod.app.updates.backend import InstallChannel
+from iOpenPod.GUI.dialogs.help_support import HelpSupportDialog
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentityUninstallDialog,
 )
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.icons import glyph_icon
@@ -72,10 +77,10 @@ from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.settings_editor import ScopedSettingBinding, SettingsEditor
 from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
+from iOpenPod.GUI.widgets.settings_tab import SettingsTab
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
-_ISSUES_URL = "https://github.com/TheRealSavi/iOpenPod/issues"
 _DONATION_URL = "https://ko-fi.com/johngibbons"
 
 
@@ -84,7 +89,9 @@ class SettingsPage(QWidget):
 
     mediaToolsRequested = Signal()
     mediaToolsCheckRequested = Signal()
+    phaseAnalysisSetupRequested = Signal()
     appUpdatesRequested = Signal()
+    onboardingRequested = Signal()
     chooseIPodRequested = Signal()
 
     def __init__(
@@ -146,6 +153,9 @@ class SettingsPage(QWidget):
             self._colorful_mode_combo,
             self,
         )
+        self._itunes_artwork_combo = AppComboBox(self)
+        self._itunes_artwork_combo.setObjectName("itunes107ArtworkCombo")
+        self._itunes_artwork_row = SettingRow("", "", self._itunes_artwork_combo, self)
         self._track_title_bar_combo = AppComboBox(self)
         self._track_title_bar_combo.setObjectName("trackTitleBarStyleCombo")
         self._track_title_bar_row = SettingRow(
@@ -159,7 +169,13 @@ class SettingsPage(QWidget):
             self._player_position_combo,
             self,
         )
+        self._player_auto_minimize_combo = AppComboBox(self)
+        self._player_auto_minimize_combo.setObjectName("playerAutoMinimizeCombo")
+        self._player_auto_minimize_row = SettingRow(
+            "", "", self._player_auto_minimize_combo, self
+        )
         self._language_combo = AppComboBox(self)
+        self._language_combo.setObjectName("languageCombo")
         self._language_row = SettingRow("", "", self._language_combo, self)
 
         self._library_title = QLabel(self)
@@ -171,6 +187,12 @@ class SettingsPage(QWidget):
         )
         library = SettingGroup(self)
         library.setMaximumWidth(960)
+        self._navigation_style_combo = AppComboBox(self)
+        self._navigation_style_combo.setObjectName("navigationStyleCombo")
+        self._navigation_style_row = SettingRow(
+            "", "", self._navigation_style_combo, self
+        )
+        library.add_row(self._navigation_style_row)
         self._ipod_view_mode_combo = AppComboBox(self)
         self._ipod_view_mode_combo.setObjectName("ipodLibraryViewModeCombo")
         self._ipod_view_mode_row = SettingRow("", "", self._ipod_view_mode_combo, self)
@@ -211,8 +233,10 @@ class SettingsPage(QWidget):
         appearance.add_row(self._light_theme_row)
         appearance.add_row(self._dark_theme_row)
         appearance.add_row(self._colorful_mode_row)
+        appearance.add_row(self._itunes_artwork_row)
         appearance.add_row(self._track_title_bar_row)
         appearance.add_row(self._player_position_row)
+        appearance.add_row(self._player_auto_minimize_row)
         appearance.add_row(self._language_row)
 
         self._donation_banner = QFrame(self)
@@ -294,23 +318,33 @@ class SettingsPage(QWidget):
         self._check_updates.clicked.connect(self.appUpdatesRequested.emit)
         self._version_row = SettingRow("", "", self._check_updates, self)
         self._version_row.setObjectName("currentAppVersion")
+        self._retake_onboarding = ActionButton(parent=self)
+        self._retake_onboarding.setObjectName("retakeOnboarding")
+        self._retake_onboarding.clicked.connect(self.onboardingRequested.emit)
+        self._onboarding_row = SettingRow("", "", self._retake_onboarding, self)
         self._update_message = QLabel(self)
         self._update_message.setObjectName("appUpdateMessage")
         self._update_message.setWordWrap(True)
         self._update_message.setTextFormat(Qt.TextFormat.PlainText)
         self._update_message.setMaximumWidth(960)
         self._update_message.hide()
-        self._report_issue = ActionButton(parent=self)
-        self._report_issue.setObjectName("reportIssue")
-        self._report_issue_row = SettingRow("", "", self._report_issue, self)
+        self._help_support = ActionButton(parent=self)
+        self._help_support.setObjectName("helpSupport")
+        self._help_support_row = SettingRow("", "", self._help_support, self)
         self._open_log_folder = ActionButton(parent=self)
         self._open_log_folder.setObjectName("openLogFolder")
         self._open_log_folder_row = SettingRow("", "", self._open_log_folder, self)
+        self._log_file_path = QLineEdit(self)
+        self._log_file_path.setObjectName("activeLogPath")
+        self._log_file_path.setReadOnly(True)
+        self._log_file_path_row = SettingRow("", "", self._log_file_path, self)
         about = SettingGroup(self)
         about.setMaximumWidth(960)
         about.add_row(self._version_row)
+        about.add_row(self._onboarding_row)
         about.add_row(self._open_log_folder_row)
-        about.add_row(self._report_issue_row)
+        about.add_row(self._log_file_path_row)
+        about.add_row(self._help_support_row)
 
         self._credits = QLabel(self)
         self._credits.setObjectName("aboutCredits")
@@ -330,7 +364,8 @@ class SettingsPage(QWidget):
         self._tabs.setObjectName("settingsTabs")
         self._tabs.setDocumentMode(True)
         self._tabs.setUsesScrollButtons(True)
-        self._tabs.tabBar().setExpanding(False)
+        self._tabs.tabBar().setExpanding(True)
+        self._tabs.currentChanged.connect(self._update_tab_width)
         # Keep tab clicks from restoring an off-screen control and jumping the scroll.
         self._tabs.tabBar().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._transcoding_settings = TranscodingSettings(
@@ -339,6 +374,9 @@ class SettingsPage(QWidget):
         self._media_tools = MediaToolsSettings(self, settings=settings)
         self._media_tools.setupRequested.connect(self.mediaToolsRequested.emit)
         self._media_tools.checkRequested.connect(self.mediaToolsCheckRequested.emit)
+        self._media_tools.phaseSetupRequested.connect(
+            self.phaseAnalysisSetupRequested.emit
+        )
         self._sync_settings = SyncSettings(settings, self, editor=self._editor)
         self._appearance_tab = self._add_tab(
             "appearanceSettingsScroll",
@@ -425,13 +463,22 @@ class SettingsPage(QWidget):
         self._colorful_mode_combo.currentIndexChanged.connect(
             self._colorful_mode_selected
         )
+        self._itunes_artwork_combo.currentIndexChanged.connect(
+            self._itunes_artwork_selected
+        )
         self._player_position_combo.currentIndexChanged.connect(
             self._player_position_selected
+        )
+        self._player_auto_minimize_combo.currentIndexChanged.connect(
+            self._player_auto_minimize_selected
         )
         self._track_title_bar_combo.currentIndexChanged.connect(
             self._track_title_bar_selected
         )
         self._language_combo.currentIndexChanged.connect(self._language_selected)
+        self._navigation_style_combo.currentIndexChanged.connect(
+            self._navigation_style_selected
+        )
         self._draft_all_changes_combo.currentIndexChanged.connect(
             self._draft_all_changes_selected
         )
@@ -441,7 +488,7 @@ class SettingsPage(QWidget):
         self._choose_backup_location.clicked.connect(self._choose_backup_folder)
         self._check_udev_rule.clicked.connect(self._inspect_udev_rule)
         self._uninstall_udev_rule.clicked.connect(self._show_udev_uninstall)
-        self._report_issue.clicked.connect(self._open_issue_tracker)
+        self._help_support.clicked.connect(self._open_help_support)
         self._open_log_folder.clicked.connect(self._show_log_folder)
         self._donate.clicked.connect(self._open_donation_page)
         self._tabs.currentChanged.connect(self._update_saved_note)
@@ -501,21 +548,16 @@ class SettingsPage(QWidget):
             self.mediaToolsCheckRequested.emit()
 
     def _add_tab(self, name: str, *widgets: QWidget) -> int:
-        scroll = QScrollArea(self._tabs)
-        scroll.setObjectName(name)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        content = QWidget(scroll)
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(
-            LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
+        scroll = SettingsTab(
+            name, widgets, self._tabs, theme_manager=self._theme_manager
         )
-        layout.setSpacing(LAYOUT.space_xs)
-        for widget in widgets:
-            layout.addWidget(widget)
-        layout.addStretch(1)
-        scroll.setWidget(content)
+        scroll.columnWidthChanged.connect(self._update_tab_width)
         return self._tabs.addTab(scroll, "")
+
+    def _update_tab_width(self) -> None:
+        current = self._tabs.currentWidget()
+        if isinstance(current, SettingsTab):
+            self._tabs.tabBar().setFixedWidth(current.column_width)
 
     def retranslate_ui(self) -> None:
         self._update_version()
@@ -536,11 +578,18 @@ class SettingsPage(QWidget):
         self._tabs.setTabText(self._about_tab, self.tr("About"))
         self._appearance_title.setText(self.tr("Appearance and language"))
         self._library_title.setText(self.tr("Library"))
+        self._navigation_style_row.set_copy(
+            self.tr("Navigation style"),
+            self.tr(
+                "Browse using the sidebar or a compact bar across the top of the app."
+            ),
+        )
         self._ipod_view_mode_row.set_copy(
             self.tr("iPod Library View Mode"),
             self.tr(
-                "Show Tracks below Album and collection grids, or open them "
-                "on a whole page like the Host Sync Library."
+                "Show Tracks in a split table or on a whole page. iTunes 11 style "
+                "opens an album-colored Track list inside the Albums grid; "
+                "other views use a split table."
             ),
         )
         self._draft_all_changes_row.set_copy(
@@ -588,9 +637,19 @@ class SettingsPage(QWidget):
                 "from their image."
             ),
         )
+        self._itunes_artwork_row.set_copy(
+            self.tr("iTunes 10.7 Style artwork"),
+            self.tr(
+                "Use classic angled device artwork where available, including managed iPod drive icons."
+            ),
+        )
         self._player_position_row.set_copy(
             self.tr("Player position"),
             self.tr("Place the Player above or below the main application area."),
+        )
+        self._player_auto_minimize_row.set_copy(
+            self.tr("Automatically minimize Player"),
+            self.tr("Minimize the Player when no Track is loaded."),
         )
         self._track_title_bar_row.set_copy(
             self.tr("Track-list title bar"),
@@ -622,16 +681,30 @@ class SettingsPage(QWidget):
                 "Package-managed copies under /usr or /lib are preserved."
             ),
         )
-        self._report_issue_row.set_copy(
-            QCoreApplication.translate("CommonActions", "Report an Issue"),
-            self.tr("Open the iOpenPod issue tracker on GitHub."),
+        self._help_support_row.set_copy(
+            self.tr("Help and support"),
+            self.tr(
+                "Find guides, community help, issue reporting, and ways to support iOpenPod."
+            ),
         )
+        self._onboarding_row.set_copy(
+            self.tr("Getting started"),
+            self.tr("Revisit the welcome tour and choose your essential settings."),
+        )
+        self._retake_onboarding.setText(self.tr("Retake onboarding"))
         self._open_log_folder_row.set_copy(
             self.tr("Log files"),
             self.tr("Open the folder containing the active iOpenPod log file."),
         )
         self._open_log_folder.setText(self.tr("Open Log Folder"))
-        self._open_log_folder.setEnabled(active_log_path() is not None)
+        log_path = active_log_path()
+        self._open_log_folder.setEnabled(log_path is not None)
+        self._log_file_path_row.set_copy(
+            self.tr("Log file path"),
+            self.tr("Select and copy this path if the folder does not open."),
+        )
+        self._log_file_path.setText(str(log_path) if log_path is not None else "")
+        self._log_file_path.setToolTip(self._log_file_path.text())
         self._donation_title.setText(self.tr("Support iOpenPod"))
         self._donation_description.setText(
             self.tr(
@@ -642,9 +715,7 @@ class SettingsPage(QWidget):
         self._choose_backup_location.setText(self.tr("Choose…"))
         self._check_udev_rule.setText(self.tr("Check Again"))
         self._uninstall_udev_rule.setText(self.tr("Uninstall Rule"))
-        self._report_issue.setText(
-            QCoreApplication.translate("CommonActions", "Report an Issue")
-        )
+        self._help_support.setText(self.tr("Help and support"))
         self._donate.setText(self.tr("Support on Ko-fi ↗"))
         self._update_saved_note()
         self._ipod_preferences.retranslate_ui()
@@ -654,6 +725,7 @@ class SettingsPage(QWidget):
         self._rebuild_backup_options()
         self._rebuild_draft_all_changes_options()
         self._rebuild_volume_presentation_options()
+        self._rebuild_navigation_style_options()
         self._rebuild_ipod_view_mode_options()
         self._rebuild_double_click_options()
         self._sync_backup_location(self._settings.get(BACKUP_LOCATION))
@@ -691,6 +763,7 @@ class SettingsPage(QWidget):
         )
         del blocker
         self._draft_all_changes_row.setVisible(not device)
+        self._navigation_style_row.setVisible(not device)
         self._volume_presentation_row.setVisible(not device)
         self._backup_location_row.setVisible(not device)
         if self._scrobbling_settings is not None:
@@ -763,6 +836,11 @@ class SettingsPage(QWidget):
                 "<p>An honorary thank-you to the {libgpod} and {gtkpod} "
                 "contributors for their pioneering iPod support, documentation, "
                 "and the references this project learned from.</p>"
+                "<p>Thanks to {dotm5} and their {genius_research} repository "
+                "for helping us understand native Genius Data.</p>"
+                "<p>Thanks to {olsro} for organizing and preserving iPod click wheel "
+                "games through the {games_preservation}. "
+                "iOpenPod's game binary downloads are sourced from this repository.</p>"
                 "<p>Application icon by DJShott, used with permission.</p>"
             ).format(
                 license='<a href="https://www.gnu.org/licenses/gpl-3.0.html">'
@@ -771,6 +849,16 @@ class SettingsPage(QWidget):
                 hashab='<a href="https://github.com/dstaley/hashab">Dylan Staley (@dstaley)</a>',
                 libgpod='<a href="https://github.com/gtkpod/libgpod">libgpod</a>',
                 gtkpod='<a href="https://github.com/gtkpod/gtkpod">gtkpod</a>',
+                dotm5='<a href="https://github.com/dotm5">dotm5</a>',
+                genius_research=(
+                    '<a href="https://github.com/dotm5/Genius-Mix-Research">'
+                    "Genius-Mix-Research</a>"
+                ),
+                olsro='<a href="https://github.com/Olsro">Olsro</a>',
+                games_preservation=(
+                    '<a href="https://github.com/Olsro/ipodclickwheelgamespreservationproject">'
+                    "iPod Clickwheel Games Preservation Project</a>"
+                ),
             )
         )
 
@@ -793,6 +881,8 @@ class SettingsPage(QWidget):
                 self._light_theme_combo,
                 self._dark_theme_combo,
                 self._colorful_mode_combo,
+                self._itunes_artwork_combo,
+                self._player_auto_minimize_combo,
                 self._track_title_bar_combo,
             )
         )
@@ -834,9 +924,18 @@ class SettingsPage(QWidget):
             self.tr("Northern Lights"), DarkTheme.NORTHERN_LIGHTS.value
         )
         self._dark_theme_combo.addItem(self.tr("Orchid"), DarkTheme.ORCHID.value)
+        self._dark_theme_combo.addItem(self.tr("Tech"), DarkTheme.TECH.value)
         self._colorful_mode_combo.clear()
         self._colorful_mode_combo.addItem(self.tr("Off"), False)
         self._colorful_mode_combo.addItem(self.tr("On"), True)
+        self._itunes_artwork_combo.clear()
+        self._itunes_artwork_combo.addItem(self.tr("Off"), False)
+        self._itunes_artwork_combo.addItem(self.tr("On"), True)
+        self._sync_itunes_artwork(self._settings.get(ITUNES_107_ARTWORK))
+        self._player_auto_minimize_combo.clear()
+        self._player_auto_minimize_combo.addItem(self.tr("Off"), False)
+        self._player_auto_minimize_combo.addItem(self.tr("On"), True)
+        self._sync_player_auto_minimize(self._settings.get(PLAYER_AUTO_MINIMIZE))
         self._track_title_bar_combo.clear()
         self._track_title_bar_combo.addItem(
             self.tr("Flat"), TrackTitleBarStyle.FLAT.value
@@ -892,6 +991,18 @@ class SettingsPage(QWidget):
         self._sync_draft_all_changes(self._settings.get(DRAFT_ALL_CHANGES))
         del blocker
 
+    def _rebuild_navigation_style_options(self) -> None:
+        blocker = QSignalBlocker(self._navigation_style_combo)
+        self._navigation_style_combo.clear()
+        self._navigation_style_combo.addItem(
+            self.tr("Sidebar"), NavigationStyle.SIDEBAR.value
+        )
+        self._navigation_style_combo.addItem(
+            self.tr("Compact top bar"), NavigationStyle.COMPACT_TOP_BAR.value
+        )
+        self._sync_navigation_style_selection(self._settings.get(NAVIGATION_STYLE))
+        del blocker
+
     def _rebuild_ipod_view_mode_options(self) -> None:
         self._view_binding.configure(
             (
@@ -900,6 +1011,7 @@ class SettingsPage(QWidget):
                     self.tr("Whole Page Table"),
                     IPodLibraryViewMode.WHOLE_PAGE_TABLE.value,
                 ),
+                (self.tr("iTunes 11 style"), IPodLibraryViewMode.ITUNES_11.value),
             )
         )
 
@@ -923,6 +1035,30 @@ class SettingsPage(QWidget):
         self._volume_presentation_combo.addItem(self.tr("On"), True)
         self._sync_volume_presentation(self._settings.get(MANAGE_VOLUME_PRESENTATION))
         del blocker
+
+    def _sync_player_auto_minimize(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._player_auto_minimize_combo)
+        self._player_auto_minimize_combo.setCurrentIndex(
+            self._player_auto_minimize_combo.findData(enabled)
+        )
+        del blocker
+
+    def _player_auto_minimize_selected(self, index: int) -> None:
+        value = self._player_auto_minimize_combo.itemData(index)
+        if isinstance(value, bool):
+            self._settings.set_global(PLAYER_AUTO_MINIMIZE, value)
+
+    def _sync_itunes_artwork(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self._itunes_artwork_combo)
+        self._itunes_artwork_combo.setCurrentIndex(
+            self._itunes_artwork_combo.findData(enabled)
+        )
+        del blocker
+
+    def _itunes_artwork_selected(self, index: int) -> None:
+        value = self._itunes_artwork_combo.itemData(index)
+        if isinstance(value, bool):
+            self._settings.set_global(ITUNES_107_ARTWORK, value)
 
     def _sync_volume_presentation(self, enabled: bool) -> None:
         blocker = QSignalBlocker(self._volume_presentation_combo)
@@ -997,6 +1133,11 @@ class SettingsPage(QWidget):
         if isinstance(value, str):
             self._settings.set_global(PLAYER_POSITION, PlayerPosition(value).value)
 
+    def _navigation_style_selected(self, index: int) -> None:
+        value = self._navigation_style_combo.itemData(index)
+        if isinstance(value, str):
+            self._settings.set_global(NAVIGATION_STYLE, NavigationStyle(value).value)
+
     def _track_title_bar_selected(self, index: int) -> None:
         value = self._track_title_bar_combo.itemData(index)
         if isinstance(value, str):
@@ -1041,23 +1182,23 @@ class SettingsPage(QWidget):
         LinuxIdentityUninstallDialog(self).exec()
         self._inspect_udev_rule()
 
-    def _open_issue_tracker(self) -> None:
-        QDesktopServices.openUrl(QUrl(_ISSUES_URL))
+    def _open_help_support(self) -> None:
+        HelpSupportDialog(self).open()
 
     def _show_log_folder(self) -> None:
         log_path = active_log_path()
         if log_path is None:
             return
         folder = log_path.parent
-        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))):
+        if not open_desktop_url(QUrl.fromLocalFile(str(folder))):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Open Log Folder"),
-                str(folder),
+                self.tr("Open this folder manually: %1").replace("%1", str(folder)),
             )
 
     def _open_donation_page(self) -> None:
-        QDesktopServices.openUrl(QUrl(_DONATION_URL))
+        open_desktop_url(QUrl(_DONATION_URL))
 
     def _udev_status_description(self) -> str:
         status = self._udev_rule_status
@@ -1084,10 +1225,23 @@ class SettingsPage(QWidget):
             self._sync_draft_all_changes(value)
         elif key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
             self._sync_volume_presentation(value)
+        elif key == ITUNES_107_ARTWORK.key and isinstance(value, bool):
+            self._sync_itunes_artwork(value)
         elif key == PLAYER_POSITION.key and isinstance(value, str):
             self._sync_player_position_selection(value)
+        elif key == PLAYER_AUTO_MINIMIZE.key and isinstance(value, bool):
+            self._sync_player_auto_minimize(value)
+        elif key == NAVIGATION_STYLE.key and isinstance(value, str):
+            self._sync_navigation_style_selection(value)
         elif key == BACKUP_LOCATION.key and isinstance(value, str):
             self._sync_backup_location(value)
+
+    def _sync_navigation_style_selection(self, value: str) -> None:
+        blocker = QSignalBlocker(self._navigation_style_combo)
+        self._navigation_style_combo.setCurrentIndex(
+            max(0, self._navigation_style_combo.findData(value))
+        )
+        del blocker
 
     def _sync_player_position_selection(self, position_value: str) -> None:
         blocker = QSignalBlocker(self._player_position_combo)

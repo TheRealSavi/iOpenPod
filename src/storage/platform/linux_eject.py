@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol, cast
+from xml.etree import ElementTree
 
 from storage.errors import (
     EjectError,
@@ -220,27 +222,31 @@ class _QtUDisksClient:
 
     def _require_no_drive_siblings(self, drive: str) -> None:
         sibling_id = self._property(drive, self._DRIVE, "SiblingId")
-        if not isinstance(sibling_id, str) or not sibling_id:
+        if not isinstance(sibling_id, str):
+            raise _invalid_drive_inventory()
+        if not sibling_id:
             return
-        try:
-            listed = self._call(
-                self._ROOT + "/Manager",
-                self._MANAGER,
-                "GetDrives",
-                _variant_map({}),
-            )
-        except UDisksError as error:
-            if error.name.endswith("UnknownMethod"):
-                raise UDisksError(
-                    "org.freedesktop.UDisks2.Error.NotSupported",
-                    "UDisks cannot verify whether powering off this Drive would "
-                    "also affect other media.",
-                ) from error
-            raise
-        for candidate in _object_paths(_first_argument(listed)):
-            if candidate != drive and (
-                self._property(candidate, self._DRIVE, "SiblingId") == sibling_id
-            ):
+
+        # Manager.GetDrives requires UDisks 2.11. The documented /drives subtree
+        # is also available on older releases, including drives without media.
+        # Introspection returns a string, avoiding PySide's read-only nested-map
+        # overload limitations when decoding ObjectManager.GetManagedObjects.
+        drive_root = self._ROOT + "/drives"
+        listed = self._call(
+            drive_root,
+            "org.freedesktop.DBus.Introspectable",
+            "Introspect",
+        )
+        drives = _introspected_drive_paths(_first_argument(listed), drive_root)
+        if drive not in drives:
+            raise _invalid_drive_inventory()
+        for candidate in drives:
+            if candidate == drive:
+                continue
+            candidate_id = self._property(candidate, self._DRIVE, "SiblingId")
+            if not isinstance(candidate_id, str):
+                raise _invalid_drive_inventory()
+            if candidate_id == sibling_id:
                 raise UDisksError(
                     "org.freedesktop.UDisks2.Error.NotSupported",
                     "Powering off this Drive may also affect other media in the "
@@ -285,6 +291,36 @@ def _variant_map(values: dict[str, object]) -> dict[str, object]:
     # a{sv}. Building a QDBusArgument manually instead makes the Python binding
     # marshal an empty structure and causes UDisks to reject the method call.
     return dict(values)
+
+
+def _invalid_drive_inventory() -> UDisksError:
+    return UDisksError(
+        "org.freedesktop.UDisks2.Error.NotSupported",
+        "UDisks could not provide a complete Drive inventory for safe removal. "
+        "Use the desktop's Safely Remove or Power Off action.",
+    )
+
+
+def _introspected_drive_paths(value: object, root: str) -> tuple[str, ...]:
+    """Read the documented UDisks Drive subtree without dropping invalid entries."""
+    if not isinstance(value, str):
+        raise _invalid_drive_inventory()
+    try:
+        node = ElementTree.fromstring(value)
+    except ElementTree.ParseError as error:
+        raise _invalid_drive_inventory() from error
+    if node.tag != "node" or node.get("name", root) != root:
+        raise _invalid_drive_inventory()
+    paths: list[str] = []
+    for child in node.findall("node"):
+        name = child.get("name", "")
+        if re.fullmatch(r"[A-Za-z0-9_]+", name) is None:
+            raise _invalid_drive_inventory()
+        path = f"{root}/{name}"
+        if path in paths:
+            raise _invalid_drive_inventory()
+        paths.append(path)
+    return tuple(paths)
 
 
 def _first_argument(message: object) -> object:

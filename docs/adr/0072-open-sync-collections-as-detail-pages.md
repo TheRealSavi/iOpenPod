@@ -47,3 +47,19 @@ pages, retaining their existing Track table and iPod actions while hiding Sync
 Selection controls. The preference applies immediately and persists across
 restarts. The Host browser keeps its own presentation policy independently of this
 iPod preference.
+
+## Extension: detail-page transitions (2026-11-05)
+
+Opening a whole-page Track table and going Back crossfades the shared Library page,
+including its toolbar, over 180 ms in both Library and Sync with Host. Navigation
+commits immediately; one page-sized outgoing snapshot fades over the live target
+without intercepting input. Repeated navigation starts from the current blend.
+Snapshots include the composed window background inside the page bounds so
+transparent child-widget backgrounds cannot reveal incoming controls prematurely.
+Hidden pages skip animation; resizing, hiding, changing presentation, or changing
+the theme clears unfinished fades. Split Table and inline Albums retain their
+existing presentation.
+
+While a detail page is visible, the mouse Back button invokes its existing Back
+action from any control in the same window. It leaves other windows, dialogs,
+hidden pages, and the mouse Forward button alone.

@@ -201,3 +201,73 @@ def test_episode_cover_precedes_show_cover_and_chapters_reach_native_library(
             )
     finally:
         device.coordinator.close()
+
+
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
+    reason="FFmpeg and FFprobe required for actual Podcast preparation",
+)
+@pytest.mark.parametrize("rss_available", (True, False))
+def test_episode_rss_cover_reaches_ipod_ahead_of_embedded_show_cover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rss_available: bool
+) -> None:
+    source = tmp_path / "episode.mp3"
+    source.write_bytes(base64.decodebytes((FIXTURES / "tone.mp3.b64").read_bytes()))
+    tags = _FRAMES.ID3(source)
+    tags.add(_FRAMES.APIC(mime="image/png", type=3, data=_image("blue")))
+    tags.save(source, v2_version=3)
+    monkeypatch.setattr(
+        media, "build_opener", PodcastOpenerFactory(source.read_bytes())
+    )
+    requested_covers: list[str] = []
+
+    def load_publisher(request: Request, *, timeout: int) -> PodcastResponse:
+        requested_covers.append(request.full_url)
+        return PodcastOpener(_image("red") if rss_available else b"invalid image").open(
+            request, timeout=timeout
+        )
+
+    monkeypatch.setattr(feed_client, "urlopen", load_publisher)
+    addition = podcast_addition()
+    addition = replace(
+        addition,
+        episode=replace(
+            addition.episode, artwork_url="https://publisher.example/episode.png"
+        ),
+        subscription=replace(
+            addition.subscription, artwork_url="https://publisher.example/show.png"
+        ),
+    )
+    monkeypatch.setattr(
+        "iOpenPod.app.sync_execution.prepare_podcast_sync",
+        FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
+    )
+    device = build_device(tmp_path)
+    try:
+        result = SyncExecutor(device.coordinator).execute(
+            podcast_request(device.active), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        reloaded = device.coordinator.select_device(device.active.candidate.id)
+        podcast = next(
+            track
+            for track in reloaded.library.tracks
+            if track.media_kind is MediaKind.PODCAST
+        )
+        assert podcast.artwork_id > 0
+        decoded = device.coordinator.load_artwork(
+            ArtworkRequest(podcast.artwork_id, 128)
+        )
+        assert decoded is not None
+        center = ((decoded.height // 2) * decoded.width + decoded.width // 2) * 3
+        red, green, blue = decoded.rgb888[center : center + 3]
+        if rss_available:
+            assert red >= 240 and green <= 12 and blue <= 12
+        else:
+            assert blue >= 240 and red <= 12 and green <= 12
+            assert any(
+                issue.code == "sync.podcast_artwork_skipped" for issue in result.issues
+            )
+        assert requested_covers == ["https://publisher.example/episode.png"]
+    finally:
+        device.coordinator.close()

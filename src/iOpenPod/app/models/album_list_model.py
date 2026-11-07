@@ -78,6 +78,7 @@ class AlbumRole(IntEnum):
     ARTWORK_ID = Qt.ItemDataRole.UserRole.value + 10
     ARTIST_KEY = Qt.ItemDataRole.UserRole.value + 11
     GENRE_KEYS = Qt.ItemDataRole.UserRole.value + 12
+    ON_IPOD = Qt.ItemDataRole.UserRole.value + 13
 
 
 class AlbumListModel(QAbstractListModel):
@@ -87,9 +88,12 @@ class AlbumListModel(QAbstractListModel):
         self,
         tracks: TrackTableModel,
         parent: QObject | None = None,
+        *,
+        media_kind: MediaKind = MediaKind.MUSIC,
     ) -> None:
         super().__init__(parent)
         self._tracks = tracks
+        self._media_kind = media_kind
         self._albums: tuple[AlbumSummary, ...] = ()
         self._search_texts: tuple[str, ...] = ()
         self._sync_selection: SyncSelection | None = None
@@ -98,6 +102,11 @@ class AlbumListModel(QAbstractListModel):
         tracks.rowsInserted.connect(self._source_changed)
         tracks.rowsRemoved.connect(self._source_changed)
         self._source_reset()
+
+    @property
+    def media_kind(self) -> MediaKind:
+        """The media scope shared by Album cards and their Track contents."""
+        return self._media_kind
 
     @property
     def album_count(self) -> int:
@@ -145,6 +154,8 @@ class AlbumListModel(QAbstractListModel):
         album = self._albums[index.row()]
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
             return self._sync_selection.track_group_check_state(album.track_ids)
+        if role == AlbumRole.ON_IPOD and self._sync_selection is not None:
+            return self._sync_selection.track_group_on_ipod(album.track_ids)
         if role == Qt.ItemDataRole.DisplayRole:
             return album.title or _translate(_UNKNOWN_ALBUM_SOURCE)
         if role == AlbumRole.SUMMARY:
@@ -205,7 +216,7 @@ class AlbumListModel(QAbstractListModel):
     def _project(self) -> tuple[AlbumSummary, ...]:
         accumulators: dict[str, _AlbumAccumulator] = {}
         for track in self._tracks.tracks:
-            if track.media_kind is not MediaKind.MUSIC:
+            if track.media_kind is not self._media_kind:
                 continue
             album = accumulators.get(track.album_key)
             if album is None:
@@ -277,7 +288,7 @@ class AlbumListModel(QAbstractListModel):
         self.dataChanged.emit(
             self.index(0, 0),
             self.index(len(self._albums) - 1, 0),
-            [Qt.ItemDataRole.CheckStateRole.value],
+            [Qt.ItemDataRole.CheckStateRole.value, AlbumRole.ON_IPOD],
         )
 
 

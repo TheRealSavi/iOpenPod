@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import time
 from threading import Lock
 from typing import TYPE_CHECKING, Protocol
 
+from whenever import Instant
+
 from .clients import client_for, wait_between_batches
 from .models import LASTFM_MAX_AGE, ScrobbleError, ScrobbleResult, Service
-from .queue import capture
+from .queue import MIN_TIMESTAMP, capture
 from .reporting import adjustment_report, rejection_report
 from .timestamps import adjust_lastfm_dates
 
@@ -30,6 +31,11 @@ class ScrobbleSource(Protocol):
     ) -> tuple[str, Callable[[], None]]: ...
 
 
+def _unix_now() -> float:
+    """Keep the injected Unix-clock boundary; delivery dates use whole seconds."""
+    return float(Instant.now().timestamp())
+
+
 class ScrobbleService:
     def __init__(
         self,
@@ -38,7 +44,7 @@ class ScrobbleService:
         credentials: CredentialStore,
         *,
         clients: Callable[[Service], Submitter] = client_for,
-        clock: Callable[[], float] = time.time,
+        clock: Callable[[], float] = _unix_now,
     ) -> None:
         self._coordinator = coordinator
         self._queue = queue
@@ -114,6 +120,7 @@ class ScrobbleService:
                     for item in state.pending
                     if item.device == device
                     and item.account == account.identity
+                    and MIN_TIMESTAMP <= item.submission.timestamp <= now
                     and (
                         account.service is not Service.LASTFM
                         or item.submission.timestamp >= now - LASTFM_MAX_AGE

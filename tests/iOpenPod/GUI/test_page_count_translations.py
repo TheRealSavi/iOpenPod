@@ -55,7 +55,7 @@ def test_sync_selection_and_extra_diagnostic_paths_use_count_forms(count: int) -
                 ),
             )
         )
-        issues = execution.findChild(QLabel, "syncResultMessage")
+        issues = execution.findChild(QLabel, "syncResultMessageOverflow")
         assert issues is not None
         assert f"…and {count} more file{suffix}" in issues.text()
     finally:

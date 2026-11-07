@@ -30,6 +30,28 @@ from iPodDB.library import ContentAdvisory
 
 
 @pytest.mark.parametrize(
+    "publication,expected",
+    [("Wed, 31 Dec 1969 23:59:59 GMT", -1), ("not a date", 0), ("", 0)],
+)
+def test_feed_dates_preserve_signed_seconds_and_tolerate_unknown_metadata(
+    monkeypatch: pytest.MonkeyPatch, publication: str, expected: int
+) -> None:
+    payload = f"""<rss version="2.0"><channel><title>Show</title><item>
+    <guid>episode</guid><title>Episode</title><pubDate>{publication}</pubDate>
+    <enclosure url="https://cdn.example.test/episode.mp3" type="audio/mpeg" />
+    </item></channel></rss>""".encode()
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        return payload, url
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+    episode = (
+        FeedparserPodcastClient().fetch("https://publisher.example/feed").episodes[0]
+    )
+    assert episode.published_at == expected
+
+
+@pytest.mark.parametrize(
     "feed_value,episode_value,expected",
     (
         ("true", "", ContentAdvisory.EXPLICIT),
@@ -58,7 +80,7 @@ def test_explicit_advisory_and_subtitle_survive_feed_normalization(
     def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
         return payload, url
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
     episode = (
         FeedparserPodcastClient().fetch("https://publisher.example/feed").episodes[0]
     )
@@ -66,6 +88,34 @@ def test_explicit_advisory_and_subtitle_survive_feed_normalization(
     assert episode.subtitle == "Short summary"
     assert episode.description == "Full episode description"
     assert episode.guid == "opaque-guid"
+
+
+@pytest.mark.parametrize(
+    "second_url",
+    (
+        "https://cdn.example.test/shared.mp3",
+        "HTTPS://CDN.example.test:443/shared.mp3#fragment",
+    ),
+)
+def test_repeated_episode_identity_is_reported_as_a_feed_error(
+    monkeypatch: pytest.MonkeyPatch,
+    second_url: str,
+) -> None:
+    payload = f"""<rss version="2.0"><channel><title>Show</title>
+    <item><guid>first</guid><title>First</title>
+    <enclosure url="https://cdn.example.test/shared.mp3" type="audio/mpeg" />
+    </item>
+    <item><guid>second</guid><title>Second</title>
+    <enclosure url="{second_url}" type="audio/mpeg" />
+    </item></channel></rss>""".encode()
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        return payload, url
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+
+    with pytest.raises(PodcastFeedError, match="Episode IDs"):
+        FeedparserPodcastClient().fetch("https://example.test/feed")
 
 
 def test_directory_retains_text_and_feed_url_without_promotional_artwork(
@@ -100,7 +150,7 @@ def test_directory_retains_text_and_feed_url_without_promotional_artwork(
         assert accept == "application/json"
         return payload, url
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
 
     results = ApplePodcastDirectoryClient().search("Example Show")
 
@@ -152,7 +202,7 @@ def test_feedparser_client_normalizes_typed_podcast_metadata(
         del url, limit, timeout_seconds, accept
         return payload, "https://example.test/feed"
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
 
     subscription = FeedparserPodcastClient().fetch("https://example.test/feed")
 
@@ -186,7 +236,7 @@ def test_artwork_loader_returns_bounded_square_rgb_pixels(
         del url, limit, timeout_seconds, accept, checkpoint
         return payload.getvalue(), "https://cdn.example.test/cover.png"
 
-    monkeypatch.setattr(feed_client, "_request_bytes", request_bytes)
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
 
     image = HttpPodcastArtworkLoader().load_artwork(
         PodcastArtworkRequest("https://example.test/cover.png", 96)
@@ -197,6 +247,25 @@ def test_artwork_loader_returns_bounded_square_rgb_pixels(
     assert image.width == 96
     assert image.height == 96
     assert len(image.rgb888) == 96 * 96 * 3
+
+
+def test_chapter_images_keep_their_full_aspect_ratio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = BytesIO()
+    Image.new("RGB", (240, 120), "blue").save(payload, format="PNG")
+
+    def request_bytes(url: str, **_kwargs: object) -> tuple[bytes, str]:
+        return payload.getvalue(), url
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+    image = HttpPodcastArtworkLoader().load_artwork(
+        PodcastArtworkRequest(
+            "https://publisher.test/slide.png", 96, preserve_aspect=True
+        )
+    )
+    assert image is not None
+    assert (image.width, image.height) == (96, 48)
 
 
 class _TrickleResponse:

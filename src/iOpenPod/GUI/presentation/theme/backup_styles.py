@@ -49,6 +49,7 @@ QLabel#backupSnapshotsCount,
 QLabel#backupSnapshotSummary,
 QLabel#backupProgressFile,
 QLabel#backupEmptyDetail,
+QLabel#backupLoadingPage,
 QLabel#backupArchiveEmpty {{
     color: {tokens.text_secondary};
 }}

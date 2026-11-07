@@ -34,6 +34,7 @@ from storage.models import (
 )
 from storage.platform.base import ObservationDiscoveryResult
 from storage.platform.common import capabilities, disk_usage
+from storage.platform.linux_backing import capture_backing
 from storage.platform.linux_eject import LinuxDeviceEjector
 from storage.platform.linux_eject import set_volume_label as set_udisks_volume_label
 from storage.scsi_vpd import collect_scsi_vpd
@@ -233,28 +234,66 @@ class LinuxPlatformAdapter:
         # Desktop environments read the ordinary companion files.
         pass
 
+    def paths_share_physical_device(self, first: Path, second: Path) -> bool:
+        """Use comparable kernel backing evidence without changing journal identities."""
+        try:
+            records = self._records()
+            before = capture_backing((first, second), records, _SYS_CLASS_BLOCK)
+            after = capture_backing((first, second), records, _SYS_CLASS_BLOCK)
+            if before != after or records != self._records():
+                raise MountInspectionError(
+                    "Linux physical backing changed during Host path validation"
+                )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise MountInspectionError(
+                f"Could not establish Linux physical backing: {error}"
+            ) from error
+        return bool(before.devices[0] & before.devices[1])
+
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:
         requested = Path(os.path.realpath(path))
         try:
-            matching = tuple(
-                record
-                for record in self._records()
-                if requested == record.mount_point
-                or requested.is_relative_to(record.mount_point)
-            )
+            records = self._records()
         except OSError as error:
             raise MountInspectionError(
                 f"Could not read the Linux mount table: {error}"
             ) from error
-        if not matching:
-            raise MountInspectionError(f"No mounted Volume contains {requested}")
-        record = max(matching, key=lambda item: len(os.fspath(item.mount_point)))
-        identity = _linux_physical_device_identity(
-            record,
-            self._connection_identity_properties(record),
-            stable_only=True,
-        )
-        return PhysicalDeviceId(f"linux:{identity}") if identity is not None else None
+        visited: set[str] = set()
+        while True:
+            matching = tuple(
+                record
+                for record in records
+                if requested == record.mount_point
+                or requested.is_relative_to(record.mount_point)
+            )
+            if not matching:
+                raise MountInspectionError(f"No mounted Volume contains {requested}")
+            record = max(matching, key=lambda item: len(os.fspath(item.mount_point)))
+            if record.mount_id in visited:
+                return None
+            visited.add(record.mount_id)
+            if record.filesystem_type == "ecryptfs":
+                # eCryptfs names its backing directory rather than a block device.
+                # Resolve that directory against the same mount-table snapshot;
+                # its storage may still be on the protected removable device.
+                backing = Path(record.source)
+                if not backing.is_absolute():
+                    return None
+                try:
+                    requested = backing.resolve(strict=True)
+                    if not requested.is_dir():
+                        return None
+                except (OSError, RuntimeError):
+                    return None
+                continue
+            identity = _linux_physical_device_identity(
+                record,
+                self._connection_identity_properties(record),
+                stable_only=True,
+            )
+            return (
+                PhysicalDeviceId(f"linux:{identity}") if identity is not None else None
+            )
 
     def flush(self, observation: VolumeObservation) -> FlushResult:
         if not shutil.which("sync"):

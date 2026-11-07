@@ -15,16 +15,16 @@ layout: default
     </header>
     <div class="guide-body">{{ content }}</div>
     <aside class="guide-next" aria-label="Get started">
-      <h2>{{ page.cta_heading | default: 'Put your iPod back to work.' | escape }}</h2>
+      <h2>{{ page.cta_heading | default: 'Download and setup' | escape }}</h2>
       <p>{{ page.cta_description | default: 'iOpenPod is free and open source. Choose a download for your computer, then follow the setup guide.' | escape }}</p>
       <div class="guide-actions">
-        <a class="download-nav" href="{{ '/#install' | relative_url }}">Get iOpenPod <span aria-hidden="true">↗</span></a>
+        <a class="download-nav" href="{{ '/#install' | relative_url }}">Get iOpenPod</a>
         <a href="{{ '/install-help/' | relative_url }}">Installation help</a>
       </div>
     </aside>
   </article>
   <section class="guide-related" aria-labelledby="related-heading">
-    <h2 id="related-heading">Keep reading</h2>
+    <h2 id="related-heading">Related guides</h2>
     <ul class="guide-links">
       {% for related_url in page.related_guides %}
       {% assign guide = site.data.guides | where: 'url', related_url | first %}

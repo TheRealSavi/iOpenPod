@@ -162,16 +162,24 @@ def run_media_tool(
     max_output_bytes: int = 4 * 1024 * 1024,
     max_stderr_bytes: int | None = None,
     low_priority: bool = False,
+    keep_stdin_open: bool = False,
     check: bool = True,
     input_file: HostPath | None = None,
+    arguments_after_input: tuple[str, ...] = (),
     progress: Callable[[MediaToolProgress], None] | None = None,
 ) -> ToolOutput:
-    """Run a bounded tool, optionally appending one pinned, seekable Host input.
+    """Run a bounded tool, optionally including one pinned, seekable Host input.
+
+    The pinned input follows ``arguments`` and precedes ``arguments_after_input``.
+    A suffix requires ``input_file``.
 
     With ``progress``, stdout must contain FFmpeg's ``-progress pipe:1`` protocol.
     Records are bounded individually and callbacks run on the calling thread during
     processing, with the final sample drained after exit. Progress stdout is
     consumed rather than returned.
+
+    ``keep_stdin_open`` retains an unwritten pipe until cleanup. A persistent
+    child can observe EOF on that pipe when this process exits unexpectedly.
 
     The input handle remains open until the child is reaped. On Windows its file
     and ancestor handles prevent replacement; POSIX passes the verified descriptor
@@ -183,6 +191,8 @@ def run_media_tool(
         raise ValueError("Media tool output limit must be positive")
     if max_stderr_bytes is not None and max_stderr_bytes <= 0:
         raise ValueError("Media tool diagnostic limit must be positive")
+    if arguments_after_input and input_file is None:
+        raise ValueError("Arguments after input require a pinned input file")
     checkpoint()
     if input_file is not None:
         observed = LocalHostFile.observe(input_file)
@@ -194,12 +204,13 @@ def run_media_tool(
                 path = f"/dev/fd/{inherited_fds[0]}"
             return _run_media_tool(
                 executable,
-                (*arguments, path),
+                (*arguments, path, *arguments_after_input),
                 checkpoint=checkpoint,
                 timeout_seconds=timeout_seconds,
                 max_output_bytes=max_output_bytes,
                 max_stderr_bytes=max_stderr_bytes,
                 low_priority=low_priority,
+                keep_stdin_open=keep_stdin_open,
                 check=check,
                 inherited_fds=inherited_fds,
                 progress=progress,
@@ -212,6 +223,7 @@ def run_media_tool(
         max_output_bytes=max_output_bytes,
         max_stderr_bytes=max_stderr_bytes,
         low_priority=low_priority,
+        keep_stdin_open=keep_stdin_open,
         check=check,
         inherited_fds=(),
         progress=progress,
@@ -227,6 +239,7 @@ def _run_media_tool(
     max_output_bytes: int,
     max_stderr_bytes: int | None,
     low_priority: bool,
+    keep_stdin_open: bool,
     check: bool,
     inherited_fds: tuple[int, ...],
     progress: Callable[[MediaToolProgress], None] | None,
@@ -237,7 +250,7 @@ def _run_media_tool(
     try:
         process = subprocess.Popen(
             [os.fspath(executable), *arguments],
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if keep_stdin_open else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             creationflags=flags,
@@ -283,6 +296,8 @@ def _run_media_tool(
             with suppress(subprocess.TimeoutExpired):
                 process.wait(timeout=0.05)
     finally:
+        if keep_stdin_open and process.stdin is not None:
+            process.stdin.close()
         if process.poll() is None:
             process.kill()
         process.wait()
@@ -457,6 +472,17 @@ class MediaWorkspace:
         if path != self._directory / "source":
             raise ValueError("Only this workspace's private input can be discarded")
         path.unlink()
+
+    def discard_output(self, output: HostPath) -> None:
+        """Remove failed tool output before retrying in this private workspace."""
+        path = Path(output)
+        if (
+            path.parent != self._directory
+            or re.fullmatch(r"processed\.[a-z0-9]{1,8}", path.name) is None
+        ):
+            raise ValueError("Only this workspace's output can be discarded")
+        self._checkpoint()
+        path.unlink(missing_ok=True)
 
     def transform_stream(
         self, source: HostPath, transform: Callable[[BinaryIO], None]

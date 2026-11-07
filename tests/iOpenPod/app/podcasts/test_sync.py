@@ -89,6 +89,50 @@ def _added(plan: PodcastSyncPlan) -> tuple[str, ...]:
     return tuple(item.episode.episode_id for item in plan.additions)
 
 
+@pytest.mark.parametrize("mode", tuple(PodcastFillMode))
+@pytest.mark.parametrize("method", tuple(PodcastClearMethod))
+@pytest.mark.parametrize("on_device", (False, True))
+def test_zero_slots_disable_automatic_additions_clearing_and_replacements(
+    mode: PodcastFillMode, method: PodcastClearMethod, on_device: bool
+) -> None:
+    show = _show(
+        _episode(1, on_device=on_device, listened=True),
+        _episode(2, on_device=on_device),
+        _episode(3),
+        settings=PodcastSyncSettings(
+            episode_slots=0,
+            fill_mode=mode,
+            clear_older_than=PodcastClearAge.IMMEDIATE,
+            clear_method=method,
+        ),
+    )
+
+    assert _plan(show) == PodcastSyncPlan()
+
+
+@pytest.mark.parametrize("automatic", (False, True))
+def test_zero_slots_allow_explicit_additions_and_removals(automatic: bool) -> None:
+    show = _show(
+        _episode(1, on_device=True),
+        _episode(2),
+        settings=PodcastSyncSettings(episode_slots=0),
+    )
+    plan = plan_podcast_sync(
+        PodcastSyncRequest(
+            PodcastSnapshot((show,), writable=True),
+            additions=(("show", "episode-2"),),
+            removals=(("show", "episode-1"),),
+            automatic=automatic,
+        ),
+        _library(show),
+    )
+
+    assert _added(plan) == ("episode-2",)
+    assert plan.removals == (1,)
+    assert plan.automatic_removals == ()
+    assert plan.issues == ()
+
+
 @pytest.mark.parametrize("method", tuple(PodcastClearMethod))
 def test_newest_adds_latest_and_repeated_sync_does_not_rotate_backwards(
     method: PodcastClearMethod,

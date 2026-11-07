@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager, suppress
-from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, cast
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import normalize_feed_url
 from iPodDB.library import MediaType, Track, TrackMetadata
@@ -125,20 +126,18 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
     year = 0
     if episode.published_at:
         with suppress(OverflowError, OSError, ValueError):
-            year = datetime.fromtimestamp(episode.published_at, UTC).year
+            year = Instant.from_timestamp(episode.published_at).to_fixed_offset().year
     return Track(
         0,
         episode.title or "Untitled Episode",
-        subscription.author,
+        episode.author or subscription.author,
         subscription.title,
         episode.duration_seconds * 1000,
         genre="Podcast",
         year=year,
         track_number=episode.episode_number or 0,
         play_count=episode.play_count,
-        media_types=(MediaType.VIDEO_PODCAST,)
-        if video
-        else (MediaType.AUDIO, MediaType.PODCAST),
+        media_types=(MediaType.VIDEO_PODCAST,) if video else (MediaType.PODCAST,),
         show=subscription.title,
         episode=episode.guid,
         album_artist=subscription.author,
@@ -151,10 +150,10 @@ def episode_track(addition: PodcastEpisodeAddition, *, video: bool = False) -> T
             description=episode.description,
             subtitle=episode.subtitle or episode.description[:255],
             content_advisory=episode.content_advisory,
-            disc_number=1,
-            last_modified=int(time.time()),
+            last_modified=Instant.now().timestamp(),
             release_date=episode.published_at,
             category=subscription.category,
+            copyright=subscription.copyright,
             skip_shuffle=True,
             remember_position=True,
             played=episode.listened,

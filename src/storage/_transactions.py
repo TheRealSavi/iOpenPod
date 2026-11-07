@@ -33,6 +33,7 @@ from storage._transaction_journal import (
 from storage.errors import (
     ConcurrentModificationError,
     FilePreconditionError,
+    FileSizeLimitError,
     ReadOnlyFilesystemError,
     RecoverableWriteError,
     StorageOperationError,
@@ -272,8 +273,10 @@ def _journal(
     session: FilesystemSession, plan: StorageTransaction
 ) -> TransactionJournal:
     volume = session.mounted_volume
-    record_metadata = plan.recovery_material is not None or any(
-        write.modified_ns is not None for write in plan.writes
+    record_metadata = (
+        plan.host_recovery
+        or plan.recovery_material is not None
+        or any(write.modified_ns is not None for write in plan.writes)
     )
     return TransactionJournal(
         volume.physical_device.id.value,
@@ -304,7 +307,11 @@ def _journal(
             JournalDependency(f.path, _content(f.fingerprint))
             for f in plan.dependencies
         ),
-        plan.recovery_material.identity if plan.recovery_material is not None else "",
+        "storage-host-v1"
+        if plan.host_recovery
+        else plan.recovery_material.identity
+        if plan.recovery_material is not None
+        else "",
     )
 
 
@@ -315,7 +322,7 @@ def _journal_allocation(journal: TransactionJournal, unit: int | None) -> int:
     )
 
 
-def _external_staging_peak(plan: StorageTransaction, unit: int | None) -> int:
+def _staging_peak(plan: StorageTransaction, unit: int | None) -> int:
     """Return peak extra allocation while bounded writes publish in order."""
 
     committed_delta = 0
@@ -338,6 +345,18 @@ def validate(
     *,
     checkpoint: Callable[[], None] | None = None,
 ) -> TransactionValidation:
+    result = _validate_resources(session, plan, checkpoint=checkpoint)
+    _check_preconditions(session, _preconditions(plan))
+    return result
+
+
+def _validate_resources(
+    session: FilesystemSession,
+    plan: StorageTransaction,
+    *,
+    checkpoint: Callable[[], None] | None = None,
+) -> TransactionValidation:
+    """Validate plan shape and capacity without streaming device preconditions."""
     observation = session._revalidate()  # pyright: ignore[reportPrivateUsage]
     capabilities = observation.volume.capabilities
     if not capabilities.safe_for_writes:
@@ -346,11 +365,12 @@ def validate(
         raise ValueError("A Storage transaction needs at least one file change")
     if plan.reserve_bytes < 0:
         raise ValueError("Transaction reserve must be nonnegative")
+    if plan.host_recovery and plan.recovery_material is not None:
+        raise ValueError("Choose one transaction recovery store")
     files = _preconditions(plan)
     validate_paths(
         tuple(f.path for f in files), case_sensitive=capabilities.case_sensitive is True
     )
-    _check_preconditions(session, files)
     for write in plan.writes:
         if isinstance(write.source, bytes) and (
             len(write.source) != write.content.size
@@ -359,24 +379,39 @@ def validate(
             raise ConcurrentModificationError(
                 f"Transaction input differs from captured content: {write.path}"
             )
-        session._check_write_capacity(  # pyright: ignore[reportPrivateUsage]
-            write.content.size,
-            observation,
-            reserve_bytes=0,
-            display_name=write.path.name,
-        )
+        if plan.host_recovery:
+            limit = capabilities.max_file_size_bytes
+            if limit is not None and write.content.size > limit:
+                raise FileSizeLimitError(
+                    f"{write.path} exceeds the filesystem size limit"
+                )
+        else:
+            session._check_write_capacity(  # pyright: ignore[reportPrivateUsage]
+                write.content.size,
+                observation,
+                reserve_bytes=0,
+                display_name=write.path.name,
+            )
+    if plan.host_recovery:
+        from storage._host_transactions import validate as validate_host
+
+        return validate_host(session, plan, _journal(session, plan))
     _validate_recovery_material(plan, checkpoint=checkpoint)
     unit = capabilities.allocation_unit_size
     journal_size = _journal_allocation(_journal(session, plan), unit)
     if plan.recovery_material is None:
-        staged = sum(allocated_size(w.content.size, unit) for w in plan.writes)
+        staged = (
+            _staging_peak(plan, unit)
+            if plan.stage_one_at_a_time
+            else sum(allocated_size(w.content.size, unit) for w in plan.writes)
+        )
         originals = sum(
             allocated_size(w.expected.size, unit)
             for w in plan.writes
             if w.expected is not None
         )
     else:
-        staged = _external_staging_peak(plan, unit)
+        staged = _staging_peak(plan, unit)
         originals = 0
     rollback = max(
         (
@@ -650,7 +685,29 @@ def execute(
     checkpoint: Callable[[], None] | None,
     progress: Callable[[TransactionProgress], None] | None,
     activity: Callable[[TransactionActivity], None] | None = None,
+    resume_path: DevicePath | None = None,
 ) -> TransactionResult:
+    resumed_fingerprint = None
+    if resume_path is not None:
+        if (
+            plan.host_recovery
+            or plan.recovery_material is not None
+            or plan.removals
+            or plan.stage_one_at_a_time
+            or any(write.expected is not None for write in plan.writes)
+        ):
+            raise ValueError("Only create-only staged transactions can resume")
+        retained, resumed_fingerprint = _read(session, resume_path)
+        if retained != _journal(session, plan):
+            raise FilePreconditionError(
+                "Resume requires the exact original staging journal and plan"
+            )
+    if plan.host_recovery:
+        from storage._host_transactions import execute as execute_host
+
+        return execute_host(
+            session, plan, checkpoint=checkpoint, progress=progress, activity=activity
+        )
     if plan.recovery_material is not None:
         return _execute_external(
             session,
@@ -660,7 +717,7 @@ def execute(
         )
     validate(session, plan)
     journal = _journal(session, plan)
-    path = _journal_path(plan)
+    path = resume_path if resume_path is not None else _journal_path(plan)
     root = journal_root(path)
     started = False
     flushes: list[FlushResult] = []
@@ -684,7 +741,7 @@ def execute(
     if checkpoint is not None:
         checkpoint()
     try:
-        fingerprint = _persist(session, path, journal, None)
+        fingerprint = resumed_fingerprint or _persist(session, path, journal, None)
         staged: list[FileFingerprint] = []
         # Keep enough free space for a restoration copy after every staged file.
         unit = session.mounted_volume.volume.capabilities.allocation_unit_size
@@ -712,15 +769,31 @@ def execute(
                     reserve_bytes=reserve,
                     checkpoint=checkpoint,
                 )
-            staged.append(
-                session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
-                    write.source,
-                    _stage(root, index),
-                    write.content,
-                    reserve_bytes=reserve,
-                    checkpoint=checkpoint,
-                ).fingerprint
-            )
+            if not plan.stage_one_at_a_time:
+                stage = _stage(root, index)
+                if resume_path is not None and session.exists(stage):
+                    existing = session.fingerprint(stage)
+                    if FileContent.from_fingerprint(existing) == write.content:
+                        staged.append(existing)
+                        continue
+                    # Retain incomplete bytes inside the owned namespace; only
+                    # this damaged stage needs to be copied again.
+                    session._move_file(  # pyright: ignore[reportPrivateUsage]
+                        stage,
+                        root.joinpath(f"incomplete-{index}-{uuid.uuid4().hex}.bin"),
+                        expected_source=existing,
+                        expected_destination=None,
+                        create_parents=False,
+                    )
+                staged.append(
+                    session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
+                        write.source,
+                        _stage(root, index),
+                        write.content,
+                        reserve_bytes=reserve,
+                        checkpoint=checkpoint,
+                    ).fingerprint
+                )
         journal = replace(journal, state=TransactionState.PREPARED)
         fingerprint = _persist(session, path, journal, fingerprint)
         _activity(activity, TransactionActivityPhase.FLUSHING)
@@ -742,7 +815,12 @@ def execute(
                 _expected_content(
                     session, _backup(root, index), _content(write.expected)
                 )
-            if session.fingerprint(_stage(root, index)) != staged[index]:
+            if plan.stage_one_at_a_time:
+                # The application retains private Host outputs until publication
+                # completes. Check every source before changing the first target;
+                # each later copy also verifies its captured hash before moving.
+                _verify_host_content(write, checkpoint=None)
+            elif session.fingerprint(_stage(root, index)) != staged[index]:
                 raise FilePreconditionError(
                     "A transaction stage changed before publication"
                 )
@@ -753,10 +831,21 @@ def execute(
         flushes.append(session.flush())
         started = True
         for index, write in enumerate(plan.writes):
+            staged_file = (
+                session._copy_transaction_file(  # pyright: ignore[reportPrivateUsage]
+                    write.source,
+                    _stage(root, index),
+                    write.content,
+                    reserve_bytes=reserve,
+                    checkpoint=None,
+                ).fingerprint
+                if plan.stage_one_at_a_time
+                else staged[index]
+            )
             written = session._move_file(  # pyright: ignore[reportPrivateUsage]
                 _stage(root, index),
                 write.path,
-                expected_source=staged[index],
+                expected_source=staged_file,
                 expected_destination=write.expected,
                 create_parents=True,
             ).fingerprint
@@ -853,8 +942,17 @@ def _read_journal(
 ) -> tuple[TransactionJournal, FileFingerprint]:
     try:
         journal_root(path)
+        from storage._host_transactions import read as read_host
+
+        retained = read_host(session, path)
+        if retained is not None:
+            return retained
         snapshot = session.read_snapshot(path, max_bytes=MAX_JOURNAL_BYTES)
         journal = decode(snapshot.data)
+        if journal.recovery_material_identity == "storage-host-v1":
+            raise StorageOperationError(
+                "This transaction needs its Host recovery files. Reconnect to the computer that started the save."
+            )
         validate_paths(
             tuple(e.path for e in journal.entries)
             + tuple(d.path for d in journal.dependencies),
@@ -919,7 +1017,12 @@ def _finalize_terminal(
         raise FilePreconditionError(
             f"Only a verified {state.value} transaction can be cleaned up"
         )
-    if journal.content_durability_confirmed:
+    # Terminal cleanup needs the journal observation, not restoration's two
+    # complete content scans. Host recovery owns its pre-cleanup flush below.
+    if (
+        journal.content_durability_confirmed
+        and journal.recovery_material_identity != "storage-host-v1"
+    ):
         _require_complete_flush(
             session.flush(),
             path,
@@ -975,7 +1078,7 @@ def inspect(
         )
         observed.append(FilePrecondition(target, _fingerprint(session, target)))
     files = tuple(observed)
-    if session.fingerprint(path) != fingerprint:
+    if _read(session, path)[1] != fingerprint:
         raise FilePreconditionError("Transaction journal changed during inspection")
     _check_preconditions(session, files, activity=activity)
     return _recovery_observation(path, fingerprint, journal, files)
@@ -991,6 +1094,10 @@ def finalize(
         raise FilePreconditionError(
             "Only a committed or restored transaction can be finalized"
         )
+    if recovery.recovery_material_identity == "storage-host-v1":
+        from storage._host_transactions import finalize as finalize_host
+
+        return finalize_host(session, recovery)
     path = recovery.journal_path
     root = journal_root(path)
     if not session.exists(root):
@@ -1325,6 +1432,17 @@ def restore(
     if tuple(f.path for f in recovery.files) != expected_paths:
         raise FilePreconditionError("Recovery must capture every target and dependency")
     _check_preconditions(session, recovery.files, activity=activity)
+    if journal.recovery_material_identity == "storage-host-v1":
+        from storage._host_transactions import restore as restore_host
+
+        return restore_host(
+            session,
+            recovery,
+            journal,
+            checkpoint=checkpoint,
+            progress=progress,
+            activity=activity,
+        )
     if journal.recovery_material_identity:
         return _restore_external(
             session,

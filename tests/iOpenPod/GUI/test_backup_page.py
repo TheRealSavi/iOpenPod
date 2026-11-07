@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QStackedWidget,
+    QWidget,
 )
 
 from iOpenPod.app.backup_controller import (
@@ -48,6 +50,7 @@ from iOpenPod.app.backups.outcomes import (
     DeviceWritePolicy,
     RestoreIncomplete,
 )
+from iOpenPod.app.core.settings.definitions import BACKUP_LOCATION
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.GUI.pages.backup_page import BackupPage, BackupSnapshotCard
@@ -89,11 +92,13 @@ class _Controller(QObject):
         *,
         inventory: BackupInventory | None = None,
         catalog: BackupCatalog | None = None,
+        defer_inventory: bool = False,
     ) -> None:
         super().__init__()
         self.backup_root = backup_root
         self.inventory = inventory or BackupInventory(())
         self.catalog = catalog
+        self.defer_inventory = defer_inventory
         self.busy = False
         self.device_write_policy = DeviceWritePolicy.ALLOWED
         self.imported_sources: list[str] = []
@@ -101,7 +106,8 @@ class _Controller(QObject):
         self.recovery_calls: list[str] = []
 
     def refresh(self) -> None:
-        pass
+        if not self.defer_inventory:
+            self.inventoryChanged.emit(self.inventory)
 
     def create_snapshot(self) -> None:
         pass
@@ -159,12 +165,14 @@ def build_backup_page(
     *,
     inventory: BackupInventory | None = None,
     catalog: BackupCatalog | None = None,
+    defer_inventory: bool = False,
 ) -> tuple[BackupPage, _Controller]:
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     controller = _Controller(
         tmp_path / "native",
         inventory=inventory,
         catalog=catalog,
+        defer_inventory=defer_inventory,
     )
     devices = _Devices()
     page = BackupPage(
@@ -842,6 +850,137 @@ def test_empty_page_gives_wrapped_instructions_without_clipping(tmp_path: Path) 
         detail = page.findChild(QLabel, "backupEmptyDetail")
         assert detail is not None and detail.isVisible()
         assert detail.height() >= detail.heightForWidth(detail.width())
+    finally:
+        page.close()
+        page.deleteLater()
+
+
+def test_initial_inventory_load_never_displays_empty_state(tmp_path: Path) -> None:
+    device = BackupDeviceInfo("roadpod", "RoadPod", snapshot_count=1)
+    snapshot = SnapshotInfo(
+        "snapshot-1", "2026-09-12T12:00:00+00:00", "roadpod", "RoadPod"
+    )
+    page, controller = build_backup_page(
+        tmp_path,
+        catalog=BackupCatalog(device, (snapshot,), stored_size=128),
+        defer_inventory=True,
+    )
+    try:
+        content = page.findChild(QStackedWidget, "backupContent")
+        assert content is not None
+        loading = page.findChild(QLabel, "backupLoadingPage")
+        browser = page.findChild(QWidget, "backupBrowserPage")
+        assert loading is not None and browser is not None
+        assert content.currentWidget() is loading
+        page.show()
+        APPLICATION.processEvents()
+        assert content.currentWidget() is loading
+
+        controller.inventoryChanged.emit(BackupInventory((device,)))
+        APPLICATION.processEvents()
+        assert content.currentWidget() is browser
+        assert page.findChild(BackupSnapshotCard) is not None
+
+        page.hide()
+        page.show()
+        page.refresh()
+        APPLICATION.processEvents()
+        assert content.currentWidget() is browser
+    finally:
+        page.close()
+        page.deleteLater()
+
+
+def test_empty_state_requires_completed_inventory_and_uses_neutral_copy(
+    tmp_path: Path,
+) -> None:
+    page, controller = build_backup_page(tmp_path, defer_inventory=True)
+    try:
+        page.show()
+        APPLICATION.processEvents()
+        title = page.findChild(QLabel, "backupEmptyTitle")
+        assert title is not None and not title.isVisible()
+
+        controller.inventoryChanged.emit(BackupInventory(()))
+        assert title.isVisible()
+        assert title.text() == "No backups found"
+        detail = page.findChild(QLabel, "backupEmptyDetail")
+        assert detail is not None
+        assert detail.text() == (
+            "No backups are saved in this location. "
+            "Use Import Backups to import an Original iOpenPod archive."
+        )
+    finally:
+        page.close()
+        page.deleteLater()
+
+
+def test_failed_initial_inventory_can_retry_without_showing_empty_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page, controller = build_backup_page(tmp_path, defer_inventory=True)
+    messages: list[BackupMessage] = []
+    monkeypatch.setattr(page, "_show_backup_message", messages.append)
+    try:
+        page.show()
+        APPLICATION.processEvents()
+        controller.operationFailed.emit(
+            BackupOperationFailure(BackupOperation.REFRESH, "Unavailable", "OSError")
+        )
+        assert messages
+        loading = page.findChild(QLabel, "backupLoadingPage")
+        assert loading is not None and loading.isVisible()
+        assert loading.text() == "Unable to load backups. Select Refresh to try again."
+        refresh = page.findChild(QPushButton, "backupRefresh")
+        assert refresh is not None
+        refresh.click()
+        assert loading.text() == "Loading backups…"
+        controller.inventoryChanged.emit(BackupInventory(()))
+        assert not loading.isVisible()
+        title = page.findChild(QLabel, "backupEmptyTitle")
+        assert title is not None and title.isVisible()
+    finally:
+        page.close()
+        page.deleteLater()
+
+
+def test_changing_backup_location_waits_for_its_inventory(tmp_path: Path) -> None:
+    page, controller = build_backup_page(tmp_path)
+    try:
+        page.show()
+        APPLICATION.processEvents()
+        title = page.findChild(QLabel, "backupEmptyTitle")
+        assert title is not None and title.isVisible()
+
+        controller.defer_inventory = True
+        page._setting_changed(  # pyright: ignore[reportPrivateUsage]
+            BACKUP_LOCATION.key, str(tmp_path / "other")
+        )
+        assert not title.isVisible()
+        APPLICATION.processEvents()
+        loading = page.findChild(QLabel, "backupLoadingPage")
+        assert loading is not None and loading.isVisible()
+        controller.inventoryChanged.emit(BackupInventory(()))
+        assert title.isVisible()
+    finally:
+        page.close()
+        page.deleteLater()
+
+
+def test_initial_inventory_waits_for_busy_controller(tmp_path: Path) -> None:
+    page, controller = build_backup_page(tmp_path)
+    controller.busy = True
+    try:
+        page.show()
+        APPLICATION.processEvents()
+        loading = page.findChild(QLabel, "backupLoadingPage")
+        assert loading is not None and loading.isVisible()
+
+        controller.busy = False
+        controller.busyChanged.emit(False)
+        APPLICATION.processEvents()
+        title = page.findChild(QLabel, "backupEmptyTitle")
+        assert title is not None and title.isVisible()
     finally:
         page.close()
         page.deleteLater()

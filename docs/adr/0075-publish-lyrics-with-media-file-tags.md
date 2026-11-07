@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-24
 - Extends: ADR-0021, ADR-0030 and ADR-0034
+- Amended by: ADR-0206 for Classic native verification and lyrics-flag semantics
 
 Stock iPod lyrics need an embedded media tag as well as the iTunesDB presence flag.
 Database-only semantic verification previously accepted edits that could not

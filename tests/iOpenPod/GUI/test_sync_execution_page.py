@@ -1,11 +1,15 @@
 """Sync outcomes expose actual diagnostics, cancellation, and recovery actions."""
 
+from pathlib import Path
+
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -27,6 +31,143 @@ from iOpenPod.app.sync_plan import (
 from iOpenPod.GUI.pages.sync_execution_page import SyncExecutionPage
 from iOpenPod.GUI.widgets.sync_preparation_progress import SyncPreparationProgress
 from iPodDB.library import IssueSeverity, Track, WriteIssue
+from storage import AtomicHostFile
+
+
+@pytest.mark.parametrize("outcome", ["saved", "cancelled", "write_error"])
+def test_save_sync_report_keeps_every_file_and_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    page = SyncExecutionPage()
+    destination = tmp_path / "sync-report.txt"
+    destination.write_text("Previous report", encoding="utf-8")
+    errors: list[str] = []
+
+    def choose(*args: object, **kwargs: object) -> tuple[str, str]:
+        return ("" if outcome == "cancelled" else str(destination), "")
+
+    def show_error(dialog: QMessageBox) -> int:
+        errors.append(dialog.text())
+        return 0
+
+    def fail_replace(file: AtomicHostFile, data: bytes) -> None:
+        raise PermissionError("Report destination is read-only")
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", choose)
+    monkeypatch.setattr(QMessageBox, "exec", show_error)
+    if outcome == "write_error":
+        monkeypatch.setattr(AtomicHostFile, "replace_bytes", fail_replace)
+    try:
+        button = page.findChild(QPushButton, "saveSyncReport")
+        assert button is not None and button.isHidden()
+        issues = tuple(
+            WriteIssue(
+                "sync.item_failed",
+                "Track skipped",
+                detail="Unreadable audio frames — damaged source",
+                artifact=f"/Music/Épisode {index}.m4a",
+            )
+            for index in range(12)
+        )
+        page.show_result(
+            SyncExecutionResult(SyncExecutionStatus.PARTIAL, issues=issues)
+        )
+        assert not button.isHidden()
+        button.click()
+        text = destination.read_text(encoding="utf-8")
+        if outcome == "saved":
+            assert "Sync partially completed" in text
+            assert "Unreadable audio frames — damaged source" in text
+            assert all(issue.artifact in text for issue in issues)
+            assert "sync.item_failed" in text
+        else:
+            assert text == "Previous report"
+        assert errors == (
+            ["Report destination is read-only"] if outcome == "write_error" else []
+        )
+        title = page.findChild(QLabel, "syncResultTitle")
+        assert title is not None and title.text() == "Sync partially completed"
+        page.begin()
+        assert button.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("phase", ["draft.genius", "draft.genius.audio"])
+def test_genius_skip_is_available_only_during_analysis_and_resets_each_sync(
+    phase: str,
+) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        skip = page.findChild(QPushButton, "skipGeniusAnalysis")
+        cancel = page.findChild(QPushButton, "cancelSyncExecution")
+        detail = page.findChild(QLabel, "syncExecutionDetail")
+        assert skip is not None and cancel is not None and detail is not None
+        skipped = QSignalSpy(page.skipGeniusRequested)
+        cancelled = QSignalSpy(page.cancelRequested)
+        assert skip.isHidden()
+        page.update_progress(WriteProgress(phase, "Preparing music analysis"))
+        assert not skip.isHidden() and skip.isEnabled()
+        assert skip.text() == "Skip for this Sync"
+        page.update_progress(
+            WriteProgress(
+                "draft.genius.audio",
+                "Analyzing audio",
+            )
+        )
+        skip.click()
+        assert skipped.count() == 1 and cancelled.count() == 0
+        assert not skip.isEnabled() and cancel.isEnabled()
+        assert "Completed results will be kept" in detail.text()
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert not skip.isEnabled()
+        page.update_progress(WriteProgress("draft.genius.rank", "Ranking candidates"))
+        assert skip.isHidden()
+        page.begin()
+        page.update_progress(WriteProgress("draft.genius.audio", "Analyzing audio"))
+        assert skip.isEnabled() and not skip.isHidden()
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.SUCCESS))
+        assert skip.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_phase_skip_is_scoped_to_analysis_and_resets_each_sync() -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        skip = page.findChild(QPushButton, "skipPhaseAnalysis")
+        cancel = page.findChild(QPushButton, "cancelSyncExecution")
+        detail = page.findChild(QLabel, "syncExecutionDetail")
+        assert skip is not None and cancel is not None and detail is not None
+        skipped = QSignalSpy(page.skipPhaseRequested)
+        cancelled = QSignalSpy(page.cancelRequested)
+        assert skip.isHidden()
+        page.update_progress(WriteProgress("draft.genius.audio", "Analyzing Genius"))
+        assert skip.isHidden()
+        page.update_progress(WriteProgress("resources.phase", "Analyzing Phase"))
+        assert not skip.isHidden() and skip.isEnabled()
+        skip.click()
+        assert skipped.count() == 1 and cancelled.count() == 0
+        assert not skip.isEnabled() and cancel.isEnabled()
+        assert "Completed charts will be kept" in detail.text()
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert not skip.isEnabled()
+        page.update_progress(WriteProgress("save.storage.stage", "Saving"))
+        assert skip.isHidden()
+        page.begin()
+        page.update_progress(WriteProgress("resources.phase", "Analyzing Phase"))
+        assert skip.isEnabled()
+        cancel.click()
+        assert not skip.isEnabled()
+        page.show_result(SyncExecutionResult(SyncExecutionStatus.SUCCESS))
+        assert skip.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
 
 
 def test_success_replaces_cleanup_progress_with_a_finished_result() -> None:
@@ -141,7 +282,10 @@ def test_messages_are_grouped_by_severity_with_complete_expandable_details() -> 
             label.text() for label in page.findChildren(QLabel, "syncResultMessage")
         )
         assert "A useful note." in messages and "Check this warning." in messages
-        assert "Track <one>" in messages and "sync.failed" not in messages
+        assert "sync.failed" not in messages
+        references = page.findChildren(QLabel, "syncResultReference")
+        assert [label.text() for label in references] == ["Track <one>"]
+        assert references[0].textFormat() == Qt.TextFormat.PlainText
         details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
         toggle = page.findChild(QPushButton, "syncResultTechnicalToggle")
         assert details is not None and details.isHidden() and toggle is not None
@@ -223,9 +367,10 @@ def test_long_results_scroll_without_hiding_the_return_action() -> None:
         APPLICATION.processEvents()
 
 
-def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_titles() -> (
-    None
-):
+@pytest.mark.parametrize("phase", ("sync.prepare", "sync.podcast_prepare"))
+def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_titles(
+    phase: str,
+) -> None:
     page = SyncExecutionPage()
     try:
         page.begin()
@@ -245,7 +390,7 @@ def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_t
         )
         page.update_progress(
             WriteProgress(
-                "sync.prepare",
+                phase,
                 "Preparing selected Tracks",
                 completed=1,
                 total=6,
@@ -277,7 +422,7 @@ def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_t
         )
         page.update_progress(
             WriteProgress(
-                "sync.prepare",
+                phase,
                 "Preparing selected Tracks",
                 completed=2,
                 total=6,
@@ -292,6 +437,100 @@ def test_concurrent_preparations_keep_independent_phase_progress_and_duplicate_t
             QFrame, "syncPreparationRow"
         )
         assert summary.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+def test_genius_analysis_shows_a_bar_for_each_active_track() -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        page.update_progress(
+            WriteProgress(
+                "draft.genius.audio",
+                "Analyzing music for Genius",
+                completed=0,
+                total=3,
+                unit="tracks",
+                active_items=(
+                    WriteItemProgress(
+                        "genius:1",
+                        "Same title",
+                        MediaPreparationProgress(
+                            MediaPreparationPhase.ANALYZING,
+                            "Analyzing audio for Genius",
+                        ),
+                    ),
+                    WriteItemProgress(
+                        "genius:2",
+                        "Same title",
+                        MediaPreparationProgress(
+                            MediaPreparationPhase.ANALYZING,
+                            "Analyzing audio for Genius",
+                        ),
+                    ),
+                ),
+            )
+        )
+        workers = page.findChild(SyncPreparationProgress, "syncPreparationProgressList")
+        summary = page.findChild(QLabel, "syncPreparationSummary")
+        assert workers is not None and summary is not None
+        rows = workers.findChildren(QFrame, "syncPreparationRow")
+        bars = workers.findChildren(QProgressBar, "syncPreparationProgress")
+        assert len(rows) == len(bars) == 2
+        assert {row.toolTip() for row in rows} == {"genius:1", "genius:2"}
+        assert all(bar.maximum() == 0 for bar in bars)
+        assert summary.text() == "2 active · 1 waiting · 0 processed"
+        page.update_progress(WriteProgress("draft.genius.rank", "Ranking candidates"))
+        assert workers.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("total", (None, 4 * 1024**3))
+def test_podcast_download_bytes_have_independent_progress(total: int | None) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        page.update_progress(
+            WriteProgress(
+                "sync.podcast_prepare",
+                "Preparing Podcast media for the iPod…",
+                completed=1,
+                total=4,
+                unit="episodes",
+                active_items=(
+                    WriteItemProgress(
+                        "podcast:0",
+                        "Episode",
+                        MediaPreparationProgress(
+                            MediaPreparationPhase.READING,
+                            "Downloading Podcast Episode…",
+                            processed_bytes=1024**3,
+                            total_bytes=total,
+                        ),
+                    ),
+                ),
+            )
+        )
+        workers = page.findChild(SyncPreparationProgress, "syncPreparationProgressList")
+        summary = page.findChild(QLabel, "syncPreparationSummary")
+        assert workers is not None and not workers.isHidden()
+        assert (
+            summary is not None
+            and summary.text() == "1 active · 2 waiting · 1 processed"
+        )
+        bar = workers.findChild(QProgressBar, "syncPreparationProgress")
+        detail = workers.findChild(QLabel, "syncPreparationDetail")
+        assert bar is not None and detail is not None
+        assert "1,073,741,824" in detail.text()
+        if total is None:
+            assert bar.maximum() == 0 and "%" not in detail.text()
+        else:
+            assert bar.maximum() == 1000 and bar.value() == 250
+            assert "25%" in detail.text()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()
@@ -427,7 +666,10 @@ def test_progress_exposes_stage_counts_and_the_last_completed_item() -> None:
         APPLICATION.processEvents()
 
 
-def test_other_conversion_notices_are_grouped_in_the_result() -> None:
+@pytest.mark.parametrize("severity", tuple(IssueSeverity))
+def test_other_conversion_notices_are_grouped_in_the_result(
+    severity: IssueSeverity,
+) -> None:
     page = SyncExecutionPage()
     try:
         page.begin()
@@ -438,7 +680,7 @@ def test_other_conversion_notices_are_grouped_in_the_result() -> None:
                     WriteIssue(
                         "sync.media_warning",
                         "This iPod does not support ALAC. Preserved lossless audio as 16-bit WAV.",
-                        severity=IssueSeverity.INFO,
+                        severity=severity,
                         artifact=f"book-{i}.m4b",
                     )
                     for i in range(5)
@@ -449,12 +691,23 @@ def test_other_conversion_notices_are_grouped_in_the_result() -> None:
         assert details is not None
         assert details.toPlainText().count("Preserved lossless audio") == 1
         assert "5 items" in details.toPlainText()
-        assert "INFO" in details.toPlainText()
+        assert severity.value.upper() in details.toPlainText()
         assert "book-2.m4b" in details.toPlainText()
         assert "book-4.m4b" in details.toPlainText()
         message = page.findChild(QLabel, "syncResultMessage")
-        assert message is not None and "book-3.m4b" not in message.text()
-        assert "Technical details" in message.text()
+        assert message is not None and "5 items" in message.text()
+        references = page.findChildren(QLabel, "syncResultReference")
+        assert [label.text() for label in references] == [
+            "book-0.m4b",
+            "book-1.m4b",
+            "book-2.m4b",
+        ]
+        assert all(label.parent() is message.parent() for label in references)
+        bullets = page.findChildren(QLabel, "syncResultReferenceBullet")
+        assert [label.text() for label in bullets] == ["•"] * 3
+        overflow = page.findChild(QLabel, "syncResultMessageOverflow")
+        assert overflow is not None and "…and 2 more files" in overflow.text()
+        assert "Technical details" in overflow.text()
     finally:
         page.deleteLater()
         APPLICATION.processEvents()

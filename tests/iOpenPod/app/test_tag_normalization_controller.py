@@ -12,7 +12,7 @@ from iOpenPod.app import tag_normalization_controller as workers
 from iOpenPod.app.library_workspace import LibraryWorkspace, TrackUpdate
 from iOpenPod.app.tag_normalization_controller import TagNormalizationController
 from iOpenPod.app.tag_normalizer import TagProfile, TagSuggestion, normalize_tags
-from iPodDB.library import LibrarySnapshot, Track, TrackFieldEdit
+from iPodDB.library import LibrarySnapshot, Track, TrackFieldEdit, TrackMetadata
 
 
 def _wait(predicate: Callable[[], bool]) -> None:
@@ -39,6 +39,50 @@ def test_background_scan_requires_apply_and_preserves_the_source() -> None:
         assert workspace.tracks[0].metadata.sort_artist == "Artist, The"
         assert workspace.snapshot is source and workspace.dirty
         assert controller.suggestion is None
+    finally:
+        controller.shutdown()
+
+
+def test_collaboration_preview_and_apply_keep_sorts_bound_to_track_identity() -> None:
+    workspace = LibraryWorkspace()
+    source = LibrarySnapshot(
+        tuple(
+            Track(
+                identity,
+                "Same title",
+                f"Lead/{guest}",
+                "Record",
+                100,
+                album_artist="Lead",
+                metadata=TrackMetadata(sort_artist=f"Lead/{guest}"),
+            )
+            for identity, guest in ((91, "Guest B"), (7, "Guest A"))
+        )
+    )
+    workspace.load(source)
+    controller = TagNormalizationController(workspace)
+    try:
+        controller.start(TagProfile())
+        _wait(lambda: not controller.scanning)
+        assert controller.suggestion is not None
+        assert not workspace.dirty
+        assert all(
+            edit.field != "metadata.sort_artist"
+            for update in controller.suggestion.updates
+            for edit in update.edits
+        )
+        controller.apply()
+        assert [
+            (t.track_id, t.artist, t.metadata.sort_artist) for t in workspace.tracks
+        ] == [
+            (91, "Lead", "Lead/Guest B"),
+            (7, "Lead", "Lead/Guest A"),
+        ]
+        assert workspace.snapshot is source
+        assert source.tracks[0].artist == "Lead/Guest B"
+        controller.start(TagProfile())
+        _wait(lambda: not controller.scanning)
+        assert not controller.suggestion.updates
     finally:
         controller.shutdown()
 

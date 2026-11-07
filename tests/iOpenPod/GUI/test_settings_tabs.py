@@ -10,7 +10,15 @@ import pytest
 from PySide6.QtCore import QEvent, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QTabWidget, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QScrollArea,
+    QTabWidget,
+    QWidget,
+)
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.context import AppContext
@@ -19,9 +27,11 @@ from iOpenPod.app.core.settings.definitions import (
     APPEARANCE_LIGHT_THEME,
     MANAGE_VOLUME_PRESENTATION,
     MAX_BACKUPS,
+    NAVIGATION_STYLE,
     AppearanceMode,
     DarkTheme,
     LightTheme,
+    NavigationStyle,
 )
 from iOpenPod.app.services.linux_identity import UdevRuleStatus, UdevRuleStatusKind
 from iOpenPod.GUI.pages import settings_page
@@ -123,11 +133,44 @@ def test_about_opens_active_log_folder(
             button.click()
             assert len(opened) == 1
             assert Path(opened[0]) == log_path.parent
+            path_field = about.findChild(QLineEdit, "activeLogPath")
+            assert path_field is not None and path_field.isReadOnly()
+            assert path_field.text() == str(log_path)
+            path_field.selectAll()
+            assert path_field.selectedText() == str(log_path)
         finally:
             page.close()
     finally:
         root_logger.removeHandler(handler)
         handler.close()
+
+
+def test_about_retains_manual_log_access_when_desktop_opening_fails(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "log files" / "iopenpod.log"
+    monkeypatch.setattr(settings_page, "active_log_path", lambda: log_path)
+
+    def fail_open(_url: QUrl) -> bool:
+        return False
+
+    monkeypatch.setattr(settings_page, "open_desktop_url", fail_open)
+    warnings: list[str] = []
+
+    def warning(_parent: QWidget, _title: str, text: str) -> None:
+        warnings.append(text)
+
+    monkeypatch.setattr(QMessageBox, "warning", warning)
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    try:
+        button = page.findChild(ActionButton, "openLogFolder")
+        path_field = page.findChild(QLineEdit, "activeLogPath")
+        assert button is not None and path_field is not None
+        button.click()
+        assert len(warnings) == 1 and str(log_path.parent) in warnings[0]
+        assert path_field.isReadOnly() and path_field.text() == str(log_path)
+    finally:
+        page.close()
 
 
 def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
@@ -153,6 +196,7 @@ def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
             "Gravity",
             "Northern Lights",
             "Orchid",
+            "Tech",
         ]
         for theme in (*LightTheme, *DarkTheme):
             if isinstance(theme, LightTheme):
@@ -179,7 +223,7 @@ def test_appearance_lists_and_applies_every_theme_without_retranslation_reset(
             assert control.currentData() == theme.value
             assert changes.count() == 0
         assert light.currentData() == LightTheme.SEA_GLASS.value
-        assert dark.currentData() == DarkTheme.ORCHID.value
+        assert dark.currentData() == DarkTheme.TECH.value
     finally:
         page.close()
 
@@ -380,7 +424,18 @@ def test_about_displays_license_and_community_credits(context: AppContext) -> No
             "Dylan Staley (@dstaley)",
             "DJShott",
             "HASHAB WebAssembly",
+            "dotm5",
+            "Genius-Mix-Research",
+            "native Genius Data",
+            "Olsro",
+            "organizing and preserving iPod click wheel games",
+            "iPod Clickwheel Games Preservation Project",
+            "iOpenPod's game binary downloads are sourced from this repository.",
+            'href="https://github.com/Olsro"',
+            'href="https://github.com/Olsro/ipodclickwheelgamespreservationproject"',
             "https://github.com/dstaley/hashab",
+            "https://github.com/dotm5",
+            "https://github.com/dotm5/Genius-Mix-Research",
             "https://github.com/gtkpod/libgpod",
             "https://github.com/gtkpod/gtkpod",
         ):
@@ -390,6 +445,43 @@ def test_about_displays_license_and_community_credits(context: AppContext) -> No
             context.theme_manager.set_mode(mode)
             APPLICATION.processEvents()
             assert context.theme_manager.tokens.accent in credits.text()
+    finally:
+        page.close()
+
+
+def test_navigation_style_is_saved_and_retranslated_without_extra_writes(
+    context: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    tabs = page.findChild(QTabWidget, "settingsTabs")
+    library = page.findChild(QScrollArea, "librarySettingsScroll")
+    combo = page.findChild(AppComboBox, "navigationStyleCombo")
+    assert tabs is not None and library is not None and combo is not None
+    try:
+        tabs.setCurrentWidget(library)
+        assert library.findChild(AppComboBox, "navigationStyleCombo") is combo
+        assert [combo.itemText(index) for index in range(combo.count())] == [
+            "Sidebar",
+            "Compact top bar",
+        ]
+        assert combo.currentData() == NavigationStyle.COMPACT_TOP_BAR.value
+        changes = QSignalSpy(context.settings.settingChanged)
+        combo.setCurrentIndex(combo.findData(NavigationStyle.SIDEBAR.value))
+        assert context.settings.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+        assert changes.count() == 1
+
+        def translate(_page: SettingsPage, text: str) -> str:
+            return f"Translated {text}"
+
+        monkeypatch.setattr(SettingsPage, "tr", translate)
+        APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
+        assert combo.currentData() == NavigationStyle.SIDEBAR.value
+        assert combo.currentText() == "Translated Sidebar"
+        assert changes.count() == 1
+        context.settings.set_global(
+            NAVIGATION_STYLE, NavigationStyle.COMPACT_TOP_BAR.value
+        )
+        assert combo.currentData() == NavigationStyle.COMPACT_TOP_BAR.value
     finally:
         page.close()
 

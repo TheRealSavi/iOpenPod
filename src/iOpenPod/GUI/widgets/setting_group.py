@@ -40,13 +40,13 @@ class SettingRow(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("settingRow")
+        self.control = control
         self._title = QLabel(title, self)
         self._title.setObjectName("settingLabel")
         self._title.setBuddy(control)
         self._description = QLabel(description, self)
         self._description.setObjectName("settingDescription")
         self._description.setWordWrap(True)
-        self._description.setMaximumWidth(720)
         self._description.setVisible(bool(description))
 
         copy_layout = QVBoxLayout()
@@ -75,6 +75,14 @@ class SettingRow(QWidget):
         layout.addLayout(copy_layout, 1)
         layout.addWidget(control)
 
+    @property
+    def title(self) -> str:
+        return self._title.text()
+
+    @property
+    def description(self) -> str:
+        return self._description.text()
+
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._update_minimum_height()
@@ -96,7 +104,12 @@ class SettingRow(QWidget):
         self._description.setVisible(bool(description))
         self._update_minimum_height()
 
-    def set_scope_hint(self, text: str) -> None:
+    def set_scope_hint(self, text: str, *, warning: bool = False) -> None:
         self._scope_hint.setText(text)
+        if self._scope_hint.property("warning") != warning:
+            self._scope_hint.setProperty("warning", warning)
+            style = self._scope_hint.style()
+            style.unpolish(self._scope_hint)
+            style.polish(self._scope_hint)
         self._scope_hint.setVisible(bool(text))
         self._update_minimum_height()

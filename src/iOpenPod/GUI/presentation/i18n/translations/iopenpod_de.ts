@@ -2,10 +2,57 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="de" sourcelanguage="en">
 <context>
+    <name>AddGeniusMixesDialog</name>
+    <message>
+        <source>Add Genius Mixes</source>
+        <translation>Genius-Mixe hinzufügen</translation>
+    </message>
+    <message>
+        <source>%1 selected</source>
+        <translation>%1 ausgewählt</translation>
+    </message>
+    <message>
+        <source>Select your mixes</source>
+        <translation>Mixe auswählen</translation>
+    </message>
+    <message>
+        <source>Choose mixes to keep on your iPod. Manually added mixes never expire.</source>
+        <translation type="vanished">Wählen Sie Mixe aus, die auf Ihrem iPod bleiben sollen. Manuell hinzugefügte Mixe laufen nie ab.</translation>
+    </message>
+    <message>
+        <source>Mood mixes are checked when you save.</source>
+        <translation type="vanished">Stimmungs-Mixe werden beim Speichern geprüft.</translation>
+    </message>
+    <message>
+        <source>Proposed Genius Mixes</source>
+        <translation>Vorgeschlagene Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Analyze when saving</source>
+        <translation type="vanished">Analyse beim Speichern</translation>
+    </message>
+    <message>
+        <source>Select to add this mix</source>
+        <translation>Auswählen, um diesen Mix hinzuzufügen</translation>
+    </message>
+    <message>
+        <source>No Genius Mixes are available to add.</source>
+        <translation>Es sind keine Genius-Mixe zum Hinzufügen verfügbar.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="vanished">Abbrechen</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>Hinzufügen</translation>
+    </message>
+</context>
+<context>
     <name>AlbumGridView</name>
     <message>
         <source>Albums</source>
-        <translation>Alben</translation>
+        <translation type="vanished">Alben</translation>
     </message>
 </context>
 <context>
@@ -39,7 +86,7 @@
     </message>
     <message>
         <source>Add Image…</source>
-        <translation>Bild hinzufügen…</translation>
+        <translation type="vanished">Bild hinzufügen…</translation>
     </message>
     <message>
         <source>Remove Entry</source>
@@ -74,12 +121,44 @@
         <translation>Das ausgewählte Bild auf dem Computer wird eingelesen und verarbeitet.</translation>
     </message>
     <message>
+        <source>Chapter artwork</source>
+        <translation>Kapitelcover</translation>
+    </message>
+    <message>
+        <source>Choose a Chapter to assign its artwork. Keep a cover image at the start. Changing Chapters does not move or delete existing artwork. Playback support varies by iPod and firmware. Changes apply to every selected Track.</source>
+        <translation>Wählen Sie ein Kapitel aus, um sein Cover zuzuweisen. Behalten Sie ein Cover am Anfang bei. Kapiteländerungen verschieben oder löschen keine vorhandenen Cover. Die Wiedergabeunterstützung hängt vom iPod und der Firmware ab. Änderungen gelten für alle ausgewählten Titel.</translation>
+    </message>
+    <message>
+        <source>The artwork sequence does not match every Chapter start. Existing images are retained; iPod playback may differ.</source>
+        <translation>Die Cover-Abfolge stimmt nicht mit allen Kapitelanfängen überein. Vorhandene Bilder bleiben erhalten; die Wiedergabe auf dem iPod kann abweichen.</translation>
+    </message>
+    <message>
+        <source>Cover</source>
+        <translation>Cover</translation>
+    </message>
+    <message>
+        <source>%1. %2</source>
+        <translation>%1. %2</translation>
+    </message>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>Unassigned artwork — %1 seconds</source>
+        <translation>Nicht zugewiesenes Cover — %1 Sekunden</translation>
+    </message>
+    <message>
+        <source>Select a Chapter to view or edit its artwork.</source>
+        <translation>Wählen Sie ein Kapitel aus, um sein Cover anzuzeigen oder zu bearbeiten.</translation>
+    </message>
+    <message>
         <source>Each artwork entry needs a different display time.</source>
-        <translation>Jeder Bildeintrag benötigt eine andere Anzeigezeit.</translation>
+        <translation type="vanished">Jeder Bildeintrag benötigt eine andere Anzeigezeit.</translation>
     </message>
     <message>
         <source>Artwork entries</source>
-        <translation>Bildeinträge</translation>
+        <translation type="vanished">Bildeinträge</translation>
     </message>
     <message>
         <source>Preserved special entry</source>
@@ -87,11 +166,19 @@
     </message>
     <message>
         <source>From %1 seconds</source>
-        <translation>Ab %1 Sekunden</translation>
+        <translation type="vanished">Ab %1 Sekunden</translation>
     </message>
     <message>
         <source>Choose an image or consolidate an existing sequence for all selected Tracks.</source>
         <translation>Wählen Sie ein Bild aus oder übernehmen Sie eine vorhandene Bildfolge für alle ausgewählten Titel.</translation>
+    </message>
+    <message>
+        <source>Choose a cover image before assigning later Chapter artwork.</source>
+        <translation>Wählen Sie zuerst ein Cover am Anfang aus, bevor Sie späteren Kapiteln Cover zuweisen.</translation>
+    </message>
+    <message>
+        <source>This Chapter has no assigned artwork.</source>
+        <translation>Diesem Kapitel ist kein Cover zugewiesen.</translation>
     </message>
     <message>
         <source>Artwork preview unavailable</source>
@@ -103,7 +190,7 @@
     </message>
     <message>
         <source>Select an entry to view or edit its image and display time.</source>
-        <translation>Wählen Sie einen Eintrag aus, um sein Bild und seine Anzeigezeit anzuzeigen oder zu bearbeiten.</translation>
+        <translation type="vanished">Wählen Sie einen Eintrag aus, um sein Bild und seine Anzeigezeit anzuzeigen oder zu bearbeiten.</translation>
     </message>
     <message>
         <source>No artwork</source>
@@ -111,11 +198,11 @@
     </message>
     <message>
         <source>Display from (seconds)</source>
-        <translation>Anzeigen ab (Sekunden)</translation>
+        <translation type="vanished">Anzeigen ab (Sekunden)</translation>
     </message>
     <message>
         <source>Each image displays from its start time until the next image. Keep an image at zero seconds. Playback support varies by iPod and firmware. Changes apply to every selected Track.</source>
-        <translation>Jedes Bild wird ab seiner Startzeit bis zum nächsten Bild angezeigt. Behalten Sie ein Bild bei null Sekunden bei. Die Wiedergabeunterstützung hängt vom iPod und seiner Firmware ab. Änderungen gelten für alle ausgewählten Titel.</translation>
+        <translation type="vanished">Jedes Bild wird ab seiner Startzeit bis zum nächsten Bild angezeigt. Behalten Sie ein Bild bei null Sekunden bei. Die Wiedergabeunterstützung hängt vom iPod und seiner Firmware ab. Änderungen gelten für alle ausgewählten Titel.</translation>
     </message>
     <message>
         <source>Replace Image…</source>
@@ -468,14 +555,6 @@
         <translation>iPod wiederherstellen</translation>
     </message>
     <message>
-        <source>Your first backup starts here</source>
-        <translation>Hier beginnt Ihr erstes Backup</translation>
-    </message>
-    <message>
-        <source>Connect your iPod to save a copy you can restore later. Have backups from Original iOpenPod? Choose Import Backups.</source>
-        <translation>Schließen Sie Ihren iPod an, um eine Kopie für eine spätere Wiederherstellung zu sichern. Haben Sie Backups aus Original iOpenPod? Wählen Sie „Backups importieren“.</translation>
-    </message>
-    <message>
         <source>Back Up Now</source>
         <translation>Jetzt sichern</translation>
     </message>
@@ -526,10 +605,6 @@
         <translation>iPod</translation>
     </message>
     <message>
-        <source>Save a copy of your iPod to come back to later.</source>
-        <translation>Sichern Sie eine Kopie Ihres iPods, die Sie später wiederherstellen können.</translation>
-    </message>
-    <message>
         <source>Connect this iPod to back it up or restore a saved backup.</source>
         <translation>Schließen Sie diesen iPod an, um ihn zu sichern oder ein gespeichertes Backup wiederherzustellen.</translation>
     </message>
@@ -552,14 +627,6 @@
     <message>
         <source>You&apos;ll be asked to confirm this backup belongs to your iPod.</source>
         <translation>Sie werden gebeten zu bestätigen, dass dieses Backup zu Ihrem iPod gehört.</translation>
-    </message>
-    <message>
-        <source>No backups yet. Make your first copy with Back Up Now.</source>
-        <translation>Noch keine Backups vorhanden. Erstellen Sie Ihre erste Kopie mit „Jetzt sichern“.</translation>
-    </message>
-    <message>
-        <source>No backups yet. Connect this iPod to make your first copy.</source>
-        <translation>Noch keine Backups vorhanden. Schließen Sie diesen iPod an, um Ihre erste Kopie zu erstellen.</translation>
     </message>
     <message>
         <source>Restore an Imported Backup?</source>
@@ -657,6 +724,30 @@
     <message>
         <source>Could Not Open Backup Folder</source>
         <translation>Backup-Ordner konnte nicht geöffnet werden</translation>
+    </message>
+    <message>
+        <source>No backups found</source>
+        <translation>Keine Backups gefunden</translation>
+    </message>
+    <message>
+        <source>No backups are saved in this location. Use Import Backups to import an Original iOpenPod archive.</source>
+        <translation>An diesem Speicherort sind keine Backups gespeichert. Verwenden Sie „Backups importieren“, um ein Archiv aus Original iOpenPod zu importieren.</translation>
+    </message>
+    <message>
+        <source>This iPod is connected.</source>
+        <translation>Dieser iPod ist verbunden.</translation>
+    </message>
+    <message>
+        <source>No backups saved for this iPod.</source>
+        <translation>Für diesen iPod sind keine Backups gespeichert.</translation>
+    </message>
+    <message>
+        <source>Loading backups…</source>
+        <translation>Backups werden geladen…</translation>
+    </message>
+    <message>
+        <source>Unable to load backups. Select Refresh to try again.</source>
+        <translation>Backups konnten nicht geladen werden. Wählen Sie „Aktualisieren“, um es erneut zu versuchen.</translation>
     </message>
 </context>
 <context>
@@ -774,6 +865,10 @@
         <translation>Titel</translation>
     </message>
     <message>
+        <source>Artwork</source>
+        <translation>Cover</translation>
+    </message>
+    <message>
         <source>Add chapter</source>
         <translation>Kapitel hinzufügen</translation>
     </message>
@@ -786,6 +881,10 @@
         <translation>Nach Zeit sortieren</translation>
     </message>
     <message>
+        <source>Choose artwork for this chapter</source>
+        <translation>Cover für dieses Kapitel auswählen</translation>
+    </message>
+    <message>
         <source>Each chapter needs a start time and title.</source>
         <translation>Jedes Kapitel benötigt eine Startzeit und einen Titel.</translation>
     </message>
@@ -796,6 +895,53 @@
     <message>
         <source>Enter numeric start times before sorting.</source>
         <translation>Geben Sie vor dem Sortieren die Startzeiten als Zahlen ein.</translation>
+    </message>
+</context>
+<context>
+    <name>ChapterIndexPopup</name>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>{number}. {title}
+{timestamp}</source>
+        <translation>{number}. {title}
+{timestamp}</translation>
+    </message>
+    <message>
+        <source>Chapters</source>
+        <translation>Kapitel</translation>
+    </message>
+    <message>
+        <source>No chapters available</source>
+        <translation>Keine Kapitel verfügbar</translation>
+    </message>
+</context>
+<context>
+    <name>CheckableComboBox</name>
+    <message>
+        <source>None</source>
+        <translation>Keine</translation>
+    </message>
+    <message>
+        <source>%1 selected</source>
+        <translation>%1 ausgewählt</translation>
+    </message>
+</context>
+<context>
+    <name>CollectionAlbumList</name>
+    <message>
+        <source>Play</source>
+        <translation>Wiedergeben</translation>
+    </message>
+    <message>
+        <source>Add to top of queue</source>
+        <translation>An den Anfang der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Add to bottom of queue</source>
+        <translation>Ans Ende der Warteschlange hinzufügen</translation>
     </message>
 </context>
 <context>
@@ -904,7 +1050,7 @@
     </message>
     <message>
         <source>Report an Issue</source>
-        <translation>Problem melden</translation>
+        <translation type="vanished">Problem melden</translation>
     </message>
     <message>
         <source>Select All</source>
@@ -917,6 +1063,73 @@
     <message>
         <source>Deselect All</source>
         <translation>Alle abwählen</translation>
+    </message>
+</context>
+<context>
+    <name>CompactTopBar</name>
+    <message>
+        <source>Check your Library for more consistent tags.</source>
+        <translation>Prüfen Sie Ihre Mediathek auf einheitliche Metadaten.</translation>
+    </message>
+    <message>
+        <source>Open device summary</source>
+        <translation type="vanished">Geräteübersicht öffnen</translation>
+    </message>
+    <message>
+        <source>Choose iPod…</source>
+        <translation type="vanished">iPod auswählen…</translation>
+    </message>
+    <message>
+        <source>Device</source>
+        <translation>Gerät</translation>
+    </message>
+    <message>
+        <source>Device actions</source>
+        <translation>Geräteaktionen</translation>
+    </message>
+    <message>
+        <source>Select an Active iPod before Sync.</source>
+        <translation>Wählen Sie vor der Synchronisierung einen aktiven iPod aus.</translation>
+    </message>
+    <message>
+        <source>Audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Video</translation>
+    </message>
+    <message>
+        <source>Playlists</source>
+        <translation>Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Maintenance</source>
+        <translation>Wartung</translation>
+    </message>
+    <message>
+        <source>Sync with Host</source>
+        <translation>Mit Computer synchronisieren</translation>
+    </message>
+    <message>
+        <source>Scrobble Now</source>
+        <translation>Jetzt scrobbeln</translation>
+    </message>
+    <message>
+        <source>Review Changes</source>
+        <translation>Änderungen prüfen</translation>
+    </message>
+    <message>
+        <source>Choose Device</source>
+        <translation>Gerät auswählen</translation>
+    </message>
+    <message>
+        <source>Eject</source>
+        <translation>Auswerfen</translation>
+    </message>
+    <message>
+        <source>Eject Active iPod</source>
+        <translation type="vanished">Aktiven iPod auswerfen</translation>
     </message>
 </context>
 <context>
@@ -1083,6 +1296,10 @@
         <translation>Kein aktiver iPod geladen.</translation>
     </message>
     <message>
+        <source>Open device summary</source>
+        <translation>Geräteübersicht öffnen</translation>
+    </message>
+    <message>
         <source>Storage</source>
         <translation>Speicher</translation>
     </message>
@@ -1181,10 +1398,6 @@
         <translation>iPod auswählen</translation>
     </message>
     <message>
-        <source>Select a recognized iPod. Its identity and library are checked again before it becomes active.</source>
-        <translation>Wählen Sie einen erkannten iPod aus. Seine Identität und Mediathek werden vor dem Laden erneut geprüft.</translation>
-    </message>
-    <message>
         <source>Set Up Linux</source>
         <translation>Linux einrichten</translation>
     </message>
@@ -1242,7 +1455,7 @@
     </message>
     <message>
         <source>The device filesystem could not be inspected</source>
-        <translation>Das Dateisystem des Geräts konnte nicht geprüft werden</translation>
+        <translation type="vanished">Das Dateisystem des Geräts konnte nicht geprüft werden</translation>
     </message>
     <message>
         <source>Some dates need a timezone fallback or cannot be interpreted uniquely.</source>
@@ -1294,7 +1507,90 @@
     </message>
     <message>
         <source>The device filesystem could not be inspected.</source>
-        <translation>Das Dateisystem des Geräts konnte nicht geprüft werden.</translation>
+        <translation type="vanished">Das Dateisystem des Geräts konnte nicht geprüft werden.</translation>
+    </message>
+    <message>
+        <source>Select to create the missing iPod Library</source>
+        <translation>Auswählen, um die fehlende iPod-Mediathek zu erstellen</translation>
+    </message>
+    <message>
+        <source>Device access could not be prepared</source>
+        <translation>Der Gerätezugriff konnte nicht vorbereitet werden</translation>
+    </message>
+    <message>
+        <source>Device access could not be prepared.</source>
+        <translation>Der Gerätezugriff konnte nicht vorbereitet werden.</translation>
+    </message>
+</context>
+<context>
+    <name>DeviceSummaryPage</name>
+    <message>
+        <source>Summary</source>
+        <translation>Übersicht</translation>
+    </message>
+    <message>
+        <source>Restore iPod</source>
+        <translation>iPod wiederherstellen</translation>
+    </message>
+    <message>
+        <source>Coming soon</source>
+        <translation>Demnächst verfügbar</translation>
+    </message>
+    <message>
+        <source>Name</source>
+        <translation>Name</translation>
+    </message>
+    <message>
+        <source>Capacity</source>
+        <translation>Kapazität</translation>
+    </message>
+    <message>
+        <source>Software version</source>
+        <translation>Softwareversion</translation>
+    </message>
+    <message>
+        <source>Serial number</source>
+        <translation>Seriennummer</translation>
+    </message>
+    <message>
+        <source>Model number</source>
+        <translation>Modellnummer</translation>
+    </message>
+    <message>
+        <source>Model</source>
+        <translation>Modell</translation>
+    </message>
+    <message>
+        <source>Color</source>
+        <translation>Farbe</translation>
+    </message>
+    <message>
+        <source>Tracks</source>
+        <translation type="vanished">Titel</translation>
+    </message>
+    <message>
+        <source>Playlists</source>
+        <translation type="vanished">Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Library format</source>
+        <translation type="vanished">Mediatheksformat</translation>
+    </message>
+    <message>
+        <source>No Active iPod</source>
+        <translation>Kein aktiver iPod</translation>
+    </message>
+    <message>
+        <source>Choose an iPod from the sidebar to see its details.</source>
+        <translation>Wählen Sie einen iPod in der Seitenleiste aus, um seine Details anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>Nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>iPod</source>
+        <translation>iPod</translation>
     </message>
 </context>
 <context>
@@ -1357,6 +1653,18 @@
     <message>
         <source>{hours}h {minutes}m</source>
         <translation>{hours} Std. {minutes} Min.</translation>
+    </message>
+    <message>
+        <source>ETA: ~{duration}</source>
+        <translation>Restzeit: ~{duration}</translation>
+    </message>
+    <message>
+        <source>Finishing…</source>
+        <translation>Wird abgeschlossen…</translation>
+    </message>
+    <message>
+        <source>ETA: estimating…</source>
+        <translation>Restzeit wird geschätzt…</translation>
     </message>
 </context>
 <context>
@@ -1502,6 +1810,495 @@
     </message>
 </context>
 <context>
+    <name>GameCatalogDialog</name>
+    <message>
+        <source>Select all</source>
+        <translation>Alle auswählen</translation>
+    </message>
+    <message>
+        <source>Adding…</source>
+        <translation>Wird hinzugefügt…</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>Hinzufügen</translation>
+    </message>
+    <message>
+        <source>Available games</source>
+        <translation>Verfügbare Spiele</translation>
+    </message>
+    <message>
+        <source>Search games</source>
+        <translation>Spiele suchen</translation>
+    </message>
+    <message>
+        <source>No available games</source>
+        <translation>Keine verfügbaren Spiele</translation>
+    </message>
+</context>
+<context>
+    <name>GamesController</name>
+    <message>
+        <source>Loading games…</source>
+        <translation type="vanished">Spiele werden geladen…</translation>
+    </message>
+    <message>
+        <source>Games could not be loaded: {detail}</source>
+        <translation type="vanished">Spiele konnten nicht geladen werden: {detail}</translation>
+    </message>
+    <message>
+        <source>Select an iPod to view installed games.</source>
+        <translation type="vanished">Wähle einen iPod aus, um installierte Spiele anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>Some game details could not be read.</source>
+        <translation type="vanished">Einige Spieldetails konnten nicht gelesen werden.</translation>
+    </message>
+    <message>
+        <source>No installed games found.</source>
+        <translation type="vanished">Keine installierten Spiele gefunden.</translation>
+    </message>
+    <message>
+        <source>Select an iPod to prepare game authorization.</source>
+        <translation>Wählen Sie einen iPod aus, um die Spielautorisierung vorzubereiten.</translation>
+    </message>
+    <message>
+        <source>Finish the current iPod operation or recovery first.</source>
+        <translation>Schließen Sie zuerst den aktuellen iPod-Vorgang oder die Wiederherstellung ab.</translation>
+    </message>
+    <message>
+        <source>Games is shutting down.</source>
+        <translation>Spiele wird beendet.</translation>
+    </message>
+    <message>
+        <source>Wait for the current Games operation to finish.</source>
+        <translation>Warten Sie, bis der aktuelle Spielvorgang abgeschlossen ist.</translation>
+    </message>
+    <message>
+        <source>Preparing to uninstall {title}…</source>
+        <translation>Deinstallation von {title} wird vorbereitet…</translation>
+    </message>
+    <message>
+        <source>Uninstalling {title}…</source>
+        <translation>{title} wird deinstalliert…</translation>
+    </message>
+    <message>
+        <source>Verifying removal of {title}…</source>
+        <translation>Entfernung von {title} wird überprüft…</translation>
+    </message>
+    <message>
+        <source>Removing folders for {title}…</source>
+        <translation>Ordner von {title} werden entfernt…</translation>
+    </message>
+    <message>
+        <source>Finishing uninstall of {title}…</source>
+        <translation>Deinstallation von {title} wird abgeschlossen…</translation>
+    </message>
+    <message>
+        <source>Downloading game files…</source>
+        <translation>Spieldateien werden heruntergeladen…</translation>
+    </message>
+    <message>
+        <source>Preparing games for installation…</source>
+        <translation>Spielinstallation wird vorbereitet…</translation>
+    </message>
+    <message>
+        <source>Extracting {title}…</source>
+        <translation>{title} wird entpackt…</translation>
+    </message>
+    <message>
+        <source>Extracting game archives…</source>
+        <translation>Spielarchive werden entpackt…</translation>
+    </message>
+    <message>
+        <source>Installing games…</source>
+        <translation>Spiele werden installiert…</translation>
+    </message>
+    <message>
+        <source>Verifying installed games…</source>
+        <translation>Installierte Spiele werden überprüft…</translation>
+    </message>
+    <message>
+        <source>Verifying game files…</source>
+        <translation>Spieldateien werden überprüft…</translation>
+    </message>
+    <message>
+        <source>Finishing game installation…</source>
+        <translation>Spielinstallation wird abgeschlossen…</translation>
+    </message>
+    <message>
+        <source>Finishing game preparation…</source>
+        <translation>Spielvorbereitung wird abgeschlossen…</translation>
+    </message>
+    <message>
+        <source>Game removal was interrupted. Device recovery is required before another write.</source>
+        <translation>Die Deinstallation des Spiels wurde unterbrochen. Vor einem weiteren Schreibvorgang muss das Gerät wiederhergestellt werden.</translation>
+    </message>
+    <message>
+        <source>Game installation was interrupted. Device recovery is required before another write.</source>
+        <translation>Die Spielinstallation wurde unterbrochen. Vor einem weiteren Schreibvorgang muss das Gerät wiederhergestellt werden.</translation>
+    </message>
+    <message>
+        <source>Preparing and verifying game authorization…</source>
+        <translation type="vanished">Die Spielautorisierung wird vorbereitet und überprüft…</translation>
+    </message>
+    <message>
+        <source>Game authorization saved: {added} added, {replaced} replaced, {unchanged} unchanged.</source>
+        <translation type="vanished">Spielautorisierung gespeichert: {added} hinzugefügt, {replaced} ersetzt, {unchanged} unverändert.</translation>
+    </message>
+    <message>
+        <source>The iPod already has these game authorizations.</source>
+        <translation type="vanished">Der iPod verfügt bereits über diese Spielautorisierungen.</translation>
+    </message>
+    <message>
+        <source>Game authorization was interrupted. Device recovery is required before another write.</source>
+        <translation>Die Spielautorisierung wurde unterbrochen. Vor einem weiteren Schreibvorgang muss das Gerät wiederhergestellt werden.</translation>
+    </message>
+    <message>
+        <source>Game files could not be prepared: {detail}</source>
+        <translation>Spieldateien konnten nicht vorbereitet werden: {detail}</translation>
+    </message>
+    <message>
+        <source>The game could not be uninstalled: {detail}</source>
+        <translation>Das Spiel konnte nicht deinstalliert werden: {detail}</translation>
+    </message>
+    <message>
+        <source>Games could not be installed: {detail}</source>
+        <translation>Die Spiele konnten nicht installiert werden: {detail}</translation>
+    </message>
+    <message>
+        <source>Game authorization could not be saved: {detail}</source>
+        <translation>Die Spielautorisierung konnte nicht gespeichert werden: {detail}</translation>
+    </message>
+</context>
+<context>
+    <name>GamesPage</name>
+    <message>
+        <source>Games</source>
+        <translation>Spiele</translation>
+    </message>
+    <message>
+        <source>Install Games</source>
+        <translation>Spiele installieren</translation>
+    </message>
+    <message>
+        <source>No games on this iPod</source>
+        <translation>Keine Spiele auf diesem iPod</translation>
+    </message>
+    <message>
+        <source>Choose games to add</source>
+        <translation>Spiele zum Hinzufügen auswählen</translation>
+    </message>
+    <message>
+        <source>Uninstall</source>
+        <translation>Deinstallieren</translation>
+    </message>
+    <message>
+        <source>Uninstall game?</source>
+        <translation>Spiel deinstallieren?</translation>
+    </message>
+    <message>
+        <source>Uninstall &quot;{title}&quot;?</source>
+        <translation>„{title}“ deinstallieren?</translation>
+    </message>
+    <message>
+        <source>The game, its saved progress, and its statistics will be deleted from this iPod.</source>
+        <translation>Das Spiel, sein gespeicherter Fortschritt und seine Statistiken werden von diesem iPod gelöscht.</translation>
+    </message>
+    <message>
+        <source>Game compatibility</source>
+        <translation>Spielkompatibilität</translation>
+    </message>
+    <message>
+        <source>This iPod may not be supported. Continue anyway?</source>
+        <translation>Dieser iPod wird möglicherweise nicht unterstützt. Trotzdem fortfahren?</translation>
+    </message>
+    <message>
+        <source>Continue anyway</source>
+        <translation>Trotzdem fortfahren</translation>
+    </message>
+    <message>
+        <source>The game catalog could not be loaded: {detail}</source>
+        <translation>Der Spielekatalog konnte nicht geladen werden: {detail}</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation type="vanished">Aktualisieren</translation>
+    </message>
+    <message>
+        <source>Installed games</source>
+        <translation>Installierte Spiele</translation>
+    </message>
+    <message>
+        <source>Version {version}</source>
+        <translation>Version {version}</translation>
+    </message>
+    <message>
+        <source>Version unavailable</source>
+        <translation>Version nicht verfügbar</translation>
+    </message>
+</context>
+<context>
+    <name>GeniusMixNames</name>
+    <message>
+        <source>Rock Mix</source>
+        <translation>Rock-Mix</translation>
+    </message>
+    <message>
+        <source>Alternative Mix</source>
+        <translation>Alternative-Mix</translation>
+    </message>
+    <message>
+        <source>Pop Mix</source>
+        <translation>Pop-Mix</translation>
+    </message>
+    <message>
+        <source>Hard Rock Mix</source>
+        <translation>Hard-Rock-Mix</translation>
+    </message>
+    <message>
+        <source>Metal Mix</source>
+        <translation>Metal-Mix</translation>
+    </message>
+    <message>
+        <source>Punk Mix</source>
+        <translation>Punk-Mix</translation>
+    </message>
+    <message>
+        <source>Electronic Mix</source>
+        <translation>Elektronik-Mix</translation>
+    </message>
+    <message>
+        <source>Dance Mix</source>
+        <translation>Dance-Mix</translation>
+    </message>
+    <message>
+        <source>Hip-Hop Mix</source>
+        <translation>Hip-Hop-Mix</translation>
+    </message>
+    <message>
+        <source>R&amp;B and Soul Mix</source>
+        <translation>R&amp;B und Soul-Mix</translation>
+    </message>
+    <message>
+        <source>Jazz Mix</source>
+        <translation>Jazz-Mix</translation>
+    </message>
+    <message>
+        <source>Blues Mix</source>
+        <translation>Blues-Mix</translation>
+    </message>
+    <message>
+        <source>Country Mix</source>
+        <translation>Country-Mix</translation>
+    </message>
+    <message>
+        <source>Folk and Acoustic Mix</source>
+        <translation>Folk und Akustik-Mix</translation>
+    </message>
+    <message>
+        <source>Classical Mix</source>
+        <translation>Klassik-Mix</translation>
+    </message>
+    <message>
+        <source>Reggae Mix</source>
+        <translation>Reggae-Mix</translation>
+    </message>
+    <message>
+        <source>Latin Mix</source>
+        <translation>Latin-Mix</translation>
+    </message>
+    <message>
+        <source>Soundtrack Mix</source>
+        <translation>Soundtrack-Mix</translation>
+    </message>
+    <message>
+        <source>Focus Mix</source>
+        <translation>Fokus-Mix</translation>
+    </message>
+    <message>
+        <source>Love Mix</source>
+        <translation>Liebes-Mix</translation>
+    </message>
+    <message>
+        <source>Energy Mix</source>
+        <translation>Energie-Mix</translation>
+    </message>
+    <message>
+        <source>Relax Mix</source>
+        <translation>Entspannungs-Mix</translation>
+    </message>
+</context>
+<context>
+    <name>GeniusMixSettingsDialog</name>
+    <message>
+        <source>Genius Mix Settings</source>
+        <translation>Einstellungen für Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Automatically keep a selection of mixes on this iPod during Sync.</source>
+        <translation>Halten Sie beim Synchronisieren automatisch eine Auswahl an Mixen auf diesem iPod bereit.</translation>
+    </message>
+    <message>
+        <source>Count</source>
+        <translation>Anzahl</translation>
+    </message>
+    <message>
+        <source>Automatic mix count</source>
+        <translation>Anzahl automatischer Mixe</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Aus</translation>
+    </message>
+    <message>
+        <source>Expiry (days)</source>
+        <translation>Ablauf (Tage)</translation>
+    </message>
+    <message>
+        <source>Mix expiry in days</source>
+        <translation>Ablaufzeit der Mixe in Tagen</translation>
+    </message>
+    <message>
+        <source>Expired mixes are replaced with a different random mix at the next Sync. If none is available, the current mix stays. Manual mixes never expire and do not count toward Count. Reducing Count removes excess automatic mixes at the next Sync.</source>
+        <translation>Abgelaufene Mixe werden bei der nächsten Synchronisierung durch einen anderen, zufällig ausgewählten Mix ersetzt. Ist keiner verfügbar, bleibt der aktuelle Mix erhalten. Manuelle Mixe laufen nie ab und werden nicht mitgezählt. Wenn Sie die Anzahl verringern, werden überzählige automatische Mixe bei der nächsten Synchronisierung entfernt.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="vanished">Abbrechen</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Speichern</translation>
+    </message>
+</context>
+<context>
+    <name>GeniusPage</name>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
+    </message>
+    <message>
+        <source>Genius collections</source>
+        <translation>Genius-Sammlungen</translation>
+    </message>
+    <message>
+        <source>Genius Playlists</source>
+        <translation>Genius-Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Genius Mixes</source>
+        <translation>Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Genius Mix settings</source>
+        <translation>Einstellungen für Genius-Mixe</translation>
+    </message>
+    <message>
+        <source>Add Genius Mixes</source>
+        <translation>Genius-Mixe hinzufügen</translation>
+    </message>
+    <message>
+        <source>Could not add Genius Mixes</source>
+        <translation>Genius-Mixe konnten nicht hinzugefügt werden</translation>
+    </message>
+    <message>
+        <source>Could not save Genius Mix settings</source>
+        <translation>Die Einstellungen für Genius-Mixe konnten nicht gespeichert werden</translation>
+    </message>
+    <message>
+        <source>Connect and choose an iPod to browse its Genius collections.</source>
+        <translation>Verbinden Sie einen iPod und wählen Sie ihn aus, um seine Genius-Sammlungen anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>No Genius collections were found on this iPod.</source>
+        <translation>Auf diesem iPod wurden keine Genius-Sammlungen gefunden.</translation>
+    </message>
+    <message>
+        <source>Choose a Genius Playlist or Mix.</source>
+        <translation>Wählen Sie eine Genius-Wiedergabeliste oder einen Genius-Mix aus.</translation>
+    </message>
+    <message>
+        <source>Choose a supported iPod that is available for writing.</source>
+        <translation>Wählen Sie einen unterstützten iPod aus, der zum Schreiben verfügbar ist.</translation>
+    </message>
+    <message>
+        <source>Remove Mix…</source>
+        <translation>Mix entfernen…</translation>
+    </message>
+    <message>
+        <source>Remove Playlist…</source>
+        <translation>Wiedergabeliste entfernen…</translation>
+    </message>
+    <message>
+        <source>Remove Genius Mix</source>
+        <translation>Genius-Mix entfernen</translation>
+    </message>
+    <message>
+        <source>Remove Genius Playlist</source>
+        <translation>Genius-Wiedergabeliste entfernen</translation>
+    </message>
+    <message>
+        <source>Remove &apos;%1&apos;?</source>
+        <translation>&apos;%1&apos; entfernen?</translation>
+    </message>
+    <message>
+        <source>Could not remove Genius collection</source>
+        <translation>Genius-Sammlung konnte nicht entfernt werden</translation>
+    </message>
+</context>
+<context>
+    <name>HelpSupportPage</name>
+    <message>
+        <source>Help and support</source>
+        <translation>Hilfe und Unterstützung</translation>
+    </message>
+    <message>
+        <source>Have a question?</source>
+        <translation>Hast du eine Frage?</translation>
+    </message>
+    <message>
+        <source>Find guides on the website or ask the community on Discord.</source>
+        <translation>Auf der Website findest du Anleitungen. Auf Discord hilft dir die Community.</translation>
+    </message>
+    <message>
+        <source>Visit the website</source>
+        <translation>Website besuchen</translation>
+    </message>
+    <message>
+        <source>Join Discord</source>
+        <translation>Discord beitreten</translation>
+    </message>
+    <message>
+        <source>Something not working?</source>
+        <translation>Funktioniert etwas nicht?</translation>
+    </message>
+    <message>
+        <source>Report issues on GitHub. Include what happened and how to reproduce it.</source>
+        <translation>Melde Probleme auf GitHub. Beschreibe, was passiert ist und wie es sich reproduzieren lässt.</translation>
+    </message>
+    <message>
+        <source>Report an issue</source>
+        <translation>Problem melden</translation>
+    </message>
+    <message>
+        <source>Enjoying iOpenPod?</source>
+        <translation>Gefällt dir iOpenPod?</translation>
+    </message>
+    <message>
+        <source>Support development on Ko-fi, or give the project a star on GitHub. Thank you!</source>
+        <translation>Unterstütze die Entwicklung auf Ko-fi oder gib dem Projekt einen Stern auf GitHub. Vielen Dank!</translation>
+    </message>
+    <message>
+        <source>Support on Ko-fi</source>
+        <translation>Auf Ko-fi unterstützen</translation>
+    </message>
+    <message>
+        <source>Star on GitHub</source>
+        <translation>Stern auf GitHub geben</translation>
+    </message>
+</context>
+<context>
     <name>HostMediaDropTarget</name>
     <message>
         <source>Drop to Sync with Host</source>
@@ -1528,6 +2325,13 @@
     </message>
 </context>
 <context>
+    <name>HoverDropdownGroup</name>
+    <message>
+        <source>Opens a menu. Use arrow keys to move, Enter to activate, and Escape to close.</source>
+        <translation>Öffnet ein Menü. Navigieren Sie mit den Pfeiltasten, aktivieren Sie einen Eintrag mit der Eingabetaste und schließen Sie das Menü mit Escape.</translation>
+    </message>
+</context>
+<context>
     <name>I18nManager</name>
     <message>
         <source>System default</source>
@@ -1551,6 +2355,76 @@
     <message>
         <source>Preferences have not been loaded for this iPod.</source>
         <translation>Die Einstellungen für diesen iPod wurden noch nicht geladen.</translation>
+    </message>
+</context>
+<context>
+    <name>InlineAlbumPanel</name>
+    <message>
+        <source>Play album now</source>
+        <translation>Album jetzt wiedergeben</translation>
+    </message>
+    <message>
+        <source>Add album to top of queue</source>
+        <translation>Album an den Anfang der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Add album to bottom of queue</source>
+        <translation>Album ans Ende der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>by %1</source>
+        <translation>von %1</translation>
+    </message>
+    <message>
+        <source>Close album</source>
+        <translation>Album schließen</translation>
+    </message>
+    <message>
+        <source>Album tracks</source>
+        <translation>Albumtitel</translation>
+    </message>
+</context>
+<context>
+    <name>InlineTVShowPanel</name>
+    <message>
+        <source>Episode %1</source>
+        <translation>Folge %1</translation>
+    </message>
+    <message>
+        <source>Episode</source>
+        <translation>Folge</translation>
+    </message>
+    <message>
+        <source>Season %1</source>
+        <translation>Staffel %1</translation>
+    </message>
+    <message>
+        <source>Unknown season</source>
+        <translation>Unbekannte Staffel</translation>
+    </message>
+    <message>
+        <source>Close show</source>
+        <translation>Serie schließen</translation>
+    </message>
+    <message>
+        <source>Season episodes</source>
+        <translation>Folgen der Staffel</translation>
+    </message>
+    <message>
+        <source>Play season now</source>
+        <translation>Staffel jetzt abspielen</translation>
+    </message>
+    <message>
+        <source>Add season to top of queue</source>
+        <translation>Staffel an den Anfang der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Add season to bottom of queue</source>
+        <translation>Staffel ans Ende der Warteschlange hinzufügen</translation>
+    </message>
+    <message>
+        <source>Seasons</source>
+        <translation>Staffeln</translation>
     </message>
 </context>
 <context>
@@ -1610,6 +2484,10 @@
         <translation>Alben suchen</translation>
     </message>
     <message>
+        <source>Search %1</source>
+        <translation>%1 durchsuchen</translation>
+    </message>
+    <message>
         <source>Sort albums</source>
         <translation>Alben sortieren</translation>
     </message>
@@ -1649,6 +2527,14 @@
         <translation>Vorbereitung abbrechen</translation>
     </message>
     <message>
+        <source>Skip Phase analysis</source>
+        <translation>Phase-Analyse überspringen</translation>
+    </message>
+    <message>
+        <source>Continue saving with completed charts. Tracks still needing analysis stay in the Playlist but are unavailable in Phase until a later Phase edit.</source>
+        <translation>Mit den fertigen Spielcharts weiterspeichern. Titel, die noch analysiert werden müssen, bleiben in der Wiedergabeliste, sind aber in Phase erst nach einer späteren Bearbeitung der Phase-Wiedergabeliste verfügbar.</translation>
+    </message>
+    <message>
         <source>Discard Changes</source>
         <translation>Änderungen verwerfen</translation>
     </message>
@@ -1666,7 +2552,7 @@
     </message>
     <message>
         <source>Preparing changes…</source>
-        <translation>Änderungen werden vorbereitet…</translation>
+        <translation type="vanished">Änderungen werden vorbereitet…</translation>
     </message>
     <message>
         <source>Prepared for review.</source>
@@ -1690,7 +2576,7 @@
     </message>
     <message>
         <source>Saving Library changes… Keep the iPod connected until verification finishes.</source>
-        <translation>Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
+        <translation type="vanished">Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
     </message>
     <message>
         <source>Library changes saved and verified on your iPod.</source>
@@ -1745,6 +2631,10 @@
         <translation>Bearbeiten</translation>
     </message>
     <message>
+        <source>Update</source>
+        <translation>Aktualisieren</translation>
+    </message>
+    <message>
         <source>Delete</source>
         <translation>Löschen</translation>
     </message>
@@ -1767,6 +2657,10 @@
     <message>
         <source>Library</source>
         <translation>Mediathek</translation>
+    </message>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
     </message>
     <message>
         <source>Media</source>
@@ -1877,7 +2771,30 @@
     </message>
 </context>
 <context>
+    <name>LibraryWriteStatus</name>
+    <message>
+        <source>Saving Library changes…</source>
+        <translation>Änderungen an der Mediathek werden gespeichert…</translation>
+    </message>
+    <message>
+        <source>Preparing Library changes…</source>
+        <translation>Änderungen an der Mediathek werden vorbereitet…</translation>
+    </message>
+    <message>
+        <source>Do not disconnect your iPod</source>
+        <translation>Trennen Sie Ihren iPod nicht</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
+    <message>
+        <source>Library changes saved and verified. Eject your iPod before disconnecting.</source>
+        <translation>Änderungen an der Mediathek gespeichert und überprüft. Werfen Sie Ihren iPod aus, bevor Sie ihn trennen.</translation>
+    </message>
+    <message>
+        <source>Changes could not be saved. See Review Changes for details.</source>
+        <translation>Änderungen konnten nicht gespeichert werden. Einzelheiten finden Sie unter „Änderungen überprüfen“.</translation>
+    </message>
     <message>
         <source>Backup progress</source>
         <translation type="vanished">Backup-Fortschritt</translation>
@@ -1943,11 +2860,11 @@
     </message>
     <message>
         <source>Preparing Library changes…</source>
-        <translation>Änderungen an der Mediathek werden vorbereitet…</translation>
+        <translation type="vanished">Änderungen an der Mediathek werden vorbereitet…</translation>
     </message>
     <message>
         <source>Saving Library changes… Keep the iPod connected until verification finishes.</source>
-        <translation>Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
+        <translation type="vanished">Änderungen an der Mediathek werden gespeichert… Lassen Sie den iPod angeschlossen, bis die Prüfung abgeschlossen ist.</translation>
     </message>
     <message>
         <source>Library action unavailable</source>
@@ -2008,6 +2925,10 @@
     <message>
         <source>Album conversion cancelled.</source>
         <translation>Albumumwandlung abgebrochen.</translation>
+    </message>
+    <message>
+        <source>Skip Phase analysis</source>
+        <translation>Phase-Analyse überspringen</translation>
     </message>
     <message>
         <source>Save or discard the Library Draft before updating iOpenPod.</source>
@@ -2236,6 +3157,137 @@
     </message>
 </context>
 <context>
+    <name>MediaStreamsDialog</name>
+    <message>
+        <source>Choose streams</source>
+        <translation>Streams auswählen</translation>
+    </message>
+    <message>
+        <source>Use automatic stream selection</source>
+        <translation>Streams automatisch auswählen</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Video</translation>
+    </message>
+    <message>
+        <source>Audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <source>Alternate audio</source>
+        <translation>Alternative Audiospur</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Untertitel</translation>
+    </message>
+    <message>
+        <source>Captions</source>
+        <translation>Geschlossene Untertitel</translation>
+    </message>
+    <message>
+        <source>Choices apply to this Sync. Existing iPod copies will be replaced when selected for Sync. Text subtitle formatting may be simplified. Captions embedded inside video remain part of that video stream.</source>
+        <translation type="vanished">Die Auswahl gilt für diese Synchronisierung. Vorhandene iPod-Kopien werden ersetzt, wenn sie zur Synchronisierung ausgewählt sind. Die Formatierung von Textuntertiteln kann vereinfacht werden. Im Video eingebettete Untertitel bleiben Teil des Videostreams.</translation>
+    </message>
+    <message>
+        <source>Choices are remembered for this Host file across scans and Syncs. Changed choices replace the iPod copy once. Text subtitle formatting may be simplified. Captions embedded inside video remain part of that video stream.</source>
+        <translation>Die Auswahl für diese Datei wird für spätere Scans und Synchronisierungen gespeichert. Eine geänderte Auswahl ersetzt die iPod-Kopie einmal. Die Formatierung von Textuntertiteln kann vereinfacht werden. In das Video eingebettete Untertitel bleiben Teil dieses Videostreams.</translation>
+    </message>
+    <message>
+        <source>Apply choices</source>
+        <translation>Auswahl übernehmen</translation>
+    </message>
+    <message>
+        <source>Reading available streams…</source>
+        <translation>Verfügbare Streams werden gelesen…</translation>
+    </message>
+    <message>
+        <source>Choose the streams to include in the iPod copy.</source>
+        <translation>Wählen Sie die Streams für die iPod-Kopie aus.</translation>
+    </message>
+    <message>
+        <source>Both subtitles and captions can be kept. iPod Classic displays one mode at a time.</source>
+        <translation>Sowohl Untertitel als auch geschlossene Untertitel können erhalten bleiben. Der iPod Classic zeigt jeweils einen Modus an.</translation>
+    </message>
+    <message>
+        <source>The iPod&apos;s audio choice depends on its firmware and the track languages. Alternate Audio does not always select the second audio track.</source>
+        <translation type="vanished">Die Audioauswahl des iPods hängt von seiner Firmware und den Sprachen der Audiospuren ab. „Alternatives Audio“ wählt nicht immer die zweite Audiospur aus.</translation>
+    </message>
+    <message>
+        <source>Both tracks and their languages are preserved. How the iPod&apos;s Alternate Audio setting selects between them still needs playback verification.</source>
+        <translation>Beide Audiospuren und ihre Sprachen bleiben erhalten. Wie die Einstellung „Alternatives Audio“ des iPods zwischen ihnen auswählt, muss noch bei der Wiedergabe überprüft werden.</translation>
+    </message>
+    <message>
+        <source>Primary audio</source>
+        <translation>Primäre Audiospur</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Keine</translation>
+    </message>
+    <message>
+        <source>No separate streams found</source>
+        <translation>Keine separaten Streams gefunden</translation>
+    </message>
+    <message>
+        <source> — unavailable on this iPod (no supported conversion)</source>
+        <translation> — auf diesem iPod nicht verfügbar (keine unterstützte Konvertierung)</translation>
+    </message>
+    <message>
+        <source> — convert to iPod text</source>
+        <translation> — in iPod-Text umwandeln</translation>
+    </message>
+    <message>
+        <source>Stream %1</source>
+        <translation>Stream %1</translation>
+    </message>
+    <message>
+        <source>%1 channels</source>
+        <translation>%1 Kanäle</translation>
+    </message>
+    <message>
+        <source>Language unspecified</source>
+        <translation>Sprache nicht angegeben</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Standard</translation>
+    </message>
+    <message>
+        <source>Forced</source>
+        <translation>Erzwungen</translation>
+    </message>
+    <message>
+        <source>Hearing impaired</source>
+        <translation>Für Hörgeschädigte</translation>
+    </message>
+    <message>
+        <source>Visual impaired</source>
+        <translation>Für Sehbehinderte</translation>
+    </message>
+    <message>
+        <source>Commentary</source>
+        <translation>Kommentar</translation>
+    </message>
+    <message>
+        <source>Unavailable on this iPod — no supported conversion</source>
+        <translation>Auf diesem iPod nicht verfügbar — keine unterstützte Konvertierung</translation>
+    </message>
+    <message>
+        <source>Convert to iPod text</source>
+        <translation>In iPod-Text konvertieren</translation>
+    </message>
+    <message>
+        <source>Ready for iPod</source>
+        <translation>Bereit für den iPod</translation>
+    </message>
+    <message>
+        <source>The stream choices could not be saved. Your previous choices are unchanged. %1</source>
+        <translation>Die Streamauswahl konnte nicht gespeichert werden. Ihre bisherige Auswahl bleibt unverändert. %1</translation>
+    </message>
+</context>
+<context>
     <name>MediaToolsController</name>
     <message>
         <source>FFmpeg, FFprobe, and fpcalc are ready to use.</source>
@@ -2283,6 +3335,10 @@
     <message>
         <source>All Files (*)</source>
         <translation>Alle Dateien (*)</translation>
+    </message>
+    <message>
+        <source>Set Up Phase Analysis…</source>
+        <translation>Phase-Analyse einrichten…</translation>
     </message>
     <message>
         <source>Media Tools</source>
@@ -2496,7 +3552,11 @@
     </message>
     <message>
         <source>View artwork, crop images, and choose when each image displays</source>
-        <translation>Bilder anzeigen und zuschneiden sowie ihre Anzeigezeiten festlegen</translation>
+        <translation type="vanished">Bilder anzeigen und zuschneiden sowie ihre Anzeigezeiten festlegen</translation>
+    </message>
+    <message>
+        <source>View artwork, crop images, and assign images to chapters</source>
+        <translation>Cover anzeigen, Bilder zuschneiden und Kapiteln zuweisen</translation>
     </message>
     <message>
         <source>Read-only values retained with the selected Track data</source>
@@ -2594,8 +3654,8 @@
         <translation>Felder filtern</translation>
     </message>
     <message>
-        <source>Podcasts and videos keep their place and are skipped when shuffling.</source>
-        <translation>Podcasts und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
+        <source>Podcasts, audiobooks, and videos keep their place and are skipped when shuffling.</source>
+        <translation>Podcasts, Hörbücher und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
     </message>
     <message>
         <source>Other</source>
@@ -2899,6 +3959,14 @@
 <context>
     <name>Navigation</name>
     <message>
+        <source>Welcome</source>
+        <translation>Willkommen</translation>
+    </message>
+    <message>
+        <source>Device Summary</source>
+        <translation>Geräteübersicht</translation>
+    </message>
+    <message>
         <source>Albums</source>
         <translation>Alben</translation>
     </message>
@@ -2917,6 +3985,10 @@
     <message>
         <source>Playlists</source>
         <translation>Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Games</source>
+        <translation>Spiele</translation>
     </message>
     <message>
         <source>Photos</source>
@@ -2961,6 +4033,367 @@
     <message>
         <source>Settings</source>
         <translation>Einstellungen</translation>
+    </message>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
+    </message>
+</context>
+<context>
+    <name>NowPlayingPage</name>
+    <message>
+        <source>Close Now Playing</source>
+        <translation>Aktuelle Wiedergabe schließen</translation>
+    </message>
+    <message>
+        <source>Previous Track</source>
+        <translation>Vorheriger Titel</translation>
+    </message>
+    <message>
+        <source>Play</source>
+        <translation>Wiedergeben</translation>
+    </message>
+    <message>
+        <source>Next Track</source>
+        <translation>Nächster Titel</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Nothing playing</source>
+        <translation>Keine Wiedergabe</translation>
+    </message>
+    <message>
+        <source>{track} — {chapter}</source>
+        <translation>{track} — {chapter}</translation>
+    </message>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>Close Now Playing (Esc)</source>
+        <translation>Aktuelle Wiedergabe schließen (Esc)</translation>
+    </message>
+    <message>
+        <source>Queue</source>
+        <translation>Warteschlange</translation>
+    </message>
+    <message>
+        <source>Clear Queue</source>
+        <translation>Warteschlange leeren</translation>
+    </message>
+    <message>
+        <source>Queue is empty</source>
+        <translation>Warteschlange ist leer</translation>
+    </message>
+    <message>
+        <source>Playback Queue</source>
+        <translation>Wiedergabewarteschlange</translation>
+    </message>
+    <message>
+        <source>Playback position</source>
+        <translation>Wiedergabeposition</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Vorheriges Kapitel</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Nächstes Kapitel</translation>
+    </message>
+</context>
+<context>
+    <name>OnboardingDialog</name>
+    <message>
+        <source>Welcome to iOpenPod</source>
+        <translation>Willkommen bei iOpenPod</translation>
+    </message>
+    <message>
+        <source>Your iPod. Your Library.</source>
+        <translation type="vanished">Ihr iPod. Ihre Mediathek.</translation>
+    </message>
+    <message>
+        <source>Welcome to iOpenPod. Connect your iPod and use Choose Device to load its Library. We call this your Active iPod; only one is loaded at a time.</source>
+        <translation type="vanished">Willkommen bei iOpenPod. Verbinden Sie Ihren iPod und laden Sie seine Mediathek über Gerät auswählen. Dies ist Ihr aktiver iPod; es wird immer nur einer geladen.</translation>
+    </message>
+    <message>
+        <source>No iPod needed yet. First, make iOpenPod feel like home.</source>
+        <translation type="vanished">Noch ist kein iPod nötig. Richten Sie iOpenPod zuerst nach Ihren Wünschen ein.</translation>
+    </message>
+    <message>
+        <source>Find your way around</source>
+        <translation type="vanished">So finden Sie sich zurecht</translation>
+    </message>
+    <message>
+        <source>Choose your navigation style</source>
+        <translation>Wählen Sie Ihren Navigationsstil</translation>
+    </message>
+    <message>
+        <source>Have navigation across the top, or expand it onto the left of your Library.</source>
+        <translation>Platzieren Sie die Navigation oben oder erweitern Sie sie zu einer Seitenleiste links neben Ihrer Mediathek.</translation>
+    </message>
+    <message>
+        <source>Compact top bar</source>
+        <translation>Kompakte obere Leiste</translation>
+    </message>
+    <message>
+        <source>More room for your Library. Open the headings to find each view.</source>
+        <translation>Mehr Platz für Ihre Mediathek. Öffnen Sie die Menüs, um die einzelnen Ansichten aufzurufen.</translation>
+    </message>
+    <message>
+        <source>Sidebar</source>
+        <translation>Seitenleiste</translation>
+    </message>
+    <message>
+        <source>Keep Library sections and Playlists visible down the left.</source>
+        <translation>Bereiche der Mediathek und Wiedergabelisten bleiben links sichtbar.</translation>
+    </message>
+    <message>
+        <source>Opening an Album</source>
+        <translation>Ein Album öffnen</translation>
+    </message>
+    <message>
+        <source>Choose how Tracks appear when you open an Album in your Library.</source>
+        <translation>Wählen Sie, wie Titel beim Öffnen eines Albums in Ihrer Mediathek angezeigt werden.</translation>
+    </message>
+    <message>
+        <source>Split Table</source>
+        <translation>Geteilte Tabellenansicht</translation>
+    </message>
+    <message>
+        <source>Browse Albums above, with the selected Album&apos;s Tracks below.</source>
+        <translation>Oben sehen Sie die Alben, darunter die Titel des ausgewählten Albums.</translation>
+    </message>
+    <message>
+        <source>Whole Page Table</source>
+        <translation>Ganzseitige Tabellenansicht</translation>
+    </message>
+    <message>
+        <source>Open Tracks on their own page. Back takes you to the Albums.</source>
+        <translation>Titel werden auf einer eigenen Seite angezeigt. Zurück führt Sie zu den Alben.</translation>
+    </message>
+    <message>
+        <source>iTunes 11 style</source>
+        <translation>iTunes-11-Stil</translation>
+    </message>
+    <message>
+        <source>Expand an Album&apos;s Tracks right inside the artwork grid.</source>
+        <translation>Klappen Sie die Titel eines Albums direkt im Coverraster auf.</translation>
+    </message>
+    <message>
+        <source>iPod image</source>
+        <translation>iPod-Bild</translation>
+    </message>
+    <message>
+        <source>Use classic angled artwork where available.</source>
+        <translation>Verwenden Sie klassische schräge Gerätebilder, sofern verfügbar.</translation>
+    </message>
+    <message>
+        <source>Transcoding settings</source>
+        <translation>Konvertierungseinstellungen</translation>
+    </message>
+    <message>
+        <source>Open Settings &gt; Transcoding before your first sync to set things up the way you like. Transcoding converts media into formats your iPod can play. Your original files stay unchanged.</source>
+        <translation>Öffnen Sie vor der ersten Synchronisierung Einstellungen &gt; Konvertierung, um alles nach Ihren Wünschen einzurichten. Dabei werden Medien in Formate umgewandelt, die Ihr iPod abspielen kann. Ihre Originaldateien bleiben unverändert.</translation>
+    </message>
+    <message>
+        <source>Leave on Auto for iOpenPod to automatically choose the best encoder, and use Compact, Balanced, and High Quality presets to configure how much space the files use on your iPod. Change to a specific encoder to access advanced configuration.</source>
+        <translation>Lassen Sie Auto ausgewählt, damit iOpenPod automatisch den besten Encoder wählt. Mit den Voreinstellungen Kompakt, Ausgewogen und Hohe Qualität legen Sie fest, wie viel Speicherplatz die Dateien auf Ihrem iPod belegen. Wählen Sie einen bestimmten Encoder, um auf erweiterte Einstellungen zuzugreifen.</translation>
+    </message>
+    <message>
+        <source>1. Open Sync with Host</source>
+        <translation>1. Mit Computer synchronisieren öffnen</translation>
+    </message>
+    <message>
+        <source>Connect your iPod and load it with Choose Device. Then press Sync with Host in the navigation bar. Host means the computer running iOpenPod.</source>
+        <translation>Verbinden Sie Ihren iPod und laden Sie ihn über Gerät auswählen. Klicken Sie dann in der Navigation auf Mit Computer synchronisieren. Host bezeichnet den Computer, auf dem iOpenPod läuft.</translation>
+    </message>
+    <message>
+        <source>This button starts the guided Sync workflow. It does not immediately copy or remove any media.</source>
+        <translation>Diese Schaltfläche startet die geführte Synchronisierung. Dabei werden noch keine Medien kopiert oder entfernt.</translation>
+    </message>
+    <message>
+        <source>2. Choose your media folders</source>
+        <translation>2. Medienordner auswählen</translation>
+    </message>
+    <message>
+        <source>In Choose Media Folders, press Add Folder to pick folders on your computer. Use each folder&apos;s settings button to choose media types and whether to include subfolders.</source>
+        <translation>Klicken Sie unter Medienordner auswählen auf Ordner hinzufügen, um Ordner auf Ihrem Computer auszuwählen. Über die Einstellungen jedes Ordners wählen Sie die Medientypen und ob Unterordner einbezogen werden.</translation>
+    </message>
+    <message>
+        <source>Press Sync to scan these folders and compare them with your iPod. This step finds media; you choose what to transfer next.</source>
+        <translation>Klicken Sie auf Synchronisieren, um diese Ordner zu durchsuchen und mit Ihrem iPod zu vergleichen. Dabei werden Medien gefunden; was übertragen wird, wählen Sie im nächsten Schritt.</translation>
+    </message>
+    <message>
+        <source>3. Select your media</source>
+        <translation>3. Medien auswählen</translation>
+    </message>
+    <message>
+        <source>After scanning, browse the media found on your computer. Check the Tracks, Albums, or other items you want on your iPod. Checked items with the iPod symbol are already on your iPod.</source>
+        <translation>Durchsuchen Sie nach dem Scan die gefundenen Medien auf Ihrem Computer. Markieren Sie Titel, Alben oder andere Inhalte, die Sie auf Ihrem iPod haben möchten. Markierte Inhalte mit dem iPod-Symbol sind bereits auf Ihrem iPod.</translation>
+    </message>
+    <message>
+        <source>Watch the estimated storage as you choose. Press Review Sync when your selection is ready. Nothing has been transferred yet.</source>
+        <translation>Beachten Sie bei der Auswahl den geschätzten Speicherbedarf. Klicken Sie auf Synchronisierung prüfen, wenn Ihre Auswahl fertig ist. Es wurde noch nichts übertragen.</translation>
+    </message>
+    <message>
+        <source>4. Review, then sync</source>
+        <translation>4. Prüfen und synchronisieren</translation>
+    </message>
+    <message>
+        <source>Review the proposed additions, updates, and removals. Uncheck changes you do not want, or press Edit Selection to go back. iPod-only removals start unchecked.</source>
+        <translation>Prüfen Sie die vorgeschlagenen Ergänzungen, Aktualisierungen und Entfernungen. Entfernen Sie Häkchen bei unerwünschten Änderungen oder gehen Sie über Auswahl bearbeiten zurück. Entfernungen von nur auf dem iPod vorhandenen Inhalten sind zunächst nicht ausgewählt.</translation>
+    </message>
+    <message>
+        <source>Press Sync Selected to apply the checked changes. Keep your iPod connected until Sync finishes, check the result, then eject it before unplugging.</source>
+        <translation>Klicken Sie auf Auswahl synchronisieren, um die markierten Änderungen anzuwenden. Lassen Sie Ihren iPod bis zum Ende verbunden, prüfen Sie das Ergebnis und werfen Sie ihn vor dem Abziehen aus.</translation>
+    </message>
+    <message>
+        <source>A familiar face for your iPod</source>
+        <translation type="vanished">Ein vertrauter Anblick für Ihren iPod</translation>
+    </message>
+    <message>
+        <source>Choose the device images shown in iOpenPod.</source>
+        <translation>Wählen Sie die Gerätebilder, die iOpenPod anzeigt.</translation>
+    </message>
+    <message>
+        <source>Standard</source>
+        <translation>Standard</translation>
+    </message>
+    <message>
+        <source>Use the standard device portrait.</source>
+        <translation>Verwenden Sie das Standardbild des Geräts.</translation>
+    </message>
+    <message>
+        <source>iTunes 10.7 style</source>
+        <translation>iTunes-10.7-Stil</translation>
+    </message>
+    <message>
+        <source>Use classic angled artwork where available. This also applies to drive icons when Manage iPod drive appearance is enabled.</source>
+        <translation type="vanished">Verwenden Sie klassische schräge Gerätebilder, sofern verfügbar. Dies gilt auch für Laufwerkssymbole, wenn iPod-Darstellung im Dateimanager verwalten aktiviert ist.</translation>
+    </message>
+    <message>
+        <source>Decide when edits are saved</source>
+        <translation type="vanished">Bestimmen Sie, wann Änderungen gespeichert werden</translation>
+    </message>
+    <message>
+        <source>Draft all changes lets you review Library edits before saving to your iPod.</source>
+        <translation type="vanished">Mit Alle Änderungen zur Prüfung sammeln können Sie Änderungen an der Mediathek vor dem Speichern auf Ihrem iPod prüfen.</translation>
+    </message>
+    <message>
+        <source>Save immediately</source>
+        <translation type="vanished">Sofort speichern</translation>
+    </message>
+    <message>
+        <source>Library edits are saved as you make them. Sync still has its own Review step.</source>
+        <translation type="vanished">Änderungen an der Mediathek werden sofort gespeichert. Die Synchronisierung hat weiterhin einen eigenen Prüfschritt.</translation>
+    </message>
+    <message>
+        <source>Review first</source>
+        <translation type="vanished">Zuerst prüfen</translation>
+    </message>
+    <message>
+        <source>Keep Library edits in a draft, then review and accept them before saving.</source>
+        <translation type="vanished">Sammeln Sie Änderungen an der Mediathek als Entwurf und prüfen und bestätigen Sie diese vor dem Speichern.</translation>
+    </message>
+    <message>
+        <source>Bring your media along</source>
+        <translation type="vanished">Nehmen Sie Ihre Medien mit</translation>
+    </message>
+    <message>
+        <source>Sync compares media folders on your computer (the Host) with your iPod. Choose what to include, then review the changes before applying them.</source>
+        <translation type="vanished">Die Synchronisierung vergleicht Medienordner auf Ihrem Computer (dem Host) mit Ihrem iPod. Wählen Sie die gewünschten Inhalte und prüfen Sie die Änderungen, bevor Sie diese anwenden.</translation>
+    </message>
+    <message>
+        <source>You&apos;re ready. All these choices can be changed later in Settings.</source>
+        <translation type="vanished">Alles ist bereit. Sie können diese Auswahl später in den Einstellungen ändern.</translation>
+    </message>
+    <message>
+        <source>You can always change this later in settings</source>
+        <translation>Sie können dies später jederzeit in den Einstellungen ändern</translation>
+    </message>
+    <message>
+        <source>Screenshots use a fictional sample Library.</source>
+        <translation type="vanished">Die Bildschirmfotos zeigen eine fiktive Beispielmediathek.</translation>
+    </message>
+    <message>
+        <source>Settings save error</source>
+        <translation>Fehler beim Speichern der Einstellungen</translation>
+    </message>
+    <message>
+        <source>Set up later</source>
+        <translation>Später einrichten</translation>
+    </message>
+    <message>
+        <source>Back</source>
+        <translation>Zurück</translation>
+    </message>
+    <message>
+        <source>GETTING STARTED · %1 OF %2</source>
+        <translation>ERSTE SCHRITTE · %1 VON %2</translation>
+    </message>
+    <message>
+        <source>Finish</source>
+        <translation>Fertigstellen</translation>
+    </message>
+    <message>
+        <source>Next</source>
+        <translation>Weiter</translation>
+    </message>
+    <message>
+        <source>Could not save settings. Check available space and permissions, then try Finish again.</source>
+        <translation>Die Einstellungen konnten nicht gespeichert werden. Prüfen Sie den freien Speicherplatz und die Zugriffsrechte und klicken Sie erneut auf Fertigstellen.</translation>
+    </message>
+    <message>
+        <source>Language</source>
+        <translation>Sprache</translation>
+    </message>
+    <message>
+        <source>Could not save the language. Please try again.</source>
+        <translation>Die Sprache konnte nicht gespeichert werden. Bitte versuche es erneut.</translation>
+    </message>
+</context>
+<context>
+    <name>PhaseRuntimeSetupDialog</name>
+    <message>
+        <source>Set Up Phase Analysis</source>
+        <translation>Phase-Analyse einrichten</translation>
+    </message>
+    <message>
+        <source>Acoustic analysis is included with iOpenPod. Optional instrument analysis can help Phase follow vocals, instruments, and recurring musical phrases.
+
+Download it here to use it on this computer. Setup needs internet access, and the download and installed files can use several gigabytes of disk space. Acoustic analysis remains available if you skip or cancel setup.</source>
+        <translation>Die akustische Analyse ist in iOpenPod enthalten. Die optionale Instrumentenanalyse kann Phase dabei helfen, Gesang, Instrumenten und wiederkehrenden musikalischen Phrasen zu folgen.
+
+Laden Sie sie hier herunter, um sie auf diesem Computer zu verwenden. Die Einrichtung benötigt einen Internetzugang. Der Download und die installierten Dateien können mehrere Gigabyte Speicherplatz belegen. Die akustische Analyse bleibt verfügbar, wenn Sie die Einrichtung überspringen oder abbrechen.</translation>
+    </message>
+    <message>
+        <source>Setup error details</source>
+        <translation>Details zum Einrichtungsfehler</translation>
+    </message>
+    <message>
+        <source>Download and Reinstall</source>
+        <translation>Herunterladen und neu installieren</translation>
+    </message>
+    <message>
+        <source>Acoustic analysis is included with iOpenPod. Optional instrument analysis can help Phase follow vocals, instruments, and recurring musical phrases.
+
+Choose Download and Install to download Python, analysis libraries, and the model into iOpenPod&apos;s user-data folder. Downloads and installed files can use several gigabytes. Setup does not replace your system Python or change FFmpeg settings. The existing analyzer remains available if you skip or cancel setup.</source>
+        <translation type="vanished">Die akustische Analyse ist in iOpenPod enthalten. Die optionale Instrumentenanalyse kann Phase helfen, Gesang, Instrumente und wiederkehrende musikalische Phrasen zu verfolgen.
+
+Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken und das Modell in den Benutzerdatenordner von iOpenPod herunterzuladen. Downloads und installierte Dateien können mehrere Gigabyte belegen. Die Einrichtung ersetzt Ihr System-Python nicht und ändert keine FFmpeg-Einstellungen. Wenn Sie die Einrichtung überspringen oder abbrechen, bleibt die vorhandene Analyse verfügbar.</translation>
+    </message>
+    <message>
+        <source>Download and Install</source>
+        <translation>Herunterladen und installieren</translation>
+    </message>
+    <message>
+        <source>Cancel Setup</source>
+        <translation>Einrichtung abbrechen</translation>
     </message>
 </context>
 <context>
@@ -3378,7 +4811,7 @@
     </message>
     <message>
         <source>New Album</source>
-        <translation>Neues Album</translation>
+        <translation type="vanished">Neues Album</translation>
     </message>
     <message>
         <source>Create a new Photo Album</source>
@@ -3656,6 +5089,22 @@
         <translation>Pause</translation>
     </message>
     <message>
+        <source>Show Chapters</source>
+        <translation>Kapitel anzeigen</translation>
+    </message>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>{track} — {chapter}</source>
+        <translation>{track} — {chapter}</translation>
+    </message>
+    <message>
+        <source>Open Now Playing</source>
+        <translation>Aktuelle Wiedergabe öffnen</translation>
+    </message>
+    <message>
         <source>Clear Queue</source>
         <translation>Warteschlange leeren</translation>
     </message>
@@ -3666,6 +5115,18 @@
     <message>
         <source>Playback position</source>
         <translation>Wiedergabeposition</translation>
+    </message>
+    <message>
+        <source>Open video player</source>
+        <translation>Videoplayer öffnen</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Vorheriges Kapitel</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Nächstes Kapitel</translation>
     </message>
     <message>
         <source>Track rating: %1 of 5 stars</source>
@@ -3682,6 +5143,25 @@
     <message>
         <source>Hide Queue, History, and Lyrics</source>
         <translation>Warteschlange, Verlauf und Liedtext ausblenden</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistDuplicates</name>
+    <message>
+        <source>Songs already in playlist</source>
+        <translation>Titel bereits in der Wiedergabeliste</translation>
+    </message>
+    <message>
+        <source>Some songs are already in this playlist, would you like to add those again, or skip them?</source>
+        <translation>Einige Titel sind bereits in dieser Wiedergabeliste. Möchten Sie diese erneut hinzufügen oder überspringen?</translation>
+    </message>
+    <message>
+        <source>Add Again</source>
+        <translation>Erneut hinzufügen</translation>
+    </message>
+    <message>
+        <source>Skip</source>
+        <translation>Überspringen</translation>
     </message>
 </context>
 <context>
@@ -4079,6 +5559,10 @@
         <translation>Sortierung</translation>
     </message>
     <message>
+        <source>Use as the Phase Playlist</source>
+        <translation>Als Phase-Wiedergabeliste verwenden</translation>
+    </message>
+    <message>
         <source>Apply Changes</source>
         <translation>Änderungen anwenden</translation>
     </message>
@@ -4113,6 +5597,10 @@
     <message>
         <source>Give this playlist or folder a name.</source>
         <translation>Geben Sie dieser Wiedergabeliste oder diesem Ordner einen Namen.</translation>
+    </message>
+    <message>
+        <source>Genius Playlist</source>
+        <translation>Genius-Wiedergabeliste</translation>
     </message>
 </context>
 <context>
@@ -4159,6 +5647,57 @@
     <message>
         <source>M3U — Extended M3U</source>
         <translation>M3U · Extended M3U</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistMatchDialog</name>
+    <message>
+        <source>Choose Playlist match</source>
+        <translation>Playlist-Zuordnung wählen</translation>
+    </message>
+    <message>
+        <source>Host Playlist source</source>
+        <translation>Quelle der Host-Playlist</translation>
+    </message>
+    <message>
+        <source>Use an existing iPod Playlist or create a new one. Sync will use the name, entries and order from the Host Playlist.</source>
+        <translation>Eine vorhandene iPod-Playlist verwenden oder eine neue erstellen. Die Synchronisierung übernimmt Namen, Einträge und Reihenfolge der Host-Playlist.</translation>
+    </message>
+    <message>
+        <source>Search iPod Playlists</source>
+        <translation>iPod-Playlists durchsuchen</translation>
+    </message>
+    <message>
+        <source>iPod Playlists</source>
+        <translation>iPod-Playlists</translation>
+    </message>
+    <message>
+        <source>iPod Playlist matches</source>
+        <translation>iPod-Playlist-Zuordnungen</translation>
+    </message>
+    <message>
+        <source>Create new Playlist</source>
+        <translation>Neue Playlist erstellen</translation>
+    </message>
+    <message>
+        <source>%1 · %2 Tracks</source>
+        <translation>%1 · %2 Titel</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="vanished">Abbrechen</translation>
+    </message>
+    <message>
+        <source>Use this match</source>
+        <translation>Zuordnung verwenden</translation>
+    </message>
+    <message>
+        <source>A new Playlist will be added to the iPod.</source>
+        <translation>Eine neue Playlist wird zum iPod hinzugefügt.</translation>
+    </message>
+    <message>
+        <source>Empty Playlist</source>
+        <translation>Leere Playlist</translation>
     </message>
 </context>
 <context>
@@ -4253,6 +5792,112 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <source>Add tracks to the top of the Queue</source>
         <translation>Titel am Anfang der Warteschlange hinzufügen</translation>
     </message>
+    <message>
+        <source>Genius</source>
+        <translation>Genius</translation>
+    </message>
+    <message>
+        <source>Mix tracks are possible starting songs; the iPod generates the mix when you play it.</source>
+        <translation>Die Titel des Mixes sind mögliche Starttitel. Der iPod erstellt den Mix beim Abspielen.</translation>
+    </message>
+    <message>
+        <source>Tracks saved in this Genius Playlist.</source>
+        <translation>In dieser Genius-Wiedergabeliste gespeicherte Titel.</translation>
+    </message>
+    <message>
+        <source>Genius Mix</source>
+        <translation>Genius-Mix</translation>
+    </message>
+    <message>
+        <source>No available Tracks in this Genius Mix.</source>
+        <translation>In diesem Genius-Mix sind keine Titel verfügbar.</translation>
+    </message>
+    <message>
+        <source>No available Tracks in this Genius Playlist.</source>
+        <translation>In dieser Genius-Wiedergabeliste sind keine Titel verfügbar.</translation>
+    </message>
+    <message>
+        <source>Search Genius Tracks</source>
+        <translation>Genius-Titel suchen</translation>
+    </message>
+    <message>
+        <source>Play selected</source>
+        <translation>Auswahl abspielen</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistSyncReview</name>
+    <message>
+        <source>Skipped this Sync. Track selection is unchanged.</source>
+        <translation>Bei dieser Synchronisierung übersprungen. Die Titelauswahl bleibt unverändert.</translation>
+    </message>
+    <message>
+        <source>Playlist Sync choices</source>
+        <translation>Playlist-Auswahl zur Synchronisierung</translation>
+    </message>
+    <message>
+        <source>Check a Playlist to sync it. Select a row and choose Change match to use another iPod Playlist.</source>
+        <translation>Eine Playlist zum Synchronisieren markieren. Eine Zeile auswählen und Zuordnung ändern wählen, um eine andere iPod-Playlist zu verwenden.</translation>
+    </message>
+    <message>
+        <source>Change match…</source>
+        <translation>Zuordnung ändern…</translation>
+    </message>
+</context>
+<context>
+    <name>PlaylistSyncTableModel</name>
+    <message>
+        <source>Host Playlist</source>
+        <translation>Host-Playlist</translation>
+    </message>
+    <message>
+        <source>On iPod</source>
+        <translation>Auf dem iPod</translation>
+    </message>
+    <message>
+        <source>Changes</source>
+        <translation>Änderungen</translation>
+    </message>
+    <message>
+        <source>Choose a match…</source>
+        <translation>Zuordnung wählen…</translation>
+    </message>
+    <message>
+        <source>Create new Playlist</source>
+        <translation>Neue Playlist erstellen</translation>
+    </message>
+    <message>
+        <source>Skipped</source>
+        <translation>Übersprungen</translation>
+    </message>
+    <message>
+        <source>Needs attention</source>
+        <translation>Prüfung erforderlich</translation>
+    </message>
+    <message>
+        <source>Save match</source>
+        <translation>Zuordnung speichern</translation>
+    </message>
+    <message>
+        <source>Up to date</source>
+        <translation>Aktuell</translation>
+    </message>
+    <message>
+        <source>Create</source>
+        <translation>Erstellen</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>Umbenennen</translation>
+    </message>
+    <message>
+        <source>%1 added, %2 removed</source>
+        <translation>%1 hinzugefügt, %2 entfernt</translation>
+    </message>
+    <message>
+        <source>Reorder</source>
+        <translation>Neu anordnen</translation>
+    </message>
 </context>
 <context>
     <name>PlaylistTree</name>
@@ -4327,6 +5972,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <source>Untitled Playlist</source>
         <translation>Unbenannte Wiedergabeliste</translation>
     </message>
+    <message>
+        <source>Phase Playlist: %1</source>
+        <translation>Phase-Wiedergabeliste: %1</translation>
+    </message>
+    <message>
+        <source>%1 · Phase</source>
+        <translation type="vanished">%1 · Phase</translation>
+    </message>
 </context>
 <context>
     <name>PodcastPage</name>
@@ -4395,6 +6048,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Abonnement beenden</translation>
     </message>
     <message>
+        <source>Website</source>
+        <translation>Website</translation>
+    </message>
+    <message>
         <source>Episodes</source>
         <translation>Folgen</translation>
     </message>
@@ -4451,6 +6108,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Wenn Sie das Abonnement beenden, werden die Folgen dieses Podcasts vom iPod entfernt. Fortfahren?</translation>
     </message>
     <message>
+        <source>Episode links</source>
+        <translation>Links zur Folge</translation>
+    </message>
+    <message>
         <source>Remove this Podcast&apos;s episodes from the iPod before unsubscribing.</source>
         <translation type="vanished">Entfernen Sie die Folgen dieses Podcasts vom iPod, bevor Sie das Abonnement beenden.</translation>
     </message>
@@ -4465,6 +6126,14 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Select a Podcast</source>
         <translation>Podcast auswählen</translation>
+    </message>
+    <message>
+        <source>Serial</source>
+        <translation>Fortlaufend</translation>
+    </message>
+    <message>
+        <source>Episodic</source>
+        <translation>Einzelfolgen</translation>
     </message>
     <message numerus="yes">
         <source>%n on iPod</source>
@@ -4537,6 +6206,18 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>GEHÖRT</translation>
     </message>
     <message>
+        <source>Full episode</source>
+        <translation>Vollständige Folge</translation>
+    </message>
+    <message>
+        <source>Bonus</source>
+        <translation>Bonus</translation>
+    </message>
+    <message>
+        <source>Trailer</source>
+        <translation>Trailer</translation>
+    </message>
+    <message>
         <source>%1 hr %2 min</source>
         <translation>%1 Std. %2 Min.</translation>
     </message>
@@ -4565,7 +6246,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>PODCAST DIRECTORY</source>
-        <translation>PODCAST-VERZEICHNIS</translation>
+        <translation type="vanished">PODCAST-VERZEICHNIS</translation>
     </message>
     <message>
         <source>Find your next show</source>
@@ -4573,7 +6254,11 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Search the public directory by show name and publisher, then subscribe to keep the feed with this iPod.</source>
-        <translation>Suchen Sie im öffentlichen Verzeichnis nach Namen oder Herausgeber. Abonnieren Sie dann den Podcast, um seinen Feed für diesen iPod zu speichern.</translation>
+        <translation type="vanished">Suchen Sie im öffentlichen Verzeichnis nach Namen oder Herausgeber. Abonnieren Sie dann den Podcast, um seinen Feed für diesen iPod zu speichern.</translation>
+    </message>
+    <message>
+        <source>Search by show name or publisher.</source>
+        <translation>Nach Sendungsname oder Herausgeber suchen.</translation>
     </message>
     <message>
         <source>Podcast name</source>
@@ -4596,6 +6281,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Haben Sie eine Feed-URL?</translation>
     </message>
     <message>
+        <source>Add using an RSS feed</source>
+        <translation>Über einen RSS-Feed hinzufügen</translation>
+    </message>
+    <message>
         <source>Subscribe directly when a Podcast is not listed in the directory.</source>
         <translation>Abonnieren Sie einen Podcast direkt, wenn er nicht im Verzeichnis aufgeführt ist.</translation>
     </message>
@@ -4614,6 +6303,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Add Feed</source>
         <translation>Feed hinzufügen</translation>
+    </message>
+    <message>
+        <source>Discover a show to take with you.</source>
+        <translation>Entdecken Sie eine Sendung für unterwegs.</translation>
     </message>
     <message>
         <source>Enter a Podcast name, then choose Search.</source>
@@ -4641,6 +6334,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
 </context>
 <context>
     <name>PodcastSyncSettingsDialog</name>
+    <message>
+        <source>Automatic sync is disabled for this podcast. You can still add or remove episodes yourself.</source>
+        <translation>Die automatische Synchronisierung ist für diesen Podcast deaktiviert. Sie können weiterhin selbst Folgen hinzufügen oder entfernen.</translation>
+    </message>
     <message>
         <source>Podcast Sync Settings</source>
         <translation>Podcast-Synchronisierungseinstellungen</translation>
@@ -4806,7 +6503,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Open the iOpenPod issue tracker on GitHub.</source>
-        <translation>Die Seite zum Melden von iOpenPod-Problemen auf GitHub öffnen.</translation>
+        <translation type="vanished">Die Seite zum Melden von iOpenPod-Problemen auf GitHub öffnen.</translation>
     </message>
 </context>
 <context>
@@ -4817,15 +6514,15 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Override for this iPod · Host: %1</source>
-        <translation>Eigener Wert für diesen iPod · Host: %1</translation>
+        <translation type="vanished">Eigener Wert für diesen iPod · Host: %1</translation>
     </message>
     <message>
         <source>Following Host changes automatically</source>
         <translation>Übernimmt Änderungen am Host automatisch</translation>
     </message>
     <message>
-        <source>The Active iPod has its own override.</source>
-        <translation>Der aktive iPod hat einen eigenen Wert.</translation>
+        <source>The Active iPod has its own override. Set to: %1.</source>
+        <translation>Der aktive iPod hat einen eigenen Wert. Eingestellt auf: %1.</translation>
     </message>
 </context>
 <context>
@@ -5034,12 +6731,20 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Darstellung und Sprache</translation>
     </message>
     <message>
+        <source>Navigation style</source>
+        <translation>Navigationsstil</translation>
+    </message>
+    <message>
+        <source>Browse using the sidebar or a compact bar across the top of the app.</source>
+        <translation>Navigieren Sie über die Seitenleiste oder eine kompakte Leiste am oberen Rand der App.</translation>
+    </message>
+    <message>
         <source>iPod Library View Mode</source>
         <translation>Ansicht der iPod-Mediathek</translation>
     </message>
     <message>
-        <source>Show Tracks below Album and collection grids, or open them on a whole page like the Host Sync Library.</source>
-        <translation>Zeigt Titel unter den Rastern für Alben und Sammlungen an oder öffnet sie auf einer ganzen Seite wie bei der Synchronisierung mit der Mediathek auf dem Computer.</translation>
+        <source>Show Tracks in a split table or on a whole page. iTunes 11 style opens an album-colored Track list inside the Albums grid; other views use a split table.</source>
+        <translation>Zeigt Titel in einer geteilten Tabelle oder auf einer ganzen Seite an. Der iTunes-11-Stil öffnet eine Titelliste in den Albumfarben innerhalb des Albumrasters; andere Ansichten verwenden eine geteilte Tabelle.</translation>
     </message>
     <message>
         <source>Draft all changes</source>
@@ -5110,12 +6815,28 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Hintergründe der Sammlungskarten und die Titelleiste der Titelliste passend zum jeweiligen Bild einfärben.</translation>
     </message>
     <message>
+        <source>iTunes 10.7 Style artwork</source>
+        <translation>Gerätebilder im Stil von iTunes 10.7</translation>
+    </message>
+    <message>
+        <source>Use classic angled device artwork where available, including managed iPod drive icons.</source>
+        <translation>Klassische Gerätebilder in Schrägansicht verwenden, sofern verfügbar, auch für verwaltete iPod-Laufwerkssymbole.</translation>
+    </message>
+    <message>
         <source>Player position</source>
         <translation>Position des Players</translation>
     </message>
     <message>
         <source>Place the Player above or below the main application area.</source>
         <translation>Den Player über oder unter dem Hauptbereich der Anwendung anzeigen.</translation>
+    </message>
+    <message>
+        <source>Automatically minimize Player</source>
+        <translation>Player automatisch minimieren</translation>
+    </message>
+    <message>
+        <source>Minimize the Player when no Track is loaded.</source>
+        <translation>Den Player minimieren, wenn kein Titel geladen ist.</translation>
     </message>
     <message>
         <source>Track-list title bar</source>
@@ -5160,6 +6881,18 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Review a command that removes only iOpenPod&apos;s local /etc rule. Package-managed copies under /usr or /lib are preserved.</source>
         <translation>Prüfen Sie den Befehl, der nur die lokale iOpenPod-Regel unter /etc entfernt. Vom Paketmanager verwaltete Kopien unter /usr oder /lib bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Getting started</source>
+        <translation>Erste Schritte</translation>
+    </message>
+    <message>
+        <source>Revisit the welcome tour and choose your essential settings.</source>
+        <translation>Sehen Sie sich die Einführung erneut an und wählen Sie Ihre grundlegenden Einstellungen.</translation>
+    </message>
+    <message>
+        <source>Retake onboarding</source>
+        <translation>Einführung erneut starten</translation>
     </message>
     <message>
         <source>iOpenPod is and always will be completely free and open source. If you like it and would like to support me, it is so very appreciated.</source>
@@ -5210,8 +6943,8 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Änderungen werden automatisch gespeichert.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;iOpenPod is free software under {license}. You may modify and redistribute it under those terms. It comes without any warranty.&lt;/p&gt;&lt;p&gt;Special thanks to {hashab} for the HASHAB WebAssembly implementation used by iOpenPod.&lt;/p&gt;&lt;p&gt;An honorary thank-you to the {libgpod} and {gtkpod} contributors for their pioneering iPod support, documentation, and the references this project learned from.&lt;/p&gt;&lt;p&gt;Application icon by DJShott, used with permission.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;iOpenPod ist freie Software unter {license}. Sie dürfen die Software unter diesen Bedingungen ändern und weitergeben. Sie wird ohne jegliche Gewährleistung bereitgestellt.&lt;/p&gt;&lt;p&gt;Besonderer Dank gilt {hashab} für die von iOpenPod verwendete HASHAB-WebAssembly-Implementierung.&lt;/p&gt;&lt;p&gt;Ein besonderer Dank gilt auch den Mitwirkenden von {libgpod} und {gtkpod} für ihre Pionierarbeit bei der iPod-Unterstützung, ihre Dokumentation und die Grundlagen, von denen dieses Projekt gelernt hat.&lt;/p&gt;&lt;p&gt;Das Anwendungssymbol stammt von DJShott und wird mit Genehmigung verwendet.&lt;/p&gt;</translation>
+        <source>&lt;p&gt;iOpenPod is free software under {license}. You may modify and redistribute it under those terms. It comes without any warranty.&lt;/p&gt;&lt;p&gt;Special thanks to {hashab} for the HASHAB WebAssembly implementation used by iOpenPod.&lt;/p&gt;&lt;p&gt;An honorary thank-you to the {libgpod} and {gtkpod} contributors for their pioneering iPod support, documentation, and the references this project learned from.&lt;/p&gt;&lt;p&gt;Thanks to {dotm5} and their {genius_research} repository for helping us understand native Genius Data.&lt;/p&gt;&lt;p&gt;Application icon by DJShott, used with permission.&lt;/p&gt;</source>
+        <translation type="vanished">&lt;p&gt;iOpenPod ist freie Software unter {license}. Sie dürfen die Software unter diesen Bedingungen ändern und weitergeben. Sie wird ohne jegliche Gewährleistung bereitgestellt.&lt;/p&gt;&lt;p&gt;Besonderer Dank gilt {hashab} für die von iOpenPod verwendete HASHAB-WebAssembly-Implementierung.&lt;/p&gt;&lt;p&gt;Ein besonderer Dank gilt auch den Mitwirkenden von {libgpod} und {gtkpod} für ihre Pionierarbeit bei der iPod-Unterstützung, ihre Dokumentation und die Grundlagen, von denen dieses Projekt gelernt hat.&lt;/p&gt;&lt;p&gt;Vielen Dank an {dotm5} und das Repository {genius_research}, das uns beim Verständnis nativer Genius-Daten geholfen hat.&lt;/p&gt;&lt;p&gt;Das Anwendungssymbol stammt von DJShott und wird mit Genehmigung verwendet.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>GPLv3 or later</source>
@@ -5278,6 +7011,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Orchid</translation>
     </message>
     <message>
+        <source>Tech</source>
+        <translation>Tech</translation>
+    </message>
+    <message>
         <source>Off</source>
         <translation>Aus</translation>
     </message>
@@ -5306,12 +7043,24 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Unbegrenzt</translation>
     </message>
     <message>
+        <source>Sidebar</source>
+        <translation>Seitenleiste</translation>
+    </message>
+    <message>
+        <source>Compact top bar</source>
+        <translation>Kompakte obere Leiste</translation>
+    </message>
+    <message>
         <source>Split Table</source>
         <translation>Geteilte Tabellenansicht</translation>
     </message>
     <message>
         <source>Whole Page Table</source>
         <translation>Ganzseitige Tabellenansicht</translation>
+    </message>
+    <message>
+        <source>iTunes 11 style</source>
+        <translation>iTunes-11-Stil</translation>
     </message>
     <message>
         <source>Play next</source>
@@ -5465,6 +7214,30 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <source>Media tool status is read-only.</source>
         <translation type="vanished">Der Status der Medienwerkzeuge ist schreibgeschützt.</translation>
     </message>
+    <message>
+        <source>Log file path</source>
+        <translation>Pfad der Protokolldatei</translation>
+    </message>
+    <message>
+        <source>Select and copy this path if the folder does not open.</source>
+        <translation>Markieren und kopieren Sie diesen Pfad, falls sich der Ordner nicht öffnet.</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;iOpenPod is free software under {license}. You may modify and redistribute it under those terms. It comes without any warranty.&lt;/p&gt;&lt;p&gt;Special thanks to {hashab} for the HASHAB WebAssembly implementation used by iOpenPod.&lt;/p&gt;&lt;p&gt;An honorary thank-you to the {libgpod} and {gtkpod} contributors for their pioneering iPod support, documentation, and the references this project learned from.&lt;/p&gt;&lt;p&gt;Thanks to {dotm5} and their {genius_research} repository for helping us understand native Genius Data.&lt;/p&gt;&lt;p&gt;Thanks to {olsro} for organizing and preserving iPod click wheel games through the {games_preservation}. iOpenPod&apos;s game binary downloads are sourced from this repository.&lt;/p&gt;&lt;p&gt;Application icon by DJShott, used with permission.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;iOpenPod ist freie Software unter {license}. Sie dürfen die Software unter diesen Bedingungen ändern und weitergeben. Sie wird ohne jegliche Gewährleistung bereitgestellt.&lt;/p&gt;&lt;p&gt;Besonderer Dank gilt {hashab} für die von iOpenPod verwendete HASHAB-WebAssembly-Implementierung.&lt;/p&gt;&lt;p&gt;Ein besonderer Dank gilt auch den Mitwirkenden von {libgpod} und {gtkpod} für ihre Pionierarbeit bei der iPod-Unterstützung, ihre Dokumentation und die Grundlagen, von denen dieses Projekt gelernt hat.&lt;/p&gt;&lt;p&gt;Vielen Dank an {dotm5} und das Repository {genius_research}, das uns beim Verständnis nativer Genius-Daten geholfen hat.&lt;/p&gt;&lt;p&gt;Vielen Dank an {olsro} für die Organisation und Erhaltung von iPod-Click-Wheel-Spielen im Projekt {games_preservation}. iOpenPod bezieht die Spieldateien aus diesem Repository.&lt;/p&gt;&lt;p&gt;Das Anwendungssymbol stammt von DJShott und wird mit Genehmigung verwendet.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Open this folder manually: %1</source>
+        <translation>Diesen Ordner manuell öffnen: %1</translation>
+    </message>
+    <message>
+        <source>Help and support</source>
+        <translation>Hilfe und Unterstützung</translation>
+    </message>
+    <message>
+        <source>Find guides, community help, issue reporting, and ways to support iOpenPod.</source>
+        <translation>Anleitungen, Hilfe aus der Community, Problemmeldungen und Möglichkeiten, iOpenPod zu unterstützen.</translation>
+    </message>
 </context>
 <context>
     <name>SettingsScopeSwitcher</name>
@@ -5533,6 +7306,32 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
 </context>
 <context>
+    <name>StarRating</name>
+    <message>
+        <source>Click a star to set the rating; click the selected star to clear</source>
+        <translation>Klicken Sie auf einen Stern, um die Bewertung festzulegen; klicken Sie zum Löschen erneut auf den ausgewählten Stern</translation>
+    </message>
+    <message>
+        <source>%1 of 5 stars</source>
+        <translation>%1 von 5 Sternen</translation>
+    </message>
+</context>
+<context>
+    <name>StartPage</name>
+    <message>
+        <source>Choose Device</source>
+        <translation>Gerät auswählen</translation>
+    </message>
+    <message>
+        <source>Welcome to iOpenPod</source>
+        <translation>Willkommen bei iOpenPod</translation>
+    </message>
+    <message>
+        <source>Connect your iPod, then click Choose Device to get started.</source>
+        <translation>Schließen Sie Ihren iPod an und klicken Sie auf „Gerät auswählen“, um loszulegen.</translation>
+    </message>
+</context>
+<context>
     <name>StatusListButton</name>
     <message>
         <source>Active statuses (%1)</source>
@@ -5549,6 +7348,89 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Close statuses</source>
         <translation>Statusmeldungen schließen</translation>
+    </message>
+</context>
+<context>
+    <name>StorageBreakdown</name>
+    <message>
+        <source>Storage</source>
+        <translation>Speicher</translation>
+    </message>
+    <message>
+        <source>Storage by category</source>
+        <translation>Speicher nach Kategorie</translation>
+    </message>
+    <message>
+        <source>Capacity unavailable</source>
+        <translation>Kapazität nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>Storage details appear when an iPod is loaded.</source>
+        <translation>Die Speicherdetails erscheinen, sobald ein iPod geladen ist.</translation>
+    </message>
+    <message>
+        <source>This iPod&apos;s storage capacity is unavailable.</source>
+        <translation>Die Speicherkapazität dieses iPod ist nicht verfügbar.</translation>
+    </message>
+    <message>
+        <source>%1 free of %2</source>
+        <translation>%1 von %2 frei</translation>
+    </message>
+    <message>
+        <source>Music</source>
+        <translation>Musik</translation>
+    </message>
+    <message>
+        <source>Videos</source>
+        <translation>Videos</translation>
+    </message>
+    <message>
+        <source>Podcasts</source>
+        <translation>Podcasts</translation>
+    </message>
+    <message>
+        <source>Audiobooks</source>
+        <translation>Hörbücher</translation>
+    </message>
+    <message>
+        <source>Photos</source>
+        <translation>Fotos</translation>
+    </message>
+    <message>
+        <source>Games</source>
+        <translation>Spiele</translation>
+    </message>
+    <message>
+        <source>Album artwork</source>
+        <translation>Albumcover</translation>
+    </message>
+    <message>
+        <source>Other</source>
+        <translation>Sonstiges</translation>
+    </message>
+    <message>
+        <source>Free</source>
+        <translation>Frei</translation>
+    </message>
+    <message>
+        <source>Category sizes are unavailable because content sizes exceed used storage.</source>
+        <translation>Die Größen der Kategorien sind nicht verfügbar, weil die erfassten Dateigrößen den belegten Speicherplatz überschreiten.</translation>
+    </message>
+    <message>
+        <source>Media sizes are estimated from the saved library. Games and Album artwork use captured folder sizes. Other includes remaining databases and unclassified files.</source>
+        <translation>Die Mediengrößen werden anhand der gespeicherten Mediathek geschätzt. Spiele und Albumcover verwenden erfasste Ordnergrößen. Sonstiges umfasst die übrigen Datenbanken und nicht zugeordnete Dateien.</translation>
+    </message>
+    <message>
+        <source>Media sizes are estimated from the saved library; Games uses captured file sizes. Other includes artwork, databases, and unclassified files.</source>
+        <translation type="vanished">Die Mediengrößen werden anhand der gespeicherten Mediathek geschätzt; Spiele verwendet erfasste Dateigrößen. Sonstiges umfasst Cover, Datenbanken und nicht zugeordnete Dateien.</translation>
+    </message>
+    <message>
+        <source>Category sizes are unavailable because library sizes exceed used storage.</source>
+        <translation type="vanished">Die Größen der Kategorien sind nicht verfügbar, weil die in der Mediathek erfassten Dateigrößen den belegten Speicherplatz überschreiten.</translation>
+    </message>
+    <message>
+        <source>Category sizes are estimated from the saved library. Other includes artwork, databases, and unclassified files.</source>
+        <translation type="vanished">Die Größen der Kategorien werden anhand der gespeicherten Mediathek geschätzt. Sonstiges umfasst Cover, Datenbanken und nicht zugeordnete Dateien.</translation>
     </message>
 </context>
 <context>
@@ -5974,6 +7856,14 @@ Playlists: %3</translation>
         <translation>Schritt %1 von %2</translation>
     </message>
     <message>
+        <source>Skipping remaining music analysis. Completed results will be kept.</source>
+        <translation>Die verbleibende Musikanalyse wird übersprungen. Abgeschlossene Ergebnisse bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Skipping remaining Phase analysis. Completed charts will be kept.</source>
+        <translation>Die verbleibende Phase-Analyse wird übersprungen. Fertige Spielcharts bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>Cancellation requested; waiting for a safe stopping point. Keep the iPod connected.</source>
         <translation>Abbruch angefordert. Es wird auf einen sicheren Haltepunkt gewartet. Lassen Sie den iPod angeschlossen.</translation>
     </message>
@@ -6038,8 +7928,24 @@ Playlists: %3</translation>
         <translation>Das Wiederherstellungsprotokoll wird abgeschlossen und die aktuelle Mediathek neu geladen. Lassen Sie den iPod angeschlossen.</translation>
     </message>
     <message>
+        <source>Save Sync report…</source>
+        <translation>Synchronisierungsbericht speichern…</translation>
+    </message>
+    <message>
         <source>Cancel Sync</source>
         <translation>Synchronisierung abbrechen</translation>
+    </message>
+    <message>
+        <source>Skip for this Sync</source>
+        <translation>Für diese Synchronisierung überspringen</translation>
+    </message>
+    <message>
+        <source>Skip Phase analysis</source>
+        <translation>Phase-Analyse überspringen</translation>
+    </message>
+    <message>
+        <source>Continue Sync with completed charts. Tracks still needing analysis stay in the Playlist but are unavailable in Phase until a later Phase edit.</source>
+        <translation>Die Synchronisierung mit den fertigen Spielcharts fortsetzen. Titel, die noch analysiert werden müssen, bleiben in der Wiedergabeliste, sind aber in Phase erst nach einer späteren Bearbeitung der Phase-Wiedergabeliste verfügbar.</translation>
     </message>
     <message>
         <source>Return to Library</source>
@@ -6255,6 +8161,18 @@ Playlists: %3</translation>
     <message>
         <source>Technical details</source>
         <translation>Technische Details</translation>
+    </message>
+    <message>
+        <source>Save Sync report</source>
+        <translation>Synchronisierungsbericht speichern</translation>
+    </message>
+    <message>
+        <source>Text files (*.txt);;All files (*)</source>
+        <translation>Textdateien (*.txt);;Alle Dateien (*)</translation>
+    </message>
+    <message>
+        <source>Sync report could not be saved</source>
+        <translation>Der Synchronisierungsbericht konnte nicht gespeichert werden</translation>
     </message>
     <message>
         <source>Completed: %1</source>
@@ -6482,6 +8400,38 @@ Playlists: %3</translation>
         <translation>Foto</translation>
     </message>
     <message>
+        <source>Restore automatic stream selection</source>
+        <translation>Automatische Streamauswahl wiederherstellen</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Video</translation>
+    </message>
+    <message>
+        <source>Audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Untertitel</translation>
+    </message>
+    <message>
+        <source>Captions</source>
+        <translation>Geschlossene Untertitel</translation>
+    </message>
+    <message>
+        <source>Selected streams: %1</source>
+        <translation>Ausgewählte Streams: %1</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Keine</translation>
+    </message>
+    <message>
+        <source>Video or selected-stream source changed</source>
+        <translation>Quelle des Videos oder der ausgewählten Streams wurde geändert</translation>
+    </message>
+    <message>
         <source>Audio payload fingerprint changed</source>
         <translation>Audio-Inhaltsfingerabdruck geändert</translation>
     </message>
@@ -6651,6 +8601,10 @@ Playlists: %3</translation>
         <source>Deselect from Sync</source>
         <translation>Von Synchronisierung abwählen</translation>
     </message>
+    <message>
+        <source>Choose streams…</source>
+        <translation>Streams auswählen…</translation>
+    </message>
 </context>
 <context>
     <name>SyncSettings</name>
@@ -6659,12 +8613,32 @@ Playlists: %3</translation>
         <translation>Synchronisierungsverhalten</translation>
     </message>
     <message>
+        <source>Edit defaults…</source>
+        <translation>Standardeinstellungen bearbeiten…</translation>
+    </message>
+    <message>
+        <source>Default Podcast Sync Settings</source>
+        <translation>Standard-Synchronisierungseinstellungen für Podcasts</translation>
+    </message>
+    <message>
+        <source>Choose the Sync settings for newly added podcasts. Existing podcasts keep their own settings.</source>
+        <translation>Wählen Sie die Synchronisierungseinstellungen für neu hinzugefügte Podcasts. Vorhandene Podcasts behalten ihre eigenen Einstellungen.</translation>
+    </message>
+    <message>
         <source>Off</source>
         <translation>Aus</translation>
     </message>
     <message>
         <source>On</source>
         <translation>Ein</translation>
+    </message>
+    <message>
+        <source>Analyze for Genius</source>
+        <translation>Für Genius analysieren</translation>
+    </message>
+    <message>
+        <source>Analyze music and refresh native Genius recommendations during Sync on supported iPods. Off skips Genius generation and keeps existing Genius data where possible.</source>
+        <translation>Analysiert Musik und aktualisiert bei der Synchronisierung die nativen Genius-Empfehlungen auf unterstützten iPods. Bei Aus wird die Genius-Erstellung übersprungen und vorhandene Genius-Daten bleiben nach Möglichkeit erhalten.</translation>
     </message>
     <message>
         <source>Compute Sound Check</source>
@@ -6699,6 +8673,10 @@ Playlists: %3</translation>
         <translation>Das gesamte Foto in kleine Vorschaubilder der Raster- und Listenansicht einpassen, bei Bedarf mit Rändern. Bei deaktivierter Option werden nur diese Vorschaubilder zugeschnitten, um sie auszufüllen. Alle anderen Fotoansichten zeigen immer das gesamte Bild mit Rändern.</translation>
     </message>
     <message>
+        <source>Could not save podcast defaults</source>
+        <translation>Die Standardeinstellungen für Podcasts konnten nicht gespeichert werden</translation>
+    </message>
+    <message>
         <source>Fit the entire Photo inside device thumbnails, leaving borders as needed. Off crops Photos to fill each thumbnail.</source>
         <translation type="vanished">Das gesamte Foto in die Vorschaubilder des Geräts einpassen, bei Bedarf mit Rändern. Bei deaktivierter Option werden Fotos zugeschnitten, um jedes Vorschaubild auszufüllen.</translation>
     </message>
@@ -6717,6 +8695,14 @@ Playlists: %3</translation>
     <message>
         <source>Submit pending iPod plays to connected services before syncing media. Failed submissions are saved for retry.</source>
         <translation>Senden Sie ausstehende iPod-Wiedergaben vor der Mediensynchronisierung an verbundene Dienste. Fehlgeschlagene Übermittlungen werden für einen erneuten Versuch gespeichert.</translation>
+    </message>
+    <message>
+        <source>Calculate missing BPM</source>
+        <translation>Fehlende BPM berechnen</translation>
+    </message>
+    <message>
+        <source>Fill missing BPM for new music and music already on the iPod during Sync. Existing BPM values and Host files stay unchanged. Works with Analyze for Genius off.</source>
+        <translation>Bei der Synchronisierung fehlende BPM für neue Musik und bereits auf dem iPod vorhandene Musik ergänzen. Vorhandene BPM-Werte und Dateien auf dem Computer bleiben unverändert. Funktioniert auch bei deaktivierter Option „Für Genius analysieren“.</translation>
     </message>
 </context>
 <context>
@@ -6793,6 +8779,17 @@ Playlists: %3</translation>
     </message>
 </context>
 <context>
+    <name>SyncTrackDelegate</name>
+    <message>
+        <source>Auto</source>
+        <translation>Auto</translation>
+    </message>
+    <message>
+        <source>Manual</source>
+        <translation>Manuell</translation>
+    </message>
+</context>
+<context>
     <name>SyncWorkspace</name>
     <message>
         <source>Sync Podcasts</source>
@@ -6848,7 +8845,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Reconcile Playlists</source>
-        <translation>Wiedergabelisten abgleichen</translation>
+        <translation type="vanished">Wiedergabelisten abgleichen</translation>
     </message>
     <message>
         <source>Create and update supported Host Playlists using the selected media. Review membership and order changes below. References to removed Tracks are removed from iPod Playlists even when this option is off.</source>
@@ -6856,11 +8853,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Playlist changes</source>
-        <translation>Wiedergabelistenänderungen</translation>
+        <translation type="vanished">Wiedergabelistenänderungen</translation>
     </message>
     <message>
         <source>Read-only preview of Playlist creation, membership, and order changes.</source>
-        <translation>Schreibgeschützte Vorschau der Erstellung von Wiedergabelisten und der Änderungen an Einträgen und Reihenfolge.</translation>
+        <translation type="vanished">Schreibgeschützte Vorschau der Erstellung von Wiedergabelisten und der Änderungen an Einträgen und Reihenfolge.</translation>
     </message>
     <message>
         <source>Validate and apply the selected changes using your transcoding and Sync settings. Independent items that fail preparation are skipped and reported.</source>
@@ -6868,10 +8865,18 @@ Playlists: %3</translation>
     </message>
     <message numerus="yes">
         <source>%n Host item selected for the iPod</source>
-        <translation>
+        <translation type="vanished">
             <numerusform>%n Element vom Computer für den iPod ausgewählt</numerusform>
             <numerusform>%n Elemente vom Computer für den iPod ausgewählt</numerusform>
         </translation>
+    </message>
+    <message>
+        <source>Sync Playlists</source>
+        <translation>Playlists synchronisieren</translation>
+    </message>
+    <message>
+        <source>Saved stream choices could not be loaded. Sync is paused to preserve your choices. Restore the preferences file and scan again. %1</source>
+        <translation>Die gespeicherte Streamauswahl konnte nicht geladen werden. Die Synchronisierung ist zum Schutz Ihrer Auswahl angehalten. Stellen Sie die Einstellungsdatei wieder her und scannen Sie erneut. %1</translation>
     </message>
     <message>
         <source>Result</source>
@@ -6879,7 +8884,7 @@ Playlists: %3</translation>
     </message>
     <message numerus="yes">
         <source>%n Host items selected for the iPod</source>
-        <translation>
+        <translation type="vanished">
             <numerusform>%n Element vom Computer für den iPod ausgewählt</numerusform>
             <numerusform>%n Elemente vom Computer für den iPod ausgewählt</numerusform>
         </translation>
@@ -6902,6 +8907,10 @@ Playlists: %3</translation>
             <numerusform> · %Ln Wiedergabelistenänderung</numerusform>
             <numerusform> · %Ln Wiedergabelistenänderungen</numerusform>
         </translation>
+    </message>
+    <message>
+        <source> · Playlist matches to save: %1</source>
+        <translation> · Zu speichernde Playlist-Zuordnungen: %1</translation>
     </message>
     <message>
         <source>Selected duplicates need choices</source>
@@ -6927,32 +8936,48 @@ Playlists: %3</translation>
         <translation>Ausgewählte Medienänderungen aus allen Gruppen, einschließlich durch Filter ausgeblendeter Elemente, sowie ausgewählte Wiedergabelistenänderungen.</translation>
     </message>
     <message>
+        <source>Playlist Sync is off. References to Tracks you remove are still removed.</source>
+        <translation>Playlist-Synchronisierung ist deaktiviert. Verweise auf entfernte Titel werden weiterhin entfernt.</translation>
+    </message>
+    <message>
+        <source>Choose which Playlists to update. Track selection stays separate.</source>
+        <translation>Playlists zum Aktualisieren auswählen. Die Titelauswahl bleibt unabhängig.</translation>
+    </message>
+    <message>
+        <source>No Host Playlists to sync.</source>
+        <translation>Keine Host-Playlists zum Synchronisieren.</translation>
+    </message>
+    <message>
         <source>Create</source>
-        <translation>Erstellen</translation>
+        <translation type="vanished">Erstellen</translation>
     </message>
     <message>
         <source>Update</source>
-        <translation>Aktualisieren</translation>
+        <translation type="vanished">Aktualisieren</translation>
     </message>
     <message>
         <source>%1 added, %2 removed</source>
-        <translation>%1 hinzugefügt, %2 entfernt</translation>
+        <translation type="vanished">%1 hinzugefügt, %2 entfernt</translation>
     </message>
     <message>
         <source>, order changed</source>
-        <translation>, Reihenfolge geändert</translation>
+        <translation type="vanished">, Reihenfolge geändert</translation>
     </message>
     <message>
         <source>Host Playlists will not be reconciled. References to removed Tracks are still removed.</source>
-        <translation>Wiedergabelisten vom Computer werden nicht abgeglichen. Verweise auf entfernte Titel werden weiterhin entfernt.</translation>
+        <translation type="vanished">Wiedergabelisten vom Computer werden nicht abgeglichen. Verweise auf entfernte Titel werden weiterhin entfernt.</translation>
     </message>
     <message>
         <source>Membership and order changes for the selected media:</source>
-        <translation>Änderungen an Einträgen und Reihenfolge für die ausgewählten Medien:</translation>
+        <translation type="vanished">Änderungen an Einträgen und Reihenfolge für die ausgewählten Medien:</translation>
     </message>
     <message>
         <source>No Playlist changes for the selected media.</source>
-        <translation>Keine Wiedergabelistenänderungen für die ausgewählten Medien.</translation>
+        <translation type="vanished">Keine Wiedergabelistenänderungen für die ausgewählten Medien.</translation>
+    </message>
+    <message>
+        <source>Revert selections</source>
+        <translation>Auswahl zurücksetzen</translation>
     </message>
 </context>
 <context>
@@ -6960,10 +8985,6 @@ Playlists: %3</translation>
     <message>
         <source>Normalize iPod Tags</source>
         <translation>iPod-Metadaten vereinheitlichen</translation>
-    </message>
-    <message>
-        <source>A little tidying for your Library. Keep names, album grouping, and sorting consistent on your iPod.</source>
-        <translation>Etwas Ordnung für Ihre Mediathek. Halten Sie Namen, Albumgruppierung und Sortierung auf Ihrem iPod einheitlich.</translation>
     </message>
     <message>
         <source>Track, artist, album, or tag value…</source>
@@ -7009,26 +9030,6 @@ Playlists: %3</translation>
         <source>Checking…</source>
         <translation>Wird geprüft…</translation>
     </message>
-    <message>
-        <source>Checking your Library…</source>
-        <translation>Ihre Mediathek wird geprüft…</translation>
-    </message>
-    <message>
-        <source>Tag changes: %1 · Tracks: %2</source>
-        <translation>Metadatenänderungen: %1 · Titel: %2</translation>
-    </message>
-    <message>
-        <source>Your tags are in good shape</source>
-        <translation>Ihre Metadaten sind in Ordnung</translation>
-    </message>
-    <message>
-        <source>Consistent tags, easier browsing</source>
-        <translation>Einheitliche Metadaten erleichtern das Stöbern</translation>
-    </message>
-    <message>
-        <source>Tailored to %1</source>
-        <translation>Auf %1 abgestimmt</translation>
-    </message>
     <message numerus="yes">
         <source>Apply all %Ln change(s)</source>
         <translation>
@@ -7056,60 +9057,56 @@ Playlists: %3</translation>
         </translation>
     </message>
     <message>
-        <source>Finding the finishing touches</source>
-        <translation>Letzte Verbesserungen werden gesucht</translation>
+        <source>Checking tags…</source>
+        <translation>Metadaten werden geprüft…</translation>
     </message>
     <message>
-        <source>Checking names, album grouping, and sort tags. You can keep browsing while we work.</source>
-        <translation>Namen, Albumgruppierung und Sortierangaben werden geprüft. Sie können währenddessen weiter stöbern.</translation>
+        <source>Checking names, album grouping, and sort tags.</source>
+        <translation>Namen, Albumgruppierung und Sortierangaben werden geprüft.</translation>
     </message>
     <message>
         <source>No matching changes</source>
         <translation>Keine passenden Änderungen</translation>
     </message>
     <message>
-        <source>Try another search or clear the filters to see every suggestion.</source>
-        <translation>Versuchen Sie eine andere Suche oder setzen Sie die Filter zurück, um alle Vorschläge anzuzeigen.</translation>
+        <source>Change the search or clear the filters to show all changes.</source>
+        <translation>Ändern Sie die Suche oder setzen Sie die Filter zurück, um alle Änderungen anzuzeigen.</translation>
     </message>
     <message>
-        <source>All tidy</source>
-        <translation>Alles aufgeräumt</translation>
+        <source>No changes needed</source>
+        <translation>Keine Änderungen erforderlich</translation>
     </message>
     <message>
-        <source>No tag changes are needed.</source>
-        <translation>Keine Metadatenänderungen erforderlich.</translation>
-    </message>
-    <message>
-        <source>Your Library is busy</source>
-        <translation>Ihre Mediathek ist beschäftigt</translation>
+        <source>Library in use</source>
+        <translation>Mediathek wird verwendet</translation>
     </message>
     <message>
         <source>Wait for the current operation to finish before checking tags.</source>
         <translation>Warten Sie, bis der aktuelle Vorgang abgeschlossen ist, bevor Sie die Metadaten prüfen.</translation>
     </message>
     <message>
-        <source>Choose an iPod to get started</source>
-        <translation>Wählen Sie einen iPod aus, um zu beginnen</translation>
+        <source>No iPod selected</source>
+        <translation>Kein iPod ausgewählt</translation>
     </message>
     <message>
-        <source>Load its Library to check for suggested tag changes.</source>
-        <translation>Laden Sie seine Mediathek, um vorgeschlagene Metadatenänderungen zu prüfen.</translation>
+        <source>Select an iPod and load its Library to check tags.</source>
+        <translation>Wählen Sie einen iPod aus und laden Sie seine Mediathek, um die Metadaten zu prüfen.</translation>
     </message>
     <message>
-        <source>We couldn&apos;t check your tags</source>
-        <translation>Ihre Metadaten konnten nicht geprüft werden</translation>
+        <source>Tag scan failed</source>
+        <translation>Metadatenprüfung fehlgeschlagen</translation>
     </message>
     <message>
         <source>Try scanning again.</source>
         <translation>Versuchen Sie die Suche erneut.</translation>
     </message>
     <message>
-        <source>Ready for a fresh look</source>
-        <translation>Bereit für eine neue Prüfung</translation>
+        <source>Ready to scan</source>
+        <translation>Bereit zur Prüfung</translation>
     </message>
     <message>
-        <source>Scan your Library to preview suggested tag changes.</source>
-        <translation>Durchsuchen Sie Ihre Mediathek, um vorgeschlagene Metadatenänderungen anzusehen.</translation>
+        <source>Scan the Library to review suggested tag changes.</source>
+        <translation>Prüfen Sie die Mediathek, um vorgeschlagene Metadatenänderungen anzuzeigen.</translation>
     </message>
 </context>
 <context>
@@ -7187,8 +9184,8 @@ Playlists: %3</translation>
         <translation> (unterschiedlich)</translation>
     </message>
     <message>
-        <source>Podcasts and videos keep their place and are skipped when shuffling.</source>
-        <translation>Podcasts und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
+        <source>Podcasts, audiobooks, and videos keep their place and are skipped when shuffling.</source>
+        <translation>Podcasts, Hörbücher und Videos merken sich die Wiedergabeposition und werden bei der Zufallswiedergabe übersprungen.</translation>
     </message>
     <message>
         <source>Rating</source>
@@ -7268,6 +9265,29 @@ Playlists: %3</translation>
     <message>
         <source>All Tracks</source>
         <translation>Alle Titel</translation>
+    </message>
+</context>
+<context>
+    <name>TrackMediaSwitch</name>
+    <message>
+        <source>Track media types</source>
+        <translation>Medientypen der Titel</translation>
+    </message>
+    <message>
+        <source>Music only</source>
+        <translation>Nur Musik</translation>
+    </message>
+    <message>
+        <source>Show music only</source>
+        <translation>Nur Musik anzeigen</translation>
+    </message>
+    <message>
+        <source>All media</source>
+        <translation>Alle Medien</translation>
+    </message>
+    <message>
+        <source>Show all media types</source>
+        <translation>Alle Medientypen anzeigen</translation>
     </message>
 </context>
 <context>
@@ -7790,6 +9810,14 @@ Playlists: %3</translation>
         <source>PDF Book</source>
         <translation>PDF-Buch</translation>
     </message>
+    <message>
+        <source>Manual stream choices. Choose streams… (Enter)</source>
+        <translation>Manuelle Streamauswahl. Streams auswählen… (Eingabe)</translation>
+    </message>
+    <message>
+        <source>Automatic stream selection. Choose streams… (Enter)</source>
+        <translation>Automatische Streamauswahl. Streams auswählen… (Eingabe)</translation>
+    </message>
 </context>
 <context>
     <name>TranscodingSettings</name>
@@ -8090,7 +10118,82 @@ Playlists: %3</translation>
     </message>
 </context>
 <context>
+    <name>VideoPlayerPage</name>
+    <message>
+        <source>Close video player</source>
+        <translation>Videoplayer schließen</translation>
+    </message>
+    <message>
+        <source>Pause</source>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <source>Play</source>
+        <translation>Wiedergeben</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Aus</translation>
+    </message>
+    <message>
+        <source>Subtitle {number}</source>
+        <translation>Untertitel {number}</translation>
+    </message>
+    <message>
+        <source>Subtitles</source>
+        <translation>Untertitel</translation>
+    </message>
+    <message>
+        <source>No embedded subtitles</source>
+        <translation>Keine eingebetteten Untertitel</translation>
+    </message>
+    <message>
+        <source>Video output is unavailable.</source>
+        <translation>Die Videoausgabe ist nicht verfügbar.</translation>
+    </message>
+    <message>
+        <source>Untitled Track</source>
+        <translation>Unbenannter Titel</translation>
+    </message>
+    <message>
+        <source>Nothing playing</source>
+        <translation>Keine Wiedergabe</translation>
+    </message>
+    <message>
+        <source>Playback position</source>
+        <translation>Wiedergabeposition</translation>
+    </message>
+    <message>
+        <source>Volume</source>
+        <translation>Lautstärke</translation>
+    </message>
+    <message>
+        <source>Video</source>
+        <translation>Video</translation>
+    </message>
+    <message>
+        <source>Previous Chapter</source>
+        <translation>Vorheriges Kapitel</translation>
+    </message>
+    <message>
+        <source>Previous Track</source>
+        <translation>Vorheriger Titel</translation>
+    </message>
+    <message>
+        <source>Next Chapter</source>
+        <translation>Nächstes Kapitel</translation>
+    </message>
+    <message>
+        <source>Next Track</source>
+        <translation>Nächster Titel</translation>
+    </message>
+</context>
+<context>
     <name>Workflow</name>
+    <message>
+        <source>A changed native browse record is shared by incompatible groups.</source>
+        <translation>Ein geänderter nativer Browsing-Datensatz wird von inkompatiblen Gruppen gemeinsam verwendet.</translation>
+    </message>
     <message>
         <source>{title}</source>
         <translation>{title}</translation>
@@ -8123,7 +10226,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A Host Playlist or one of its retained sources changed or became unavailable after Review. Host Playlist reconciliation was skipped; rescan before retrying.</source>
-        <translation>Eine Wiedergabeliste auf dem Computer oder eine ihrer erfassten Quellen hat sich nach der Prüfung geändert oder ist nicht mehr verfügbar. Der Abgleich dieser Wiedergabelisten wurde übersprungen. Starten Sie vor einem neuen Versuch die Suche erneut.</translation>
+        <translation type="vanished">Eine Wiedergabeliste auf dem Computer oder eine ihrer erfassten Quellen hat sich nach der Prüfung geändert oder ist nicht mehr verfügbar. Der Abgleich dieser Wiedergabelisten wurde übersprungen. Starten Sie vor einem neuen Versuch die Suche erneut.</translation>
     </message>
     <message>
         <source>A Master Playlist does not contain the desired device name.</source>
@@ -8220,6 +10323,10 @@ Playlists: %3</translation>
     <message>
         <source>A required file changed while the operation was running.</source>
         <translation>Eine erforderliche Datei hat sich während des Vorgangs geändert.</translation>
+    </message>
+    <message>
+        <source>A required flat Podcasts counterpart was not created.</source>
+        <translation>Das erforderliche flache Gegenstück der Podcasts-Wiedergabeliste wurde nicht erstellt.</translation>
     </message>
     <message>
         <source>A retained Playlist disappeared from its counterpart dataset.</source>
@@ -8367,7 +10474,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Artwork for {title} could not be prepared. Episodes can still sync. Sync this Podcast again to retry its artwork.</source>
-        <translation>Das Cover für {title} konnte nicht vorbereitet werden. Folgen können trotzdem synchronisiert werden. Synchronisieren Sie diesen Podcast erneut, um das Cover noch einmal zu versuchen.</translation>
+        <translation type="vanished">Das Cover für {title} konnte nicht vorbereitet werden. Folgen können trotzdem synchronisiert werden. Synchronisieren Sie diesen Podcast erneut, um das Cover noch einmal zu versuchen.</translation>
     </message>
     <message>
         <source>ArtworkDB changed while it was loading.</source>
@@ -8398,12 +10505,36 @@ Playlists: %3</translation>
         <translation>Ja/Nein-Bedingungen akzeptieren keinen zusätzlichen Wert.</translation>
     </message>
     <message>
+        <source>Building gameplay analysis · CPU</source>
+        <translation>Spielanalyse wird erstellt · CPU</translation>
+    </message>
+    <message>
         <source>Building the Host Media Library…</source>
         <translation>Mediathek auf dem Computer wird erstellt…</translation>
     </message>
     <message>
         <source>Cancellation arrived after publication began. Sync finished and verified the selected changes to keep the iPod Library consistent.</source>
         <translation>Der Abbruch wurde angefordert, nachdem die Übertragung begonnen hatte. Die Synchronisierung hat die ausgewählten Änderungen abgeschlossen und geprüft, um die iPod-Mediathek konsistent zu halten.</translation>
+    </message>
+    <message>
+        <source>Cancelling setup…</source>
+        <translation>Einrichtung wird abgebrochen…</translation>
+    </message>
+    <message>
+        <source>Caption alarm controls may not work on this iPod. Original caption commands are retained.</source>
+        <translation>Alarmsteuerungen für geschlossene Untertitel funktionieren auf diesem iPod möglicherweise nicht. Die ursprünglichen Untertitelbefehle bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Caption field 2 is retained unchanged; its playback on this iPod has not been verified.</source>
+        <translation>Feld 2 der geschlossenen Untertitel bleibt unverändert erhalten; seine Wiedergabe auf diesem iPod wurde nicht überprüft.</translation>
+    </message>
+    <message>
+        <source>Caption flashing may not display on this iPod. Original caption commands are retained.</source>
+        <translation>Das Blinken geschlossener Untertitel wird auf diesem iPod möglicherweise nicht dargestellt. Die ursprünglichen Untertitelbefehle bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Caption text mode may not display on this iPod. Original caption commands are retained.</source>
+        <translation>Der Textmodus für geschlossene Untertitel wird auf diesem iPod möglicherweise nicht dargestellt. Die ursprünglichen Untertitelbefehle bleiben erhalten.</translation>
     </message>
     <message>
         <source>Captured identities disagree for the same media file. Refresh its prepared facts and inventory together.</source>
@@ -8422,12 +10553,20 @@ Playlists: %3</translation>
         <translation>Datei {index} von {total} wird erfasst…</translation>
     </message>
     <message>
+        <source>Chapter data has no header enabling the native named index. Editable Chapter metadata is retained.</source>
+        <translation>Die Kapiteldaten haben keinen Header, der den nativen Index benannter Kapitel aktiviert. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
         <source>Chapter positions must be ordered and fit within the Track duration.</source>
         <translation>Kapitelpositionen müssen geordnet sein und innerhalb der Titeldauer liegen.</translation>
     </message>
     <message>
         <source>Chaptered media does not match its verified destination.</source>
         <translation>Die Mediendatei mit Kapiteln stimmt nicht mit dem geprüften Ziel überein.</translation>
+    </message>
+    <message>
+        <source>Chapters without a name atom are omitted from the native named index. Editable Chapter metadata is retained.</source>
+        <translation>Kapitel ohne name-Atom werden aus dem nativen Index benannter Kapitel ausgelassen. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
     </message>
     <message>
         <source>Checking Host Track details.</source>
@@ -8538,6 +10677,10 @@ Playlists: %3</translation>
         <translation>Wählen Sie, ob alle Regeln oder mindestens eine Regel zutreffen müssen.</translation>
     </message>
     <message>
+        <source>Chosen in Review</source>
+        <translation>In der Prüfung ausgewählt</translation>
+    </message>
+    <message>
         <source>Cleaning verified Library recovery files…</source>
         <translation>Geprüfte Wiederherstellungsdateien der Mediathek werden entfernt…</translation>
     </message>
@@ -8546,12 +10689,28 @@ Playlists: %3</translation>
         <translation>Geprüfte Wiederherstellungsdateien der Synchronisierung werden entfernt…</translation>
     </message>
     <message>
+        <source>Combining musical evidence · CPU</source>
+        <translation>Musikalische Merkmale werden zusammengeführt · CPU</translation>
+    </message>
+    <message>
         <source>Committed Library files: {completed} of {total}</source>
         <translation>Gespeicherte Mediathek-Dateien: {completed} von {total}</translation>
     </message>
     <message>
         <source>Comparing the iPod media with its Sync helper…</source>
         <translation>iPod-Medien werden mit den gespeicherten Synchronisierungsinformationen verglichen…</translation>
+    </message>
+    <message>
+        <source>Complete saved rules</source>
+        <translation>Vollständig gespeicherte Regeln</translation>
+    </message>
+    <message>
+        <source>Conflicting firmware releases were reported; game authorization cannot choose a release.</source>
+        <translation>Es wurden widersprüchliche Firmwareversionen gemeldet; für die Spielautorisierung kann keine Version ausgewählt werden.</translation>
+    </message>
+    <message>
+        <source>Conflicting updater families were reported; game authorization cannot choose a family.</source>
+        <translation>Es wurden widersprüchliche Updater-Familien gemeldet; für die Spielautorisierung kann keine Familie ausgewählt werden.</translation>
     </message>
     <message>
         <source>Connect the iPod identified by this archive and try again.</source>
@@ -8610,6 +10769,10 @@ Playlists: %3</translation>
         <translation>{title} konnte nicht aktualisiert werden: {error}</translation>
     </message>
     <message>
+        <source>Could not repair subtitle and caption metadata for &quot;{title}&quot;. The existing video is unchanged; Sync can retry the repair.</source>
+        <translation>Die Metadaten für Untertitel und geschlossene Untertitel von &quot;{title}&quot; konnten nicht repariert werden. Das vorhandene Video bleibt unverändert; bei der Synchronisierung kann die Reparatur erneut versucht werden.</translation>
+    </message>
+    <message>
         <source>Cover Flow devices are sensitive to Artist+Album differences and same-name albums.</source>
         <translation>Bei Geräten mit Cover Flow können Unterschiede zwischen Künstler und Album sowie gleichnamige Alben die Darstellung beeinflussen.</translation>
     </message>
@@ -8658,12 +10821,24 @@ Playlists: %3</translation>
         <translation>Die Datenbankversion muss ein positiver vorzeichenloser 32-Bit-Wert sein.</translation>
     </message>
     <message>
+        <source>Date ranges require two whole-number timestamps.</source>
+        <translation>Datumsbereiche erfordern zwei ganzzahlige Zeitstempel.</translation>
+    </message>
+    <message>
         <source>Daylight saving switch</source>
         <translation>Sommerzeitumschaltung</translation>
     </message>
     <message>
+        <source>Decoding audio with FFmpeg · CPU</source>
+        <translation>Audio wird mit FFmpeg dekodiert · CPU</translation>
+    </message>
+    <message>
         <source>Deleting obsolete Track files.</source>
         <translation>Nicht mehr benötigte Titeldateien werden gelöscht.</translation>
+    </message>
+    <message>
+        <source>Demucs htdemucs_6s</source>
+        <translation>Demucs htdemucs_6s</translation>
     </message>
     <message>
         <source>Derive firmware membership, flags, or representable values from the requested edit.</source>
@@ -8690,12 +10865,28 @@ Playlists: %3</translation>
         <translation>Podcast-Folge wird heruntergeladen…</translation>
     </message>
     <message>
+        <source>Downloading and installing the analysis libraries…</source>
+        <translation>Analysebibliotheken werden heruntergeladen und installiert…</translation>
+    </message>
+    <message>
+        <source>Downloading the model and testing instrument analysis…</source>
+        <translation>Modell wird heruntergeladen und Instrumentenanalyse wird getestet…</translation>
+    </message>
+    <message>
+        <source>Downloading the verified setup tool…</source>
+        <translation>Verifiziertes Einrichtungswerkzeug wird heruntergeladen…</translation>
+    </message>
+    <message>
         <source>Downloading {title}…</source>
         <translation>{title} wird heruntergeladen…</translation>
     </message>
     <message>
         <source>Embedded artwork could not be verified; existing iPod covers will be kept.</source>
         <translation>Eingebettete Cover konnten nicht geprüft werden; vorhandene iPod-Cover bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Embedded artwork for {title} could not be prepared.</source>
+        <translation>Das eingebettete Cover für {title} konnte nicht vorbereitet werden.</translation>
     </message>
     <message>
         <source>Embedded artwork for {title} could not be prepared. The Episode can still sync with available publisher artwork.</source>
@@ -8736,6 +10927,10 @@ Playlists: %3</translation>
     <message>
         <source>Every Playlist Entry needs a unique nonempty identity.</source>
         <translation>Jeder Wiedergabelisteneintrag benötigt eine eindeutige, nicht leere Kennung.</translation>
+    </message>
+    <message>
+        <source>Existing album artwork was corrected for this iPod.</source>
+        <translation>Vorhandene Albumcover wurden für diesen iPod korrigiert.</translation>
     </message>
     <message>
         <source>Export its files for manual recovery; it cannot be restored destructively.</source>
@@ -8782,6 +10977,10 @@ Playlists: %3</translation>
         <translation>Fingerabdruck für iPod-Bild {index} von {total} wird berechnet…</translation>
     </message>
     <message>
+        <source>Finishing analysis</source>
+        <translation>Analyse wird abgeschlossen</translation>
+    </message>
+    <message>
         <source>Flatpak</source>
         <translation>Flatpak</translation>
     </message>
@@ -8806,6 +11005,14 @@ Playlists: %3</translation>
         <translation>Geben Sie am angegebenen Speicherort Platz frei und versuchen Sie es erneut.</translation>
     </message>
     <message>
+        <source>GPU setup could not finish. Retrying with CPU analysis…</source>
+        <translation>Die GPU-Einrichtung konnte nicht abgeschlossen werden. Neuer Versuch mit CPU-Analyse…</translation>
+    </message>
+    <message>
+        <source>Game authorization is not supported for this firmware release.</source>
+        <translation>Die Spielautorisierung wird für diese Firmwareversion nicht unterstützt.</translation>
+    </message>
+    <message>
         <source>Give the Photo Album a nonempty Unicode name without null characters.</source>
         <translation>Geben Sie dem Fotoalbum einen nicht leeren Unicode-Namen ohne Nullzeichen.</translation>
     </message>
@@ -8822,6 +11029,10 @@ Playlists: %3</translation>
         <translation>Suche in der Mediathek auf dem Computer abgeschlossen.</translation>
     </message>
     <message>
+        <source>ID3 tag flags, extended headers or unsynchronization need explicit conversion first.</source>
+        <translation>ID3-Tag-Flags, erweiterte Header oder Unsynchronisierung erfordern zuerst eine ausdrückliche Konvertierung.</translation>
+    </message>
+    <message>
         <source>Imported Track facts do not match the captured media.</source>
         <translation>Die Angaben zum importierten Titel stimmen nicht mit den erfassten Medien überein.</translation>
     </message>
@@ -8836,6 +11047,26 @@ Playlists: %3</translation>
     <message>
         <source>Inspecting the converted media</source>
         <translation>Konvertierte Medien werden geprüft</translation>
+    </message>
+    <message>
+        <source>Installing a private Python runtime…</source>
+        <translation>Private Python-Laufzeit wird installiert…</translation>
+    </message>
+    <message>
+        <source>Instrument analysis is installed. Acoustic analysis remains available as a fallback.</source>
+        <translation>Die Instrumentenanalyse ist installiert. Die akustische Analyse bleibt als Ersatz verfügbar.</translation>
+    </message>
+    <message>
+        <source>Instrument analysis is ready for the next Phase save or Sync.</source>
+        <translation>Die Instrumentenanalyse ist für das nächste Speichern der Phase-Wiedergabeliste oder den nächsten Sync bereit.</translation>
+    </message>
+    <message>
+        <source>Instrument analysis is ready. Acoustic analysis remains available as a fallback.</source>
+        <translation>Die Instrumentenanalyse ist bereit. Die akustische Analyse bleibt als Rückfalloption verfügbar.</translation>
+    </message>
+    <message>
+        <source>Instrument analysis setup is unavailable on this system. Acoustic analysis remains available.</source>
+        <translation>Die Instrumentenanalyse kann auf diesem System nicht eingerichtet werden. Die akustische Analyse bleibt verfügbar.</translation>
     </message>
     <message>
         <source>Keep in iTunes source list</source>
@@ -8878,6 +11109,10 @@ Playlists: %3</translation>
         <translation>Änderungen an der Mediathek wurden gespeichert und Wiederherstellungsdateien entfernt. Der Abschluss der letzten Schreibvorgänge auf dem Gerät konnte jedoch nicht bestätigt werden. Werfen Sie den iPod vor dem Trennen sicher aus.</translation>
     </message>
     <message>
+        <source>Library changes were saved, but Genius audio profiles could not be cached for the iPod. A later Sync may repeat audio analysis.</source>
+        <translation>Die Änderungen an der Mediathek wurden gespeichert, aber die Genius-Audioprofile konnten nicht für den iPod zwischengespeichert werden. Bei einer späteren Synchronisierung wird die Audioanalyse möglicherweise wiederholt.</translation>
+    </message>
+    <message>
         <source>Library changes were saved, but Sync history could not be updated. Keep the iPod connected and rescan before another Sync.</source>
         <translation>Änderungen an der Mediathek wurden gespeichert. Der Synchronisierungsverlauf konnte jedoch nicht aktualisiert werden. Lassen Sie den iPod angeschlossen und starten Sie vor einer weiteren Synchronisierung die Suche erneut.</translation>
     </message>
@@ -8890,6 +11125,10 @@ Playlists: %3</translation>
         <translation>Änderungen an der Mediathek wurden geprüft. Das System konnte jedoch nicht bestätigen, dass alle Schreibvorgänge auf dem Gerät abgeschlossen sind. Werfen Sie den iPod über das Betriebssystem sicher aus, bevor Sie ihn trennen.</translation>
     </message>
     <message>
+        <source>Library timezone</source>
+        <translation>Zeitzone der Mediathek</translation>
+    </message>
+    <message>
         <source>Linked library identifier</source>
         <translation>Kennung der verknüpften Mediathek</translation>
     </message>
@@ -8898,8 +11137,24 @@ Playlists: %3</translation>
         <translation>Linux benötigt die mitgelieferte Identifikationsregel 61-iopenpod.rules, damit iOpenPod dieses Modell prüfen kann. Installieren Sie diese in /etc/udev/rules.d, laden Sie die udev-Regeln neu und schließen Sie den iPod erneut an.</translation>
     </message>
     <message>
+        <source>Loading Demucs htdemucs_6s</source>
+        <translation>Demucs htdemucs_6s wird geladen</translation>
+    </message>
+    <message>
+        <source>Lyrics cannot be verified for this iPod&apos;s native player: {reason} The full lyrics and source file were not truncated.</source>
+        <translation>Der Liedtext kann für den integrierten Player dieses iPod nicht überprüft werden: {reason} Der vollständige Liedtext und die Quelldatei wurden nicht gekürzt.</translation>
+    </message>
+    <message>
         <source>Lyrics resources repeat a Track identity.</source>
         <translation>Liedtext-Ressourcen enthalten eine Titelkennung mehrfach.</translation>
+    </message>
+    <message>
+        <source>MP4 lyrics contain an ambiguous NUL terminator.</source>
+        <translation>Der MP4-Liedtext enthält ein mehrdeutiges NUL-Abschlusszeichen.</translation>
+    </message>
+    <message>
+        <source>MP4 lyrics exceed the native 10,240-byte text limit.</source>
+        <translation>Der MP4-Liedtext überschreitet die native Textgrenze von 10.240 Byte.</translation>
     </message>
     <message>
         <source>Mac App Store (receipt detected)</source>
@@ -8922,6 +11177,10 @@ Playlists: %3</translation>
         <translation>Die originale Albumreihenfolge des Sortiertyps 36 und Positionen der Hauptwiedergabeliste beibehalten.</translation>
     </message>
     <message>
+        <source>Make dataset 2 match the Playlists in dataset 3, retaining flat Podcast entries.</source>
+        <translation>Datenbestand 2 an die Wiedergabelisten in Datenbestand 3 angleichen und flache Podcast-Einträge beibehalten.</translation>
+    </message>
+    <message>
         <source>Manual</source>
         <translation>Manuell</translation>
     </message>
@@ -8936,6 +11195,10 @@ Playlists: %3</translation>
     <message>
         <source>Media replacement requires an existing source Track retained in the desired Library.</source>
         <translation>Das Ersetzen von Medien erfordert einen vorhandenen Quelltitel, der in der gewünschten Mediathek beibehalten wird.</translation>
+    </message>
+    <message>
+        <source>Membership refresh requires a retained, supported live Smart Playlist, requested once.</source>
+        <translation>Die Aktualisierung der Titelliste erfordert eine beibehaltene, unterstützte intelligente Wiedergabeliste mit aktivierter Live-Aktualisierung, die genau einmal angefordert wird.</translation>
     </message>
     <message>
         <source>Menu language</source>
@@ -8954,8 +11217,16 @@ Playlists: %3</translation>
         <translation>Mehrere Wiedergabelisten tragen die besondere Podcasts-Markierung.</translation>
     </message>
     <message>
+        <source>More than one Playlist has this name. Choose an iPod Playlist or create a new one.</source>
+        <translation>Mehrere Playlists haben diesen Namen. Eine iPod-Playlist auswählen oder eine neue erstellen.</translation>
+    </message>
+    <message>
         <source>Multiple playlist datasets have the same type; their ownership is ambiguous.</source>
         <translation>Mehrere Wiedergabelisten-Datenbestände haben denselben Typ. Ihre Zuordnung ist nicht eindeutig.</translation>
+    </message>
+    <message>
+        <source>Multiple retained Chapter headers are not interpreted by this native index view. Editable Chapter metadata is retained.</source>
+        <translation>Mehrere vorhandene Kapitelheader werden von dieser Ansicht des nativen Index nicht interpretiert. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
     </message>
     <message>
         <source>Music selection</source>
@@ -8966,8 +11237,16 @@ Playlists: %3</translation>
         <translation>Musiksynchronisierung</translation>
     </message>
     <message>
+        <source>Named Chapter positions and artwork image times differ. Classic image refresh compares their indices; playback needs device validation. No positions were changed.</source>
+        <translation>Die Positionen benannter Kapitel und die Zeitpunkte der Coverbilder unterscheiden sich. Der Classic vergleicht beim Aktualisieren des Bildes ihre Indizes; die Wiedergabe muss am Gerät geprüft werden. Es wurden keine Positionen geändert.</translation>
+    </message>
+    <message>
         <source>New Photo Albums must follow the retained Photo Albums.</source>
         <translation>Neue Fotoalben müssen auf die beibehaltenen Fotoalben folgen.</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <translation>Neue Playlist</translation>
     </message>
     <message>
         <source>New Playlists require an established counterpart dataset; the existing playlist datasets disagree.</source>
@@ -8976,6 +11255,10 @@ Playlists: %3</translation>
     <message>
         <source>No changes since the latest Backup Snapshot.</source>
         <translation>Keine Änderungen seit dem letzten Backup.</translation>
+    </message>
+    <message>
+        <source>No game authorization codec is available for this iPod model.</source>
+        <translation>Für dieses iPod-Modell ist kein Codec zur Spielautorisierung verfügbar.</translation>
     </message>
     <message>
         <source>No tag changes are needed.</source>
@@ -8988,6 +11271,10 @@ Playlists: %3</translation>
     <message>
         <source>Normalization applied.</source>
         <translation>Vereinheitlichung angewendet.</translation>
+    </message>
+    <message>
+        <source>Normalize Podcast album ownership, representative links, show identities, Playlist settings and sort-36 traversal.</source>
+        <translation type="vanished">Albumzuordnung, repräsentative Verknüpfungen, Sendungskennungen, Wiedergabelisteneinstellungen und Sort-36-Reihenfolge für Podcasts vereinheitlichen.</translation>
     </message>
     <message>
         <source>Not decoded for this model or firmware</source>
@@ -9147,19 +11434,19 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because its name matches an ambiguous or managed Playlist. Rename the Host Playlist and retry.</source>
-        <translation>Die Wiedergabeliste {name} wurde beibehalten, da ihr Name mit einer mehrdeutigen oder verwalteten Wiedergabeliste übereinstimmt. Benennen Sie die Wiedergabeliste auf dem Computer um und versuchen Sie es erneut.</translation>
+        <translation type="vanished">Die Wiedergabeliste {name} wurde beibehalten, da ihr Name mit einer mehrdeutigen oder verwalteten Wiedergabeliste übereinstimmt. Benennen Sie die Wiedergabeliste auf dem Computer um und versuchen Sie es erneut.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because one of its selected Tracks failed. Retry those Tracks to update this Playlist.</source>
-        <translation>Die Wiedergabeliste {name} wurde beibehalten, da einer ihrer ausgewählten Titel fehlgeschlagen ist. Versuchen Sie diese Titel erneut, um die Wiedergabeliste zu aktualisieren.</translation>
+        <translation type="vanished">Die Wiedergabeliste {name} wurde beibehalten, da einer ihrer ausgewählten Titel fehlgeschlagen ist. Versuchen Sie diese Titel erneut, um die Wiedergabeliste zu aktualisieren.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because some of its Tracks have unresolved matches. Review those matches before updating this Playlist.</source>
-        <translation>Die Wiedergabeliste {name} wurde beibehalten, da die Zuordnung einiger ihrer Titel ungeklärt ist. Prüfen Sie diese Zuordnungen, bevor Sie die Wiedergabeliste aktualisieren.</translation>
+        <translation type="vanished">Die Wiedergabeliste {name} wurde beibehalten, da die Zuordnung einiger ihrer Titel ungeklärt ist. Prüfen Sie diese Zuordnungen, bevor Sie die Wiedergabeliste aktualisieren.</translation>
     </message>
     <message>
         <source>Playlist {name} was preserved because some source entries were excluded or could not be read. Resolve its missing or declined references and rescan before updating this Playlist.</source>
-        <translation>Die Wiedergabeliste {name} wurde beibehalten, da einige Quelleinträge ausgeschlossen wurden oder nicht gelesen werden konnten. Klären Sie fehlende oder abgelehnte Verweise und starten Sie die Suche erneut, bevor Sie diese Wiedergabeliste aktualisieren.</translation>
+        <translation type="vanished">Die Wiedergabeliste {name} wurde beibehalten, da einige Quelleinträge ausgeschlossen wurden oder nicht gelesen werden konnten. Klären Sie fehlende oder abgelehnte Verweise und starten Sie die Suche erneut, bevor Sie diese Wiedergabeliste aktualisieren.</translation>
     </message>
     <message>
         <source>Podcast Episode could not be added. Refresh the Podcast and retry.</source>
@@ -9187,7 +11474,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Podcast episode position metadata must reference its native row identifier.</source>
-        <translation>Positionsmetadaten einer Podcast-Folge müssen auf ihre Originalzeilenkennung verweisen.</translation>
+        <translation type="vanished">Positionsmetadaten einer Podcast-Folge müssen auf ihre Originalzeilenkennung verweisen.</translation>
     </message>
     <message>
         <source>Podcast files were verified, but the operating system did not confirm a complete device flush. Safe-eject before unplugging.</source>
@@ -9490,6 +11777,10 @@ Playlists: %3</translation>
         <translation>Fordern Sie das Ersetzen von Medien nur einmal pro Titel an.</translation>
     </message>
     <message>
+        <source>Resolve the unmatched Tracks in this Playlist before syncing it.</source>
+        <translation>Die nicht zugeordneten Titel in dieser Playlist vor dem Synchronisieren zuordnen.</translation>
+    </message>
+    <message>
         <source>Restore Recovery is still required.</source>
         <translation>Die unterbrochene Wiederherstellung muss weiterhin repariert werden.</translation>
     </message>
@@ -9550,6 +11841,10 @@ Playlists: %3</translation>
         <translation>Unveränderte Datei {index} von {total} wird wiederverwendet…</translation>
     </message>
     <message>
+        <source>Reusing verified analysis</source>
+        <translation>Geprüfte Analyse wird wiederverwendet</translation>
+    </message>
+    <message>
         <source>Review the application log, then try again.</source>
         <translation>Prüfen Sie das Anwendungsprotokoll und versuchen Sie es erneut.</translation>
     </message>
@@ -9570,12 +11865,44 @@ Playlists: %3</translation>
         <translation>Das Rockbox-Cover für {name} wurde nicht eingebettet. Die Mediendatei und das iOpenPod-Cover können weiterhin synchronisiert werden; korrigieren Sie die Datei und versuchen Sie es erneut.</translation>
     </message>
     <message>
+        <source>Rules for the saved city</source>
+        <translation>Regeln für die gespeicherte Stadt</translation>
+    </message>
+    <message>
+        <source>SQLite Podcast Episodes must store ascending publication dates per show.</source>
+        <translation>Podcast-Folgen in SQLite müssen pro Sendung nach aufsteigendem Veröffentlichungsdatum gespeichert sein.</translation>
+    </message>
+    <message>
         <source>SQLite regeneration requires a SQLite-capable target.</source>
         <translation>Die Neuerstellung von SQLite erfordert ein Zielgerät mit SQLite-Unterstützung.</translation>
     </message>
     <message>
         <source>SQLite regeneration requires resolved Track dates. Reload with a known timezone before saving this Library.</source>
-        <translation>Die Neuerstellung von SQLite erfordert eindeutig bestimmte Titeldaten. Laden Sie die Mediathek mit einer bekannten Zeitzone neu, bevor Sie sie speichern.</translation>
+        <translation type="vanished">Die Neuerstellung von SQLite erfordert eindeutig bestimmte Titeldaten. Laden Sie die Mediathek mit einer bekannten Zeitzone neu, bevor Sie sie speichern.</translation>
+    </message>
+    <message>
+        <source>Same name</source>
+        <translation>Gleicher Name</translation>
+    </message>
+    <message>
+        <source>Saved clock correction (days)</source>
+        <translation>Gespeicherte Uhrkorrektur (Tage)</translation>
+    </message>
+    <message>
+        <source>Saved clock correction (raw seconds word)</source>
+        <translation>Gespeicherte Uhrkorrektur (Sekunden-Rohwert)</translation>
+    </message>
+    <message>
+        <source>Saved daylight saving rules</source>
+        <translation>Gespeicherte Sommerzeitregeln</translation>
+    </message>
+    <message>
+        <source>Saved daylight saving state</source>
+        <translation>Gespeicherter Sommerzeitstatus</translation>
+    </message>
+    <message>
+        <source>Saved match</source>
+        <translation>Gespeicherte Zuordnung</translation>
     </message>
     <message>
         <source>Saving Sync helper…</source>
@@ -9622,6 +11949,10 @@ Playlists: %3</translation>
         <translation>Wählen Sie Fotos aus der aktuellen Mediathek aus.</translation>
     </message>
     <message>
+        <source>Select Tracks from this Playlist to add them to the iPod.</source>
+        <translation>Titel aus dieser Playlist auswählen, um sie zum iPod hinzuzufügen.</translation>
+    </message>
+    <message>
         <source>Select an Active iPod before exporting Photos.</source>
         <translation>Wählen Sie einen aktiven iPod aus, bevor Sie Fotos exportieren.</translation>
     </message>
@@ -9646,6 +11977,14 @@ Playlists: %3</translation>
         <translation>Wählen Sie mindestens einen Titel zum Exportieren aus.</translation>
     </message>
     <message>
+        <source>Select at least one playable stream</source>
+        <translation>Wählen Sie mindestens einen abspielbaren Stream aus</translation>
+    </message>
+    <message>
+        <source>Select one video stream for this video.</source>
+        <translation>Wählen Sie einen Videostream für dieses Video aus.</translation>
+    </message>
+    <message>
         <source>Select the complete Album before converting its Tracks.</source>
         <translation>Wählen Sie vor der Umwandlung alle Titel des Albums aus.</translation>
     </message>
@@ -9658,12 +11997,20 @@ Playlists: %3</translation>
         <translation>Ausgewählte Podcasts</translation>
     </message>
     <message>
+        <source>Selecting hardware</source>
+        <translation>Hardware wird ausgewählt</translation>
+    </message>
+    <message>
         <source>Serializing database artifacts</source>
         <translation>Datenbankdateien werden serialisiert</translation>
     </message>
     <message>
         <source>Settings were verified, but the device flush was incomplete. Safe-eject the iPod before unplugging.</source>
         <translation>Die Einstellungen wurden überprüft, aber das vollständige Schreiben auf das Gerät wurde nicht bestätigt. Wirf den iPod sicher aus, bevor du ihn trennst.</translation>
+    </message>
+    <message>
+        <source>Setup could not finish. Acoustic analysis remains available.</source>
+        <translation>Die Einrichtung konnte nicht abgeschlossen werden. Die akustische Analyse bleibt verfügbar.</translation>
     </message>
     <message>
         <source>Shared Photo files have conflicting captured content.</source>
@@ -9706,16 +12053,28 @@ Playlists: %3</translation>
         <translation>Snap</translation>
     </message>
     <message>
+        <source>Some Photo dates use best-effort interpretation; unrelated edits preserve their native bytes.</source>
+        <translation>Einige Datumsangaben von Fotos werden näherungsweise interpretiert; Änderungen an anderen Daten erhalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
+        <source>Some Track dates use best-effort interpretation; unrelated edits preserve their native bytes.</source>
+        <translation>Einige Datumsangaben von Titeln werden näherungsweise interpretiert; Änderungen an anderen Daten erhalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
         <source>Some folder contents were unavailable; scanning continued: {error}</source>
         <translation>Einige Ordnerinhalte waren nicht verfügbar. Die Suche wurde fortgesetzt: {error}</translation>
     </message>
     <message>
         <source>Some retained Photo dates cannot be represented uniquely with the known timezone and missing-date marker. They are unavailable in the Library; unrelated edits preserve their native bytes.</source>
-        <translation>Einige beibehaltene Fotodatumsangaben lassen sich mit der bekannten Zeitzone und der Markierung für fehlende Datumsangaben nicht eindeutig darstellen. Sie sind in der Mediathek nicht verfügbar; andere Änderungen erhalten ihre ursprünglichen Bytes.</translation>
+        <translation type="vanished">Einige beibehaltene Fotodatumsangaben lassen sich mit der bekannten Zeitzone und der Markierung für fehlende Datumsangaben nicht eindeutig darstellen. Sie sind in der Mediathek nicht verfügbar; andere Änderungen erhalten ihre ursprünglichen Bytes.</translation>
     </message>
     <message>
         <source>Some retained Track dates cannot be represented uniquely with the known timezone and missing-date marker. They are unavailable in the Library; unrelated edits preserve their native bytes.</source>
-        <translation>Einige beibehaltene Datumsangaben von Titeln lassen sich mit der bekannten Zeitzone und der Markierung für fehlende Datumsangaben nicht eindeutig darstellen. Sie sind in der Mediathek nicht verfügbar; andere Änderungen erhalten ihre ursprünglichen Bytes.</translation>
+        <translation type="vanished">Einige beibehaltene Datumsangaben von Titeln lassen sich mit der bekannten Zeitzone und der Markierung für fehlende Datumsangaben nicht eindeutig darstellen. Sie sind in der Mediathek nicht verfügbar; andere Änderungen erhalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
+        <source>Some source entries could not be read or were declined. Resolve them and rescan.</source>
+        <translation>Einige Quelleinträge konnten nicht gelesen werden oder wurden abgelehnt. Diese Einträge prüfen und erneut scannen.</translation>
     </message>
     <message>
         <source>Sort 36 has no retained source index.</source>
@@ -9814,8 +12173,8 @@ Playlists: %3</translation>
         <translation>Die Synchronisierung wurde unterbrochen und die vorherige Mediathek konnte nicht wiederhergestellt werden. Schließen Sie denselben iPod erneut an und stellen Sie diesen Vorgang vor weiteren Schreibvorgängen wieder her.</translation>
     </message>
     <message>
-        <source>Tag rewrites require one retained Track at its existing location.</source>
-        <translation>Das Neuschreiben von Tags erfordert einen beibehaltenen Titel an seinem bisherigen Speicherort.</translation>
+        <source>Tag rewrites require one incoming Track or a retained Track at its existing location.</source>
+        <translation>Das Neuschreiben von Tags erfordert einen eingehenden Titel oder einen beibehaltenen Titel an seinem bisherigen Speicherort.</translation>
     </message>
     <message>
         <source>Temporary Host files could not be prepared. Check free space and file access, then retry.</source>
@@ -9868,6 +12227,14 @@ Playlists: %3</translation>
     <message>
         <source>The Host destination directory does not exist: {parent_path}</source>
         <translation>Der Zielordner auf dem Computer ist nicht vorhanden: {parent_path}</translation>
+    </message>
+    <message>
+        <source>The Host file changed after scanning. Rescan before choosing streams.</source>
+        <translation>Die Datei auf dem Computer wurde nach dem Scan geändert. Scannen Sie erneut, bevor Sie Streams auswählen.</translation>
+    </message>
+    <message>
+        <source>The Host file changed during inspection. Rescan before choosing streams.</source>
+        <translation>Die Datei auf dem Computer wurde während der Prüfung geändert. Scannen Sie erneut, bevor Sie Streams auswählen.</translation>
     </message>
     <message>
         <source>The Host source {name} changed after scanning. Rescan before Sync.</source>
@@ -9995,7 +12362,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The changed composer has conflicting native identities.</source>
-        <translation>Der geänderte Komponist enthält widersprüchliche Originalkennungen.</translation>
+        <translation type="vanished">Der geänderte Komponist enthält widersprüchliche Originalkennungen.</translation>
     </message>
     <message>
         <source>The chapter timeline does not match the Album Tracks.</source>
@@ -10030,8 +12397,28 @@ Playlists: %3</translation>
         <translation>Die vorhandene Podcast-Abonnementdatei ist ungültig. iOpenPod hat sie unverändert gelassen.</translation>
     </message>
     <message>
-        <source>The existing helper is invalid and was left unchanged; its Sync history must be recovered or explicitly replaced.</source>
-        <translation>Die vorhandene Datei mit Synchronisierungsinformationen ist ungültig und wurde unverändert gelassen. Ihr Synchronisierungsverlauf muss wiederhergestellt oder ausdrücklich ersetzt werden.</translation>
+        <source>The existing helper could not be safely read and was left unchanged; its Sync history must be recovered or explicitly replaced.</source>
+        <translation>Die vorhandene Datei mit Synchronisierungsinformationen konnte nicht sicher gelesen werden und wurde unverändert gelassen. Ihr Synchronisierungsverlauf muss wiederhergestellt oder ausdrücklich ersetzt werden.</translation>
+    </message>
+    <message>
+        <source>The existing helper could not be read and was left unchanged; media analysis will continue without its cached Sync history: {error}</source>
+        <translation>Die vorhandene Datei mit Synchronisierungsinformationen konnte nicht gelesen werden und wurde unverändert gelassen. Die Medienanalyse wird ohne ihren zwischengespeicherten Synchronisierungsverlauf fortgesetzt: {error}</translation>
+    </message>
+    <message>
+        <source>Acoustic analysis · librosa · CPU</source>
+        <translation>Akustische Analyse · librosa · CPU</translation>
+    </message>
+    <message>
+        <source>Phase · {detail} · {completed}/{total} tracks</source>
+        <translation>Phase · {detail} · {completed}/{total} Titel</translation>
+    </message>
+    <message>
+        <source>Reading and checking audio</source>
+        <translation>Audio wird gelesen und geprüft</translation>
+    </message>
+    <message>
+        <source>Some playback dates use best-effort timezone interpretation; the original playback file is archived when saved.</source>
+        <translation>Die Zeitzone einiger Wiedergabezeitpunkte wird näherungsweise interpretiert; die ursprüngliche Wiedergabedatei wird beim Speichern archiviert.</translation>
     </message>
     <message>
         <source>The existing helper is invalid: {error}</source>
@@ -10079,7 +12466,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The iPod timezone is unknown. Local dates are unavailable; unchanged date bytes will be retained.</source>
-        <translation>Die Zeitzone des iPod ist unbekannt. Lokale Datumsangaben sind nicht verfügbar; unveränderte Datumsbytes bleiben erhalten.</translation>
+        <translation type="vanished">Die Zeitzone des iPod ist unbekannt. Lokale Datumsangaben sind nicht verfügbar; unveränderte Datumsbytes bleiben erhalten.</translation>
     </message>
     <message>
         <source>The limit must be a positive whole number up to 4,294,967,295.</source>
@@ -10100,6 +12487,10 @@ Playlists: %3</translation>
     <message>
         <source>The master Photo Library album is read-only.</source>
         <translation>Das Hauptalbum der Fotomediathek ist schreibgeschützt.</translation>
+    </message>
+    <message>
+        <source>The matched Playlist is missing or cannot be synced. Choose another iPod Playlist or create a new one.</source>
+        <translation>Die zugeordnete Playlist fehlt oder kann nicht synchronisiert werden. Eine andere iPod-Playlist auswählen oder eine neue erstellen.</translation>
     </message>
     <message>
         <source>The name cannot contain a null character.</source>
@@ -10258,6 +12649,10 @@ Playlists: %3</translation>
         <translation>Der ausgewählte Pfad konnte nicht aufgelöst werden: {error}</translation>
     </message>
     <message>
+        <source>The selected streams changed. Rescan the source and choose its streams again.</source>
+        <translation>Die ausgewählten Streams wurden geändert. Scannen Sie die Quelle erneut und wählen Sie die Streams noch einmal aus.</translation>
+    </message>
+    <message>
         <source>The selection contains a missing or repeated Photo.</source>
         <translation>Die Auswahl enthält ein fehlendes oder mehrfach ausgewähltes Foto.</translation>
     </message>
@@ -10276,6 +12671,10 @@ Playlists: %3</translation>
     <message>
         <source>The symbolic link could not be followed: {error}</source>
         <translation>Dem symbolischen Link konnte nicht gefolgt werden: {error}</translation>
+    </message>
+    <message>
+        <source>This iPod cannot play video.</source>
+        <translation>Dieser iPod kann keine Videos abspielen.</translation>
     </message>
     <message>
         <source>This iPod&apos;s database format stores played state only through the play count.</source>
@@ -10302,12 +12701,20 @@ Playlists: %3</translation>
         <translation>Nicht unterstützte Mediendatei.</translation>
     </message>
     <message>
+        <source>Video playback metadata repeats a Track identity.</source>
+        <translation>Die Metadaten zur Videowiedergabe enthalten eine Titelidentität mehrfach.</translation>
+    </message>
+    <message>
         <source>Windows package (sideloaded)</source>
         <translation>Windows-Paket (manuell installiert)</translation>
     </message>
     <message>
         <source>iPod settings could not be read. Reload the iPod to try again. {detail}</source>
         <translation>Die iPod-Einstellungen konnten nicht gelesen werden. Lade den iPod neu, um es erneut zu versuchen. {detail}</translation>
+    </message>
+    <message>
+        <source>lyrics verification requires an ID3v2.2, v2.3 or v2.4 tag.</source>
+        <translation>die Liedtextprüfung erfordert ein ID3v2.2-, v2.3- oder v2.4-Tag.</translation>
     </message>
     <message>
         <source>{value} (units unknown)</source>
@@ -10466,8 +12873,56 @@ Playlists: %3</translation>
         <translation>Dieser Schreibvorgang für die Mediathek erfordert einen erfassten Dateibestand ohne ausstehende positionsbezogene Wiedergabe-Begleitdateien. Behalten Sie diese bei oder gleichen Sie sie ab, bevor Sie die Ausgabe vorbereiten.</translation>
     </message>
     <message>
-        <source>Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.</source>
-        <translation>Zum Neuaufbau des Albumindex sind genau ein Paar aus Index und Sprungtabelle sowie vollständige, eindeutige Einträge in der Hauptwiedergabeliste erforderlich.</translation>
+        <source>A Host Playlist or one of its retained sources changed or became unavailable after Review. Affected Playlists were skipped; rescan before retrying.</source>
+        <translation>Eine Host-Playlist oder eine ihrer beibehaltenen Quellen wurde nach der Prüfung geändert oder ist nicht mehr verfügbar. Betroffene Playlists wurden übersprungen; vor einem erneuten Versuch erneut scannen.</translation>
+    </message>
+    <message>
+        <source>A Podcast show is missing unique persistent identity or group metadata.</source>
+        <translation>Einer Podcast-Sendung fehlt eine eindeutige dauerhafte Kennung oder es fehlen Gruppenmetadaten.</translation>
+    </message>
+    <message>
+        <source>A deleted Genius seed must be replaced by the first surviving member; other seed edits are unsupported.</source>
+        <translation>Ein gelöschter Genius-Starttitel muss durch den ersten verbleibenden Titel ersetzt werden; andere Änderungen am Starttitel werden nicht unterstützt.</translation>
+    </message>
+    <message>
+        <source>A normalized Podcast Episode position differs from its row identity.</source>
+        <translation>Die Position einer vereinheitlichten Podcast-Folge weicht von ihrer Zeilenkennung ab.</translation>
+    </message>
+    <message>
+        <source>A normalized Podcast library must have one sort-36 index per Master.</source>
+        <translation>Eine vereinheitlichte Podcast-Mediathek muss je Hauptwiedergabeliste einen Sort-36-Index enthalten.</translation>
+    </message>
+    <message>
+        <source>A normalized Podcasts Playlist has inconsistent sort, flags or database identity.</source>
+        <translation>Eine vereinheitlichte Podcast-Wiedergabeliste hat eine inkonsistente Sortierung, Kennzeichen oder Datenbankkennung.</translation>
+    </message>
+    <message>
+        <source>A selected Track failed. Retry it before syncing this Playlist.</source>
+        <translation>Ein ausgewählter Titel ist fehlgeschlagen. Diesen Titel vor dem Synchronisieren der Playlist erneut versuchen.</translation>
+    </message>
+    <message>
+        <source>A selected subtitle or caption cannot be prepared for this iPod. Choose another stream.</source>
+        <translation>Ein ausgewählter Untertitelstream kann nicht für diesen iPod vorbereitet werden. Wählen Sie einen anderen Stream aus.</translation>
+    </message>
+    <message>
+        <source>A video frame for {name} could not be prepared. Media can still Sync; any existing iPod artwork was preserved.</source>
+        <translation>Ein Videobild für {name} konnte nicht vorbereitet werden. Die Medien können weiterhin synchronisiert werden; vorhandene iPod-Cover wurden beibehalten.</translation>
+    </message>
+    <message>
+        <source>A video frame for {name} could not be prepared. The Episode can still sync without artwork.</source>
+        <translation>Ein Videobild für {name} konnte nicht vorbereitet werden. Die Folge kann weiterhin ohne Cover synchronisiert werden.</translation>
+    </message>
+    <message>
+        <source>Acoustic analysis is included. Optional instrument analysis can be installed here.</source>
+        <translation>Die akustische Analyse ist enthalten. Hier können Sie die optionale Instrumentenanalyse installieren.</translation>
+    </message>
+    <message>
+        <source>Album index rebuilding requires complete, unambiguous Master Playlist membership.</source>
+        <translation>Zum Neuaufbau des Albumindex sind vollständige, eindeutige Einträge in der Hauptwiedergabeliste erforderlich.</translation>
+    </message>
+    <message>
+        <source>Album index rebuilding requires exactly one Album index and at most one jump table.</source>
+        <translation>Zum Neuaufbau des Albumindex sind genau ein Albumindex und höchstens eine Sprungtabelle erforderlich.</translation>
     </message>
     <message>
         <source>Album rebuilding changed Master Playlist occurrences.</source>
@@ -10476,6 +12931,180 @@ Playlists: %3</translation>
     <message>
         <source>Album rebuilding lost or duplicated a retained browse index.</source>
         <translation>Beim Neuaufbau der Albumindizes ging ein beibehaltener Ansichtsindex verloren oder wurde dupliziert.</translation>
+    </message>
+    <message>
+        <source>Alternate Audio</source>
+        <translation>Alternatives Audio</translation>
+    </message>
+    <message>
+        <source>An existing album artwork thumbnail could not be safely corrected and was preserved.</source>
+        <translation>Ein vorhandenes Albumcover-Vorschaubild konnte nicht sicher korrigiert werden und wurde beibehalten.</translation>
+    </message>
+    <message>
+        <source>Analyzing Phase playlist audio</source>
+        <translation type="vanished">Audio der Phase-Wiedergabeliste wird analysiert</translation>
+    </message>
+    <message>
+        <source>Another selected Host Playlist uses this iPod Playlist. Choose a different target or uncheck one.</source>
+        <translation>Eine andere ausgewählte Host-Playlist verwendet diese iPod-Playlist. Ein anderes Ziel auswählen oder eine der Playlists abwählen.</translation>
+    </message>
+    <message>
+        <source>Artwork for {title} could not be prepared. Episodes can still sync.</source>
+        <translation>Die Bilder für {title} konnten nicht vorbereitet werden. Die Folgen können trotzdem synchronisiert werden.</translation>
+    </message>
+    <message>
+        <source>Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.</source>
+        <translation>Albumzuordnung, repräsentative Verknüpfungen, Sendungsidentitäten und gerätespezifische Wiedergabelistenreihenfolge für Podcasts normalisieren.</translation>
+    </message>
+    <message>
+        <source>Not reported</source>
+        <translation>Nicht gemeldet</translation>
+    </message>
+    <message>
+        <source>Off (raw 0)</source>
+        <translation>Aus (Rohwert 0)</translation>
+    </message>
+    <message>
+        <source>On (raw {value})</source>
+        <translation>Ein (Rohwert {value})</translation>
+    </message>
+    <message>
+        <source>Playlist datasets do not match the authoritative dataset 3.</source>
+        <translation>Die Wiedergabelisten-Datenbestände stimmen nicht mit dem maßgeblichen Datenbestand 3 überein.</translation>
+    </message>
+    <message>
+        <source>Playlist {name} was preserved. {detail}</source>
+        <translation>Playlist {name} wurde beibehalten. {detail}</translation>
+    </message>
+    <message>
+        <source>Podcast counterparts must use matching Episode positions.</source>
+        <translation>Zusammengehörige Podcast-Wiedergabelisten müssen übereinstimmende Folgenpositionen verwenden.</translation>
+    </message>
+    <message>
+        <source>Podcast counterparts must use matching Episode row identifiers.</source>
+        <translation>Zusammengehörige Podcast-Wiedergabelisten müssen übereinstimmende Zeilenkennungen für Folgen verwenden.</translation>
+    </message>
+    <message>
+        <source>Podcast dates do not match the retained creation date and captured write time.</source>
+        <translation>Podcast-Datumswerte stimmen nicht mit dem beibehaltenen Erstellungsdatum und dem erfassten Schreibzeitpunkt überein.</translation>
+    </message>
+    <message>
+        <source>Podcast episode position metadata is missing or ambiguous.</source>
+        <translation>Die Positionsmetadaten einer Podcast-Folge fehlen oder sind mehrdeutig.</translation>
+    </message>
+    <message>
+        <source>Podcast normalization changed or omitted the retained root identity.</source>
+        <translation>Die Podcast-Vereinheitlichung hat die beibehaltene Kennung der Datenbankwurzel geändert oder ausgelassen.</translation>
+    </message>
+    <message>
+        <source>Podcast normalization omitted the grouped Podcasts Playlist.</source>
+        <translation>Die Podcast-Vereinheitlichung hat die gruppierte Podcast-Wiedergabeliste ausgelassen.</translation>
+    </message>
+    <message>
+        <source>Podcast row identifiers must increase in serialized group and Episode order.</source>
+        <translation>Podcast-Zeilenkennungen müssen in der gespeicherten Reihenfolge der Gruppen und Folgen ansteigen.</translation>
+    </message>
+    <message>
+        <source>Podcast settings were not preserved or initialized from the captured defaults.</source>
+        <translation>Die Podcast-Einstellungen wurden weder beibehalten noch anhand der erfassten Standardwerte initialisiert.</translation>
+    </message>
+    <message>
+        <source>Preparing optional analysis setup…</source>
+        <translation>Optionale Analyseeinrichtung wird vorbereitet…</translation>
+    </message>
+    <message>
+        <source>Remove the Genius Playlist emptied by Track deletion.</source>
+        <translation>Entfernen Sie die Genius-Wiedergabeliste, die durch das Löschen von Titeln leer geworden ist.</translation>
+    </message>
+    <message>
+        <source>Setup cancelled. Acoustic analysis remains available.</source>
+        <translation>Einrichtung abgebrochen. Die akustische Analyse bleibt verfügbar.</translation>
+    </message>
+    <message>
+        <source>Setup could not finish: {error}
+Acoustic analysis remains available.</source>
+        <translation type="vanished">Die Einrichtung konnte nicht abgeschlossen werden: {error}
+Die akustische Analyse bleibt verfügbar.</translation>
+    </message>
+    <message>
+        <source>The Phase Playlist producer marker is missing.</source>
+        <translation>Die Erstellerkennzeichnung der Phase-Wiedergabeliste fehlt.</translation>
+    </message>
+    <message>
+        <source>The date will use the closest supported iPod representation.</source>
+        <translation>Das Datum wird in der nächstmöglichen vom iPod unterstützten Darstellung gespeichert.</translation>
+    </message>
+    <message>
+        <source>The iPod family or firmware changed after confirmation. Try again.</source>
+        <translation>Die iPod-Familie oder Firmware hat sich nach der Bestätigung geändert. Versuchen Sie es erneut.</translation>
+    </message>
+    <message>
+        <source>The iPod timezone is unknown. Dates are interpreted as UTC; unchanged native date bytes are retained.</source>
+        <translation>Die Zeitzone des iPod ist unbekannt. Datumsangaben werden als UTC interpretiert; unveränderte Datumsangaben behalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
+        <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>
+        <translation>Der native Kapitelindex behält die gespeicherte Reihenfolge bei und stoppt an der ersten zukünftigen Startposition. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>The native Chapter index selects the last eligible duplicate start. Editable Chapter metadata is retained.</source>
+        <translation>Der native Kapitelindex wählt den letzten passenden Eintrag mit gleicher Startposition aus. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>The previous instrument analysis setup needs attention. Acoustic analysis remains available.</source>
+        <translation>Die bisherige Einrichtung der Instrumentenanalyse muss überprüft werden. Die akustische Analyse bleibt verfügbar.</translation>
+    </message>
+    <message>
+        <source>The referenced artwork item is absent. A reverse-owner image is not substituted; the raw artwork reference is preserved.</source>
+        <translation>Der referenzierte Cover-Eintrag fehlt. Ein Bild mit Rückverweis auf den Titel wird nicht ersatzweise verwendet; der rohe Cover-Verweis bleibt erhalten.</translation>
+    </message>
+    <message>
+        <source>The relative date period was bounded to the supported range.</source>
+        <translation>Der relative Zeitraum wurde auf den unterstützten Bereich begrenzt.</translation>
+    </message>
+    <message>
+        <source>The replacement Genius seed differs from the reviewed Playlist.</source>
+        <translation>Der neue Genius-Starttitel stimmt nicht mit der geprüften Wiedergabeliste überein.</translation>
+    </message>
+    <message>
+        <source>The reported firmware release could not be interpreted.</source>
+        <translation>Die gemeldete Firmwareversion konnte nicht interpretiert werden.</translation>
+    </message>
+    <message>
+        <source>The retained Chapter header disables the native named index. Editable Chapter metadata is retained.</source>
+        <translation>Der vorhandene Kapitelheader deaktiviert den nativen Index benannter Kapitel. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>The selected iPod is read-only.</source>
+        <translation>Der ausgewählte iPod ist schreibgeschützt.</translation>
+    </message>
+    <message>
+        <source>The selected native Playlist is not a Genius Playlist.</source>
+        <translation>Die ausgewählte native Wiedergabeliste ist keine Genius-Wiedergabeliste.</translation>
+    </message>
+    <message>
+        <source>The updater family or firmware release was not reported.</source>
+        <translation>Die Updater-Familie oder Firmwareversion wurde nicht gemeldet.</translation>
+    </message>
+    <message>
+        <source>These saved annual rules do not establish historical timezones. Library dates use the available city rules or a fixed-offset estimate.</source>
+        <translation>Diese gespeicherten jährlichen Regeln belegen keine historischen Zeitzonen. Datumsangaben der Mediathek verwenden die verfügbaren Regeln der Stadt oder eine Schätzung mit festem Zeitversatz.</translation>
+    </message>
+    <message>
+        <source>This iPod layout cannot store the date; its previous value is retained.</source>
+        <translation>Dieses iPod-Format kann das Datum nicht speichern; der bisherige Wert bleibt erhalten.</translation>
+    </message>
+    <message>
+        <source>This iPod layout cannot store the playback date; the original sidecar will be archived.</source>
+        <translation>Dieses iPod-Format kann den Wiedergabezeitpunkt nicht speichern; die ursprüngliche Begleitdatei wird archiviert.</translation>
+    </message>
+    <message>
+        <source>This updater family is not supported for game authorization. Supported families: {families}.</source>
+        <translation>Diese Updater-Familie wird für die Spielautorisierung nicht unterstützt. Unterstützte Familien: {families}.</translation>
+    </message>
+    <message>
+        <source>Timed artwork has no complete, recognized named Chapter header. The retained Chapter data is unchanged; Classic chapter artwork may be unavailable.</source>
+        <translation>Für die zeitgesteuerten Coverbilder fehlt ein vollständiger, erkannter Header für benannte Kapitel. Die vorhandenen Kapiteldaten bleiben unverändert; Kapitelbilder sind auf dem Classic möglicherweise nicht verfügbar.</translation>
     </message>
     <message>
         <source>Tracks</source>
@@ -10488,6 +13117,18 @@ Playlists: %3</translation>
     <message>
         <source>UTC{offset}</source>
         <translation>UTC{offset}</translation>
+    </message>
+    <message>
+        <source>UTF-16 lyrics contain an incomplete character.</source>
+        <translation>Der UTF-16-Liedtext enthält ein unvollständiges Zeichen.</translation>
+    </message>
+    <message>
+        <source>UTF-16 lyrics end with an incomplete code unit.</source>
+        <translation>Der UTF-16-Liedtext endet mit einer unvollständigen Codeeinheit.</translation>
+    </message>
+    <message>
+        <source>UTF-16 lyrics need a terminator within the native read limit.</source>
+        <translation>Der UTF-16-Liedtext benötigt ein Abschlusszeichen innerhalb der nativen Lesegrenze.</translation>
     </message>
     <message>
         <source>Unavailable or unsafe file: {error}</source>
@@ -10504,6 +13145,10 @@ Playlists: %3</translation>
     <message>
         <source>Unknown (code {code})</source>
         <translation>Unbekannt (Code {code})</translation>
+    </message>
+    <message>
+        <source>Unsupported Genius collection kind.</source>
+        <translation>Nicht unterstützte Art von Genius-Sammlung.</translation>
     </message>
     <message>
         <source>Unsupported Smart Playlist rules are read-only.</source>
@@ -10548,6 +13193,10 @@ Playlists: %3</translation>
     <message>
         <source>Verifying Library files and recovery copies…</source>
         <translation>Mediathek-Dateien und Wiederherstellungskopien werden geprüft…</translation>
+    </message>
+    <message>
+        <source>Verifying audio</source>
+        <translation>Audio wird überprüft</translation>
     </message>
     <message>
         <source>Verifying files on the iPod before completing recovery…</source>
@@ -10602,8 +13251,40 @@ Playlists: %3</translation>
         <translation>Metadaten werden in die vorbereitete Kopie geschrieben</translation>
     </message>
     <message>
+        <source>a metadata field extends beyond its container.</source>
+        <translation>ein Metadatenfeld reicht über seinen Container hinaus.</translation>
+    </message>
+    <message>
+        <source>an ID3 frame extends beyond its tag.</source>
+        <translation>ein ID3-Frame reicht über sein Tag hinaus.</translation>
+    </message>
+    <message>
+        <source>an ID3 frame identifier is malformed.</source>
+        <translation>eine ID3-Frame-Kennung ist fehlerhaft.</translation>
+    </message>
+    <message>
+        <source>an ID3-containing media chunk is truncated.</source>
+        <translation>ein Medienblock mit ID3-Daten ist unvollständig.</translation>
+    </message>
+    <message>
+        <source>an ID3v2.4 frame size is misread by the native lyrics reader; convert the tag to ID3v2.3 before writing lyrics.</source>
+        <translation>der native Liedtextleser liest eine ID3v2.4-Frame-Größe falsch; konvertieren Sie das Tag vor dem Schreiben des Liedtexts in ID3v2.3.</translation>
+    </message>
+    <message>
+        <source>an MP4 metadata atom has an invalid size.</source>
+        <translation>ein MP4-Metadatenatom hat eine ungültige Größe.</translation>
+    </message>
+    <message>
         <source>bytes</source>
         <translation>Bytes</translation>
+    </message>
+    <message>
+        <source>compressed, encrypted or transformed ID3 frames cannot be verified.</source>
+        <translation>komprimierte, verschlüsselte oder umgewandelte ID3-Frames können nicht überprüft werden.</translation>
+    </message>
+    <message>
+        <source>embedded NUL characters terminate native lyrics early.</source>
+        <translation>eingebettete NUL-Zeichen beenden den nativen Liedtext vorzeitig.</translation>
     </message>
     <message>
         <source>episodes</source>
@@ -10612,6 +13293,10 @@ Playlists: %3</translation>
     <message>
         <source>files</source>
         <translation>Dateien</translation>
+    </message>
+    <message>
+        <source>iPod Classic displays the description before embedded lyrics for podcasts and audiobooks. The full lyrics are retained in the media file.</source>
+        <translation>Bei Podcasts und Hörbüchern zeigt der iPod Classic die Beschreibung bevorzugt vor dem eingebetteten Liedtext an. Der vollständige Liedtext bleibt in der Mediendatei erhalten.</translation>
     </message>
     <message>
         <source>iPod media scan complete.</source>
@@ -10626,8 +13311,104 @@ Playlists: %3</translation>
         <translation>iTunes-Einrichtung abgeschlossen</translation>
     </message>
     <message>
+        <source>lyrics do not contain complete UTF-8 text.</source>
+        <translation>der Liedtext enthält keinen vollständigen UTF-8-Text.</translation>
+    </message>
+    <message>
+        <source>native MP4 lyrics require an ordinary data atom header.</source>
+        <translation>nativer MP4-Liedtext erfordert einen gewöhnlichen data-Atom-Header.</translation>
+    </message>
+    <message>
+        <source>native MP4 lyrics require one data child filling ©lyr.</source>
+        <translation>nativer MP4-Liedtext erfordert genau ein untergeordnetes data-Atom, das ©lyr ausfüllt.</translation>
+    </message>
+    <message>
+        <source>no unsynchronized lyrics frame was found.</source>
+        <translation>es wurde kein Frame mit unsynchronisiertem Liedtext gefunden.</translation>
+    </message>
+    <message>
         <source>steps</source>
         <translation>Schritte</translation>
+    </message>
+    <message>
+        <source>the ID3 lyrics body exceeds 10,240 bytes including its encoding, language and description.</source>
+        <translation>der ID3-Liedtextblock überschreitet einschließlich Kodierung, Sprache und Beschreibung 10.240 Byte.</translation>
+    </message>
+    <message>
+        <source>the ID3 lyrics body is incomplete.</source>
+        <translation>der ID3-Liedtextblock ist unvollständig.</translation>
+    </message>
+    <message>
+        <source>the ID3 lyrics description has no terminator.</source>
+        <translation>die ID3-Liedtextbeschreibung hat kein Abschlusszeichen.</translation>
+    </message>
+    <message>
+        <source>the ID3 synchsafe size is malformed.</source>
+        <translation>die synchsafe-kodierte ID3-Größenangabe ist fehlerhaft.</translation>
+    </message>
+    <message>
+        <source>the ID3 tag extends beyond its media container.</source>
+        <translation>das ID3-Tag reicht über seinen Mediencontainer hinaus.</translation>
+    </message>
+    <message>
+        <source>the MP4 lyrics data header is incomplete.</source>
+        <translation>der Datenheader des MP4-Liedtexts ist unvollständig.</translation>
+    </message>
+    <message>
+        <source>the MP4 lyrics path must contain one unambiguous item.</source>
+        <translation>der MP4-Liedtextpfad muss genau einen eindeutigen Eintrag enthalten.</translation>
+    </message>
+    <message>
+        <source>the UTF-16 lyrics description has no terminator.</source>
+        <translation>die UTF-16-Liedtextbeschreibung hat kein Abschlusszeichen.</translation>
+    </message>
+    <message>
+        <source>the bounded metadata verification limit was exceeded.</source>
+        <translation>die festgelegte Grenze für die Metadatenprüfung wurde überschritten.</translation>
+    </message>
+    <message>
+        <source>the chunked media container has an invalid size.</source>
+        <translation>der in Blöcke unterteilte Mediencontainer hat eine ungültige Größe.</translation>
+    </message>
+    <message>
+        <source>the media container does not match its filename.</source>
+        <translation>der Mediencontainer passt nicht zu seinem Dateinamen.</translation>
+    </message>
+    <message>
+        <source>the media file has no embedded ID3 lyrics tag.</source>
+        <translation>die Mediendatei enthält kein eingebettetes ID3-Liedtext-Tag.</translation>
+    </message>
+    <message>
+        <source>the metadata could not be read completely.</source>
+        <translation>die Metadaten konnten nicht vollständig gelesen werden.</translation>
+    </message>
+    <message>
+        <source>the native decoder would not reproduce the complete requested text.</source>
+        <translation>der native Decoder würde den angeforderten Text nicht vollständig wiedergeben.</translation>
+    </message>
+    <message>
+        <source>the native lyrics decoder cannot read this ID3 text encoding; use UTF-16 with BOM or UTF-8.</source>
+        <translation>der native Liedtextdecoder kann diese ID3-Textkodierung nicht lesen; verwenden Sie UTF-16 mit BOM oder UTF-8.</translation>
+    </message>
+    <message>
+        <source>this MP4 lyrics path uses an unverified atom header.</source>
+        <translation>dieser MP4-Liedtextpfad verwendet einen nicht überprüften Atom-Header.</translation>
+    </message>
+    <message>
+        <source>this MP4 metadata version is not verified.</source>
+        <translation>diese MP4-Metadatenversion ist nicht überprüft.</translation>
+    </message>
+    <message>
+        <source>this filename does not select the native MP4 audio lyrics decoder.</source>
+        <translation>dieser Dateiname wählt nicht den nativen Liedtextdecoder für MP4-Audio aus.</translation>
+    </message>
+    <message>
+        <source>this media filename has no verified lyrics decoder path.</source>
+        <translation>für diesen Mediendateinamen ist kein Liedtextdecoderpfad überprüft.</translation>
+    </message>
+    <message>
+        <source>{count} / {total}</source>
+        <translation>{count} / {total}</translation>
     </message>
     <message>
         <source>{count} reviewed Playlist change(s) could not be applied. Resolve the reported source or Track problem, then rescan and review the remaining Playlist changes.</source>
@@ -10642,12 +13423,26 @@ Playlists: %3</translation>
         <translation>{count} nicht zugeordnete Elemente bleiben unverändert. Ihre Zuordnungsdetails sind weiterhin unter „Prüfen“ verfügbar.</translation>
     </message>
     <message>
+        <source>{detail}
+Continuing will try the authorization format for {model}.</source>
+        <translation>{detail}
+Beim Fortfahren wird das Autorisierungsformat für {model} versucht.</translation>
+    </message>
+    <message>
         <source>{detail} iOpenPod can no longer verify this connection; refresh after completing safe removal in the operating system.</source>
         <translation>{detail} iOpenPod kann diese Verbindung nicht mehr prüfen. Aktualisieren Sie die Ansicht, nachdem Sie das sichere Entfernen im Betriebssystem abgeschlossen haben.</translation>
     </message>
     <message>
         <source>{device_name} requires confirmation before restore.</source>
         <translation>{device_name} erfordert vor der Wiederherstellung eine Bestätigung.</translation>
+    </message>
+    <message>
+        <source>{method} + librosa · CPU</source>
+        <translation>{method} + librosa · CPU</translation>
+    </message>
+    <message>
+        <source>{method} · {hardware}</source>
+        <translation>{method} · {hardware}</translation>
     </message>
     <message>
         <source>{name} changed during preparation and was skipped. Rescan this source before retrying.</source>
@@ -10684,6 +13479,20 @@ Playlists: %3</translation>
     <message>
         <source>{name}: the iPod file changed after scanning. Rescan the iPod before Sync.</source>
         <translation>{name}: Die iPod-Datei hat sich nach der Suche geändert. Durchsuchen Sie den iPod vor der Synchronisierung erneut.</translation>
+    </message>
+    <message>
+        <source>{reason}
+Reported updater family: {families}
+Reported firmware: {firmware}</source>
+        <translation>{reason}
+Gemeldete Updater-Familie: {families}
+Gemeldete Firmware: {firmware}</translation>
+    </message>
+    <message>
+        <source>{reason}
+Verified firmware for updater family {family}: {firmware}.</source>
+        <translation>{reason}
+Verifizierte Firmware für Updater-Familie {family}: {firmware}.</translation>
     </message>
     <message>
         <source>{title} could not be added. Refresh the Podcast and retry.</source>
@@ -10776,6 +13585,94 @@ Playlists: %3</translation>
     <message>
         <source>Finding media… Folders visited: {folders}; media files found: {files}.</source>
         <translation>Medien werden gesucht… Durchsuchte Ordner: {folders}; gefundene Mediendateien: {files}.</translation>
+    </message>
+    <message>
+        <source>The missing iPod Library could not be created safely. {detail}</source>
+        <translation>Die fehlende iPod-Mediathek konnte nicht sicher erstellt werden. {detail}</translation>
+    </message>
+    <message>
+        <source>A folder containing a native Genius Playlist cannot be removed.</source>
+        <translation>Ein Ordner mit einer nativen Genius-Wiedergabeliste kann nicht entfernt werden.</translation>
+    </message>
+    <message>
+        <source>A native Genius Playlist cannot be converted to or from another Playlist kind.</source>
+        <translation>Eine native Genius-Wiedergabeliste kann nicht in einen anderen Wiedergabelistentyp umgewandelt werden oder aus einem solchen entstehen.</translation>
+    </message>
+    <message>
+        <source>A native Genius Playlist&apos;s seed or retained Smart data changed.</source>
+        <translation>Der Starttitel oder die beibehaltenen intelligenten Daten einer nativen Genius-Wiedergabeliste wurden geändert.</translation>
+    </message>
+    <message>
+        <source>Analyzing audio for Genius</source>
+        <translation>Audio für Genius wird analysiert</translation>
+    </message>
+    <message>
+        <source>Analyzing music for Genius</source>
+        <translation>Musik für Genius wird analysiert</translation>
+    </message>
+    <message>
+        <source>Keep the native Genius seed Track or explicitly remove its Genius Playlist together with the Track.</source>
+        <translation type="vanished">Behalten Sie den nativen Genius-Starttitel bei oder entfernen Sie seine Genius-Wiedergabeliste ausdrücklich zusammen mit dem Titel.</translation>
+    </message>
+    <message>
+        <source>Native Genius Mix authoring requires a SQLite artifact target.</source>
+        <translation>Zum Erstellen nativer Genius-Mixe ist ein Ziel mit SQLite-Datenbanken erforderlich.</translation>
+    </message>
+    <message>
+        <source>Native Genius Playlists are read-only.</source>
+        <translation>Native Genius-Wiedergabelisten sind schreibgeschützt.</translation>
+    </message>
+    <message>
+        <source>Native Genius Playlists cannot be created through ordinary Playlist editing.</source>
+        <translation>Native Genius-Wiedergabelisten können nicht mit der normalen Wiedergabelistenbearbeitung erstellt werden.</translation>
+    </message>
+    <message>
+        <source>Native Genius membership can only change when removing deleted Tracks.</source>
+        <translation>Die Titelzuordnung von nativem Genius kann nur beim Entfernen gelöschter Titel geändert werden.</translation>
+    </message>
+    <message>
+        <source>Preparing Genius for music Tracks</source>
+        <translation>Genius wird für Musiktitel vorbereitet</translation>
+    </message>
+    <message>
+        <source>Ranking Genius candidates</source>
+        <translation>Genius-Kandidaten werden bewertet</translation>
+    </message>
+    <message>
+        <source>Some Genius audio analysis or cache work was unavailable. Tracks without an audio profile use metadata candidates.</source>
+        <translation>Ein Teil der Audioanalyse oder Cache-Verarbeitung für Genius war nicht verfügbar. Für Titel ohne Audioprofil werden Kandidaten anhand von Metadaten verwendet.</translation>
+    </message>
+    <message>
+        <source>The retained native Genius seed cannot be edited.</source>
+        <translation type="vanished">Der beibehaltene native Genius-Starttitel kann nicht bearbeitet werden.</translation>
+    </message>
+    <message>
+        <source>Verifying Genius sources</source>
+        <translation>Genius-Quellen werden überprüft</translation>
+    </message>
+    <message>
+        <source>tracks</source>
+        <translation>Titel</translation>
+    </message>
+    <message>
+        <source>Preparing music analysis</source>
+        <translation>Musikanalyse wird vorbereitet</translation>
+    </message>
+    <message>
+        <source>Analyzing music</source>
+        <translation>Musik wird analysiert</translation>
+    </message>
+    <message>
+        <source>Analyzing audio</source>
+        <translation>Audio wird analysiert</translation>
+    </message>
+    <message>
+        <source>Verifying music sources</source>
+        <translation>Musikquellen werden überprüft</translation>
+    </message>
+    <message>
+        <source>Some music analysis or cache work was unavailable. BPM remains unchanged where no tempo could be measured.</source>
+        <translation>Ein Teil der Musikanalyse oder Cache-Verarbeitung war nicht verfügbar. BPM bleiben unverändert, wenn kein Tempo ermittelt werden konnte.</translation>
     </message>
 </context>
 <context>
@@ -10954,6 +13851,17 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     </message>
 </context>
 <context>
+    <name>_PlaylistPopup</name>
+    <message>
+        <source>New</source>
+        <translation>Neu</translation>
+    </message>
+    <message>
+        <source>New Playlist</source>
+        <translation>Neue Wiedergabeliste</translation>
+    </message>
+</context>
+<context>
     <name>_PreparationRow</name>
     <message>
         <source>%1 processed</source>
@@ -11037,6 +13945,14 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
         <translation>Oberer Wert</translation>
     </message>
     <message>
+        <source>Rule rating</source>
+        <translation>Bewertung der Regel</translation>
+    </message>
+    <message>
+        <source>Upper rule rating</source>
+        <translation>Obere Bewertung der Regel</translation>
+    </message>
+    <message>
         <source>Rule time unit</source>
         <translation>Zeiteinheit der Regel</translation>
     </message>
@@ -11078,7 +13994,7 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     </message>
     <message>
         <source>Use a rating between 0 and 5 stars, in steps of 0.05.</source>
-        <translation>Verwenden Sie eine Bewertung zwischen 0 und 5 Sternen in Schritten von 0,05.</translation>
+        <translation type="vanished">Verwenden Sie eine Bewertung zwischen 0 und 5 Sternen in Schritten von 0,05.</translation>
     </message>
 </context>
 <context>
@@ -11091,12 +14007,141 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
         <source>Cancel Scan</source>
         <translation>Suche abbrechen</translation>
     </message>
+    <message>
+        <source>Taking a while?</source>
+        <translation>Dauert es etwas länger?</translation>
+    </message>
+    <message>
+        <source>Newly discovered music needs to be imported into iOpenPod&apos;s library. This is cached, so next time this step should take only a few seconds.</source>
+        <translation>Neu entdeckte Musik muss in die Mediathek von iOpenPod importiert werden. Die Ergebnisse werden zwischengespeichert, sodass dieser Schritt beim nächsten Mal nur wenige Sekunden dauern sollte.</translation>
+    </message>
+</context>
+<context>
+    <name>_Screenshot</name>
+    <message>
+        <source>Preview unavailable</source>
+        <translation>Vorschau nicht verfügbar</translation>
+    </message>
+</context>
+<context>
+    <name>_SeekSlider</name>
+    <message>
+        <source>Untitled Chapter</source>
+        <translation>Unbenanntes Kapitel</translation>
+    </message>
 </context>
 <context>
     <name>_SyncLibraryNavigation</name>
     <message>
         <source>HOST MEDIA</source>
         <translation>MEDIEN AUF DEM COMPUTER</translation>
+    </message>
+    <message>
+        <source>Deselect all media</source>
+        <translation>Alle Medien abwählen</translation>
+    </message>
+    <message>
+        <source>Select all media</source>
+        <translation>Alle Medien auswählen</translation>
+    </message>
+</context>
+<context>
+    <name>Equalizer</name>
+    <message>
+        <source>Use iPod setting</source>
+        <translation>iPod-Einstellung verwenden</translation>
+    </message>
+    <message>
+        <source>Acoustic</source>
+        <translation>Akustik</translation>
+    </message>
+    <message>
+        <source>Bass Booster</source>
+        <translation>Bässe verstärken</translation>
+    </message>
+    <message>
+        <source>Bass Reducer</source>
+        <translation>Bässe absenken</translation>
+    </message>
+    <message>
+        <source>Classical</source>
+        <translation>Klassik</translation>
+    </message>
+    <message>
+        <source>Dance</source>
+        <translation>Dance</translation>
+    </message>
+    <message>
+        <source>Deep</source>
+        <translation>Tief</translation>
+    </message>
+    <message>
+        <source>Electronic</source>
+        <translation>Elektronisch</translation>
+    </message>
+    <message>
+        <source>Flat</source>
+        <translation>Neutral</translation>
+    </message>
+    <message>
+        <source>Hip Hop</source>
+        <translation>Hip Hop</translation>
+    </message>
+    <message>
+        <source>Jazz</source>
+        <translation>Jazz</translation>
+    </message>
+    <message>
+        <source>Latin</source>
+        <translation>Lateinamerikanisch</translation>
+    </message>
+    <message>
+        <source>Loudness</source>
+        <translation>Loudness</translation>
+    </message>
+    <message>
+        <source>Lounge</source>
+        <translation>Lounge</translation>
+    </message>
+    <message>
+        <source>Piano</source>
+        <translation>Klavier</translation>
+    </message>
+    <message>
+        <source>Pop</source>
+        <translation>Pop</translation>
+    </message>
+    <message>
+        <source>R &amp; B</source>
+        <translation>R &amp; B</translation>
+    </message>
+    <message>
+        <source>Rock</source>
+        <translation>Rock</translation>
+    </message>
+    <message>
+        <source>Small Speakers</source>
+        <translation>Kleine Lautsprecher</translation>
+    </message>
+    <message>
+        <source>Spoken Word</source>
+        <translation>Sprache</translation>
+    </message>
+    <message>
+        <source>Treble Booster</source>
+        <translation>Höhen verstärken</translation>
+    </message>
+    <message>
+        <source>Treble Reducer</source>
+        <translation>Höhen absenken</translation>
+    </message>
+    <message>
+        <source>Vocal Booster</source>
+        <translation>Gesang verstärken</translation>
+    </message>
+    <message>
+        <source>Unknown preset (preserved)</source>
+        <translation>Unbekannte Voreinstellung (beibehalten)</translation>
     </message>
 </context>
 </TS>

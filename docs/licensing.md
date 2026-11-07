@@ -49,7 +49,7 @@ them.
 4. Verify the provenance and redistribution terms of every bundled library and
    asset. FFmpeg, FFprobe, and Chromaprint's fpcalc executables are user-installed
    and excluded from the package; their binary redistribution is outside this
-   release. The Flatpak is the exception (ADR-0151): it builds a GPL FFmpeg with
+   release. The Flatpak is the exception (ADR-0247): it builds a GPL FFmpeg with
    x264 and LAME, plus fpcalc, from the pinned sources in its manifest. Those
    sources, configure options, and notices must accompany a Flatpak release. Qt's FFmpeg playback libraries remain bundled and still require review
    of their exact build configuration, notices, and source obligations. Do not ship
@@ -59,6 +59,16 @@ them.
    review; adopting GPL for this project does not override store restrictions or
    let us relicense third-party GPL code. Qt highlights store-distribution issues
    in its [open-source obligations](https://www.qt.io/development/open-source-lgpl-obligations).
+
+## Preserved games and authorization material
+
+The [click wheel games license review](research/click-wheel-games-license-review.md)
+separates Olsro's MIT repository license from rights in the game binaries,
+bundled cover artwork, and Game Authorization Store. The upstream notice is
+retained with the project license files. Compliance with that notice does not
+establish publisher permission or resolve access-control law. These materials
+and the download workflow remain unresolved under the provenance requirement
+above; ADR-0208 and ADR-0211 describe implementation, not legal clearance.
 
 ## Windows audit materials
 

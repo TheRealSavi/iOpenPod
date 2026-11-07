@@ -10,6 +10,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
 from iOpenPod.GUI.presentation.image_color import RGBColor
 from iOpenPod.GUI.presentation.library_card import (
+    library_card_artwork_rect,
     library_card_size,
     paint_library_card,
 )
@@ -21,6 +22,21 @@ from iOpenPod.GUI.presentation.theme.tokens import (
     ThemeTokens,
     resolve_typography,
 )
+
+
+def test_landscape_cards_keep_shared_width_and_font_aware_caption_space() -> None:
+    typography = resolve_typography()
+    height = LAYOUT.album_artwork_size * 3 // 4
+    square = library_card_size(APPLICATION.font(), typography)
+    landscape = library_card_size(APPLICATION.font(), typography, artwork_height=height)
+    assert landscape.width() == square.width()
+    assert square.height() - landscape.height() == LAYOUT.album_artwork_size - height
+    option = QStyleOptionViewItem()
+    option.font = APPLICATION.font()
+    option.rect = QRect(0, 0, landscape.width(), landscape.height())
+    artwork = library_card_artwork_rect(option, typography, artwork_height=height)
+    assert artwork.width() / artwork.height() == 4 / 3
+    assert artwork.bottom() < landscape.height()
 
 
 def test_library_card_height_grows_with_host_relative_typography() -> None:

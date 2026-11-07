@@ -28,7 +28,8 @@ constants. The Player is the narrow exception: its stylesheet renderer may deriv
 subtle lighter and darker variants from the active semantic theme to distinguish
 playback chrome. Optional Colorful Mode reuses the Original project's image-to-color
 behavior through one typed presentation helper, but limits dynamic color to
-collection-card fills and the active Track-list context bar.
+collection-card fills and the active Track-list context bar. Now Playing has its
+own explicitly artwork-led presentation, independent of Colorful Mode.
 
 ## Visual Intent
 
@@ -42,6 +43,18 @@ may add low-contrast vertical gradients to its band, now-playing surface,
 slider tracks, and round handles. The optional Round Track-list title bar also uses
 opaque shading to make its native splitter handle feel rounded and grabbable.
 Those effects remain theme-derived; they must not introduce an independent palette.
+Now Playing fills the app's content area with a magnified, highly blurred copy of
+the currently displayed artwork. It preserves the image's spatial color fields
+with slow, fluid deformation and a 1.2-second crossfade on artwork changes.
+Motion preserves the cover's color fields rather than constructing a gradient.
+Hidden or minimized windows suspend it; the Host's disabled widget-animation
+preference keeps the backdrop static and page changes immediate. Opening and
+closing crossfade the entire content area over 320 ms. Saturation is strongly
+boosted after blurring; a theme-owned uniform scrim keeps primary and secondary
+text at 4.5:1 contrast. Unavailable artwork falls back
+to `window`. The larger foreground cover uses a soft neutral shadow. This treatment
+is limited to Now Playing; controls, typography, focus and Queue selection retain
+the normal semantic theme. The native window frame remains visible.
 Use the active theme's accent for focus, links, and primary actions rather than as a
 large saturated background treatment. Colorful Mode is an explicit user preference:
 it adds quiet
@@ -138,6 +151,14 @@ of each palette's supporting colors. Every palette consumes the same metrics,
 typography, palette builder, stylesheet renderer, and Colorful Mode recipes; no
 Original iOpenPod files are loaded at runtime.
 
+### Tech
+
+Tech is an additional Dark theme inspired by orange-red light against a black
+background. Its near-black canvas (`#030303`) and warm content surface (`#100D0B`)
+carry bright orange accents (`#FF7900`), amber hover and focus states, ember-red
+selection surfaces, and warm white text. It uses the same semantic tokens and
+contrast floors as the other themes, without decorative background imagery.
+
 ## Metrics
 
 All spatial values are Qt logical pixels. Qt maps them to physical pixels for the
@@ -180,6 +201,36 @@ high-density displays.
 
 ## Application Shell and Item Views
 
+### Device Summary
+
+The passive area of the Sidebar's device card opens the Device Summary. The name,
+eject, and chooser controls keep their own actions. Keyboard focus and selection
+use the shared focus and selected-surface roles.
+
+The summary follows the supplied Apple reference through a large product image on
+the left, quiet native typography, and a vertical device specification list on the
+right, centered together within one lightly shaded, bordered surface at the top
+that fills the available width with 24-pixel top and side insets and 12-pixel rounded
+corners. Bold,
+right-aligned labels end in colons, with values aligned in a shared
+second column. Firmware version and product serial number come from captured
+device evidence, with unavailable values identified explicitly. The page uses
+packaged model artwork and the current theme. Narrow panes stack the portrait above
+the list; the main content scrolls independently of the storage
+strip. Restore iPod is always disabled with adjacent "Coming soon" text. They sit
+in a separate rounded surface below the device information, with matching side
+insets and a 24-pixel gap between surfaces.
+
+Storage categories pair labeled byte totals with semantic colors: Music uses
+`artwork_blue`, Videos `artwork_violet`, Podcasts `artwork_coral`, Audiobooks
+`artwork_gold`, Photos `artwork_green`, Other `border_strong`, and Free `surface_alt`.
+The text legend and accessible description preserve meaning without color. Category
+sizes are explicitly estimates from the saved Library; pending edits do not imply
+freed disk space. Unknown capacity and inconsistent index totals are reported
+without inventing proportions.
+
+### Shared shell
+
 The main shell uses an Original-informed desktop structure: a persistent Player,
 source-list Sidebar, and one content stack. The Player defaults to the top edge, and
 the global Player position setting can move that same runtime surface to the bottom
@@ -206,9 +257,11 @@ rather than page content. The now-playing surface spans the band's complete heig
 uses the primary surface, and is separated from the edge zones by one-pixel vertical
 rules rather than a rounded floating card.
 With no current Track, the Player contracts completely and returns its space to the
-Library. Transport, metadata, artwork, volume, and Queue controls appear only once a
-current Track makes them relevant. The height transition follows the Host style's
-widget-animation preference and otherwise completes immediately.
+Library by default. Appearance's **Automatically minimize Player** Host preference
+can keep the empty Player expanded instead, showing “Nothing playing” with disabled
+transport controls. The setting applies immediately and persists across restarts;
+paused Tracks keep the Player expanded in either mode. The height transition follows
+the Host style's widget-animation preference and otherwise completes immediately.
 Previous, Play/Pause, and Next form a vertically centered cluster anchored to the
 left edge. Mute and a flexible volume slider sit on the right beside the Queue toggle,
 which remains anchored at the far-right edge. Play/Pause has the strongest glyph
@@ -287,6 +340,18 @@ asynchronous loads repaint only banners that reference the changed artwork ID.
 Cover opacity remains subordinate to metadata in every theme, controls retain their
 semantic opaque surfaces, and the ribbon has no decorative animation.
 
+The Podcast browser uses a compact show header and virtualized, cover-led Episode
+tiles. Title and artwork lead; date, duration, and nonstandard Episode type provide
+the scan line. Selection reveals additional metadata without expanding every row.
+Show Sync controls sit at the left of the fixed-height header's action row, beside
+the show artwork; Website, Refresh Show, and Unsubscribe sit at the right. Artwork
+and buttons share a bottom edge. Selection-only batch actions remain below the
+Episode list. Discovery uses publisher-feed covers with title, author, and brief metadata;
+the direct-RSS form opens on request. Image failures retain device/show fallbacks
+and deterministic placeholders. Full descriptions do not appear on hover. All
+surfaces use shared semantic tokens and native
+keyboard focus; see [ADR-0155](adr/0155-preview-publisher-covers-in-podcast-discovery.md).
+
 In the split Library view, the Track context and local Track search form the actual
 `QSplitterHandle`. The title names the selected album, or all Tracks, without a row
 count. Dragging any non-control part of that surface resizes the views; using its
@@ -315,6 +380,29 @@ reverses the slide. The view uses at most two viewport-sized snapshots, commits 
 group state immediately, and releases the snapshots when the animation finishes.
 Scrolling, resizing, or changing the model interrupts the transition and reveals
 the live grid; scroll clamping that moves the header uses the immediate layout.
+
+Select Media keeps one button below the scrolling Host sidebar navigation. It
+selects all scanned Tracks and Photos, including items hidden by the current page
+or search. Its label changes from **Select all media** to **Deselect all media**
+only when every selectable Host item is selected. With no selectable media, the
+button is disabled.
+The left side of the selection footer offers **Revert selections**, restoring the
+initial checked state for Tracks and Photos from the completed scan: correlated
+Host items checked and Host-only items unchecked. The button is disabled when that
+selection is unchanged. The current selection count appears in the status bar.
+
+Sync Album and collection cards show an iPod glyph at the top left of their artwork
+when any contained Track is matched to the iPod. Track rows show the same glyph to
+the left of the Sync checkbox. Photo cards show it at the top left when the Photo
+is matched to the iPod, both in All Photos and within a Photo Album.
+Matching evidence owns this marker independently of selection, so deselecting
+existing media leaves the marker visible. For these
+cards and rows, checked existing media uses the current accent blue and unchecked
+existing media uses danger red; checked new media uses success green and unchecked
+new media retains the neutral gray appearance. Partially checked cards retain the
+blue mixed state. These colors use theme tokens, and green checkmarks choose a
+contrasting theme foreground. Ordinary Library and Photo Album membership controls
+retain their existing appearance.
 
 Use native `QHeaderView` movement, resizing, selection, accessibility, and sorting
 behavior before introducing a custom header. Avoid initial sorts that are not
@@ -376,6 +464,21 @@ scrollbar is hidden, and every layout batch ends on a complete row. Those invari
 keep row spacing stable across scrollbar transitions, viewport resizes, accessibility
 font changes, and large collection boundaries.
 
+The Add Genius Mixes dialog presents one horizontal shelf of symbolic record
+artwork with a separate caption band. Larger catalog glyphs and fine record grooves
+give the chooser its musical character without introducing decorative motion.
+An always-visible selection marker, an accent outline, and an independent dashed
+keyboard-focus ring distinguish selection from focus. The footer shows the selected
+count beside Cancel and Add. Mix names stay on one line with full names available
+in tooltips and native accessibility; the chooser adds no Track counts or analysis
+claims. Card height follows font metrics, and the shelf remains scrollable at the
+dialog's compact desktop width.
+
+Genius artwork uses a narrow Theme Module color recipe: existing catalog hues are
+composited over the semantic surface, then their glyph ink is normalized to at least
+4.5:1 contrast. This is symbolic artwork, not a replacement for selection or action
+colors. Open dialogs refresh this artwork when the effective theme changes.
+
 ## Typography
 
 Qt's Host-provided General and Title fonts fill the body and display roles. The mono
@@ -429,6 +532,48 @@ not be the only indication that the interaction exists.
 Text expansion is expected. Layouts must survive longer translations, right-to-left
 direction, larger Host fonts, and 200% display scaling without clipped labels or
 fixed text widths.
+
+## Settings examples
+
+Settings tabs align with the setting groups and share their responsive width.
+Below 1,720 logical pixels of Settings page width, the column fills the available
+viewport inside the standard page margins. At that width and above, it returns to
+960 logical pixels and reserves the remaining space for an example image.
+
+Hovering an illustrated Setting row shows its example; an open dropdown retains priority until
+it closes. Rows without a meaningful visual example leave the space blank.
+Hovering a new row or dropdown choice for 200 ms changes the example. Moving to
+another target restarts this delay, while the current image remains visible.
+Leaving the rows cancels a pending change. Highlighting changes the example without committing
+that choice. Images fade in and out over 300 ms. Replacements crossfade
+directly over 450 ms without dimming the preview; an interrupted blend continues
+from the currently displayed frame toward the latest image. Fade-in uses OutCubic
+for a prompt reveal and gentle finish; crossfades use InOutCubic. Fade-out uses
+InOutSine to spread the opacity change more evenly and avoid a sudden drop in the
+middle. Changing categories, leaving
+Settings, or returning to the narrow layout clears obsolete examples. The image
+stays inside the visible viewport while the settings scroll.
+
+`SettingsTab` owns this presentation behavior. Language uses the shared language
+switcher SVG for every option, including System default and future languages.
+Other examples are actual iOpenPod screenshots captured at 2× density.
+General examples use Porcelain captures in Light appearance and Slate captures
+in Dark appearance, following the active palette, including Auto mode.
+Mode's Light and Dark options show the currently selected themes. Auto composes
+those two screenshots at runtime, with Light above/left and Dark below/right of a
+diagonal from bottom left to top right. Changes to either theme update the preview.
+Library content uses the supplied GenericArt
+albums and the established filename-to-Album mapping, recorded alongside capture
+hashes in `assets/settings/manifest.json`. Capture code is a development tool;
+runtime only loads or combines packaged images. The preview shows only the image;
+the row's translated title and explanation supply its accessibility description.
+The optional vignette is currently disabled by `SETTINGS_VIGNETTE_ENABLED` in
+`settings_tab.py`. When enabled, image edges fade to transparency over 25% of the shorter image dimension, capped
+at 90 logical pixels, blending into the
+underlying background in every theme. The center stays fully opaque, and each
+image is feathered before crossfading so interrupted blends retain their edges.
+It never runs workflows or reads editable field contents to make an example.
+See the [capture notes](../src/iOpenPod/assets/settings/README.md).
 
 ## Ownership
 

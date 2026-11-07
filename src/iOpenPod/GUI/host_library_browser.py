@@ -36,6 +36,8 @@ from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import MediaKind
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from PySide6.QtWidgets import QStackedWidget
 
     from iOpenPod.app.core.settings.service import SettingsService
@@ -59,6 +61,8 @@ class HostLibraryBrowser:
         workspace: LibraryWorkspace,
         parent: QStackedWidget,
         selection: SyncSelection | None = None,
+        *,
+        choose_streams: Callable[[int], None] | None = None,
     ) -> None:
         self.workspace = workspace
         self.track_model = TrackTableModel(parent)
@@ -78,10 +82,10 @@ class HostLibraryBrowser:
             CollectionKind.TV_SHOW,
             parent,
         )
-        self.music_video_model = CollectionListModel(
+        self.music_video_model = AlbumListModel(
             self.track_model,
-            CollectionKind.MUSIC_VIDEO_ALBUM,
             parent,
+            media_kind=MediaKind.MUSIC_VIDEO,
         )
         if selection is not None:
             self.track_model.set_sync_selection(selection)
@@ -179,7 +183,7 @@ class HostLibraryBrowser:
             selection_mode=selection is not None,
             follow_ipod_view_mode=False,
         )
-        music_videos = CollectionPage(
+        music_videos = LibraryPage(
             self.track_model,
             self.music_video_model,
             settings,
@@ -247,7 +251,9 @@ class HostLibraryBrowser:
         }
         self.pages: tuple[_HostLibraryPage, ...] = tuple(self.page_widgets.values())
         self._sync_actions = (
-            SyncSelectionActions(selection, parent) if selection is not None else None
+            SyncSelectionActions(selection, parent, choose_streams=choose_streams)
+            if selection is not None
+            else None
         )
 
         for page in self.pages:
@@ -260,6 +266,8 @@ class HostLibraryBrowser:
                 else:
                     table.setDragEnabled(False)
                     table.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
+                    if choose_streams is not None:
+                        table.chooseStreamsRequested.connect(choose_streams)
             for grid in (
                 *page.findChildren(AlbumGridView),
                 *page.findChildren(CollectionGridView),
@@ -288,6 +296,34 @@ class HostLibraryBrowser:
         self._photo_controller.invalidate()
         self.workspace.load(library.snapshot)
         self.track_model.reset_tracks(library.snapshot.tracks)
+
+    @property
+    def populated_pages(self) -> frozenset[PageId]:
+        """Report scan content independently of search and Sync Selection."""
+
+        if self.library is None:
+            return frozenset()
+        snapshot = self.library.snapshot
+        kinds = {track.media_kind for track in snapshot.tracks}
+        populated = {
+            PageId.ALBUMS: self.album_model.rowCount() > 0,
+            PageId.ARTISTS: self.artist_model.rowCount() > 0,
+            PageId.GENRES: self.genre_model.rowCount() > 0,
+            PageId.TRACKS: bool(snapshot.tracks),
+            PageId.PLAYLISTS: bool(snapshot.playlists),
+            PageId.PHOTOS: bool(snapshot.photos and snapshot.photos.photos),
+            PageId.PODCASTS: MediaKind.PODCAST in kinds,
+            PageId.AUDIOBOOKS: MediaKind.AUDIOBOOK in kinds,
+            PageId.MOVIES: MediaKind.MOVIE in kinds,
+            PageId.TV_SHOWS: self.tv_show_model.rowCount() > 0,
+            PageId.MUSIC_VIDEOS: self.music_video_model.rowCount() > 0,
+            PageId.VIDEOS: bool(
+                kinds & {MediaKind.MOVIE, MediaKind.TV_SHOW, MediaKind.MUSIC_VIDEO}
+            ),
+        }
+        return frozenset(
+            page_id for page_id, has_content in populated.items() if has_content
+        )
 
     def retranslate(self) -> None:
         for model in (

@@ -6,11 +6,16 @@ import hashlib
 import json
 import plistlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from xml.parsers.expat import ExpatError
 
-from device_registry.identifiers import normalize_model_number, normalize_serial
+from whenever import Instant, seconds
+
+from device_registry.identifiers import (
+    has_apple_serial_format,
+    normalize_model_number,
+    normalize_serial,
+)
 from device_registry.models import (
     DeviceEvidence,
     DeviceIdentifier,
@@ -22,6 +27,9 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 SYSINFO_AUTHORITY_FILENAME = "iOpenPodSysInfoAuthority"
+# Bump to invalidate persisted hardware provenance and trigger recapture once.
+# Version 2 invalidates caches that could contain a transport revision as firmware.
+SYSINFO_AUTHORITY_VERSION = 2
 
 _CORE_KEYS = frozenset({"pszSerialNumber", "FirewireGuid", "ModelNumStr"})
 _DERIVED_KEYS = frozenset(
@@ -79,11 +87,17 @@ def authority_covers_metadata(
     *,
     sysinfo: bytes,
     sysinfo_extended: bytes,
+    require_firmware_version: bool = False,
 ) -> bool:
-    """Return whether current hardware covers untampered core metadata."""
+    """Check recorded hardware provenance for the required cached metadata.
+
+    Firmware-dependent profiles also need a release observed from hardware and
+    retained consistently in both cache files. This does not make it a fresh
+    hardware observation or prove that the installed firmware is unchanged.
+    """
 
     parsed = _load_authority(authority)
-    if parsed.get("version") != 1 or not _authority_hashes_match(
+    if not _has_current_version(parsed) or not _authority_hashes_match(
         parsed,
         sysinfo=sysinfo,
         sysinfo_extended=sysinfo_extended,
@@ -93,7 +107,10 @@ def authority_covers_metadata(
     if fields is None:
         return False
     sysinfo_values = _parse_sysinfo(sysinfo)
-    for key in _CORE_KEYS:
+    required_keys = (
+        _CORE_KEYS | {"visibleBuildID"} if require_firmware_version else _CORE_KEYS
+    )
+    for key in required_keys:
         entry = _string_object_dict(fields.get(key))
         if entry is None:
             return False
@@ -107,6 +124,16 @@ def authority_covers_metadata(
             key,
             current,
         ):
+            return False
+    if require_firmware_version:
+        firmware_entry = _string_object_dict(fields.get("visibleBuildID")) or {}
+        if firmware_entry.get("value_kind") != "retailos_release":
+            return False
+        hashes = _string_object_dict(parsed.get("file_hashes")) or {}
+        if hashes.get("SysInfoExtended") != _sha256(sysinfo_extended):
+            return False
+        extended = _load_plist_mapping(sysinfo_extended)
+        if extended.get("VisibleBuildID") != sysinfo_values["visibleBuildID"]:
             return False
     return True
 
@@ -125,12 +152,20 @@ def reconcile_device_metadata(
 
     Unknown SysInfo keys and SysInfoExtended plist keys are retained. Current
     hardware can correct stale device metadata, while lower-authority values cannot
-    overwrite higher-authority entries recorded by the original version-1 format.
+    overwrite higher-authority entries recorded by the current cache version.
+    Older versions retain their metadata bytes but cannot supply trusted provenance.
     """
 
-    timestamp = observed_at or datetime.now(UTC).isoformat()
+    # Authority evidence keeps its existing UTC wire representation; supplied
+    # observation text remains provenance, not a clock that we reinterpret.
+    timestamp = observed_at
+    if not timestamp:
+        utc = (
+            Instant.now().round("microsecond", mode="floor").to_fixed_offset(seconds(0))
+        )
+        timestamp = utc.format_iso(unit="microsecond" if utc.nanosecond else "second")
     old_authority = _load_authority(existing_authority)
-    hashes_match = _authority_hashes_match(
+    hashes_match = _has_current_version(old_authority) and _authority_hashes_match(
         old_authority,
         sysinfo=existing_sysinfo,
         sysinfo_extended=existing_sysinfo_extended,
@@ -179,13 +214,22 @@ def reconcile_device_metadata(
         else:
             source = _entry_source(old_entry, default="sysinfo")
             authority_level = old_authority_level
-        authority_fields[key] = _authority_entry(
+        resolved_entry = _authority_entry(
             retained_value,
             source=source,
             authority=authority_level,
             timestamp=timestamp,
             previous=old_entry,
         )
+        if key == "visibleBuildID" and (
+            candidate.authority is EvidenceAuthority.CURRENT_HARDWARE
+            or (
+                old_entry.get("value_kind") == "retailos_release"
+                and retained_value == old_value
+            )
+        ):
+            resolved_entry["value_kind"] = "retailos_release"
+        authority_fields[key] = resolved_entry
 
     for key, entry in old_entries.items():
         if key in authority_fields or key not in updated_fields:
@@ -206,8 +250,10 @@ def reconcile_device_metadata(
         "SysInfo": _sha256(sysinfo),
         "SysInfoExtended": _sha256(sysinfo_extended),
     }
-    files: dict[str, object] = dict(
-        _string_object_dict(old_authority.get("files")) or {}
+    files: dict[str, object] = (
+        dict(_string_object_dict(old_authority.get("files")) or {})
+        if hashes_match
+        else {}
     )
     previous_extended_file = _string_object_dict(files.get("SysInfoExtended"))
     extended_source = "device_registry"
@@ -234,7 +280,7 @@ def reconcile_device_metadata(
         }
 
     authority_document: dict[str, object] = {
-        "version": 1,
+        "version": SYSINFO_AUTHORITY_VERSION,
         "fields": authority_fields,
         "files": files,
         "file_hashes": file_hashes,
@@ -268,6 +314,7 @@ def _resolved_fields(
     serial = _best_identifier(evidence.product_serials)
     transport = _best_identifier(evidence.transport_serials)
     firmware = _best_identifier(evidence.firmware_versions)
+    transport_revision = _best_identifier(evidence.transport_revisions)
     board = _best_identifier(evidence.board_hardware_names)
     family_id = _best_identifier(evidence.family_ids)
     updater_family_id = _best_identifier(evidence.updater_family_ids)
@@ -277,6 +324,7 @@ def _resolved_fields(
     _put(result, "pszSerialNumber", serial, _format_serial)
     _put(result, "FirewireGuid", transport, _format_guid)
     _put(result, "visibleBuildID", firmware, str)
+    _put(result, "FireWireVersion", transport_revision, str)
     _put(result, "BoardHwName", board, str)
     result["ModelNumStr"] = _ResolvedField(
         _format_model_number(profile.model_number),
@@ -382,6 +430,8 @@ def _serial_resolves_to_profile(value: str, profile: DeviceProfile) -> bool:
     from device_registry.data.catalog import DEFAULT_CATALOG
 
     serial = normalize_serial(value)
+    if not has_apple_serial_format(serial):
+        return False
     matches = tuple(
         definition
         for definition in DEFAULT_CATALOG.serial_suffixes
@@ -417,7 +467,8 @@ def _build_sysinfo_extended(
             sysinfo_fields.get("FirewireGuid", ""),
         ),
     )
-    _set_if(values, "FireWireVersion", sysinfo_fields.get("visibleBuildID", ""))
+    _set_if(values, "VisibleBuildID", sysinfo_fields.get("visibleBuildID", ""))
+    _set_if(values, "FireWireVersion", sysinfo_fields.get("FireWireVersion", ""))
     _set_if(values, "BoardHwName", sysinfo_fields.get("BoardHwName", ""))
     _set_if(values, "ModelNumStr", profile.model_number)
     _set_integer(values, "FamilyID", sysinfo_fields.get("FamilyID", ""))
@@ -538,6 +589,11 @@ def _load_authority(content: bytes | str) -> dict[str, object]:
     except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
         return {}
     return _string_object_dict(parsed) or {}
+
+
+def _has_current_version(authority: Mapping[str, object]) -> bool:
+    version = authority.get("version")
+    return type(version) is int and version == SYSINFO_AUTHORITY_VERSION
 
 
 def _authority_hashes_match(
@@ -661,6 +717,7 @@ def _live_payload_source(evidence: DeviceEvidence) -> str:
         *evidence.product_serials,
         *evidence.transport_serials,
         *evidence.firmware_versions,
+        *evidence.transport_revisions,
     ]
     current = tuple(
         item

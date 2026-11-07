@@ -50,7 +50,7 @@ from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar, SortOption
 from iOpenPod.GUI.widgets.photo_grid import PhotoGridView
 from iOpenPod.GUI.widgets.photo_inspector import PhotoInspector
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
+from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 from iPodDB.library import Photo, PhotoAlbum
 
 
@@ -95,13 +95,6 @@ class PhotoPage(QWidget):
 
         self._toolbar = LibraryToolbar(self)
         self._toolbar.set_namespace("photos")
-        self._create_album = ActionButton(
-            parent=self._toolbar,
-            kind=ActionButtonKind.PRIMARY,
-        )
-        self._create_album.setObjectName("photoCreateAlbum")
-        self._toolbar.add_action(self._create_album)
-
         album_panel = SourceListPanel(
             LAYOUT.photo_album_pane_width,
             self,
@@ -111,6 +104,14 @@ class PhotoPage(QWidget):
         album_panel.title_label.setObjectName("photoAlbumHeading")
         album_panel.count_label.setObjectName("photoAlbumCount")
         self._album_panel = album_panel
+        self._create_album = IconButton(
+            "plus",
+            self.tr("Create a new Photo Album"),
+            album_panel,
+            kind=IconButtonKind.QUIET,
+        )
+        self._create_album.setObjectName("photoCreateAlbum")
+        album_panel.add_action(self._create_album)
         self._albums = QListView(album_panel)
         self._albums.setObjectName("photoAlbumList")
         self._albums.setModel(self._albums_model)
@@ -299,7 +300,6 @@ class PhotoPage(QWidget):
         self._delete_photo_album.setText(self.tr("Delete Photo Album…"))
         self._manage_photo_albums.setText(self.tr("Manage Albums…"))
         self._delete_photos.setText(self.tr("Delete Photos…"))
-        self._create_album.setText(self.tr("New Album"))
         self._create_album.setAccessibleName(self.tr("Create a new Photo Album"))
         self._refresh_create_album_state()
         self._selected_album_id = selected_album_id

@@ -31,7 +31,7 @@ const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
         ), "Logo must have enough pixels for a high-density display");
 
         const triggers = page.locator("[data-screenshot-trigger]");
-        assert.equal(await triggers.count(), 9);
+        assert.equal(await triggers.count(), 11);
         const dialog = page.getByRole("dialog", { name: "Screenshot", exact: true });
         const close = dialog.getByRole("button", { name: "Close", exact: true });
         const stage = dialog.getByRole("region");
@@ -105,7 +105,7 @@ const preview = process.argv[2] || "http://127.0.0.1:8876/iOpenPod/";
           assert.equal(page.url(), originalURL, "Opening a screenshot navigated away");
         }
         await context.close();
-        console.log(`PASS: ${colorScheme}, ${viewport.width}x${viewport.height}, ten screenshots`);
+        console.log(`PASS: ${colorScheme}, ${viewport.width}x${viewport.height}, eleven screenshots`);
       }
     }
     assert.deepEqual(failures, []);

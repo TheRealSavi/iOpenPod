@@ -528,29 +528,58 @@ def test_live_darwin_statfs_matches_active_sdk_layout(tmp_path: Path) -> None:
     if xcrun is None:
         pytest.skip("the active macOS SDK toolchain is unavailable")
 
-    snapshot = _read_statfs(tmp_path)
-    mount_point = Path(
-        _decode_required_c_string(bytes(snapshot.f_mntonname), name="Mount Point")
-    ).resolve()
-    assert tmp_path.resolve().is_relative_to(mount_point)
-
-    helper = tmp_path / "statfs-size"
+    helper = tmp_path / "statfs-native"
     compiled = subprocess.run(
         [xcrun, "clang", "-x", "c", "-", "-o", os.fspath(helper)],
-        input=(
-            b"#include <stdio.h>\n#include <sys/mount.h>\n"
-            b'int main(void) { printf("%zu", sizeof(struct statfs)); }\n'
-        ),
+        input=rb"""
+#include <stddef.h>
+#include <stdio.h>
+#include <sys/mount.h>
+
+int main(int argc, char **argv) {
+    struct statfs snapshot;
+    if (argc != 2) return 2;
+    if (statfs(argv[1], &snapshot) != 0) {
+        perror("statfs");
+        return 1;
+    }
+    printf("%zu %zu %zu %zu %zu\n", sizeof(struct statfs),
+           offsetof(struct statfs, f_fsid),
+           offsetof(struct statfs, f_fstypename),
+           offsetof(struct statfs, f_mntonname),
+           offsetof(struct statfs, f_mntfromname));
+    printf("%d %d\n", snapshot.f_fsid.val[0], snapshot.f_fsid.val[1]);
+    printf("%s%c%s%c%s%c", snapshot.f_fstypename, 0,
+           snapshot.f_mntonname, 0, snapshot.f_mntfromname, 0);
+    return 0;
+}
+""",
         capture_output=True,
         timeout=30,
         check=False,
     )
-    if compiled.returncode != 0:
-        pytest.skip(compiled.stderr.decode("utf-8", errors="replace"))
+    assert compiled.returncode == 0, compiled.stderr.decode("utf-8", errors="replace")
     executed = subprocess.run(
-        [os.fspath(helper)],
+        [os.fspath(helper), os.fspath(tmp_path)],
         capture_output=True,
         timeout=10,
         check=True,
     )
-    assert int(executed.stdout) == ctypes.sizeof(_DarwinStatFS)
+    layout, fsid, names = executed.stdout.split(b"\n", maxsplit=2)
+    assert [int(value) for value in layout.split()] == [
+        ctypes.sizeof(_DarwinStatFS),
+        _DarwinStatFS.f_fsid.offset,
+        _DarwinStatFS.f_fstypename.offset,
+        _DarwinStatFS.f_mntonname.offset,
+        _DarwinStatFS.f_mntfromname.offset,
+    ]
+    snapshot = _read_statfs(tmp_path)
+    assert [int(value) for value in fsid.split()] == list(snapshot.f_fsid.val)
+    # Firmlinks can expose a Data-volume path outside the textual mount prefix.
+    # Compare the actual SDK call for this path instead of assuming ancestry.
+    assert names.split(b"\0") == [
+        bytes(snapshot.f_fstypename),
+        bytes(snapshot.f_mntonname),
+        bytes(snapshot.f_mntfromname),
+        b"",
+    ]

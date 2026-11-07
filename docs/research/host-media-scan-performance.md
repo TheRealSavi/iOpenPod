@@ -214,6 +214,119 @@ On Unix the initial `DirEntry.stat()` requires a system call, whose network effe
 depend on the mount. See the
 [Python 3.12 directory-entry documentation](https://docs.python.org/3.12/library/os.html#os.DirEntry.stat).
 
+## Scan recovery investigation, 2026-10-22
+
+The follow-up audit exercises first scans, restarted scanners, interrupted scans,
+and warm-cache reuse. The fixes are described in ADR-0168. Regressions were first
+run against the failing behavior, then against the fixes using temporary Host trees
+and virtual iPod Volumes.
+
+| Scenario | Previous behavior | Verified behavior |
+| --- | --- | --- |
+| Temporarily unreadable Playlist | Empty cached Playlist remained reusable | Failed parsing retries; successful parser warnings remain reusable |
+| One unreadable Photo | Restart rejected the whole cache | Healthy media stays cached; incomplete Photo is retried |
+| Cancelled Host inspection | Completed work before end-of-scan storage was lost | Completed results are checkpointed and reused after fresh enumeration |
+| Interrupted directory iterator | Already inspected entries were discarded | One bounded restart; complete retry replaces partial entries, repeated failure reports retained partial results |
+| Inaccessible iPod helper | Whole scan raised | One fresh observation, then independent analysis with the helper preserved |
+| Rapid iPod progress | 20,002 queued GUI notifications | Fewer than 30 notifications over a simulated two seconds, preserving phase endpoints and totals |
+| Growing or short device input | Read-until-EOF could chase growth or accept stale short content | Reads stop at observed size; growth and premature EOF are rejected |
+
+Healthy directory listings and helper reads acquire no extra retry operations.
+Device read tests also verify zero data reads for empty files, rejection of an
+oversized source before its first data read, and no read request beyond the
+observed size. Image-limit tests keep the decoder's pixel protection and allow
+independent media or alternative folder covers to remain usable.
+
+These are operation-count and recovery guarantees, not measured USB or NAS
+speedups. Native network, cloud hydration, and removable-device timings remain
+dependent on the provider and hardware. Cancellation is cooperative and cannot
+preempt a blocked operating-system filesystem call.
+
+### Cache-checkpoint overhead
+
+A synthetic Windows comparison used 1,500 small WAV Tracks in 75 album directories,
+with 20 Tracks and one 32 × 32 BMP cover per directory. Fingerprinting returned a
+fixed value so the timings isolate filesystem traversal, native metadata parsing,
+Library projection, and cache work. Each timed operation included `scan()` and
+`complete()`. A cold scan means an absent application cache, not an empty operating
+system filesystem cache.
+
+Separate subprocesses loaded copies of only `host_media_library.py` and
+`host_media_traversal.py`: the pre-change `a118d925` versions, the new recovery code before
+its warm-path optimization, or the final optimized versions. All variants shared
+the current Storage implementation, other application modules, dependencies, and
+input files. This isolates the Host scanner changes; it is not a comparison of two
+complete repository revisions. No live source was changed to obtain the baseline.
+
+Five initial alternating HEAD/recovery samples showed substantial scheduling
+variation while the full test suite ran. Three additional instrumented samples per
+variant measured the cache operations directly. Their median elapsed times were:
+
+| Host scanner variant | Cold | Warm, same scanner | Warm, restarted scanner |
+| --- | ---: | ---: | ---: |
+| Pre-change HEAD | 2.275 s | 0.360 s | 0.432 s |
+| Recovery before warm-path optimization | 2.368 s | 0.395 s | 0.460 s |
+| Recovery with lazy inspection checkpoints | 2.269 s | 0.382 s | 0.451 s |
+
+All variants performed 152 directory listings per scan. Cold scans opened 1,500
+media files and 75 covers, parsed 1,500 media headers, invoked 1,500 stub
+fingerprints, and wrote the cache once. Both warm modes reused all 1,500 Tracks with
+zero media or cover reads, metadata parses, fingerprints, or cache writes.
+
+The initial checkpoint implementation added a third catalog equality check to warm
+scans. The final implementation retains only newly inspected outcomes and allocates
+the checkpoint catalog lazily. Fully cached scans therefore retain the original two
+cache-store checks across `scan()` and `complete()`. Instrumentation attributed
+approximately 2.4 ms to the redundant comparison; avoiding it and the unused
+checkpoint setup reduced the measured warm median by about 13 ms.
+
+The final warm medians remain about 22 ms and 19 ms above HEAD in this fixture,
+respectively. These small synthetic timings include scheduling and OS cache noise;
+they do not demonstrate a general first-scan speedup or predict USB, cloud, or NAS
+performance. The reliable operation-count result is that warm scans still perform
+no content reads or cache writes while interrupted cold scans retain completed work.
+
+## Second-pass adversarial checks, 2026-10-22
+
+The second pass followed the entire path through source reads, cache persistence,
+cancellation, and Review. It used real temporary filenames and timestamps plus
+controlled replacement, cancellation, and device-session failures. Each new defect
+was reproduced with a failing regression before its fix.
+
+| Scenario | Finding and correction |
+| --- | --- |
+| Files dated before 1970 | Negative filesystem timestamps could reject the Host cache, abort artwork projection, or fail iPod analysis/Sync Details. Preserve signed timestamps in models and decoders. |
+| Filesystem names with surrogate code points | Host snapshot identity hashing and cache serialization could fail. Use lossless path hashing and JSON escapes while preserving ordinary cache checksums. |
+| Checksummed cache with inconsistent embedded-artwork facts | Invalid source size or a mismatched embedded path could survive decoding. Reject inconsistent records and rebuild before Library projection. |
+| Cancellation during external Playlist inspection | Completed accepted files were not retained until the whole loop finished. Checkpoint revalidated analysis without persisting approval. |
+| Cancellation after worker completion | Queued iPod success, error, or progress could still reach the GUI. Suppress delivery and release the reservation once. |
+| File changed while a preceding Track decoded | Native serial analysis used the next file's old observation. Reobserve after waiting, while still rejecting changes during its own decode. |
+| Session invalidated during the final media operation | Some mount failures could become per-item issues and apparent scan completion. Propagate invalidated-session failure. |
+| Session failure while retaining work during cancellation | An exception could bypass worker shutdown. Guarantee decoder shutdown and capture cleanup even when optional retention fails. |
+| Growing or prematurely short device capture | The fallback capture still read until EOF. Bound it to the observed size and reject incomplete content. |
+| Device path replaced after reading | Descriptor checks alone could accept stale named-file evidence. Also check the final named file. |
+| Parent replaced with a link before device open | Leaf-only validation could read outside the authorized tree. Reuse existing ancestor/leaf pins for the stream lifetime. |
+| Caller cancellation raised as an I/O exception | Capture callbacks and directory predicates could be misclassified as filesystem trouble. Preserve caller exceptions and cleanup. |
+
+The existing GUI handoff also passed a new regression: disconnecting the Active
+iPod during targeted Host metadata refresh clears pending iPod evidence, so a late
+Host result cannot present a stale comparison. Review selection and Playlist
+reconciliation were inspected to confirm that incomplete Host enumeration does
+not automatically select iPod-only removals or authorize incomplete Playlist
+membership changes.
+
+The earlier timing fixture was not rerun to claim a speedup from these safety
+fixes. Device reads now perform stronger path pinning and final identity checks;
+native latency should be measured on representative hardware. No dependencies
+were added. See [How media scanning works](../how-media-scanning-works.md) for the
+combined lifecycle and operational limits.
+
+Final Windows validation: `uv run pytest -q -x --tb=short --durations=10`
+completed with 6,826 passed, 14 platform-specific skips, and one expected
+large-image Pillow warning in 1,270.20 seconds. The dependency lock, Ruff
+format/lint, Mypy, and Rumdl checks passed. The new guide's 18 repository links
+were also checked for existing targets.
+
 ## Remaining work
 
 Metadata enumeration now overlaps up to four directories, and Storage still

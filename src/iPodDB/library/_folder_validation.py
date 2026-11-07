@@ -31,7 +31,7 @@ def folder_issues(
         assert isinstance(rules.payload, MhodSmartRulesPayload)
         messages: list[tuple[str, str]] = []
         if not isinstance(rules.prefix, MhodSmartRulesPrefix) or (
-            len(rules.payload.rules) > 1 and rules.prefix.conjunction != 1
+            len(rules.payload.rules) > 1 and not rules.prefix.conjunction
         ):
             messages.append(
                 (
@@ -39,8 +39,20 @@ def folder_issues(
                     "The affected folder has an unsupported rule conjunction.",
                 )
             )
+        if (
+            isinstance(rules.prefix, MhodSmartRulesPrefix)
+            and rules.prefix.format_version > 1
+        ):
+            messages.append(
+                (
+                    "playlist.folder_rules_version",
+                    "The affected folder uses an unsupported Smart rule format version.",
+                )
+            )
         if any(
-            r.field_id != 0x28
+            r.disabled
+            or r.is_nested
+            or r.field_id != 0x28
             or r.action_id != 1
             or not isinstance(r.data, MhodSmartNumericRuleData)
             for r in rules.payload.rules

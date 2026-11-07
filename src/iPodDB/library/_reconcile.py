@@ -2,7 +2,7 @@
 
 import logging
 from collections import Counter, defaultdict, deque
-from dataclasses import replace
+from dataclasses import fields, replace
 
 from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
@@ -32,11 +32,17 @@ from iPodDB.library._playlist_datasets import (
     is_visible,
     playlist_rows,
 )
+from iPodDB.library._playlist_mirroring import synchronize_counterparts
 from iPodDB.library._playlist_projection import project_playlist
 from iPodDB.library._playlist_writing import (
     edit_playlist,
     playlist_preferences,
     position_item,
+)
+from iPodDB.library._podcast_normalization import (
+    normalize_albums,
+    normalize_identities,
+    remove_empty_artists,
 )
 from iPodDB.library._podcast_writing import (
     complete_podcast_settings,
@@ -45,8 +51,10 @@ from iPodDB.library._podcast_writing import (
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library._track_header_requirements import derived_header_requirements
 from iPodDB.library._track_writing import edit_text, edit_track
+from iPodDB.library.playlists import PlaylistKind
 from iPodDB.library.writing import (
     IdentityMapping,
+    TimedArtworkAsset,
     WriteIssue,
     WriteResources,
 )
@@ -67,6 +75,7 @@ def reconcile(
     issues: list[WriteIssue],
     device_time: TimeConversion = 0,
 ) -> tuple[DatabaseDocument[MhbdHeader], tuple[IdentityMapping, ...]]:
+    document = synchronize_counterparts(document)
     source_document = document
     original, desired = resolved.original, resolved.desired
     logger.debug(
@@ -80,6 +89,7 @@ def reconcile(
     )
     generated_podcasts = resolved.generated_podcasts
     original_tracks = {t.track_id: t for t in original.tracks}
+    playback_dates = {item.track_id: item for item in resolved.playback_dates}
     desired_tracks = {t.track_id: t for t in desired.tracks}
     all_playlist_chunks = document.find_chunks(MhypHeader)
     occurrence_allocator = IdentityAllocator(
@@ -89,13 +99,21 @@ def reconcile(
     existing_rows = frozenset(
         (k, s.chunk.header.playlist_id) for k, s in playlist_rows(document)
     )
-    if resolved.affected_datasets.intersection((2, 3)):
+    if resolved.affected_datasets.intersection((2, 3)) and (
+        not resolved.plan.target.sqlite_database
+        or any(kind == 2 for kind, _ in existing_rows)
+    ):
         document = ensure_companion(document, occurrence_allocator)
     track_ids = dict(resolved.track_ids)
     playlist_ids = dict(resolved.playlist_ids)
     persistent_ids = dict(resolved.persistent_ids)
     media = {m.track_id: m for m in resources.media}
     lyrics = {item.track_id: item for item in resources.lyrics}
+    timed_artwork = {
+        item.artwork_id: item
+        for item in resources.artwork
+        if isinstance(item, TimedArtworkAsset) and resolved.plan.target.chapter_formats
+    }
     required_media = frozenset(resolved.plan.required_media)
     header_requirements = derived_header_requirements(
         source_document,
@@ -126,6 +144,8 @@ def reconcile(
             and track.track_id not in required_media
             and track.track_id not in lyrics
             and track.track_id not in header_requirements
+            and track.artwork_id not in timed_artwork
+            and track.track_id not in playback_dates
         ):
             track_output.append(track_chunk)
             continue
@@ -143,6 +163,8 @@ def reconcile(
                     lyrics=lyrics.get(track.track_id),
                     database_version=resolved.plan.target.database_version,
                     required_fields=header_requirements.get(track.track_id),
+                    timed_artwork=timed_artwork.get(track.artwork_id),
+                    playback_dates=playback_dates.get(track.track_id),
                 )
             )
         except (ValueError, OverflowError) as error:
@@ -221,28 +243,26 @@ def reconcile(
             new_itunes_chunk(
                 MHYP,
                 MhypHeader(master_flag=1, playlist_id=master_id, sort_order=5),
-                children=tuple(
-                    position_item(
-                        new_itunes_chunk(
-                            MHIP,
-                            MhipHeader(
-                                track_id=track_ids[t.track_id],
-                                track_persistent_id=persistent_ids[t.track_id],
+                children=(
+                    playlist_preferences(),
+                    *(
+                        position_item(
+                            new_itunes_chunk(
+                                MHIP,
+                                MhipHeader(
+                                    track_id=track_ids[t.track_id],
+                                    track_persistent_id=persistent_ids[t.track_id],
+                                ),
                             ),
-                        ),
-                        i,
-                    )
-                    for i, t in enumerate(desired.tracks)
+                            i,
+                        )
+                        for i, t in enumerate(desired.tracks)
+                    ),
                 ),
             ),
             MhodType.TITLE,
             desired.device_name,
             first=True,
-        )
-        master = replace(
-            master,
-            children=(*master.children, playlist_preferences()),
-            header=replace(master.header, string_mhod_child_count=1),
         )
         document = document.append_child(
             new_itunes_chunk(
@@ -258,6 +278,17 @@ def reconcile(
     original_playlists = {p.playlist_id: p for p in original.playlists}
     wanted_playlists = {p.playlist_id: p for p in desired.playlists}
     changed_ids = resolved.changed_playlists
+    refreshed_memberships = resolved.refreshed_smart_playlists | frozenset(
+        identity
+        for identity, playlist in original_playlists.items()
+        if playlist.kind is PlaylistKind.SMART
+        and not playlist.system_managed
+        and playlist.smart is not None
+        and playlist.smart.editable
+        and playlist.smart.live_update
+        and identity in wanted_playlists
+        and playlist.entries != wanted_playlists[identity].entries
+    )
     canonical_raw = (
         {}
         if canonical is None
@@ -314,7 +345,7 @@ def reconcile(
                     )
                     source_item_ids = [c.header.track_id for c in source_items]
                     if len(set(source_item_ids)) != len(source_item_ids) or any(
-                        c.header.podcast_group_flag & 0x100 for c in source_items
+                        c.header.is_group for c in source_items
                     ):
                         issues.append(
                             WriteIssue(
@@ -363,6 +394,7 @@ def reconcile(
                 if deleted:
                     removed = any(
                         isinstance(c.header, MhipHeader)
+                        and not c.header.is_group
                         and c.header.track_id in deleted
                         for c in chunk.children
                     )
@@ -372,6 +404,7 @@ def reconcile(
                             c
                             for c in chunk.children
                             if not isinstance(c.header, MhipHeader)
+                            or c.header.is_group
                             or c.header.track_id not in deleted
                         ),
                     )
@@ -381,7 +414,7 @@ def reconcile(
                         for child in chunk.children:
                             if (
                                 isinstance(child.header, MhipHeader)
-                                and not child.header.podcast_group_flag & 0x100
+                                and not child.header.is_group
                             ):
                                 from iPodDB.shared.chunk import chunk_as
 
@@ -406,9 +439,12 @@ def reconcile(
                     reference is None
                     or replace(actual, entries=()) != replace(reference, entries=())
                     or (
-                        Counter(actual.track_ids) != Counter(reference.track_ids)
-                        if identity in podcast_ids
-                        else actual.track_ids != reference.track_ids
+                        identity not in refreshed_memberships
+                        and (
+                            Counter(actual.track_ids) != Counter(reference.track_ids)
+                            if identity in podcast_ids
+                            else actual.track_ids != reference.track_ids
+                        )
                     )
                     or bool(chunk.header.playlist_kind_flags & 1)
                     != (identity in podcast_ids)
@@ -421,13 +457,27 @@ def reconcile(
                         != canonical_occurrences.get(identity)
                     )
                 ):
+                    differences = (
+                        ("missing canonical Playlist",)
+                        if reference is None
+                        else tuple(
+                            field.name
+                            for field in fields(actual)
+                            if getattr(actual, field.name)
+                            != getattr(reference, field.name)
+                            and (
+                                field.name != "entries"
+                                or identity not in refreshed_memberships
+                            )
+                        )
+                    )
                     issues.append(
                         WriteIssue(
                             "playlist.ambiguous_mirror",
                             "The other playlist dataset disagrees with this Playlist. Its relationship cannot be rewritten safely.",
                             subject="playlist",
                             record_id=identity,
-                            detail=f"Dataset {kind}",
+                            detail=f"Dataset {kind}. Playlist {actual.name!r} ({identity}); different source fields: {', '.join(differences)}.",
                         )
                     )
                     continue
@@ -442,13 +492,17 @@ def reconcile(
                 entry_map = {
                     e.entry_id: occurrences[e.track_id].popleft()
                     for e in baseline.entries
+                    if occurrences[e.track_id]
                 }
                 wanted = replace(
                     wanted,
                     entries=actual.entries
                     if wanted.entries == baseline.entries
+                    and identity not in refreshed_memberships
                     else tuple(
-                        replace(e, entry_id=entry_map.get(e.entry_id, e.entry_id))
+                        replace(
+                            e, entry_id=entry_map.get(e.entry_id, f"new:{e.entry_id}")
+                        )
                         for e in wanted.entries
                     ),
                 )
@@ -496,9 +550,13 @@ def reconcile(
             and all(
                 replace(p, entries=()) == replace(canonical_raw[identity], entries=())
                 and (
-                    Counter(p.track_ids) == Counter(canonical_raw[identity].track_ids)
-                    if identity in podcast_ids
-                    else p.track_ids == canonical_raw[identity].track_ids
+                    identity in refreshed_memberships
+                    or (
+                        Counter(p.track_ids)
+                        == Counter(canonical_raw[identity].track_ids)
+                        if identity in podcast_ids
+                        else p.track_ids == canonical_raw[identity].track_ids
+                    )
                 )
                 for identity, p in mirror_rows.items()
             )
@@ -582,14 +640,24 @@ def reconcile(
     document = reconcile_hidden(
         document, original, desired, track_ids, issues, resolved.indexes
     )
-    document = ensure_master_indexes(
+    if not resolved.plan.target.sqlite_database:
+        document = ensure_master_indexes(
+            document,
+            desired,
+            existing_rows,
+            resolved.indexes,
+            structural_tracks=structural_tracks,
+        )
+    if resolved.plan.draft.normalize_podcasts:
+        document = normalize_albums(document)
+        document = remove_empty_artists(document)
+    document = reconcile_album_indexes(
+        source_document,
         document,
-        desired,
-        existing_rows,
-        resolved.indexes,
-        structural_tracks=structural_tracks,
+        issues,
+        normalize_podcasts=resolved.plan.draft.normalize_podcasts
+        and not resolved.plan.target.sqlite_database,
     )
-    document = reconcile_album_indexes(source_document, document, issues)
 
     generated_native = {playlist_ids[i] for i in generated_podcasts}
     affected_native = {
@@ -621,8 +689,16 @@ def reconcile(
         if chunk != selection.chunk:
             document = document.replace_chunk(selection, chunk)
     document = reconcile_podcasts(
-        document, original, desired, track_ids, playlist_ids, resolved.podcast_playlists
+        document,
+        original,
+        desired,
+        track_ids,
+        playlist_ids,
+        resolved.podcast_playlists,
+        normalize=resolved.plan.draft.normalize_podcasts,
     )
+    if resolved.plan.draft.normalize_podcasts:
+        document = normalize_identities(document)
     # New occurrences receive private native identities. Retained short headers
     # and even pre-existing zero IDs are left exactly as loaded.
     occurrence_edits: dict[int, ParsedChunk[ChunkHeader] | None] = {}
@@ -641,4 +717,4 @@ def reconcile(
         for draft_id, native_id in mapping.items()
         if draft_id != native_id
     )
-    return document, mappings
+    return synchronize_counterparts(document), mappings

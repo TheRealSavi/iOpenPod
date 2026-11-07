@@ -1,4 +1,10 @@
-"""MHIT (Track Item) Chunk definition."""
+"""MHIT (Track Item) Chunk definition.
+
+Firmware evidence and unresolved fields: docs/research/unknown-field-reconciliation.md.
+Follow-up consumers: docs/research/unknown-itunesdb-field-consumers.md.
+Date evidence and Host-policy limits:
+docs/research/classic-datetime-file-map-2026-11-06.md.
+"""
 
 from dataclasses import dataclass
 
@@ -10,14 +16,26 @@ from iPodDB.shared.types import ChunkDefinition
 
 @dataclass(frozen=True, slots=True)
 class MhitHeader(ChunkHeader):
+    """Retained Track fields; calendar words are not semantic Unix seconds.
+
+    Ordinary date words encode 1904-based civil seconds without a timezone or
+    repeated-hour marker. Their import/event paths are qualified on the four
+    latest Classics. IANA interpretation and zero-as-missing display are Host
+    policy; preserve raw words, including zero and 0xffffffff, when unchanged.
+    """
+
     child_count: int = cf(0x0C, "u32", counts_children=True)
     track_id: int = cf(0x10, "u32")
-    unk_class_flag: int = cf(0x14, "u32", default=1)
+    # Classic 2.0.1 importer (0x08073bb8): 1/2/3 select constructor tags
+    # FILE/SHRD/HTTP; other values skip the Track and its MHOD children.
+    # The tags identify record classes, not independently proven transport types.
+    record_class: int = cf(0x14, "u32", default=1)
     filetype: int = cf(0x18, "u32")
     vbr_flag: int = cf(0x1C, "u8")
     mp3_flag: int = cf(0x1D, "u8")
     compilation_flag: int = cf(0x1E, "u8")
     rating: int = cf(0x1F, "u8")
+    # Modification metadata, in the ordinary local-Mac calendar coordinate.
     last_modified: int = cf(0x20, "u32")
     size: int = cf(0x24, "u32")
     length: int = cf(0x28, "u32")
@@ -32,10 +50,14 @@ class MhitHeader(ChunkHeader):
     sound_check: int = cf(0x4C, "u32")
     play_count_1: int = cf(0x50, "u32")
     play_count_2: int = cf(0x54, "u32")
+    # Firmware event calendar, already adjusted by its clock correction/DST.
+    # Do not add saved correction again or reject values after a clock setback.
     last_played: int = cf(0x58, "u32")
     disc_number: int = cf(0x5C, "u32")
     total_discs: int = cf(0x60, "u32")
     user_id: int = cf(0x64, "u32")
+    # Local-Mac added date. A zero input can make the native constructor sample
+    # its current Firmware Calendar; this codec retains zero rather than doing so.
     date_added: int = cf(0x68, "u32")
     bookmark_time: int = cf(0x6C, "u32")
     db_track_id: int = cf(0x70, "u64")
@@ -47,14 +69,20 @@ class MhitHeader(ChunkHeader):
     artwork_size: int = cf(0x80, "u32")
     unk_mhit_0x84: int = cf(0x84, "u32")
     sample_rate_2: float = cf(0x88, "f32")
+    # Release date: UTC-Mac is paired-capture/reference Host policy, not equally
+    # established all-four firmware UTC provenance. Never apply device DST here.
     date_released: int = cf(0x8C, "u32")
     mpeg_audio_type: int = cf(0x90, "u16")
     explicit_flag: int = cf(0x92, "u8")
     purchased_aac_flag: int = cf(0x93, "u8")
     unk_mhit_0x94: int = cf(0x94, "u32")
-    genius_category_id: int = cf(0x98, "u32")
+    # Classic 2.0.1 imports the total at 0x98 and a separate counter at 0x9C.
+    # The secondary counter's reset/host-consumption contract is not established.
+    skip_count: int = cf(0x98, "u32")
     # Extended Header Fields
-    skip_count: int = cf(0x9C, "u32")
+    secondary_skip_count: int = cf(0x9C, "u32")
+    # Same adjusted local-Mac event coordinate as last_played, independent of
+    # skip_count. Zero and backward values are retained evidence, not corruption.
     last_skipped: int = cf(0xA0, "u32")
     has_artwork: int = cf(0xA4, "u8")
     skip_when_shuffling: int = cf(0xA5, "u8")
@@ -74,6 +102,9 @@ class MhitHeader(ChunkHeader):
     media_type: int = cf(0xD0, "u32", default=1)
     season_number: int = cf(0xD4, "u32")
     episode_number: int = cf(0xD8, "u32")
+    # Historical field name; paired captures associate it with Store purchase.
+    # Host projection uses UTC-Mac seconds, distinct from the local date_added.
+    # Its complete all-four Classic meaning remains less qualified.
     date_added_to_itunes: int = cf(0xDC, "u32")
     store_track_id: int = cf(0xE0, "u32")
     store_encoder_version: int = cf(0xE4, "u32")
@@ -81,8 +112,10 @@ class MhitHeader(ChunkHeader):
     unk_mhit_0xEC: int = cf(0xEC, "u32")
     store_album_id: int = cf(0xF0, "u32")
     unk_mhit_0xF4: int = cf(0xF4, "u32")
-    gapless_audio_payload_size: int = cf(0xF8, "u32")
-    unk_mhit_0xFC: int = cf(0xFC, "u32")
+    # Classic 2.0.1 copies +0xF8/+0xFC to native TrackRecord +0x108/+0x10C.
+    # Getter 0x0827B15C returns the full u64 in r0/r1. The storage width is
+    # confirmed; the precise gapless payload-size interpretation is inherited.
+    gapless_audio_payload_size: int = cf(0xF8, "u64")
     gapless_track_flag: int = cf(0x100, "u16")
     gapless_album_flag: int = cf(0x102, "u16")
     unk_mhit_0x104: bytes = cf(0x104, "raw", size=20)
@@ -93,12 +126,21 @@ class MhitHeader(ChunkHeader):
     size_2: int = cf(0x12C, "u32")
     unk_mhit_0x130: int = cf(0x130, "u32")
     sort_mhod_indicators: bytes = cf(0x134, "raw", size=8)
-    unk_mhit_0x13C: bytes = cf(0x13C, "raw", size=24)
+    unk_mhit_0x13C: bytes = cf(0x13C, "raw", size=8)
+    # Copied to native TrackRecord +0xB4 by Classic 2.0.1.
+    # 0x0827B630 and 0x0824883C pass it beside the +0x64 user ID to a protected
+    # timing-window query. The selector role is confirmed; its token namespace
+    # is unresolved. Retain imported values; no automatic DRM authoring policy.
+    protected_timing_selector: int = cf(0x144, "u32")
+    unk_mhit_0x148: bytes = cf(0x148, "raw", size=12)
     unk_mhit_0x154: int = cf(0x154, "u32")
     unk_mhit_0x158: bytes = cf(0x158, "raw", size=8)
     artwork_id_ref: int = cf(0x160, "u32")
     unk_mhit_0x164: int = cf(0x164, "u32")
     unk_mhit_0x168: int = cf(0x168, "u32", default=1)
+    # Classic 2.0.1: any nonzero value sets TrackRecord +0x1C mask 0x1000
+    # and contributes to optional-extension allocation. The feature is unnamed;
+    # this is a nonzero-byte test, not a low-bit Boolean.
     unk_mhit_0x173: int = cf(0x173, "u8")
     video_flag_2: int = cf(0x194, "u8")
     purchased_aac_flag_2: int = cf(0x195, "u8")
@@ -111,6 +153,8 @@ class MhitHeader(ChunkHeader):
     store_album_id_2: int = cf(0x1D0, "u64")
     unk_mhit_0xF4_2_0x1D8: int = cf(0x1D8, "u64")
     artist_id_ref: int = cf(0x1E0, "u32")
+    # Joins the Genius tables in Extras.itdb on observed Classic databases.
+    genius_id: int = cf(0x1E4, "u64")
     unk_mhit_0x1EC: int = cf(0x1EC, "u32", default=1)
     composer_id: int = cf(0x1F4, "u32")
     tv_show_media_type_flag: int = cf(0x1F8, "u32")

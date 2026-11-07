@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
@@ -18,15 +19,21 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QToolButton,
     QTreeView,
+    QTreeWidget,
     QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import (
     APPLICATION,
     build_context,
+    show_albums,
+)
+from tests.iOpenPod.GUI.test_compact_top_bar import (
+    _active_ipod,  # pyright: ignore[reportPrivateUsage]
 )
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
 from iOpenPod.app.context import AppContext
+from iOpenPod.app.core.settings.definitions import NAVIGATION_STYLE, NavigationStyle
 from iOpenPod.app.library_export import PlaylistExportMode, PlaylistFileType
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -36,7 +43,10 @@ from iOpenPod.app.models.device import (
 )
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.app.models.track_columns import TrackColumn
-from iOpenPod.GUI.dialogs.playlist_editor import PlaylistEditorDialog
+from iOpenPod.GUI.dialogs.playlist_editor import (
+    PlaylistEditorDialog,
+    _rule_value_text,  # pyright: ignore[reportPrivateUsage]
+)
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
@@ -47,6 +57,7 @@ from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.sidebar import Sidebar
+from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
@@ -71,7 +82,47 @@ _TRACKS = (
     Track(2, "Alpha", "Another artist", "An album", 180_000),
     Track(3, "Beta", "Third artist", "An album", 90_000),
 )
+
+
+@pytest.mark.parametrize(
+    "timestamp,text", [(-2082844799, "1904-01-01 00:00:01"), (10**30, str(10**30))]
+)
+def test_smart_date_display_accepts_early_and_unrepresentable_dates(
+    timestamp: int, text: str
+) -> None:
+    assert _rule_value_text(SmartField.LAST_PLAYED, timestamp) == text
+
+
 _ORIGINAL = Playlist(10, "Road trip", entries=playlist_entries((3, 1, 1, 2)))
+_EDITABLE_KINDS = (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER)
+
+
+@pytest.mark.parametrize("installed", [False, True])
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
+def test_phase_option_requires_installed_game_and_editable_playlist(
+    installed: bool, kind: PlaylistKind
+) -> None:
+    dialog = PlaylistEditorDialog(kind, phase_available=installed)
+    try:
+        assert dialog.phase.isHidden() is (not installed or kind is PlaylistKind.FOLDER)
+        assert not dialog.phase.isChecked()
+        dialog.set_phase_available(True)
+        assert dialog.phase.isHidden() is (kind is PlaylistKind.FOLDER)
+    finally:
+        dialog.deleteLater()
+
+
+def test_existing_phase_selection_can_be_cleared_after_game_removal() -> None:
+    dialog = PlaylistEditorDialog(
+        PlaylistKind.PLAYLIST, Playlist(10, "Rhythm", is_phase=True)
+    )
+    try:
+        assert not dialog.phase.isHidden()
+        assert dialog.phase.isChecked()
+        dialog.phase.setChecked(False)
+        assert not dialog.phase.isChecked()
+    finally:
+        dialog.deleteLater()
 
 
 @dataclass(frozen=True)
@@ -166,6 +217,7 @@ def test_playlist_opens_in_source_order_with_repeated_track_occurrences(
     assert _table(browser.page).horizontalHeader().sortIndicatorSection() == -1
     assert "4 track" in _label(browser.page, "pageMeta").text()
     assert browser.page.findChild(QLabel, "playlistSessionNotice") is None
+    assert browser.page.findChild(QTreeWidget, "geniusCollections") is None
     assert browser.page.findChild(ActionButton, "resetPlaylistDrafts") is None
     table = _table(browser.page)
     assert not table.isColumnHidden(TrackColumn.PLAYLIST_POSITION)
@@ -209,6 +261,47 @@ def test_playlist_banner_paints_track_backed_placeholder_artwork(
     }
 
     assert sampled_colors - {background}
+
+
+def test_phase_hero_overlays_wordmark_and_clears_it_for_other_playlists(
+    browser: _Browser,
+) -> None:
+    phase = Playlist(20, "Rhythm", entries=playlist_entries((1, 2)), is_phase=True)
+    browser.context.library_workspace.load(LibrarySnapshot(_TRACKS, (_ORIGINAL, phase)))
+    browser.page.select_playlist(20)
+    APPLICATION.processEvents()
+    wordmark = browser.page.findChild(QWidget, "phaseHeroWordmark")
+    assert wordmark is not None and wordmark.isVisible()
+    assert wordmark.parentWidget() is _banner(browser.page)
+    assert wordmark.width() >= 108
+    assert (
+        wordmark.geometry().bottom()
+        < _button(browser.page, "editPlaylist").geometry().top()
+    )
+    assert _label(browser.page, "pageTitle").text() == "Rhythm"
+    image = wordmark.grab().toImage()
+    text_color = browser.context.theme_manager.tokens.text.casefold()
+    assert any(
+        image.pixelColor(x, y).name().casefold() == text_color
+        for x in range(image.width())
+        for y in range(image.height())
+    )
+    browser.page.select_playlist(10)
+    assert wordmark.isHidden()
+
+
+def test_native_genius_playlist_shows_atom_in_playlist_hero(browser: _Browser) -> None:
+    playlist = Playlist(
+        30, "Saved Genius", PlaylistKind.GENIUS, entries=playlist_entries((1, 2))
+    )
+    browser.context.library_workspace.load(
+        LibrarySnapshot(_TRACKS, (_ORIGINAL, playlist))
+    )
+    browser.page.select_playlist(30)
+    icon = browser.page.findChild(QWidget, "geniusHeroIcon")
+    assert icon is not None and icon.isVisible()
+    browser.page.select_playlist(10)
+    assert icon.isHidden()
 
 
 def test_playlist_export_button_requests_the_complete_saved_occurrence_order(
@@ -310,7 +403,7 @@ def test_folder_editor_places_and_applies_the_sort_order_control(
     assert folder.sort_order is PlaylistSortOrder.TITLE
 
 
-@pytest.mark.parametrize("kind", tuple(PlaylistKind))
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
 def test_playlist_pages_offer_contextual_actions_in_the_header(
     browser: _Browser,
     kind: PlaylistKind,
@@ -554,7 +647,7 @@ def test_playlist_play_next_is_connected_to_the_application_queue() -> None:
     context.track_model.replace_tracks(_TRACKS)
     window = MainWindow(context, auto_discover=False)
     try:
-        page = window.findChild(PlaylistPage)
+        page = window.findChild(PlaylistPage, "playlistsPage")
         assert page is not None
         page.select_playlist(10)
         controller = context.playback_controller
@@ -628,35 +721,134 @@ def test_rating_editor_uses_stars_and_converts_to_exact_shared_rating() -> None:
     )
     dialog = PlaylistEditorDialog(PlaylistKind.SMART, original)
     try:
-        values = [
-            line
+        dialog.show()
+        APPLICATION.processEvents()
+        rating = next(
+            widget
+            for widget in dialog.findChildren(StarRating)
+            if widget.accessibleName() == "Rule rating"
+        )
+        assert rating.isVisible()
+        assert rating.rating == 81
+        assert rating.text() == "★★★★☆"
+        assert all(
+            not line.isVisible()
             for line in dialog.findChildren(QLineEdit)
-            if line.accessibleName() == "Rule value"
-        ]
-        assert len(values) == 1
-        assert values[0].text() == "4.05"
-        values[0].setText("4.5")
+            if line.accessibleName() in ("Rule value", "Upper rule value")
+        )
+        QTest.mouseClick(rating, Qt.MouseButton.LeftButton, pos=rating.rect().center())
 
         dialog.accept()
 
         assert dialog.result() == QDialog.DialogCode.Accepted
         assert dialog.smart is not None
         assert dialog.smart.rules.rules == (
-            SmartRule(SmartField.RATING, SmartOperator.GREATER_THAN, 90),
+            SmartRule(SmartField.RATING, SmartOperator.GREATER_THAN, 60),
         )
     finally:
+        dialog.close()
         dialog.deleteLater()
 
 
-def test_playlist_rule_editor_uses_named_playlist_choices() -> None:
-    source = Playlist(10, "Road trip", entries=playlist_entries((1, 3)))
+def test_rating_range_edits_both_bounds_with_stars() -> None:
+    original = Playlist(
+        10,
+        "Favorites",
+        PlaylistKind.SMART,
+        smart=SmartPlaylist(
+            rules=SmartRuleGroup(
+                rules=(SmartRule(SmartField.RATING, SmartOperator.BETWEEN, 1, 99),)
+            )
+        ),
+    )
+    dialog = PlaylistEditorDialog(PlaylistKind.SMART, original)
+    try:
+        dialog.show()
+        APPLICATION.processEvents()
+        lower, upper = dialog.findChildren(StarRating)
+        assert lower.isVisible() and upper.isVisible()
+        assert (lower.rating, upper.rating) == (1, 99)
+        QTest.keyClick(lower, Qt.Key.Key_2)
+        QTest.keyClick(upper, Qt.Key.Key_4)
+        dialog.accept()
+
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert dialog.smart is not None
+        assert dialog.smart.rules.rules == (
+            SmartRule(SmartField.RATING, SmartOperator.BETWEEN, 40, 80),
+        )
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_switching_rule_field_and_operator_shows_relevant_rating_controls() -> None:
+    original = Playlist(
+        10,
+        "Favorites",
+        PlaylistKind.SMART,
+        smart=SmartPlaylist(
+            rules=SmartRuleGroup(
+                rules=(SmartRule(SmartField.ARTIST, SmartOperator.IS, "Artist"),)
+            )
+        ),
+    )
+    dialog = PlaylistEditorDialog(PlaylistKind.SMART, original)
+    try:
+        dialog.show()
+        APPLICATION.processEvents()
+        field = next(
+            combo
+            for combo in dialog.findChildren(AppComboBox)
+            if combo.accessibleName() == "Rule field"
+        )
+        operator = next(
+            combo
+            for combo in dialog.findChildren(AppComboBox)
+            if combo.accessibleName() == "Rule condition"
+        )
+        lower, upper = dialog.findChildren(StarRating)
+        assert not lower.isVisible() and not upper.isVisible()
+
+        field.setCurrentIndex(field.findData(SmartField.RATING.value))
+        assert lower.isVisible() and not upper.isVisible()
+        operator.setCurrentIndex(operator.findData(SmartOperator.BETWEEN.value))
+        assert lower.isVisible() and upper.isVisible()
+        operator.setCurrentIndex(operator.findData(SmartOperator.IS.value))
+        assert lower.isVisible() and not upper.isVisible()
+        field.setCurrentIndex(field.findData(SmartField.YEAR.value))
+        assert not lower.isVisible() and not upper.isVisible()
+        value = next(
+            line
+            for line in dialog.findChildren(QLineEdit)
+            if line.accessibleName() == "Rule value"
+        )
+        assert value.isVisible()
+        value.setText("2026")
+        dialog.accept()
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        assert dialog.smart is not None
+        assert dialog.smart.rules.rules == (
+            SmartRule(SmartField.YEAR, SmartOperator.IS, 2026),
+        )
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("playlist_id", [10, 11919153248416957672, (1 << 64) - 1])
+@pytest.mark.parametrize("missing", [False, True])
+def test_playlist_rule_editor_preserves_playlist_references(
+    playlist_id: int, missing: bool
+) -> None:
+    source = Playlist(playlist_id, "Road trip", entries=playlist_entries((1, 3)))
     smart = SmartPlaylist(
         rules=SmartRuleGroup(
             rules=(
                 SmartRule(
                     SmartField.PLAYLIST,
                     SmartOperator.IS,
-                    SmartPlaylistReference(10),
+                    SmartPlaylistReference(playlist_id),
                 ),
             )
         )
@@ -665,7 +857,7 @@ def test_playlist_rule_editor_uses_named_playlist_choices() -> None:
     dialog = PlaylistEditorDialog(
         PlaylistKind.SMART,
         original,
-        playlists=(source, original),
+        playlists=(original,) if missing else (source, original),
     )
     try:
         choice = next(
@@ -674,8 +866,10 @@ def test_playlist_rule_editor_uses_named_playlist_choices() -> None:
             if combo.accessibleName() == "Rule choice"
         )
 
-        assert choice.currentText() == "Road trip"
-        assert choice.currentData() == 10
+        assert choice.currentText() == (
+            f"Missing Playlist ({playlist_id})" if missing else "Road trip"
+        )
+        assert int(choice.currentData()) == playlist_id
         dialog.accept()
         assert dialog.result() == QDialog.DialogCode.Accepted
         assert dialog.smart is smart
@@ -748,7 +942,7 @@ def test_smart_rule_groups_alternate_surface_by_nesting_depth() -> None:
         dialog.deleteLater()
 
 
-@pytest.mark.parametrize("kind", tuple(PlaylistKind))
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
 def test_blank_names_keep_the_editor_open(kind: PlaylistKind) -> None:
     dialog = PlaylistEditorDialog(kind)
     try:
@@ -763,7 +957,7 @@ def test_blank_names_keep_the_editor_open(kind: PlaylistKind) -> None:
         dialog.deleteLater()
 
 
-@pytest.mark.parametrize("kind", tuple(PlaylistKind))
+@pytest.mark.parametrize("kind", _EDITABLE_KINDS)
 def test_creation_uses_the_selected_folder_and_selects_the_new_item(
     browser: _Browser, monkeypatch: pytest.MonkeyPatch, kind: PlaylistKind
 ) -> None:
@@ -857,15 +1051,18 @@ def test_explicit_smart_rule_edit_updates_saved_membership(
 
 def test_playlist_dropdown_keeps_library_navigation_and_only_items_open_pages() -> None:
     context = build_context()
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     context.track_model.replace_tracks(_TRACKS)
     context.library_workspace.load(LibrarySnapshot(_TRACKS, (_ORIGINAL,)))
     window = MainWindow(context, auto_discover=False)
+    show_albums(window)
     window.show()
     APPLICATION.processEvents()
     try:
         sidebar = window.findChild(Sidebar, "appSidebar")
         page = window.findChild(PlaylistPage, "playlistsPage")
         assert sidebar is not None and page is not None
+        sidebar.set_active_ipod(_active_ipod())
         tree = sidebar.playlist_tree
         assert tree is not None
         toggle = sidebar.findChild(QPushButton, "playlistSectionToggle")
@@ -1057,6 +1254,48 @@ def test_relative_date_editor_keeps_exact_seconds_and_accepts_friendly_units() -
         assert dialog.smart and dialog.smart.rules.rules == (
             SmartRule(SmartField.DATE_ADDED, SmartOperator.IN_LAST, 216000),
         )
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1969-12-31 23:59:59", -1),
+        ("1970-01-01T01:59:59+02:00", -1),
+        ("1969-12-31", -86400),
+        ("1969-12-31T23:59:59.1Z", None),
+        ("1969-12-31T23:59:59.000000001Z", None),
+        ("unknown", None),
+    ],
+)
+def test_smart_date_editor_preserves_offsets_and_whole_second_contract(
+    text: str, expected: int | None
+) -> None:
+    smart = SmartPlaylist(
+        rules=SmartRuleGroup(
+            rules=(SmartRule(SmartField.DATE_ADDED, SmartOperator.IS, 1_700_000_000),)
+        )
+    )
+    dialog = PlaylistEditorDialog(
+        PlaylistKind.SMART, Playlist(10, "Dates", PlaylistKind.SMART, smart=smart)
+    )
+    try:
+        line = next(
+            line
+            for line in dialog.findChildren(QLineEdit)
+            if line.accessibleName() == "Rule value"
+        )
+        line.setText(text)
+        dialog.accept()
+        if expected is None:
+            assert dialog.result() != QDialog.DialogCode.Accepted
+            assert dialog.smart is smart
+        else:
+            assert dialog.result() == QDialog.DialogCode.Accepted
+            assert dialog.smart and dialog.smart.rules.rules == (
+                SmartRule(SmartField.DATE_ADDED, SmartOperator.IS, expected),
+            )
     finally:
         dialog.deleteLater()
 

@@ -24,12 +24,34 @@ and accumulated understanding of iPod databases and device behavior have been
 valuable references for iOpenPod. Their work helped establish the open-source
 iPod ecosystem this project learns from and hopes to continue.
 
+## dotm5 — Genius-Mix-Research
+
+Thanks to [dotm5](https://github.com/dotm5) for their
+[Genius-Mix-Research](https://github.com/dotm5/Genius-Mix-Research) repository. Its
+research helped iOpenPod understand native Genius Data formats.
+
 ## DJShott — application icon
 
 Thank you to **DJShott** for designing and contributing the application icon and
 offering it for future iOpenPod updates. It is used with permission; the creator's
 statement and asset-specific scope are preserved in
 [`DJShott-icon.txt`](src/iOpenPod/assets/icons/DJShott-icon.txt).
+
+## Olsro — iPod Clickwheel Games Preservation Project
+
+Thanks to [Olsro](https://github.com/Olsro) and the project's contributors for
+organizing and preserving iPod click wheel games through the
+[iPod Clickwheel Games Preservation Project](https://github.com/Olsro/ipodclickwheelgamespreservationproject).
+iOpenPod downloads its game collection from that project's version16 release.
+
+The upstream MIT notice is retained in
+[`Olsro-ipodclickwheelgamespreservationproject.txt`](LICENSES/Olsro-ipodclickwheelgamespreservationproject.txt).
+It records the repository's license, not permission from the games' rights holders.
+The commercial games, their artwork, and Game Authorization Store material are
+not relicensed under iOpenPod's GPL grant. See the
+[license review](docs/research/click-wheel-games-license-review.md) for the scope
+of the upstream grant and unresolved rights questions. Credit does not imply
+endorsement by Olsro, contributors, Apple, or game publishers.
 
 ## The wider community
 

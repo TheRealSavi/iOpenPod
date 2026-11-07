@@ -14,7 +14,7 @@ import uuid
 from contextlib import suppress
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO, cast
+from typing import TYPE_CHECKING, BinaryIO, Literal, cast, overload
 
 from storage._filesystem import (
     COPY_CHUNK_SIZE,
@@ -66,8 +66,10 @@ from storage.paths import DevicePath, HostPath
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+    from contextlib import AbstractContextManager
     from types import TracebackType
 
+    from storage.media_processing import ToolOutput
     from storage.platform.base import PlatformAdapter
     from storage.transactions import (
         FileContent,
@@ -102,6 +104,9 @@ class FilesystemSession:
         platform: PlatformAdapter,
         on_invalidate: Callable[[str, ConnectionGeneration], None],
         writer_lock_directory: Path | None,
+        transaction_recovery_directory: Path | None = None,
+        check_recovery_location: Callable[[HostPath, MountedVolume], None]
+        | None = None,
     ) -> None:
         self._mounted_volume = mounted_volume
         self._current_observation = mounted_volume.observation
@@ -109,6 +114,8 @@ class FilesystemSession:
         self._platform = platform
         self._on_invalidate = on_invalidate
         self._writer_lock_directory = writer_lock_directory
+        self._transaction_recovery_directory = transaction_recovery_directory
+        self._check_recovery_location = check_recovery_location
         self._root = mounted_volume.mount_point.path.resolve(strict=True)
         self._state = _SessionState.ACTIVE
         self._invalid_reason = ""
@@ -264,6 +271,53 @@ class FilesystemSession:
     def read(self, path: DevicePath, *, max_bytes: int | None = None) -> bytes:
         return self.read_snapshot(path, max_bytes=max_bytes).data
 
+    def read_with_tool(
+        self,
+        path: DevicePath,
+        executable: HostPath,
+        arguments: tuple[str, ...],
+        *,
+        checkpoint: Callable[[], None],
+        arguments_after_input: tuple[str, ...] = (),
+        timeout_seconds: float = 60,
+        max_output_bytes: int = 4 * 1024 * 1024,
+        max_stderr_bytes: int | None = None,
+        low_priority: bool = False,
+        check: bool = True,
+    ) -> ToolOutput:
+        """Lend one pinned, seekable device file to a read-only tool without copying.
+
+        The runner retains its read handle until the child is reaped. Device Paths
+        stay inside Storage, and both connection identity and file facts are checked
+        before accepting output. This supplies analysis, never a content digest.
+        """
+        from storage.media_processing import run_media_tool
+
+        observation = self._revalidate()
+        target = resolve_device_path(
+            self._root, path, observation.volume.capabilities, require_leaf=True
+        )
+
+        def guarded_checkpoint() -> None:
+            self._assert_active()
+            checkpoint()
+
+        try:
+            return run_media_tool(
+                executable,
+                arguments,
+                input_file=HostPath(target),
+                arguments_after_input=arguments_after_input,
+                checkpoint=guarded_checkpoint,
+                timeout_seconds=timeout_seconds,
+                max_output_bytes=max_output_bytes,
+                max_stderr_bytes=max_stderr_bytes,
+                low_priority=low_priority,
+                check=check,
+            )
+        finally:
+            self._revalidate()
+
     def read_range(
         self,
         path: DevicePath,
@@ -345,46 +399,51 @@ class FilesystemSession:
 
     def delete_unrecoverably(self, path: DevicePath, *, expected: FileIdentity) -> None:
         """Delete one unchanged regular file without retaining a recovery copy."""
-
         with self._writer_lease():
-            observation = self._revalidate(write=True)
-            target = resolve_device_path(
-                self._root,
-                path,
-                observation.volume.capabilities,
-                require_leaf=True,
-            )
-            try:
-                with open_read_no_follow(target) as source:
-                    if _file_identity(os.fstat(source.fileno())) != expected:
-                        raise FilePreconditionError(
-                            f"Device file changed before deletion: {path}"
-                        )
-                # Check the named entry again after closing its handle (required
-                # for deletion on Windows).
-                metadata = os.lstat(target)
-                if is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
-                    raise UnsafeFilesystemPathError(
-                        f"Device Path is not a regular file: {path}"
-                    )
-                if _file_identity(metadata) != expected:
+            self._delete_unrecoverably(path, expected=expected)
+
+    def _delete_unrecoverably(
+        self, path: DevicePath, *, expected: FileIdentity
+    ) -> None:
+        """Internal deletion while the caller holds the Volume writer lease."""
+        observation = self._revalidate(write=True)
+        target = resolve_device_path(
+            self._root,
+            path,
+            observation.volume.capabilities,
+            require_leaf=True,
+        )
+        try:
+            with open_read_no_follow(target) as source:
+                if _file_identity(os.fstat(source.fileno())) != expected:
                     raise FilePreconditionError(
                         f"Device file changed before deletion: {path}"
                     )
-                self._revalidate(write=True)
-                target.unlink()
-                if os.path.lexists(target):
-                    raise StorageOperationError(
-                        f"Deleted device file is still present: {path}"
-                    )
-                flush_parent_directory(target)
-                self._revalidate(write=True)
-            except StorageError:
-                raise
-            except OSError as error:
+            # Check the named entry again after closing its handle (required
+            # for deletion on Windows).
+            metadata = os.lstat(target)
+            if is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
+                raise UnsafeFilesystemPathError(
+                    f"Device Path is not a regular file: {path}"
+                )
+            if _file_identity(metadata) != expected:
+                raise FilePreconditionError(
+                    f"Device file changed before deletion: {path}"
+                )
+            self._revalidate(write=True)
+            target.unlink()
+            if os.path.lexists(target):
                 raise StorageOperationError(
-                    f"Could not delete device file {path}: {error}"
-                ) from error
+                    f"Deleted device file is still present: {path}"
+                )
+            flush_parent_directory(target)
+            self._revalidate(write=True)
+        except StorageError:
+            raise
+        except OSError as error:
+            raise StorageOperationError(
+                f"Could not delete device file {path}: {error}"
+            ) from error
 
     def read_snapshot(
         self,
@@ -410,7 +469,20 @@ class FilesystemSession:
         self._revalidate()
         return FileSnapshot(data=data, fingerprint=fingerprint)
 
-    def fingerprint(self, path: DevicePath) -> FileFingerprint:
+    def fingerprint(
+        self,
+        path: DevicePath,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+    ) -> FileFingerprint:
+        """Hash a stable file, checking optional cancellation between read chunks."""
+
+        def checked() -> None:
+            self._assert_active()
+            if checkpoint is not None:
+                checkpoint()
+
+        checked()
         observation = self._revalidate()
         target = resolve_device_path(
             self._root,
@@ -422,9 +494,10 @@ class FilesystemSession:
             target,
             collect_data=False,
             max_bytes=None,
-            assert_active=self._assert_active,
+            assert_active=checked,
         )
         self._revalidate()
+        checked()
         return fingerprint
 
     def modified_time_matches(self, actual_ns: int, expected_ns: int) -> bool:
@@ -492,6 +565,28 @@ class FilesystemSession:
         with self._writer_lease():
             observation = self._revalidate(write=True)
             self._ensure_directories(path, observation)
+            self._revalidate(write=True)
+
+    def remove_empty_directory(self, path: DevicePath) -> None:
+        """Remove only the named empty directory, never its parents or files."""
+        with self._writer_lease():
+            observation = self._revalidate(write=True)
+            target = resolve_device_path(
+                self._root, path, observation.volume.capabilities, require_leaf=True
+            )
+            metadata = os.lstat(target)
+            if is_link_or_reparse(metadata) or not stat.S_ISDIR(metadata.st_mode):
+                raise UnsafeFilesystemPathError(
+                    f"Device Path is not a plain directory: {path}"
+                )
+            self._revalidate(write=True)
+            try:
+                target.rmdir()
+            except OSError as error:
+                raise StorageOperationError(
+                    f"Could not remove empty Device directory {path}: {error}"
+                ) from error
+            flush_parent_directory(target)
             self._revalidate(write=True)
 
     def atomic_write(
@@ -716,6 +811,43 @@ class FilesystemSession:
 
         return validate(self, plan)
 
+    @property
+    def supports_host_transaction_recovery(self) -> bool:
+        return self._transaction_recovery_directory is not None
+
+    def host_transaction_journals(self) -> tuple[DevicePath, ...]:
+        """Find identity-bound Host recovery, including a lost device journal."""
+        from storage._host_transactions import journals
+
+        return journals(self)
+
+    def transaction_journal_fingerprint(self, path: DevicePath) -> FileFingerprint:
+        """Observe the authoritative journal, whether retained on Host or device."""
+        from storage._host_transactions import read
+
+        retained = read(self, path)
+        return retained[1] if retained is not None else self.fingerprint(path)
+
+    def has_transaction(self, path: DevicePath) -> bool:
+        return self.exists(path) or path in self.host_transaction_journals()
+
+    def decline_transaction(
+        self, path: DevicePath, *, expected: FileFingerprint
+    ) -> None:
+        """Retire observed recovery intent while retaining diagnostic material."""
+        from storage._host_transactions import decline, read
+        from storage._transaction_journal import journal_root
+
+        if read(self, path) is None:
+            self.move(
+                path,
+                journal_root(path).joinpath("declined-transaction.json"),
+                expected_source=expected,
+            )
+            return
+        with self._writer_lease():
+            decline(self, path, expected)
+
     def execute_transaction(
         self,
         plan: StorageTransaction,
@@ -731,6 +863,34 @@ class FilesystemSession:
             self._revalidate(write=True)
             return execute(
                 self, plan, checkpoint=checkpoint, progress=progress, activity=activity
+            )
+
+    def resume_transaction(
+        self,
+        plan: StorageTransaction,
+        journal_path: DevicePath,
+        *,
+        checkpoint: Callable[[], None] | None = None,
+        progress: Callable[[TransactionProgress], None] | None = None,
+        activity: Callable[[TransactionActivity], None] | None = None,
+    ) -> TransactionResult:
+        """Resume a create-only transaction interrupted during staging.
+
+        The exact journal, device identity, plan and existing stage contents are
+        checked before reuse. Replacements and publication recovery still use
+        the existing explicit restoration workflow.
+        """
+        from storage._transactions import execute
+
+        with self._writer_lease():
+            self._revalidate(write=True)
+            return execute(
+                self,
+                plan,
+                checkpoint=checkpoint,
+                progress=progress,
+                activity=activity,
+                resume_path=journal_path,
             )
 
     def inspect_transaction(
@@ -973,6 +1133,7 @@ class FilesystemSession:
             ) from error
         self._revalidate(write=True)
 
+    @overload
     def _copy_transaction_file(
         self,
         source: bytes | HostPath | DevicePath,
@@ -982,7 +1143,50 @@ class FilesystemSession:
         expected: FileFingerprint | None = None,
         reserve_bytes: int = 0,
         checkpoint: Callable[[], None] | None = None,
-    ) -> WriteResult:
+        modified_ns: int | None = None,
+        defer_readback: Literal[False] = False,
+    ) -> WriteResult: ...
+
+    @overload
+    def _copy_transaction_file(
+        self,
+        source: bytes | HostPath | DevicePath,
+        destination: DevicePath,
+        content: FileContent,
+        *,
+        expected: FileFingerprint | None = None,
+        reserve_bytes: int = 0,
+        checkpoint: Callable[[], None] | None = None,
+        modified_ns: int | None = None,
+        defer_readback: Literal[True],
+    ) -> None: ...
+
+    @overload
+    def _copy_transaction_file(
+        self,
+        source: bytes | HostPath | DevicePath,
+        destination: DevicePath,
+        content: FileContent,
+        *,
+        expected: FileFingerprint | None = None,
+        reserve_bytes: int = 0,
+        checkpoint: Callable[[], None] | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool,
+    ) -> WriteResult | None: ...
+
+    def _copy_transaction_file(
+        self,
+        source: bytes | HostPath | DevicePath,
+        destination: DevicePath,
+        content: FileContent,
+        *,
+        expected: FileFingerprint | None = None,
+        reserve_bytes: int = 0,
+        checkpoint: Callable[[], None] | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool = False,
+    ) -> WriteResult | None:
         if isinstance(source, bytes):
             return self._atomic_publish(
                 destination,
@@ -992,7 +1196,10 @@ class FilesystemSession:
                 create_parents=True,
                 reserve_bytes=reserve_bytes,
                 expected_sha256=content.sha256,
+                modified_ns=modified_ns,
+                defer_readback=defer_readback,
             )
+        stream: AbstractContextManager[BinaryIO]
         if isinstance(source, HostPath):
             stream = _open_host_source(Path(os.fspath(source)))
         else:
@@ -1005,21 +1212,21 @@ class FilesystemSession:
                     require_leaf=True,
                 )
             )
-        with stream:
-            before = os.fstat(stream.fileno())
+        with stream as opened:
+            before = os.fstat(opened.fileno())
 
             def chunks() -> Iterable[bytes]:
                 while True:
                     if checkpoint is not None:
                         checkpoint()
                     self._assert_active()
-                    data = stream.read(COPY_CHUNK_SIZE)
+                    data = opened.read(COPY_CHUNK_SIZE)
                     if not data:
                         return
                     yield data
 
             def verify_source() -> None:
-                if _stat_identity(before) != _stat_identity(os.fstat(stream.fileno())):
+                if _stat_identity(before) != _stat_identity(os.fstat(opened.fileno())):
                     raise ConcurrentModificationError(
                         "Transaction source changed during staging"
                     )
@@ -1033,6 +1240,8 @@ class FilesystemSession:
                 reserve_bytes=reserve_bytes,
                 validate_staged=verify_source,
                 expected_sha256=content.sha256,
+                modified_ns=modified_ns,
+                defer_readback=defer_readback,
             )
 
     def copy_to_host(
@@ -1062,6 +1271,7 @@ class FilesystemSession:
 
         descriptor = -1
         temp_path: Path | None = None
+        callback_failed = False
         try:
             descriptor, temp_name = tempfile.mkstemp(
                 prefix=".iop-",
@@ -1072,24 +1282,34 @@ class FilesystemSession:
             digest = hashlib.sha256()
             copied = 0
             with (
-                open_read_no_follow(source_path) as device_file,
+                open_read_no_follow(source_path, buffering=0) as device_file,
                 os.fdopen(descriptor, "wb") as host_file,
             ):
                 descriptor = -1
                 before = os.fstat(device_file.fileno())
-                while True:
+                remaining = before.st_size
+                while remaining:
                     self._assert_active()
-                    chunk = device_file.read(COPY_CHUNK_SIZE)
+                    chunk = device_file.read(min(COPY_CHUNK_SIZE, remaining))
                     if not chunk:
-                        break
+                        raise ConcurrentModificationError(
+                            f"Device file ended before its observed size: {source}"
+                        )
+                    remaining -= len(chunk)
                     host_file.write(chunk)
                     digest.update(chunk)
                     copied += len(chunk)
                     if progress is not None:
-                        progress(copied)
+                        try:
+                            progress(copied)
+                        except OSError:
+                            callback_failed = True
+                            raise
+                self._assert_active()
                 after = os.fstat(device_file.fileno())
                 if (
                     _stat_identity(before) != _stat_identity(after)
+                    or before.st_ctime_ns != after.st_ctime_ns
                     or copied != after.st_size
                 ):
                     raise ConcurrentModificationError(
@@ -1099,7 +1319,11 @@ class FilesystemSession:
             source_fingerprint = fingerprint_from_stat(after, digest.hexdigest())
             self._revalidate()
             if prepare_staged is not None:
-                prepare_staged(HostPath(temp_path))
+                try:
+                    prepare_staged(HostPath(temp_path))
+                except OSError:
+                    callback_failed = True
+                    raise
                 with _open_host_source(temp_path, writable=True) as prepared:
                     flush_written_file(prepared)
                     prepared.seek(0)
@@ -1130,6 +1354,8 @@ class FilesystemSession:
                 source_fingerprint=source_fingerprint,
             )
         except OSError as error:
+            if callback_failed:
+                raise
             raise StorageOperationError(
                 f"Could not export {source} to the Host: {error}"
             ) from error
@@ -1272,6 +1498,7 @@ class FilesystemSession:
                 ) from error
             self._revalidate(write=True)
 
+    @overload
     def _atomic_publish(
         self,
         path: DevicePath,
@@ -1283,7 +1510,56 @@ class FilesystemSession:
         reserve_bytes: int,
         validate_staged: Callable[[], None] | None = None,
         expected_sha256: str | None = None,
-    ) -> WriteResult:
+        modified_ns: int | None = None,
+        defer_readback: Literal[False] = False,
+    ) -> WriteResult: ...
+
+    @overload
+    def _atomic_publish(
+        self,
+        path: DevicePath,
+        *,
+        source_size: int,
+        chunks: Iterable[bytes],
+        expected: FileFingerprint | None,
+        create_parents: bool,
+        reserve_bytes: int,
+        validate_staged: Callable[[], None] | None = None,
+        expected_sha256: str | None = None,
+        modified_ns: int | None = None,
+        defer_readback: Literal[True],
+    ) -> None: ...
+
+    @overload
+    def _atomic_publish(
+        self,
+        path: DevicePath,
+        *,
+        source_size: int,
+        chunks: Iterable[bytes],
+        expected: FileFingerprint | None,
+        create_parents: bool,
+        reserve_bytes: int,
+        validate_staged: Callable[[], None] | None = None,
+        expected_sha256: str | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool,
+    ) -> WriteResult | None: ...
+
+    def _atomic_publish(
+        self,
+        path: DevicePath,
+        *,
+        source_size: int,
+        chunks: Iterable[bytes],
+        expected: FileFingerprint | None,
+        create_parents: bool,
+        reserve_bytes: int,
+        validate_staged: Callable[[], None] | None = None,
+        expected_sha256: str | None = None,
+        modified_ns: int | None = None,
+        defer_readback: bool = False,
+    ) -> WriteResult | None:
         observation = self._revalidate(write=True)
         if create_parents and path.parent is not None:
             self._ensure_directories(path.parent, observation)
@@ -1337,6 +1613,13 @@ class FilesystemSession:
                 raise ConcurrentModificationError(
                     "Staged content does not match its captured SHA-256"
                 )
+            if modified_ns is not None:
+                # Set metadata on the private stage. The existing output read
+                # then verifies both content and timestamp in a single pass.
+                os.utime(
+                    temp_path,
+                    ns=(os.lstat(temp_path).st_atime_ns, modified_ns),
+                )
 
             observation = self._revalidate(write=True)
             target = resolve_device_path(
@@ -1349,10 +1632,21 @@ class FilesystemSession:
             temp_path = None
             flush_parent_directory(target)
             self._revalidate(write=True)
+            if defer_readback:
+                # Host transactions verify the entire published batch in _finish
+                # before recording COMMITTED/RESTORED. Do not manufacture a
+                # verified fingerprint from the outgoing stream's hash.
+                return None
             committed = self._fingerprint_path(target)
             if committed.size != written or committed.sha256 != digest.hexdigest():
                 raise ConcurrentModificationError(
                     f"Committed device file did not verify: {path}"
+                )
+            if modified_ns is not None and not self.modified_time_matches(
+                committed.modified_ns, modified_ns
+            ):
+                raise StorageOperationError(
+                    f"Transaction modification time could not be represented: {path}"
                 )
             return WriteResult(
                 path=path,

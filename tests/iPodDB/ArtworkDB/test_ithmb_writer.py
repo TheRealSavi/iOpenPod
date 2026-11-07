@@ -64,6 +64,22 @@ def test_rotated_rectangular_raster_matches_clockwise_big_endian_vector() -> Non
     assert decode_ithmb(payload, layout) == image
 
 
+@pytest.mark.parametrize("side", (55, 56))
+def test_f1061_encoder_preserves_selected_raster_and_zeroes_stride_padding(
+    side: int,
+) -> None:
+    # Selection between retained 55-row and 56-row layouts belongs to Library
+    # preparation. The codec must neither infer a crop nor shrink that choice.
+    payload = encode_ithmb(
+        DecodedImage(1, 1, bytes((255, 0, 0))),
+        IthmbLayout(side, side, 112, IthmbPixelFormat.RGB565_LE),
+    )
+
+    expected_row = b"\x00\xf8" * side + b"\x00\x00" * (56 - side)
+    assert len(payload) == 112 * side
+    assert payload == expected_row * side
+
+
 def test_i420_planes_accept_catalog_aggregate_row_size() -> None:
     image = DecodedImage(2, 2, bytes((255, 0, 0)) * 4)
     payload = encode_ithmb(image, IthmbLayout(2, 2, 3, IthmbPixelFormat.I420_LE))

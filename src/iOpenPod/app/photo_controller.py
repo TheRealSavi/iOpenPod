@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
+from weakref import ref
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.models.photos import (
     FULL_RESOLUTION_REQUEST_ID,
@@ -56,21 +57,17 @@ class _PhotoWorkerSignals(QObject):
     finished = Signal(int, object)
 
 
-class _PhotoWork(QRunnable):
+class _PhotoWork:
     def __init__(
         self,
         token: int,
         key: _RequestKey,
         work: Callable[[], PhotoImage | None],
     ) -> None:
-        super().__init__()
         self.token = token
         self.key = key
         self.work = work
         self.signals = _PhotoWorkerSignals()
-        # Qt releases the native job after run returns. Invalidation clears the
-        # pool's queue without dereferencing possibly deleted Python wrappers.
-        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -201,7 +198,14 @@ class PhotoController(QObject):
         )
         self._pending.add(key)
         self._work_items[token] = item
-        self._thread_pool.start(item)
+        # Qt may retain cancelled callables; the controller owns queued payloads.
+        work_ref = ref(item)
+
+        def run() -> None:
+            if (work := work_ref()) is not None:
+                work.run()
+
+        self._thread_pool.start(run)
         return None
 
     @Slot(object)

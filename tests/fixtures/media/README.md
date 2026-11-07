@@ -19,6 +19,7 @@ encoded bytes may change between versions and should be reviewed.
 | `chapters-cover.m4a` | Attached artwork is not a movie; exact chapter intervals |
 | `multi-track.mov` | Two audio languages and a QuickTime `text` subtitle sample entry |
 | `multi-track.m4v` | The same stream codec with an MP4 `tx3g` sample entry |
+| `playback-subtitles.mp4` | Four seconds of silent video with an English `tx3g` cue from 500 to 3500 ms, for subtitle selection and transport checks |
 
 The public inspector tests use the real FFprobe executable when installed and skip
 those cases otherwise. Parser fault tests and process timeout/output/cancellation

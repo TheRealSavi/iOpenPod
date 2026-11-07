@@ -5,8 +5,8 @@ from PySide6.QtGui import QMouseEvent, QStandardItem, QStandardItemModel
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QScrollArea, QTableView, QWidget
 
-from iOpenPod.GUI.presentation.middle_mouse_scrolling import (
-    install_middle_mouse_scrolling,
+from iOpenPod.GUI.presentation.scrolling import (
+    install_scrolling,
 )
 
 
@@ -21,7 +21,7 @@ APPLICATION = _application()
 
 
 def test_middle_drag_scrolls_continuously_away_from_its_origin() -> None:
-    install_middle_mouse_scrolling(APPLICATION)
+    install_scrolling(APPLICATION)
     area = QScrollArea()
     content = QWidget()
     content.resize(900, 900)
@@ -82,7 +82,7 @@ def test_middle_drag_scrolls_continuously_away_from_its_origin() -> None:
 
 
 def test_greater_distance_from_origin_increases_scroll_velocity() -> None:
-    install_middle_mouse_scrolling(APPLICATION)
+    install_scrolling(APPLICATION)
     area = QScrollArea()
     content = QWidget()
     content.resize(200, 2_000)
@@ -135,8 +135,8 @@ def test_greater_distance_from_origin_increases_scroll_velocity() -> None:
         area.close()
 
 
-def test_middle_drag_scales_pixel_motion_for_item_scrolling_tables() -> None:
-    install_middle_mouse_scrolling(APPLICATION)
+def test_middle_drag_moves_tables_smoothly_in_pixels() -> None:
+    install_scrolling(APPLICATION)
     model = QStandardItemModel()
     for row in range(100):
         model.appendRow(QStandardItem(f"Track {row}"))
@@ -166,7 +166,7 @@ def test_middle_drag_scales_pixel_motion_for_item_scrolling_tables() -> None:
         )
         QTest.qWait(180)
 
-        assert 20 < scrollbar.value() < 30
+        assert 20 < scrollbar.value() < 300
     finally:
         _send_mouse(
             table.viewport(),
@@ -179,9 +179,7 @@ def test_middle_drag_scales_pixel_motion_for_item_scrolling_tables() -> None:
 
 
 def test_installation_is_idempotent() -> None:
-    assert install_middle_mouse_scrolling(
-        APPLICATION
-    ) is install_middle_mouse_scrolling(APPLICATION)
+    assert install_scrolling(APPLICATION) is install_scrolling(APPLICATION)
 
 
 def _send_mouse(

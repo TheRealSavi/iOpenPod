@@ -99,6 +99,31 @@ def test_library_proxies_sort_cached_model_values() -> None:
     assert first_size >= last_size
 
 
+def test_album_projections_keep_audio_and_music_video_membership_separate() -> None:
+    tracks = TrackTableModel()
+    audio_albums = AlbumListModel(tracks)
+    video_albums = AlbumListModel(tracks, media_kind=MediaKind.MUSIC_VIDEO)
+    audio = Track(1, "Audio", "Artist", "Shared Album", 1000, artwork_id=10)
+    video = Track(
+        2,
+        "Video",
+        "Artist",
+        "Shared Album",
+        2000,
+        artwork_id=20,
+        media_types=(MediaType.MUSIC_VIDEO,),
+    )
+    tracks.replace_tracks((audio, video))
+    for model, track in ((audio_albums, audio), (video_albums, video)):
+        summary = model.album_at(0)
+        assert model.rowCount() == 1 and summary is not None
+        assert summary.track_ids == (track.track_id,)
+        assert summary.artwork_id == track.artwork_id
+        assert summary.duration_ms == track.length_ms
+    tracks.replace_tracks((audio,))
+    assert video_albums.rowCount() == 0 and audio_albums.rowCount() == 1
+
+
 def test_track_table_exposes_the_full_optional_metadata_projection() -> None:
     model = TrackTableModel()
     model.replace_tracks(
@@ -255,6 +280,52 @@ def test_source_neutral_tracks_use_the_same_models_and_optional_columns() -> Non
     assert proxy.index(0, 0).data(TrackRole.TRACK_ID) == 2
 
 
+@pytest.mark.parametrize("play_count", [0, 5])
+@pytest.mark.parametrize("played", [False, True])
+def test_played_column_uses_the_projected_marker_independently_of_play_count(
+    play_count: int, played: bool
+) -> None:
+    model = TrackTableModel()
+    model.replace_tracks(
+        (
+            Track(
+                1,
+                "Retained playback state",
+                "",
+                "",
+                1,
+                play_count=play_count,
+                metadata=TrackMetadata(played=played),
+            ),
+        )
+    )
+    index = model.index(0, TrackColumn.PLAYED)
+    assert index.data() == ("Yes" if played else "No")
+    assert index.data(TrackRole.SORT_VALUE) is played
+
+
+def test_played_sorting_respects_cleared_marker_with_retained_play_count() -> None:
+    model = TrackTableModel()
+    model.replace_tracks(
+        (
+            Track(1, "Marked played", "", "", 1, metadata=TrackMetadata(played=True)),
+            Track(
+                2,
+                "Marker cleared",
+                "",
+                "",
+                1,
+                play_count=5,
+                metadata=TrackMetadata(played=False),
+            ),
+        )
+    )
+    proxy = TrackFilterProxyModel(model)
+    proxy.sort(TrackColumn.PLAYED, Qt.SortOrder.AscendingOrder)
+    assert proxy.index(0, 0).data(TrackRole.TRACK_ID) == 2
+    assert proxy.index(1, 0).data(TrackRole.TRACK_ID) == 1
+
+
 def test_media_type_column_displays_translated_types_and_unknown_diagnostics() -> None:
     model = TrackTableModel()
     model.replace_tracks(
@@ -402,6 +473,31 @@ def test_album_summary_groups_tracks_by_album_artist() -> None:
     assert summary.track_ids == (1, 2)
 
 
+def test_tv_show_cover_uses_first_available_artwork_across_all_episodes() -> None:
+    tracks = TrackTableModel()
+    shows = CollectionListModel(tracks, CollectionKind.TV_SHOW)
+    episodes = tuple(
+        Track(
+            number,
+            f"Episode {number}",
+            "",
+            "",
+            1000,
+            show="Show",
+            media_types=(MediaType.TV_SHOW,),
+            artwork_id=number if number > 4 else 0,
+        )
+        for number in range(1, 8)
+    )
+    tracks.replace_tracks(episodes)
+    summary = shows.collection_at(0)
+    assert summary is not None and summary.representative_artwork_id == 5
+    assert summary.track_ids == tuple(range(1, 8))
+    tracks.replace_tracks(episodes[:4])
+    summary = shows.collection_at(0)
+    assert summary is not None and summary.representative_artwork_id == 0
+
+
 def test_collection_models_build_fixed_four_tile_artwork_collages() -> None:
     tracks = TrackTableModel()
     artists = CollectionListModel(tracks, CollectionKind.ARTIST)
@@ -421,6 +517,48 @@ def test_collection_models_build_fixed_four_tile_artwork_collages() -> None:
     summary = index.data(CollectionRole.SUMMARY)
     assert isinstance(summary, CollectionSummary)
     assert summary.representative_artwork_id == 11
+
+
+@pytest.mark.parametrize("explicit_album_artist", [False, True])
+def test_artist_case_variants_have_separate_collections_albums_and_filters(
+    explicit_album_artist: bool,
+) -> None:
+    tracks = TrackTableModel()
+    artists = CollectionListModel(tracks, CollectionKind.ARTIST)
+    albums = AlbumListModel(tracks)
+    track_proxy = TrackFilterProxyModel(tracks)
+    album_proxy = AlbumFilterProxyModel(albums)
+    artist_proxy = CollectionFilterProxyModel(artists)
+    names = ("Paul van Dyk", "Paul Van Dyk")
+    tracks.replace_tracks(
+        tuple(
+            Track(
+                n,
+                f"Track {n}",
+                name,
+                "Shared album title",
+                1000,
+                album_artist=name if explicit_album_artist else "",
+            )
+            for n, name in enumerate(names, start=1)
+        )
+    )
+    assert artists.rowCount() == 2
+    assert albums.rowCount() == 2
+    for n, name in enumerate(names, start=1):
+        collection = artists.index(n - 1, 0).data(CollectionRole.SUMMARY)
+        assert isinstance(collection, CollectionSummary)
+        assert collection.title == name
+        assert collection.track_ids == (n,)
+        track_proxy.set_collection_key(CollectionKind.ARTIST, collection.key)
+        assert track_proxy.rowCount() == 1
+        assert track_proxy.index(0, 0).data(TrackRole.TRACK_ID) == n
+        album_proxy.set_collection_key(CollectionKind.ARTIST, collection.key)
+        assert album_proxy.rowCount() == 1
+        assert album_proxy.index(0, 0).data(AlbumRole.ARTIST) == name
+    # Search remains forgiving; identity and text matching are different policies.
+    artist_proxy.set_query("PAUL VAN DYK")
+    assert artist_proxy.rowCount() == 2
 
 
 def test_track_proxy_filters_specific_media_kinds() -> None:

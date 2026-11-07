@@ -15,5 +15,18 @@
     "Hallmark component-state and contrast review",
     "cross-platform palette-aware checkbox indicator painting",
     "flat source-list disclosure pattern for Host Media Library folders"
-  ]
+  ],
+  "website": {
+    "scanned_at": "2026-10-25",
+    "framework": "Jekyll with Liquid, plain HTML/CSS and existing JavaScript",
+    "font_stack": "Manrope display, Inter body, Geist Mono code; existing font roles retained",
+    "palette": "Existing named light/dark tokens; quieter blue and neutral surfaces",
+    "motion": "No decorative motion or motion dependency",
+    "spacing": "Existing named four-point scale; compact reading and product layouts",
+    "evidence": [
+      "website/tokens.css",
+      "website/_layouts/default.html",
+      "website/iop2.css"
+    ]
+  }
 }

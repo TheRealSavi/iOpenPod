@@ -58,21 +58,35 @@ the existing HTML verification filename is not that token. Keep the verification
 file available but excluded from the sitemap. `404.html` is also excluded and
 marked `noindex`; it offers routes back to useful content.
 
-The homepage hero includes a subtle background panel with an outlined heart, a
-short development-support message, and a pill-shaped Ko-fi link beside the
-introduction. This invitation, the compact Donate link in
-the navigation, and the footer support link share `donation_url` in `_config.yml`.
+The introduction explains the application beside a real library screenshot, with
+a download link. A short developer note explains the project's two years of
+personal research and reverse engineering, with a link to the source and research.
+Beside it, `images/ipod-workbench.jpg` is the developer's supplied photograph.
+The original image is retained intact; CSS crops its display around the iPods and
+exposed parts. A visible caption identifies the workbench. The photograph sits
+below the note on smaller screens and is separate from the screenshot viewer.
+An in-page index links to that note, features, supported iPods, downloads,
+migration, and questions. Keep headings descriptive
+and copy practical: name the action or feature and explain any relevant limit.
+Use modest type, ordinary links, and compact spacing throughout the site.
 
-The header links to the GitHub project and shows total release-asset downloads
-through Shields.io, including earlier releases. Downloads are not unique or active
-users. Keep the label accurate; the count depends on Shields.io and its cache.
-The star-count badge was replaced with a stable project link after it displayed
-an invalid response during the October 2026 review.
+Development support has a filled **Support on Ko-fi** button in the shared header
+and a dedicated invitation after the download notes. The invitation uses John's
+developer voice, a warm surface, and a clear action, separate from setup copy.
+`_includes/support-link.html` owns the shared button; all support links use
+`donation_url` in `_config.yml`. Support colors are semantic tokens with light and
+dark variants. These are ordinary links to Ko-fi; checkout and payment states
+belong there. Keep keyboard focus visible and touch targets at least 44 px.
+A small invitation to star the project sits beside
+the installation notes, with a Shields.io image showing the repository's star
+count. The badge and prompt link directly to `repository_url`; no extra script is
+needed. On smaller screens, the invitation follows the notes.
 
 `tokens.css` and `theme.css` own the shared colors and typography. `iop2.css`
 contains the scoped IOP2 layout and consumes the existing `site.css` foundation.
 The layout loads the readable CSS, `theme.js`, and `screenshot-viewer.js` directly;
 older `.min.*` assets are retained but are no longer runtime inputs.
+The homepage also loads `download-links.js` to resolve the current native installers.
 
 The shared layout loads `tokens.css` before `site.css`, then `theme.css` and
 `iop2.css`. Every local stylesheet and script URL includes the same Jekyll build
@@ -80,9 +94,9 @@ timestamp (`?v=...`) so a newly deployed page requests fresh assets even when a
 browser still caches files from an earlier deployment. Keep these URLs versioned
 and load shared styles through the layout rather than unversioned CSS imports.
 
-The Sync showcase alternates four compact screenshot-and-text rows on desktop:
-media folders, media selection, Sync Review, and conversion settings. On smaller screens each
-image appears above its description. The other product-tour sections are separate.
+The Sync showcase uses two columns on wider screens and one on small screens.
+Each explanation sits above its screenshot: media folders, media selection,
+Sync Review, and conversion settings. The other product-tour sections are separate.
 
 Screenshot buttons open a native modal dialog. It supports actual-size zoom,
 scrolling, Escape, backdrop dismissal, and returning focus to the clicked image.
@@ -116,13 +130,17 @@ viewer against that preview:
 ```shell
 node tests/website/screenshot-viewer.cjs http://127.0.0.1:4000/iOpenPod/
 node tests/website/navigation.cjs http://127.0.0.1:4000/iOpenPod/
+node tests/website/download-links.cjs http://127.0.0.1:4000/iOpenPod/
 ```
 
 This checks every screenshot in both themes, mobile and desktop sizes, keyboard
 focus, zoom, all dismissal methods, unwanted downloads, and logo pixel density.
 Navigation checks cover all content pages, responsive header links, rounded images,
-the direct hero-to-Sync transition, and synchronized header/footer theme controls
+single-line control labels, the in-page index, and synchronized theme controls
 with keyboard activation and saved preferences.
+Download checks mock GitHub's API and cover platform selection, partial releases,
+failed requests, invalid destinations, JavaScript-disabled navigation, and the
+absence of automatic downloads. They do not download release binaries.
 
 ## Migration and FAQ content
 
@@ -169,12 +187,37 @@ Microsoft Store is available at
 [the iOpenPod package page](https://pypi.org/project/iopenpod/).
 Mac App Store, Flathub, and Snap Store remain `planned` with a null URL.
 
+The homepage uses Microsoft's hosted `ms-store-badge` component for the Store
+channel, with direct launch, automatic theme, large size, English text, and hover
+animation, displayed at a compact 161 × 44 pixels. The product ID lives beside the
+listing URL in `distribution.json`.
+The text link remains available if the component script cannot load or JavaScript
+is disabled. The badge scales down to fit narrow screens.
+
 The homepage and setup guide share the native download URLs from this data file.
 `native_release.url` and each native channel URL use `/releases/latest` so new
 releases do not require link edits. Asset filenames currently include a release
 number, so links open the latest release page and instructions identify each
 platform's filename ending. Do not construct `/releases/latest/download/` links
 unless a matching stable asset name is actually published.
+
+When the homepage download section enters the viewport, `download-links.js` makes
+one unauthenticated request to GitHub's latest-release API. For each channel's
+`asset_suffix`, it uses the single uploaded, nonempty matching asset's
+`browser_download_url`, restricted to this repository's HTTPS release downloads.
+It updates that link and its `direct_label`; users still choose their platform
+and explicitly click to download. Mac links select DMGs, never Sparkle archives.
+This adds no package dependency, credentials, persistent storage, or tracking.
+The tradeoff is reliance on a public API with rate limits. Network failures,
+timeouts, malformed or ambiguous results, missing platforms, and disabled
+JavaScript preserve the ordinary release-page links. Store and PyPI links are
+unchanged. Never treat an API failure as an unavailable release.
+
+The Games installation and Phase Playlist guides use the existing guide layout,
+catalog, screenshots, sitemap, and breadcrumb markup. Link them from the homepage
+and each other. Keep their narrower game-compatible model list distinct from
+general music-library support. The download-area Ko-fi invitation is optional;
+it must not gate an installation or imply a paid version of the app.
 
 Use “latest” in the README and website instead of naming or pinning an iOpenPod
 version, including in installation commands and structured data. OS and Python
@@ -220,35 +263,40 @@ image and to the corresponding source, support, and license pages.
 
 ## Refresh screenshots
 
-The current set contains ten user-provided Windows screenshots captured on
-2026-10-03. They show a personal iPod and media library, including actual album
-artwork and photos. These are not the synthetic store-kit captures.
+The twelve current images are light-mode captures of real iOpenPod widgets with a fictional
+Library and artwork supplied from the GenericArt folder. The app onboarding and
+Store screenshots use the same artwork mapping. No personal Library, physical
+iPod, network service, or saved application settings are used.
 
-Use descriptive asset names and lossless WebP encoding (method 6). Keep each
-complete capture at its original dimensions; do not resize it, draw replacement
-UI, or add fake window frames. Set the matching width and height on each
-`product-shot.html` include so the page reserves the correct image proportions.
+Regenerate on Windows with the locked development environment:
 
-| Original capture | Website asset |
-| --- | --- |
-| `Screenshot 2026-10-03 082040.png` | `screenshots/iop2/album-library.webp` |
-| `Screenshot 2026-10-03 082421.png` | `screenshots/iop2/media-folders.webp` |
-| `Screenshot 2026-10-03 082541.png` | `screenshots/iop2/sync-media-selection.webp` |
-| `Screenshot 2026-10-03 082621.png` | `screenshots/iop2/sync-change-review.webp` |
-| `Screenshot 2026-10-03 082631.png` | `screenshots/iop2/audio-transcoding-settings.webp` |
-| `Screenshot 2026-10-03 082709.png` | `screenshots/iop2/track-metadata.webp` |
-| `Screenshot 2026-10-03 082716.png` | `screenshots/iop2/track-artwork.webp` |
-| `Screenshot 2026-10-03 082750.png` | `screenshots/iop2/backups.webp` |
-| `Screenshot 2026-10-03 082816.png` | `screenshots/iop2/smart-playlist.webp` |
-| `Screenshot 2026-10-03 083318.png` | `screenshots/iop2/photo-albums.webp` |
+```powershell
+uv run python -m scripts.capture_website_screenshots --artwork-dir "C:\Users\JohnG\Desktop\GenericArt"
+```
 
-Record the capture date, source, dimensions, encoding, and input/output SHA-256
-hashes in `screenshots/iop2/manifest.json`. Inspect every image after conversion.
-Use the same assets in the homepage and root README, and keep their alternative
-text and captions accurate. The social preview uses `album-library.webp`.
-The separate synthetic capture script remains available for store-kit work; it
-does not reproduce this personal-library set. Older Original iOpenPod screenshots
-remain excluded from the published site.
+The Album catalog in `scripts/screenshot_catalog.py` pairs 24 exact source
+filenames with matching Album names, invented artists, genres, and distinct Track
+lists. Names are inspired by the filenames; invented artist names are not artwork
+credits. All 24 named covers must be present; unrelated images cannot shift the
+pairings. The last 12 case-insensitively sorted PNG filenames supply Photos. The loader
+preserves image proportions and leaves the source files untouched. The originals
+remain external capture inputs; the application only packages the resulting
+onboarding images. Game covers and device portraits remain the application's
+bundled assets. The hero includes the real Player showing a sample Track at 1:07
+in its playing state, driven by the isolated fake Playback Backend without audio
+file access. Website captures remain in light mode.
+
+The script writes complete window or dialog captures as lossless WebP (method 6)
+to `screenshots/iop2/`. It records source artwork filenames and SHA-256 hashes,
+capture date, captions, dimensions, and capture/output hashes in `manifest.json`.
+Temporary PNG captures and Host artwork fixtures stay in ignored
+`.scratch/website-preview/`.
+
+Inspect every image after regeneration. Match each `product-shot.html` width and
+height to the manifest and keep its captions and README alternative text accurate.
+The homepage and README share these assets; the social preview uses
+`album-library.webp`. Older Original iOpenPod screenshots remain excluded from the
+published site.
 
 ## Product and distribution evidence
 

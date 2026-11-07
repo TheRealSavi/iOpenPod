@@ -17,6 +17,7 @@ from storage._filesystem import (
     is_link_or_reparse,
     open_read_no_follow,
 )
+from storage._host_read import bounded_host_reader
 from storage.errors import (
     ConcurrentModificationError,
     FileSizeLimitError,
@@ -81,7 +82,7 @@ def _capture(
         observed = path.lstat()
         if is_link_or_reparse(observed) or not stat.S_ISREG(observed.st_mode):
             raise UnsafeFilesystemPathError("Host source must be a regular file")
-        with open_read_no_follow(path) as incoming:
+        with open_read_no_follow(path, buffering=0) as incoming:
             before = os.fstat(incoming.fileno())
             if _identity(observed) != _identity(before):
                 raise ConcurrentModificationError("Host source changed before capture")
@@ -89,14 +90,17 @@ def _capture(
                 raise FileSizeLimitError("Host source exceeds the capture limit")
             digest = hashlib.sha256()
             copied = 0
-            with snapshot.open("xb") as output:
+            with (
+                bounded_host_reader(incoming, before.st_size) as reader,
+                snapshot.open("xb") as output,
+            ):
                 while True:
                     try:
                         checkpoint()
                     except OSError:
                         callback_failed = True
                         raise
-                    chunk = incoming.read(COPY_CHUNK_SIZE)
+                    chunk = reader.read(COPY_CHUNK_SIZE)
                     if not chunk:
                         break
                     copied += len(chunk)

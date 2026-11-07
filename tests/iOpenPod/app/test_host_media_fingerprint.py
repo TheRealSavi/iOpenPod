@@ -13,6 +13,7 @@ import pytest
 from iOpenPod.app.host_media_fingerprint import (
     FpcalcError,
     FpcalcFingerprinter,
+    FpcalcNoAudioError,
     FpcalcUnavailableError,
     normalize_fpcalc_fingerprint,
 )
@@ -96,6 +97,33 @@ class _CompletedProcess:
 
     def kill(self) -> None:
         self.killed = True
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    (
+        b"ERROR: Could not find any audio stream in the file (Stream not found)\n",
+        b"ERROR: Could not open the input file (Invalid data found when processing input)",
+        b"ERROR: Could not find any audio stream in the file (Decoder not found)",
+    ),
+)
+def test_only_confirmed_absent_audio_is_a_reusable_negative_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, diagnostic: bytes
+) -> None:
+    source = tmp_path / "movie.mp4"
+    source.write_bytes(b"source")
+
+    def launch(args: list[str], **kwargs: object) -> _CompletedProcess:
+        return _CompletedProcess(b"", diagnostic, 2)
+
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    with pytest.raises(FpcalcError) as error:
+        FpcalcFingerprinter(HostPath(tmp_path / "fpcalc")).fingerprint(
+            HostPath(source), checkpoint=lambda: None
+        )
+    assert isinstance(error.value, FpcalcNoAudioError) is (
+        b"Stream not found" in diagnostic
+    )
 
 
 @pytest.mark.parametrize(

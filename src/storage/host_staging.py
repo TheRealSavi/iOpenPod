@@ -10,8 +10,10 @@ import sys
 import tempfile
 import time
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, BinaryIO
+from uuid import uuid4
 
 from storage._filesystem import is_link_or_reparse
 from storage._writer_lock import (
@@ -32,6 +34,49 @@ logger = logging.getLogger(__name__)
 _PREFIXES = ("iopenpod-media-", "iopenpod-content-", "iopenpod-chaptered-")
 _OWNER = ".iopenpod-owner"
 _MARKER = b"iopenpod-host-staging-v1\n"
+_SHARED_MARKER = b"iopenpod-host-staging-v2\n"
+_PROCESS_MARKER = b"iopenpod-host-staging-process-v2\n"
+_PROCESS_PREFIX = ".iopenpod-process-"
+_MARKER_LIMIT = len(_SHARED_MARKER) + len(_PROCESS_PREFIX) + 32 + 1
+
+
+@dataclass
+class _StagingOwner:
+    path: Path
+    lifetime: ExitStack
+    references: int = 0
+
+
+# Access is serialized by each root's cross-process cleanup guard. Include the
+# PID so a fork cannot register new workspaces against its parent's ownership.
+_OWNERS: dict[tuple[int, Path], _StagingOwner] = {}
+
+
+def _retain_owner(root: Path) -> _StagingOwner:
+    key = (os.getpid(), root)
+    owner = _OWNERS.get(key)
+    if owner is None:
+        with ExitStack() as lifetime:
+            path = root / f"{_PROCESS_PREFIX}{uuid4().hex}"
+            lease = lifetime.enter_context(_open_lock_file(path))
+            _lock_file(lease, "Host staging owner")
+            lifetime.callback(_unlock_file, lease)
+            lease.write(_PROCESS_MARKER)
+            owner = _StagingOwner(path, lifetime.pop_all())
+        _OWNERS[key] = owner
+    owner.references += 1
+    return owner
+
+
+def _release_owner(root: Path, owner: _StagingOwner) -> None:
+    owner.references -= 1
+    if owner.references == 0:
+        del _OWNERS[(os.getpid(), root)]
+        owner.lifetime.close()
+        # A failed TemporaryDirectory cleanup can leave a marked workspace. Its
+        # now-unlocked owner record must remain available for a later reaper.
+        if not any(path.name.startswith(_PREFIXES) for path in root.iterdir()):
+            owner.path.unlink()
 
 
 def _staging_root() -> Path:
@@ -90,8 +135,9 @@ def _cleanup_guard(root: Path, *, wait: bool = True) -> Generator[None]:
 def staging_directory(prefix: str) -> Generator[Path]:
     """Retain complete outputs on the selected Host volume until their owner exits.
 
-    An OS-held marker lock distinguishes abandoned workspaces from another live
-    process's preparations. Only these marked, flat workspaces can be reaped.
+    One OS-held owner lock per process and staging root protects every referenced
+    workspace. Retaining a large batch therefore does not retain one descriptor
+    per file. Only marked, flat workspaces can be reaped.
     """
     if prefix not in _PREFIXES:
         raise ValueError("Unsupported Host staging workspace")
@@ -104,16 +150,18 @@ def staging_directory(prefix: str) -> Generator[Path]:
     with _cleanup_guard(root):
         lifetime = ExitStack()
         try:
+            owner = _retain_owner(root)
+            # Keep ownership until this workspace's files have been removed.
+            lifetime.callback(_release_owner, root, owner)
             directory = Path(
                 lifetime.enter_context(
                     tempfile.TemporaryDirectory(prefix=prefix, dir=root)
                 )
             )
-            lease = lifetime.enter_context(_open_lock_file(directory / _OWNER))
-            _lock_file(lease, "Host staging workspace")
-            lifetime.callback(_unlock_file, lease)
             # A directory without a complete marker is never cleanup authority.
-            lease.write(_MARKER)
+            (directory / _OWNER).write_bytes(
+                _SHARED_MARKER + owner.path.name.encode("ascii") + b"\n"
+            )
         except BaseException:
             lifetime.close()
             raise
@@ -159,6 +207,11 @@ def cleanup_stale_staging() -> int:
                     # Includes active leases, files being closed by their owner,
                     # and another process completing the same cleanup.
                     continue
+            # Retain owner records while any workspace remains, including unsafe
+            # entries that may become cleanable later. Normal owners remove their
+            # own record when their last workspace closes.
+            if not any(p.name.startswith(_PREFIXES) for p in root.iterdir()):
+                _cleanup_idle_owners(root)
     except (OSError, ValueError, StorageError) as error:
         logger.debug("Host staging cleanup was unavailable: %s", error)
     return removed
@@ -170,17 +223,26 @@ def _remove_abandoned(directory: Path) -> bool:
     marker = directory / _OWNER
     with (
         pin_host_directory(directory),
-        _open_host_source(marker, writable=True) as lease,
+        ExitStack() as captures,
     ):
-        metadata = os.fstat(lease.fileno())
-        if metadata.st_nlink != 1 or (
-            sys.platform != "win32" and metadata.st_uid != os.getuid()
-        ):
+        lease = captures.enter_context(_open_host_source(marker, writable=True))
+        if not _private_file(lease):
             return False
+        data = lease.read(_MARKER_LIMIT + 1)
+        if data != _MARKER:
+            name = _shared_owner_name(data)
+            if name is None:
+                return False
+            lease = captures.enter_context(
+                _open_host_source(directory.parent / name, writable=True)
+            )
+            if (
+                not _private_file(lease)
+                or lease.read(_MARKER_LIMIT + 1) != _PROCESS_MARKER
+            ):
+                return False
         _lock_file(lease, "Host staging workspace")
         try:
-            if lease.read(len(_MARKER) + 1) != _MARKER:
-                return False
             children = tuple(directory.iterdir())
             # These workspaces contain regular files only. Do not recurse into
             # unexpected directories or follow links left by external changes.
@@ -204,3 +266,53 @@ def _remove_abandoned(directory: Path) -> bool:
     marker.unlink()
     directory.rmdir()
     return True
+
+
+def _private_file(stream: BinaryIO) -> bool:
+    metadata = os.fstat(stream.fileno())
+    return metadata.st_nlink == 1 and (
+        sys.platform == "win32" or metadata.st_uid == os.getuid()
+    )
+
+
+def _is_owner_name(name: str) -> bool:
+    token = name.removeprefix(_PROCESS_PREFIX)
+    return (
+        name.startswith(_PROCESS_PREFIX)
+        and len(token) == 32
+        and all(character in "0123456789abcdef" for character in token)
+    )
+
+
+def _shared_owner_name(data: bytes) -> str | None:
+    if not data.startswith(_SHARED_MARKER) or not data.endswith(b"\n"):
+        return None
+    try:
+        name = data[len(_SHARED_MARKER) : -1].decode("ascii")
+    except UnicodeDecodeError:
+        return None
+    return name if _is_owner_name(name) else None
+
+
+def _cleanup_idle_owners(root: Path) -> None:
+    for path in root.iterdir():
+        if not _is_owner_name(path.name):
+            continue
+        try:
+            with _open_host_source(path, writable=True) as lease:
+                if (
+                    not _private_file(lease)
+                    or lease.read(_MARKER_LIMIT + 1) != _PROCESS_MARKER
+                ):
+                    continue
+                identity = os.fstat(lease.fileno())
+                _lock_file(lease, "Host staging owner")
+                _unlock_file(lease)
+            current = path.lstat()
+            if not is_link_or_reparse(current) and (current.st_dev, current.st_ino) == (
+                identity.st_dev,
+                identity.st_ino,
+            ):
+                path.unlink()
+        except (OSError, ValueError, StorageError):
+            continue

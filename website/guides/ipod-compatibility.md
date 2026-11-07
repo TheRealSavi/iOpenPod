@@ -2,7 +2,7 @@
 layout: guide
 title: iPod compatibility — classic, mini & nano | iOpenPod
 description: Check iOpenPod's iPod classic, mini, and nano targets, unsupported models, filesystem requirements, and hardware validation limits before syncing.
-heading: Check your iPod before you sync.
+heading: iPod compatibility
 lead: iOpenPod manages filesystem-accessible iPods. The model, firmware, filesystem, and computer all affect which features are available.
 breadcrumb_title: iPod compatibility
 body_class: iop2-page guide-page

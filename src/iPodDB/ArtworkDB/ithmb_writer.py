@@ -83,9 +83,10 @@ def encode_ithmb(pixels: DecodedImage, layout: IthmbLayout) -> bytes:
         cb = bytes(round(128 + (v - 128) * 224 / 255) for v in ycbcr[1::3])
         cr = bytes(round(128 + (v - 128) * 224 / 255) for v in ycbcr[2::3])
         if kind is IthmbPixelFormat.I420_LE:
-            # Catalog RowBytes includes both chroma planes amortized over the
-            # image height. The three individual planes remain tightly packed;
-            # F1067 still reserves a two-byte-per-pixel record for that image.
+            # The Host's existing planar contract amortizes chroma over the
+            # image height and reserves a two-byte-per-pixel record. The native
+            # factory's 12-bit descriptor alone does not establish plane offsets
+            # or a different allocation policy; keep this authoring contract.
             if layout.row_bytes not in (0, width, width * 3 // 2):
                 raise ValueError("I420 requires tightly packed planar rows")
             planes = [

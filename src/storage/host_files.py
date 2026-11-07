@@ -5,11 +5,12 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from storage._writer_lock import HostResourceLease
 from storage.errors import (
     FilePreconditionError,
     StorageOperationError,
@@ -19,7 +20,15 @@ from storage.errors import (
 _COPY_CHUNK_SIZE = 1024 * 1024
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Generator, Mapping
+
+
+@contextmanager
+def lock_host_file(path: Path) -> Generator[None]:
+    """Hold an OS-owned exclusive lease, automatically released after a crash."""
+    identity = f"host-file:{os.path.normcase(str(path.resolve()))}"
+    with HostResourceLease(identity, path.parent):
+        yield
 
 
 @dataclass(frozen=True, slots=True)

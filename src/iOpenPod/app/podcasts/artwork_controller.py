@@ -5,15 +5,19 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from weakref import ref
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.podcasts.models import PodcastArtworkImage, PodcastArtworkRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from iOpenPod.app.podcasts.feed_client import PodcastArtworkLoader
+    from iOpenPod.app.podcasts.feed_client import (
+        PodcastArtworkLoader,
+        PodcastFeedClient,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +31,7 @@ class PodcastArtworkFailure:
 class _RequestKey:
     source_url: str
     target_px: int
+    from_feed: bool = False
 
 
 class _ArtworkSignals(QObject):
@@ -35,19 +40,17 @@ class _ArtworkSignals(QObject):
     finished = Signal(int, object)
 
 
-class _ArtworkWork(QRunnable):
+class _ArtworkWork:
     def __init__(
         self,
         token: int,
         key: _RequestKey,
         work: Callable[[], PodcastArtworkImage | None],
     ) -> None:
-        super().__init__()
         self.token = token
         self.key = key
         self.work = work
         self.signals = _ArtworkSignals()
-        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -66,6 +69,7 @@ class PodcastArtworkController(QObject):
     artworkReady = Signal(object)
     artworkUnavailable = Signal(str)
     artworkFailed = Signal(object)
+    feedArtworkChanged = Signal(str)
 
     def __init__(
         self,
@@ -74,11 +78,13 @@ class PodcastArtworkController(QObject):
         *,
         cache_byte_limit: int = 32 * 1024 * 1024,
         max_pending: int = 24,
+        feed_client: PodcastFeedClient | None = None,
     ) -> None:
         super().__init__(parent)
         if cache_byte_limit <= 0 or max_pending <= 0:
             raise ValueError("Podcast artwork cache limits must be positive")
         self._loader = loader
+        self._feed_client = feed_client
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(3)
         self._cache_byte_limit = cache_byte_limit
@@ -102,11 +108,28 @@ class PodcastArtworkController(QObject):
 
     def request(self, source_url: str, target_px: int) -> PodcastArtworkImage | None:
         """Return retained pixels now or queue one non-blocking download."""
+        return self._request(source_url, target_px, from_feed=False)
+
+    def request_feed(self, feed_url: str, target_px: int) -> PodcastArtworkImage | None:
+        """Resolve a visible directory result's publisher cover off the GUI thread.
+
+        Discovery never subscribes, saves feed metadata, or uses Apple artwork.
+        The normal pending limit and decoded-pixel budget also cover this work.
+        """
+        return (
+            self._request(feed_url, target_px, from_feed=True)
+            if self._feed_client is not None
+            else None
+        )
+
+    def _request(
+        self, source_url: str, target_px: int, *, from_feed: bool
+    ) -> PodcastArtworkImage | None:
 
         normalized = source_url.strip()
         if self._closed or not normalized or target_px <= 0:
             return None
-        key = _RequestKey(normalized, target_px)
+        key = _RequestKey(normalized, target_px, from_feed)
         cache_key = self._request_cache_keys.get(key)
         if cache_key is not None:
             image = self._images.get(cache_key)
@@ -123,8 +146,20 @@ class PodcastArtworkController(QObject):
 
         self._next_token += 1
         token = self._next_token
-        request = PodcastArtworkRequest(normalized, target_px)
-        item = _ArtworkWork(token, key, lambda: self._loader.load_artwork(request))
+
+        def load() -> PodcastArtworkImage | None:
+            url = (
+                self._feed_client.fetch(normalized).artwork_url
+                if from_feed and self._feed_client is not None
+                else normalized
+            )
+            return (
+                self._loader.load_artwork(PodcastArtworkRequest(url, target_px))
+                if url
+                else None
+            )
+
+        item = _ArtworkWork(token, key, load)
         item.signals.succeeded.connect(
             self._work_succeeded,
             Qt.ConnectionType.QueuedConnection,
@@ -139,7 +174,14 @@ class PodcastArtworkController(QObject):
         )
         self._pending.add(key)
         self._work_items[token] = item
-        self._pool.start(item)
+        # Qt may retain cancelled callables; the controller owns queued payloads.
+        work_ref = ref(item)
+
+        def run() -> None:
+            if (work := work_ref()) is not None:
+                work.run()
+
+        self._pool.start(run)
         return None
 
     def shutdown(self) -> None:
@@ -165,6 +207,8 @@ class PodcastArtworkController(QObject):
             return
         self._store(key, result)
         self.artworkReady.emit(result)
+        if key.from_feed:
+            self.feedArtworkChanged.emit(key.source_url)
 
     @Slot(int, object, object)
     def _work_failed(self, _token: int, key: object, error: object) -> None:

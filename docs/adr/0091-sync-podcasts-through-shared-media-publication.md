@@ -2,6 +2,8 @@
 
 > ADR-0149 amends native GUID/metadata authoring, neutral downloaded identity
 > records, show-link repair, and embedded chapter-picture import.
+> The 2026-11-01 amendment below extends the slot range to 0–50 and defines zero
+> as disabling automatic Podcast Sync for that Subscription.
 
 - Status: Accepted
 - Date: 2026-09-27
@@ -108,3 +110,42 @@ and verified Library publication. This preserves Episode-specific artwork instea
 of replacing it with a generic show cover. Existing Episode cover repair remains
 publisher-based without a device-media reread. Nested chapter images remain a
 separate import requirement.
+
+## Amendment: prefer the Episode RSS image during Sync (2026-10-24)
+
+The Podcast browser presents an Episode's RSS image ahead of device and show
+artwork. Incoming Episode Sync uses that same image first. An unavailable Episode
+RSS image falls back to a usable cover embedded in the original download, then to
+the show's publisher cover. This changes the earlier embedded-first import policy
+without changing the bounded artwork loader, shared preparation budget, or verified
+publication. Existing on-device covers remain preserved during ordinary Sync.
+
+## Amendment: zero slots disable automatic Podcast Sync (2026-11-01)
+
+At the user's request, Episode slots now range from 0 to 50, with the existing
+default of 3. Zero disables the Subscription's automatic feed refresh, Episode
+selection, clearing, replacements, and retained-cover repair during every Sync
+entry point. Existing Episodes remain on the iPod, including listened and aged
+Episodes. Explicit additions and removals remain available. Raising the target
+above zero resumes the saved retention policy. Listening History still reconciles
+observed device facts independently of automatic media management.
+
+The existing Subscription document version stores zero without a format change.
+Older readers that only accept 1–50 fail closed on that value.
+
+## Amendment: Host defaults for newly added subscriptions (2026-11-05)
+
+Settings > Sync in the Host scope offers **Default Podcast Sync Settings**. Its
+button opens the existing Podcast Sync Settings dialog. Save publishes all five
+choices together under `sync/default-podcast-settings` in Host `settings-v2.json`
+through SettingsService and Storage's atomic Host file replacement. Cancel leaves
+the saved defaults unchanged. Missing or invalid preferences use the original
+three-slot policy; zero remains a valid default. This preference has no iPod override.
+
+An explicit subscription addition captures the current defaults before starting
+network work, then saves that policy with the new Subscription. Existing matching
+Subscriptions keep their saved choices, including when re-added or refreshed.
+Changing defaults does not rewrite existing Subscriptions. Device-recovered
+Subscriptions and older Subscription documents retain their established behavior.
+Host and Subscription documents share the same retention-policy codec without
+changing the Subscription document version.

@@ -134,7 +134,15 @@ class SyncStorageProjection:
                         )
                         if track is not None and self._profile is not None:
                             incoming_size = _estimated_track_bytes(
-                                track, size, self._profile, settings
+                                track,
+                                size,
+                                self._profile,
+                                settings,
+                                audio_stream_count=(
+                                    len(item.stream_selection.audio_streams)
+                                    if item.stream_selection is not None
+                                    else 1
+                                ),
                             )
             key = (item.media_kind, item.ipod_id) if item.ipod_id is not None else None
             file = None
@@ -175,7 +183,12 @@ _VIDEO_FORMATS = frozenset(
 
 
 def _estimated_track_bytes(
-    track: Track, source_bytes: int, profile: DeviceProfile, settings: TranscodeSettings
+    track: Track,
+    source_bytes: int,
+    profile: DeviceProfile,
+    settings: TranscodeSettings,
+    *,
+    audio_stream_count: int = 1,
 ) -> int:
     """Estimate the output policy from scan facts; retain source bytes if uncertain.
 
@@ -192,7 +205,9 @@ def _estimated_track_bytes(
             return source_bytes
         # CRF video has no fixed bitrate. The device ceiling supplies a useful
         # upper projection for oversized or non-MP4 source containers.
-        cap_kbps = caps.max_bitrate_kbps + caps.max_audio_bitrate_kbps
+        cap_kbps = (
+            caps.max_bitrate_kbps + audio_stream_count * caps.max_audio_bitrate_kbps
+        )
         cap_bytes = _bitrate_bytes(track.length_ms, cap_kbps)
         if format_name in {"mp4", "m4v", "mov"} and source_bytes <= cap_bytes:
             return source_bytes

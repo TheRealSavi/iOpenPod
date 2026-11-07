@@ -61,6 +61,7 @@ def walk_linked_folders(
     *,
     selected: Callable[[Path, frozenset[HostMediaType]], bool],
     cover: Callable[[Path], bool],
+    skip_directory: Callable[[Path], bool],
     checkpoint: Callable[[], None],
     progress: Callable[[HostPath, int, int], None],
     max_workers: int,
@@ -91,6 +92,8 @@ def walk_linked_folders(
     live: dict[str, tuple[HostPath, int]] = {}
 
     def enqueue(directory: LocalHostDirectory, grant: int) -> None:
+        if skip_directory(Path(directory.path)):
+            return
         identity: DirectoryIdentity = (
             (directory.device, directory.inode)
             if directory.inode
@@ -210,6 +213,8 @@ def walk_linked_folders(
             folder = folders[grant]
             for original in state.entries:
                 checkpoint()
+                if skip_directory(Path(original.path)):
+                    continue
                 entry = original
                 if entry.kind is HostEntryKind.LINK_OR_REPARSE_POINT:
                     if not folder.follow_symlinks:

@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "release": "https://github.com/Olsro/ipodclickwheelgamespreservationproject/releases/tag/version16",
+  "url": "https://github.com/Olsro/ipodclickwheelgamespreservationproject/releases/download/version16/iPod.Games.Files.7z",
+  "size": 1800542124,
+  "sha256": "c532208b700e10edf621ec65cf188d546a2a4f043106bad3dd53caf9ed14df06",
+  "games": [
+    {
+      "identifier": "22020",
+      "content_sha256": "a3fb199d8e3962a82216da8cb34b41ce21bf1b3e480992bf163da901f2391541"
+    },
+    {
+      "identifier": "12100",
+      "content_sha256": "e07f5818c0184461a92f7f5226b40e108a2d8587cd29f9d3074b801fd6096d29"
+    },
+    {
+      "identifier": "21004",
+      "content_sha256": "f0573e185051bdbd0f97d7d68964e3416bad6a6087e01622fcd0b886168d0593"
+    },
+    {
+      "identifier": "20000",
+      "content_sha256": "5cec1c2ecacd35263e8959a7d8a8c64960f44b42fc6f1cceecb45dd5b64ed70f"
+    },
+    {
+      "identifier": "21000",
+      "content_sha256": "866227c030ca8a31068edddec9c79989614b43762bdeddd80f4468632307e062"
+    },
+    {
+      "identifier": "21008",
+      "content_sha256": "e6641898ea0dd48aa93737473b1eb4af93ea435cbc4a32f0cc81ba58a4050b2b"
+    },
+    {
+      "identifier": "25002",
+      "content_sha256": "858ada7bab49429fec2f489901d2b4b56ea100a5c6fe2f5bbe975787a781f919"
+    },
+    {
+      "identifier": "23000",
+      "content_sha256": "642cd26efa61a9216b690c8538c351dd7750bdd6a2171111107c5493a33a3a1e"
+    },
+    {
+      "identifier": "21002",
+      "content_sha256": "65f5b8562c54f9a8414db51e3a0da9fb7e7f75a4a53e1d64faf3f957963e423c"
+    },
+    {
+      "identifier": "11802",
+      "content_sha256": "b323937c0949e951601fe6a4c16d8cbcdfb0e280582471a4db97dbae243fc08a"
+    },
+    {
+      "identifier": "24002",
+      "content_sha256": "080aec888760ce34a59b3fc51a9857d337dd91077fb92a81fd25a24658681180"
+    },
+    {
+      "identifier": "22014",
+      "content_sha256": "be63e18d2482d839dd2e3615693895255d765e82a6a34148be939484b410e136"
+    },
+    {
+      "identifier": "13100",
+      "content_sha256": "1142687994a55c1b720b44b41da3a73fde67c42474637f49587c245bfbfe150a"
+    },
+    {
+      "identifier": "11002",
+      "content_sha256": "52c3d74aad37411f8e662c1bdd1746f08c26451ce92e44f59ba1fb7e315560df"
+    },
+    {
+      "identifier": "20002",
+      "content_sha256": "43ba98b9a74488069d65abaa483da41207feb47ab367480dde5036202ca7587d"
+    },
+    {
+      "identifier": "1b200",
+      "content_sha256": "3caa95d2eba521438be834fd3cbe454712678b3f4aab07fcd5dac55da093c98e"
+    },
+    {
+      "identifier": "77770",
+      "content_sha256": "9a03bf0ff8b7782cab9867fbb2ada4ba4c91d113ff234cffac34eb22655f5e76"
+    },
+    {
+      "identifier": "88908",
+      "content_sha256": "e97d9644dd68f59acddb8e4badf73fc4fc38c1e027e37deb38eb096a50ffd107"
+    },
+    {
+      "identifier": "15040",
+      "content_sha256": "6c3c7506588274ecf7af04964c8e06f984cd58131113ce0bda602a66c34e5ee0"
+    },
+    {
+      "identifier": "14024",
+      "content_sha256": "280162fee6b3f3770103f60f75a51235f47e110d997804c57330ea03f1395f69"
+    },
+    {
+      "identifier": "14005",
+      "content_sha256": "cc8735515f688093829809d195f5c001fb6f683d087c241dd03ff348e9bee0d8"
+    },
+    {
+      "identifier": "1C300",
+      "content_sha256": "4865d82aa67b31d956bc12e07ca8be50fd05887eab16ded13a92350b9c9b3614"
+    },
+    {
+      "identifier": "22010",
+      "content_sha256": "8bbdcaaf5f16c3a17f16b589381c5c6afe7707abcfd83e9ba92e74d1b3741f63"
+    },
+    {
+      "identifier": "21006",
+      "content_sha256": "f75359f73d541bf1b8a554f7991384e49a0989b24608ea8d8c438bd74bd61078"
+    },
+    {
+      "identifier": "14020",
+      "content_sha256": "be2589a187773f3eabb46773d1a80624fffa4fb037ac0237924521f45d1938f6"
+    },
+    {
+      "identifier": "12104",
+      "content_sha256": "732c4213df9adecb4a667a13e3a5e061d11c0c487eb2fe91f642cc9faad6bcf4"
+    },
+    {
+      "identifier": "1D000",
+      "content_sha256": "e1cbc23ac48d1ddca24878dfa58ccfe01eb3f8ddee417c81074576516c55ca59"
+    },
+    {
+      "identifier": "22000",
+      "content_sha256": "6f596676dfc0b9661b705c6bede6f6c02342936003c9fabb688d22dba4a4ba05"
+    },
+    {
+      "identifier": "14003",
+      "content_sha256": "49746536b09a363ae414fa527113894c6240973bfd585d4debf9a888636568bc"
+    },
+    {
+      "identifier": "22018",
+      "content_sha256": "9d0fdc236a5418f59350c73d7b1927c8a818656db8b6195087c0f068c12596be"
+    },
+    {
+      "identifier": "11800",
+      "content_sha256": "2b8d5654625bafd65a57afacc1006209530027129b551bdf612498bbb9854a40"
+    },
+    {
+      "identifier": "50514",
+      "content_sha256": "3bab023f676696083d9948e7d79d9f045682f7e2696428ace56bc7d926bcc5de"
+    },
+    {
+      "identifier": "11072",
+      "content_sha256": "461116f26326784f1536c9f11e206b66a9bbfaba7180f2444cecae076595e660"
+    },
+    {
+      "identifier": "11070",
+      "content_sha256": "d9180a760c8e30db88364e75f445cc788de85c55cbbd4c9f2ecf14ca3329ecbf"
+    },
+    {
+      "identifier": "11071",
+      "content_sha256": "24a39b0fcfbdbfdb5799261b467f243a367438e88f3e94329d56cfce7622663c"
+    },
+    {
+      "identifier": "15012",
+      "content_sha256": "a36961353aa9693680f0ad48cc342d61668b6afb66276258d0ad81fc6d7b9d41"
+    },
+    {
+      "identifier": "25000",
+      "content_sha256": "c0d1cba61895f2dfdeebbcd937aeb3d63e8e8a914a0141fa13f55395b32448e4"
+    },
+    {
+      "identifier": "24000",
+      "content_sha256": "4db69ef07ac1a80cc9804a8ff5913aea135345dc5d579321938dcc9a71134ae4"
+    },
+    {
+      "identifier": "18000",
+      "content_sha256": "bcbc4361ea6a2a0e6e2a6e8162aed8cf56bfe75fdceae5e6eda1e4043b0cc049"
+    },
+    {
+      "identifier": "15010",
+      "content_sha256": "392eac8e9845e0868f2f9c3a6d554f5ad71d1963c0ffafcdc2d24e8b3b44c3eb"
+    },
+    {
+      "identifier": "14006",
+      "content_sha256": "2518f4395a732630c5da903e060bb0a5cee8533888699bf844a1501f8daa679e"
+    },
+    {
+      "identifier": "50533",
+      "content_sha256": "0d3ed8b218b2eab5352eba2d1e9789d5df634e06ec5d81cd47599d0204d7e2c8"
+    },
+    {
+      "identifier": "14008",
+      "content_sha256": "b7bf195a83659861bb266f5a1e8766874c004f9917e293e1f880cdabeb35f851"
+    },
+    {
+      "identifier": "66686",
+      "content_sha256": "e48e28359e4e08eedd82cca8f2353e52733b33f401bf0f6b8fda835a70c9c58e"
+    },
+    {
+      "identifier": "33353",
+      "content_sha256": "cdad36fb7c75e356f14ef6ee5286d7f1319230c13eb42e6d16d8e9691857f81e"
+    },
+    {
+      "identifier": "15032",
+      "content_sha256": "4ab5614c4f513d8ffb978cec729a970f85270921b41f312a31d3ef3f35538954"
+    },
+    {
+      "identifier": "15036",
+      "content_sha256": "68a41e9cb5b2b13ae38d37d860f99704f47104512ca77beaedd294239e8b4919"
+    },
+    {
+      "identifier": "15035",
+      "content_sha256": "c54d717317adc04eef1ea83cedbe038510ed9c13450d8fd17e5a38d7b4597e0d"
+    },
+    {
+      "identifier": "15038",
+      "content_sha256": "cdf425388dcbe22487bc70d1a651e7bd30aa915d45cd85365b4f672ec2fcc990"
+    },
+    {
+      "identifier": "15042",
+      "content_sha256": "d83687a83acd60322d1f218b19f3c479d862084c0667b6b46b60c32369e7ecb9"
+    },
+    {
+      "identifier": "22012",
+      "content_sha256": "d59b64a00c8962bd31ac77d91eaccba100b9409842f0e95658fb1b43eb9b810e"
+    },
+    {
+      "identifier": "12345",
+      "content_sha256": "48f63417181d7be9cd0533194bf19adb3d47d937d05dbeeeb6416bce949bb0a3"
+    },
+    {
+      "identifier": "12346",
+      "content_sha256": "b73af18684a30d14ab428c556c6722d45e3ffaf72e71e0218b67305e3cab7c49"
+    },
+    {
+      "identifier": "22022",
+      "content_sha256": "cdd98fc2e35e16c5fb67389510be18461d4c5d79462cab7f23dade22f44b3d37"
+    },
+    {
+      "identifier": "15014",
+      "content_sha256": "cf2652d8013c16c4011aeb067474698023cce64bef91a0df0a5e2d869f9ffc4c"
+    },
+    {
+      "identifier": "12102",
+      "content_sha256": "a9d39fdd08759f382763bd8fc6ab32eeff2303c2d7b7e6941bfc2b461c44fc91"
+    }
+  ]
+}

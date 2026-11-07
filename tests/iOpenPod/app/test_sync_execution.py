@@ -16,7 +16,7 @@ import weakref
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import replace
-from datetime import UTC, datetime
+from os import PathLike
 from pathlib import Path
 from threading import Event
 from typing import Protocol, cast
@@ -30,6 +30,7 @@ from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.app.test_media_lyrics import WORDS
 from tests.iOpenPod.app.test_music_import import FIXTURES
+from whenever import Instant
 
 from iOpenPod.app import sync_execution
 from iOpenPod.app.display_text import SourceText
@@ -55,7 +56,12 @@ from iOpenPod.app.library_sync_helper import (
     SyncDetails,
     SyncedTrack,
 )
-from iOpenPod.app.library_write import LibraryReview, LibrarySaveResult, WriteProgress
+from iOpenPod.app.library_write import (
+    LibraryPreparationRequest,
+    LibraryReview,
+    LibrarySaveResult,
+    WriteProgress,
+)
 from iOpenPod.app.media.importing import ImportedSong, LibraryMediaSource
 from iOpenPod.app.media.inspection import _parse  # pyright: ignore[reportPrivateUsage]
 from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
@@ -67,6 +73,7 @@ from iOpenPod.app.media.transcoding import (
     VideoEncoding,
 )
 from iOpenPod.app.models.device import ActiveIPod
+from iOpenPod.app.playlist_sync import PlaylistAssociation, PlaylistSyncChoice
 from iOpenPod.app.services import library_resources
 from iOpenPod.app.services.device_coordinator import SyncCleanupCompletedError
 from iOpenPod.app.sync_execution import (
@@ -79,6 +86,7 @@ from iOpenPod.app.sync_execution import (
     _PreparedTrack,  # pyright: ignore[reportPrivateUsage]
     _song,  # pyright: ignore[reportPrivateUsage]
     preview_playlist_sync,
+    review_playlist_sync,
 )
 from iOpenPod.app.sync_plan import (
     SyncPlan,
@@ -142,6 +150,26 @@ class _AvailableTools(MediaTranscoder):
     def preflight(self, *, checkpoint: Callable[[], None]) -> MediaTools:
         checkpoint()
         return cast("MediaTools", None)
+
+
+def _prepare_genius_baseline(device: Device) -> None:
+    """Keep unchanged-write tests free of first-Sync database initialization."""
+    active = device.active
+    review = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            active.library,
+            active,
+            1,
+            1,
+            regenerate_genius=True,
+            rebuild_album_indexes=True,
+        ),
+        lambda _: None,
+        Event(),
+    )
+    assert review.result.prepared is not None, review.result.issues
+    saved = device.coordinator.save_library(review, active, lambda _: None, Event())
+    assert saved.active is not None, saved.issues
 
 
 def _photo_host(tmp_path: Path) -> HostMediaLibrary:
@@ -393,6 +421,27 @@ def test_large_photo_sync_preserves_host_original_and_matches_again_after_reload
             next(item for item in plan.items if item.host_path == str(path)).action
             is SyncPlanAction.UNCHANGED
         )
+
+        moved_directory = tmp_path / "moved"
+        moved_directory.mkdir()
+        moved_path = path.rename(moved_directory / "renamed.png")
+        pending = scanner.scan(
+            (create_host_media_folder(moved_directory),), checkpoint=lambda: None
+        )
+        moved_host = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
+        assert not moved_host.issues
+        moved_plan = prepare_sync_plan(moved_host, reloaded, result.active.library)
+        (matched,) = tuple(
+            item for item in moved_plan.items if item.host_path == str(moved_path)
+        )
+        assert matched.ipod_id == synced.image_id
+        assert matched.action is SyncPlanAction.UNCHANGED
+        assert moved_plan.count(SyncPlanAction.ADD) == 0
+        assert not any(
+            item.action is SyncPlanAction.REMOVE and item.ipod_id == synced.image_id
+            for item in moved_plan.items
+        )
+        assert (device.root / str(synced.path)).read_bytes() == stored
     finally:
         device.coordinator.close()
 
@@ -557,7 +606,7 @@ class _Executor(SyncExecutor):
                 DevicePath(location),
                 source.acoustic_fingerprint or "1,2,3",
                 SyncDetails(
-                    datetime.now(UTC).isoformat(),
+                    Instant.now().to_fixed_offset().format_iso(unit="microsecond"),
                     str(source.path),
                     source.size_bytes,
                     source.modified_ns,
@@ -569,12 +618,16 @@ class _Executor(SyncExecutor):
             return _PreparedTrack(item, song, provenance, lifetime.pop_all(), ())
 
 
-def _host(tmp_path: Path, *names: str, playlists: bool = False) -> HostMediaLibrary:
+def _host(
+    tmp_path: Path, *names: str, playlists: bool = False, payload: bytes | None = None
+) -> HostMediaLibrary:
     tracks: list[Track] = []
     sources: list[HostMediaSource] = []
     for index, name in enumerate(names, 100):
         path = tmp_path / f"{name}.m4a"
-        path.write_bytes(f"Prepared media for {name}".encode())
+        path.write_bytes(
+            payload if payload is not None else f"Prepared media for {name}".encode()
+        )
         observed = LocalHostFile.observe(HostPath(path))
         tracks.append(
             Track(
@@ -1059,6 +1112,49 @@ def test_update_keeps_track_identity_and_only_removes_unreferenced_old_media(
         device.coordinator.close()
 
 
+def test_sync_reuses_removed_media_space_on_a_nearly_full_ipod(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    size = 1024 * 1024
+    device = build_device(tmp_path, media_payload=b"a" * size, host_recovery=True)
+    try:
+        host = _host(tmp_path, "Replacement", payload=b"b" * size)
+        request = _request(device, host, update=True)
+
+        def allocated() -> int:
+            return sum(
+                ((p.stat().st_size + 4095) // 4096) * 4096
+                for p in device.root.rglob("*")
+                if p.is_file()
+            )
+
+        baseline = allocated()
+        actual_usage = shutil.disk_usage
+        usage = actual_usage(device.root)
+
+        def limited_disk_usage(path: str | PathLike[str]) -> tuple[int, int, int]:
+            if Path(path).resolve() == device.root:
+                return usage._replace(free=256 * 1024 - (allocated() - baseline))
+            return actual_usage(path)
+
+        monkeypatch.setattr(shutil, "disk_usage", limited_disk_usage)
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        updated = next(
+            t for t in result.active.library.tracks if t.title == "Replacement"
+        )
+        assert (device.root / updated.metadata.location).read_bytes() == b"b" * size
+        assert not (
+            device.root / request.source.library.tracks[0].metadata.location
+        ).exists()
+        assert not tuple((tmp_path / "recovery").rglob("transaction.json"))
+    finally:
+        device.coordinator.close()
+
+
 def test_bad_track_yields_safe_partial_success_without_partial_playlist(
     tmp_path: Path,
 ) -> None:
@@ -1102,7 +1198,7 @@ def test_bad_track_yields_safe_partial_success_without_partial_playlist(
 
 @pytest.mark.parametrize("workers", [1, 3])
 def test_preparation_releases_failed_track_working_data(
-    tmp_path: Path, workers: int
+    tmp_path: Path, workers: int, caplog: pytest.LogCaptureFixture
 ) -> None:
     class DecoderWorkingData:
         def __init__(self) -> None:
@@ -1147,6 +1243,13 @@ def test_preparation_releases_failed_track_working_data(
         # batch is still preparing, rather than retaining every traceback.
         assert max(live_after_completion) <= workers * 4, live_after_completion
         assert not any(ref() is not None for ref in retained)
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "iOpenPod.app.sync_execution"
+        ]
+        assert len(messages) == 6
+        assert "total=24 logged=5 omitted=19" in messages[-1]
         device.assert_original()
     finally:
         if gc_enabled:
@@ -1216,7 +1319,9 @@ def test_bounded_preparation_keeps_successful_files_until_commit_and_cleans_up(
         device.coordinator.close()
 
 
-def test_changed_host_is_skipped_without_blocking_other_tracks(tmp_path: Path) -> None:
+def test_changed_host_is_skipped_without_blocking_other_tracks(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     device = build_device(tmp_path)
     try:
         request = _request(device, _host(tmp_path, "Good", "Changed"))
@@ -1226,6 +1331,12 @@ def test_changed_host_is_skipped_without_blocking_other_tracks(tmp_path: Path) -
         )
         assert result.status is SyncExecutionStatus.PARTIAL, result.issues
         assert len(result.completed) == 1
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "iOpenPod.app.sync_execution"
+        ]
+        assert any("Changed" in message and "scan" in message for message in messages)
     finally:
         device.coordinator.close()
 
@@ -1715,6 +1826,9 @@ def test_sync_without_media_changes_publishes_pending_artwork_repair(
 ) -> None:
     device = build_device(tmp_path)
     try:
+        _prepare_genius_baseline(device)
+        database = device.root / "iPod_Control/iTunes/iTunesDB"
+        database_before = database.read_bytes()
         path = device.root / "iPod_Control/Artwork/ArtworkDB"
         before = path.read_bytes()
         chunk = parse_ArtworkDB(before).find_chunks(MhsdHeader)[0].chunk.children[0]
@@ -1744,9 +1858,7 @@ def test_sync_without_media_changes_publishes_pending_artwork_repair(
             assert not result.active.artwork_repairs_pending
             assert path.read_bytes() == before
             assert not result.completed
-            assert (
-                device.root / "iPod_Control/iTunes/iTunesDB"
-            ).read_bytes() == device.original["iPod_Control/iTunes/iTunesDB"]
+            assert database.read_bytes() == database_before
     finally:
         device.coordinator.close()
 
@@ -1787,6 +1899,80 @@ def test_payload_update_retains_artwork_when_review_does_not_change_it(
             t for t in result.active.library.tracks if t.track_id == original.track_id
         )
         assert updated.artwork_id == original.artwork_id > 0
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("equalizer", ["#!#116#!#", "Unrecognized custom EQ"])
+@pytest.mark.parametrize("replace_audio", [False, True])
+def test_sync_preserves_eq_through_metadata_and_media_replacement(
+    tmp_path: Path, equalizer: str, replace_audio: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        baseline = device.active.library
+        original = baseline.tracks[0]
+        edited = replace(
+            original, metadata=replace(original.metadata, equalizer=equalizer)
+        )
+        saved = device.save(
+            device.prepare(replace(baseline, tracks=(edited, *baseline.tracks[1:])))
+        )
+        assert saved.active is not None, saved.issues
+        host = _host(tmp_path, "New Host title")
+        request = _request(device, host, update=True)
+        if not replace_audio:
+            ipod = replace(
+                request.ipod,
+                tracks=(
+                    replace(
+                        request.ipod.tracks[0],
+                        acoustic_fingerprint=host.sources[0].acoustic_fingerprint or "",
+                    ),
+                    *request.ipod.tracks[1:],
+                ),
+            )
+            comparison = prepare_sync_plan(host, ipod, request.source.library)
+            request = replace(
+                request,
+                ipod=ipod,
+                plan=replace(
+                    comparison,
+                    items=tuple(
+                        item
+                        for item in comparison.items
+                        if item.action is not SyncPlanAction.REMOVE
+                    ),
+                ),
+            )
+        item = next(
+            item for item in request.plan.items if item.action is SyncPlanAction.UPDATE
+        )
+        assert item.metadata_changed
+        assert item.audio_payload_changed is replace_audio
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None and result.helper is not None
+        track = next(
+            t for t in result.active.library.tracks if t.track_id == original.track_id
+        )
+        assert track.title == "New Host title"
+        assert track.metadata.equalizer == equalizer
+        assert (
+            equalizer.encode("utf-16le")
+            in (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+        )
+        next_plan = prepare_sync_plan(host, result.helper, result.active.library)
+        assert (
+            next(
+                item
+                for item in next_plan.items
+                if item.host_path == str(host.sources[0].path)
+            ).action
+            is SyncPlanAction.UNCHANGED
+        )
     finally:
         device.coordinator.close()
 
@@ -3013,11 +3199,17 @@ def test_filename_failure_keeps_failed_replacement_and_commits_other_media(
         )
         assert result.status is SyncExecutionStatus.PARTIAL, result.issues
         assert result.active is not None and result.helper is not None
+        unchanged = next(
+            track
+            for track in result.active.library.tracks
+            if track.track_id == original.track_id
+        )
+        assert unchanged.ipod is not None and original.ipod is not None
+        assert unchanged.ipod.genius_id
         assert (
-            next(
-                track
-                for track in result.active.library.tracks
-                if track.track_id == original.track_id
+            replace(
+                unchanged,
+                ipod=replace(unchanged.ipod, genius_id=original.ipod.genius_id),
             )
             == original
         )
@@ -3064,6 +3256,7 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
             cancelled: Event,
             *,
             retain_recovery: bool = False,
+            validate_sources: Callable[[FilesystemSession], None] | None = None,
         ) -> LibrarySaveResult:
             location = next(
                 item.path
@@ -3076,7 +3269,12 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
             path.write_bytes(b"external file appeared after Review")
             unexpected.append(path)
             return save(
-                review, expected, progress, cancelled, retain_recovery=retain_recovery
+                review,
+                expected,
+                progress,
+                cancelled,
+                retain_recovery=retain_recovery,
+                validate_sources=validate_sources,
             )
 
         monkeypatch.setattr(device.coordinator, "save_library", collide_after_review)
@@ -3092,12 +3290,18 @@ def test_short_filename_appearing_after_review_is_never_overwritten(
         device.coordinator.close()
 
 
-def test_library_retry_reports_each_track_error_once_with_readable_context(
+@pytest.mark.parametrize("with_good_track", [False, True])
+@pytest.mark.parametrize("update", [False, True])
+@pytest.mark.parametrize("normalize", [False, True])
+def test_invalid_metadata_is_skipped_with_readable_context(
     tmp_path: Path,
+    with_good_track: bool,
+    update: bool,
+    normalize: bool,
 ) -> None:
     device = build_device(tmp_path)
     try:
-        host = _host(tmp_path, "Invalid year")
+        host = _host(tmp_path, "Invalid year", *(("Good",) if with_good_track else ()))
         path = tmp_path / "cover.png"
         Image.new("RGB", (64, 64), "blue").save(path)
         observed = LocalHostFile.observe(HostPath(path))
@@ -3105,7 +3309,10 @@ def test_library_retry_reports_each_track_error_once_with_readable_context(
             host,
             snapshot=replace(
                 host.snapshot,
-                tracks=(replace(host.snapshot.tracks[0], year=2**32, artwork_id=123),),
+                tracks=(
+                    replace(host.snapshot.tracks[0], year=2**32, artwork_id=123),
+                    *host.snapshot.tracks[1:],
+                ),
             ),
             artwork_sources=(
                 HostMediaArtworkSource(
@@ -3118,15 +3325,324 @@ def test_library_retry_reports_each_track_error_once_with_readable_context(
                 ),
             ),
         )
-        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
-            _request(device, host), lambda _: None, Event()
+        request = _request(device, host, update=update)
+        request = replace(
+            request, options=replace(request.options, normalize_tags=normalize)
         )
-        assert result.status is SyncExecutionStatus.FAILED
+        original = request.source.library.tracks[0]
+        original_bytes = (device.root / original.metadata.location).read_bytes()
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is (
+            SyncExecutionStatus.PARTIAL
+            if with_good_track
+            else SyncExecutionStatus.FAILED
+        ), result.issues
         failures = [i for i in result.issues if i.code == "track.invalid_value"]
         assert len(failures) == 1, result.issues
         assert "Invalid year" in failures[0].detail
         assert "Album" in failures[0].detail
         assert failures[0].artifact
-        device.assert_original()
+        assert failures[0].artifact == str(host.sources[0].path)
+        assert len(result.completed) == int(with_good_track)
+        assert (device.root / original.metadata.location).read_bytes() == original_bytes
+        if with_good_track:
+            assert result.active is not None and result.helper is not None
+            titles = {track.title for track in result.active.library.tracks}
+            assert "Good" in titles and "Invalid year" not in titles
+            retained = next(
+                entry
+                for entry in result.helper.tracks
+                if str(entry.path) == original.metadata.location
+            )
+            assert retained.sync == request.ipod.tracks[0].sync
+        else:
+            device.assert_original()
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("problem", ["metadata", "missing_source"])
+@pytest.mark.parametrize("normalize", [False, True])
+def test_failed_metadata_only_update_keeps_old_track_and_saves_valid_tracks(
+    tmp_path: Path, problem: str, normalize: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "Bad update", "Good", playlists=True)
+        if problem == "metadata":
+            host = replace(
+                host,
+                snapshot=replace(
+                    host.snapshot,
+                    tracks=(
+                        replace(host.snapshot.tracks[0], year=2**32),
+                        *host.snapshot.tracks[1:],
+                    ),
+                ),
+            )
+        request = _request(device, host, update=True)
+        acoustic = host.sources[0].acoustic_fingerprint
+        assert acoustic is not None
+        ipod = replace(
+            request.ipod,
+            tracks=(
+                replace(
+                    request.ipod.tracks[0],
+                    acoustic_fingerprint=acoustic,
+                ),
+                *request.ipod.tracks[1:],
+            ),
+        )
+        comparison = prepare_sync_plan(host, ipod, request.source.library)
+        request = replace(
+            request,
+            ipod=ipod,
+            plan=replace(
+                comparison,
+                items=tuple(
+                    item
+                    for item in comparison.items
+                    if item.action is not SyncPlanAction.REMOVE
+                ),
+            ),
+            options=replace(request.options, normalize_tags=normalize),
+        )
+        update = next(
+            item for item in request.plan.items if item.action is SyncPlanAction.UPDATE
+        )
+        assert update.metadata_changed and not update.audio_payload_changed
+        original = request.source.library.tracks[0]
+        original_bytes = (device.root / original.metadata.location).read_bytes()
+        if problem == "missing_source":
+            Path(host.sources[0].path.path).unlink()
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+        assert result.active is not None and result.helper is not None
+        assert len(result.completed) == 1
+        assert result.completed[0].name == "Good"
+        retained = next(
+            track
+            for track in result.active.library.tracks
+            if track.track_id == original.track_id
+        )
+        assert retained.title == original.title and retained.year == original.year
+        assert (device.root / original.metadata.location).read_bytes() == original_bytes
+        provenance = next(
+            record
+            for record in result.helper.tracks
+            if str(record.path) == original.metadata.location
+        )
+        assert provenance.sync == ipod.tracks[0].sync
+        assert any(
+            issue.code == "sync.item_failed"
+            and issue.artifact == str(host.sources[0].path)
+            for issue in result.issues
+        )
+    finally:
+        device.coordinator.close()
+
+
+def _playlist_host(tmp_path: Path, *names: str) -> HostMediaLibrary:
+    records: list[_CachedPlaylistRecord] = []
+    for index, name in enumerate(names):
+        path = tmp_path / f"playlist-{index}.m3u"
+        path.write_text(f"#EXTM3U\n#PLAYLIST:{name}\n", encoding="utf-8")
+        facts = LocalHostFile.observe(HostPath(path))
+        records.append(
+            _CachedPlaylistRecord(
+                facts.path,
+                HostMediaFileKind.PLAYLIST,
+                facts.size_bytes,
+                facts.modified_ns,
+                title=name,
+            )
+        )
+    return _build_library(tuple(records), (), HostMediaCacheStats())
+
+
+def test_playlist_saved_match_survives_helper_reload_and_source_title_change(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _playlist_host(tmp_path, "Road trip")
+        first = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, host), lambda _: None, Event()
+        )
+        assert first.status is SyncExecutionStatus.SUCCESS, first.issues
+        assert first.active is not None and first.helper is not None
+        identity = next(
+            item.playlist_id
+            for item in first.active.library.playlists
+            if item.name == "Road trip"
+        )
+        host_id = host.snapshot.playlists[0].playlist_id
+        assert first.helper.playlist_associations == (
+            PlaylistAssociation(host_id, identity),
+        )
+        # Read the serialized helper anew, rather than reusing the result object.
+        reloaded = device.coordinator.scan_ipod_media(
+            first.active, lambda _: None, Event()
+        )
+        assert reloaded.playlist_associations == first.helper.playlist_associations
+        renamed = _playlist_host(tmp_path, "Holiday")
+        assert renamed.snapshot.playlists[0].playlist_id == host_id
+        plan = SyncPlan(())
+        rows = review_playlist_sync(plan, renamed, reloaded, device.active)
+        assert rows[0].target_id == identity
+        assert rows[0].change is not None and rows[0].change.renamed
+        second = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            SyncExecutionRequest(plan, renamed, reloaded, device.active, 1, 1),
+            lambda _: None,
+            Event(),
+        )
+        assert second.status is SyncExecutionStatus.SUCCESS, second.issues
+        assert second.active is not None and second.helper is not None
+        assert (
+            next(
+                item
+                for item in second.active.library.playlists
+                if item.playlist_id == identity
+            ).name
+            == "Holiday"
+        )
+        assert len(second.active.library.playlists) == len(
+            first.active.library.playlists
+        )
+        assert second.helper.playlist_associations == first.helper.playlist_associations
+        again = review_playlist_sync(plan, renamed, second.helper, second.active)
+        assert not again[0].actionable
+    finally:
+        device.coordinator.close()
+
+
+def test_playlist_explicit_unchanged_match_only_publishes_helper(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        _prepare_genius_baseline(device)
+        saved = device.save(
+            device.prepare(
+                replace(
+                    device.active.library,
+                    playlists=(
+                        *device.active.library.playlists,
+                        Playlist(-1, "Favorites"),
+                    ),
+                )
+            )
+        )
+        assert saved.active is not None
+        target = next(
+            item for item in saved.active.library.playlists if item.name == "Favorites"
+        )
+        host = _playlist_host(tmp_path, "Favorites")
+        choice = PlaylistSyncChoice(
+            host.snapshot.playlists[0].playlist_id,
+            automatic=False,
+            target_id=target.playlist_id,
+        )
+        request = replace(_request(device, host), playlist_choices=(choice,))
+        before = {path: (device.root / path).read_bytes() for path in device.original}
+        rows = review_playlist_sync(
+            request.plan, host, request.ipod, request.source, (choice,)
+        )
+        assert rows[0].actionable and rows[0].change is None
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.helper is not None
+        assert result.helper.playlist_associations == (
+            PlaylistAssociation(choice.host_playlist_id, target.playlist_id),
+        )
+        assert result.playlist_change_count == 0
+        assert {path: (device.root / path).read_bytes() for path in before} == before
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("unchecked", [False, True])
+def test_playlist_changed_source_does_not_skip_independent_playlist(
+    tmp_path: Path, unchecked: bool
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _playlist_host(tmp_path, "Changed", "Ready")
+        changed_id = host.snapshot.playlists[0].playlist_id
+        request = replace(
+            _request(device, host),
+            playlist_choices=(PlaylistSyncChoice(changed_id, included=not unchecked),),
+        )
+        Path(host.sources[0].path.path).write_text(
+            "changed after Review", encoding="utf-8"
+        )
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is (
+            SyncExecutionStatus.SUCCESS if unchecked else SyncExecutionStatus.PARTIAL
+        ), result.issues
+        assert result.active is not None and result.helper is not None
+        assert result.playlist_change_count == 1
+        assert any(item.name == "Ready" for item in result.active.library.playlists)
+        assert not any(
+            item.name == "Changed" for item in result.active.library.playlists
+        )
+        assert all(
+            item.host_playlist_id != changed_id
+            for item in result.helper.playlist_associations
+        )
+        assert (
+            any(issue.code == "sync.playlist_source_changed" for issue in result.issues)
+            is not unchecked
+        )
+    finally:
+        device.coordinator.close()
+
+
+def test_changed_source_cannot_enable_a_previously_conflicting_playlist(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        saved = device.save(
+            device.prepare(
+                replace(
+                    device.active.library,
+                    playlists=(*device.active.library.playlists, Playlist(-1, "Keep")),
+                )
+            )
+        )
+        assert saved.active is not None
+        target = next(
+            item for item in saved.active.library.playlists if item.name == "Keep"
+        )
+        host = _playlist_host(tmp_path, "A", "B")
+        choices = tuple(
+            PlaylistSyncChoice(
+                item.playlist_id, automatic=False, target_id=target.playlist_id
+            )
+            for item in host.snapshot.playlists
+        )
+        request = replace(_request(device, host), playlist_choices=choices)
+        assert not any(
+            row.actionable
+            for row in review_playlist_sync(
+                request.plan, host, request.ipod, request.source, choices
+            )
+        )
+        Path(host.sources[0].path.path).write_text("Changed", encoding="utf-8")
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.playlist_change_count == 0
+        assert device.active.library.playlists == saved.active.library.playlists
+        assert result.helper is None or not result.helper.playlist_associations
     finally:
         device.coordinator.close()

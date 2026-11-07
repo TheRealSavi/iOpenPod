@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from storage.models import PhysicalDeviceId
+
 _MAX_FILE_SIZE_BYTES = {
     "fat": 2 * 1024**3 - 1,
     "fat16": 2 * 1024**3 - 1,
@@ -28,6 +30,16 @@ _CASE_INSENSITIVE_FILESYSTEMS = frozenset(
 class _StatVfsResult(Protocol):
     f_frsize: int
     f_bsize: int
+
+
+def paths_share_single_device(
+    lookup: Callable[[Path], PhysicalDeviceId | None], first: Path, second: Path
+) -> bool | None:
+    """Compare adapters whose native path lookup identifies one Physical Device."""
+    first_id, second_id = lookup(first), lookup(second)
+    if first_id is None or second_id is None:
+        return None
+    return first_id == second_id
 
 
 def disk_usage(path: Path) -> tuple[int, int]:

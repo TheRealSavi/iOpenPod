@@ -4,7 +4,15 @@ import sys
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QEvent, QModelIndex, QPoint, QSize, Qt, QUrl
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QModelIndex,
+    QPoint,
+    QSize,
+    Qt,
+    QUrl,
+)
 from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
@@ -17,6 +25,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QStyle,
     QStyleOptionViewItem,
+    QTreeView,
     QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import (
@@ -38,15 +47,21 @@ from iOpenPod.app.core.settings.definitions import (
     APPEARANCE_MODE,
     COLORFUL_MODE,
     DRAFT_ALL_CHANGES,
+    IPOD_LIBRARY_VIEW_MODE,
     LIBRARY_SPLITTER_STATE,
     MAX_BACKUPS,
+    NAVIGATION_STYLE,
     PLAYER_POSITION,
     AppearanceMode,
     DarkTheme,
+    IPodLibraryViewMode,
     LightTheme,
+    NavigationStyle,
     PlayerPosition,
 )
 from iOpenPod.app.core.status import StatusAction, StatusProgress
+from iOpenPod.app.library_write import WriteProgress
+from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.models.collection_list_model import (
     CollectionRole,
 )
@@ -78,6 +93,7 @@ from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.search_field import SearchField
+from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.status_controls import StatusBarControls
 from iOpenPod.GUI.widgets.status_list import StatusListButton
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -89,7 +105,39 @@ from iOpenPod.GUI.widgets.themed_buttons import (
 from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
 from iOpenPod.GUI.widgets.track_table import TrackTable
-from iPodDB.library import LibrarySnapshot, MediaType, Track
+from iPodDB.library import LibrarySnapshot, MediaType, Playlist, Track
+
+
+@pytest.mark.parametrize("pending_update", ["player_rating", "playlist_scroll"])
+def test_deferred_widget_updates_are_cancelled_when_shell_is_deleted(
+    pending_update: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _context()
+    context.library_workspace.load(LibrarySnapshot(playlists=(Playlist(1, "Queued"),)))
+    window = MainWindow(context, auto_discover=False)
+    APPLICATION.processEvents()
+    errors: list[tuple[object, ...]] = []
+
+    def record_exception(*args: object) -> None:
+        errors.append(args)
+
+    monkeypatch.setattr(sys, "excepthook", record_exception)
+    try:
+        if pending_update == "player_rating":
+            rating = window.findChild(QLabel, "playerRating")
+            assert rating is not None
+            rating.setStyleSheet("font-size: 40pt;")
+        else:
+            tree = window.findChild(QTreeView, "playlistTree")
+            assert tree is not None
+            tree.scrollTo(tree.model().index(0, 0))
+    finally:
+        window.close()
+        context.shutdown()
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        APPLICATION.processEvents()
+    assert errors == []
 
 
 def test_draft_all_changes_setting_controls_review_visibility_immediately() -> None:
@@ -209,6 +257,88 @@ def test_application_status_drives_the_shared_window_status_bar(
 
         assert "No Active iPod" in window.statusBar().currentMessage()
     finally:
+        window.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [PreparationState.SAVED, PreparationState.SAVE_FAILED, PreparationState.STALE],
+)
+def test_library_save_shows_progress_and_keeps_disconnect_warning_visible(
+    outcome: PreparationState,
+) -> None:
+    context = _context()
+    window = MainWindow(context, auto_discover=False)
+    controller = context.library_write_controller
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        baseline_height = window.statusBar().height()
+        controls = window.findChild(StatusBarControls)
+        assert controls is not None
+
+        controller.state = PreparationState.PREPARING
+        controller.changed.emit()
+        assert controls.progress.isVisible()
+        assert controls.progress.maximum() == 0
+        controller.state = PreparationState.SAVING
+        controller.changed.emit()
+        assert controls.progress.isVisible()
+        assert controls.progress.maximum() == 0
+        warning = controls.findChild(QLabel, "sharedStatusSafetyWarning")
+        assert warning is not None and warning.isVisible()
+        assert warning.text() == "Do not disconnect your iPod"
+
+        controller._progress(  # pyright: ignore[reportPrivateUsage]
+            controller._token,  # pyright: ignore[reportPrivateUsage]
+            WriteProgress(
+                "save.storage.publishing",
+                "Publishing Library files: 1 of 4",
+                completed=1,
+                total=4,
+                current_item="iPod_Control/iTunes/iTunesDB",
+                unit="files",
+            ),
+        )
+        assert "Publishing Library files: 1 of 4" in window.statusBar().currentMessage()
+        assert controls.progress.value() == 2_500
+        assert controls.progress.toolTip() == "iPod_Control/iTunes/iTunesDB"
+        context.status.show("other", "An unrelated update")
+        context.status._rotate()  # pyright: ignore[reportPrivateUsage]
+        assert "Publishing" in window.statusBar().currentMessage()
+        assert warning.isVisible()
+        APPLICATION.processEvents()
+        assert window.statusBar().height() == baseline_height
+
+        controller._progress(  # pyright: ignore[reportPrivateUsage]
+            controller._token,  # pyright: ignore[reportPrivateUsage]
+            WriteProgress(
+                "save.storage.flushing", "Waiting for the iPod to finish writing data…"
+            ),
+        )
+        assert controls.progress.maximum() == 0
+        assert warning.isVisible()
+        controller.state = outcome
+        controller.changed.emit()
+        assert warning.isHidden()
+        assert controls.progress.isHidden()
+        if outcome is PreparationState.SAVED:
+            assert "saved and verified" in window.statusBar().currentMessage()
+            assert "Eject" in window.statusBar().currentMessage()
+        elif outcome is PreparationState.SAVE_FAILED:
+            assert "could not be saved" in window.statusBar().currentMessage()
+        previous_message = window.statusBar().currentMessage()
+        controller._progress(  # pyright: ignore[reportPrivateUsage]
+            controller._token,  # pyright: ignore[reportPrivateUsage]
+            WriteProgress(
+                "save.storage.publishing", "Late update", completed=4, total=4
+            ),
+        )
+        assert window.statusBar().currentMessage() == previous_message
+        assert warning.isHidden()
+    finally:
+        controller.state = PreparationState.IDLE
         window.close()
         context.shutdown()
 
@@ -359,10 +489,16 @@ def test_chaptered_conversion_uses_the_status_bar_for_progress_and_results(
 
 def test_shell_contains_persistent_player_sidebar_and_all_routes() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(100))
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         window.show()
         APPLICATION.processEvents()
 
@@ -465,7 +601,7 @@ def test_player_position_setting_moves_the_existing_player() -> None:
     try:
         window.show()
         APPLICATION.processEvents()
-        shell = window.centralWidget()
+        shell = window.findChild(QWidget, "appShell")
         player = window.findChild(PlayerBar)
         position_combo = window.findChild(AppComboBox, "playerPositionCombo")
         assert shell is not None
@@ -503,7 +639,7 @@ def test_saved_bottom_player_position_is_applied_during_composition() -> None:
     window = MainWindow(context, auto_discover=False)
 
     try:
-        shell = window.centralWidget()
+        shell = window.findChild(QWidget, "appShell")
         player = window.findChild(PlayerBar)
         assert shell is not None
         shell_layout = shell.layout()
@@ -544,6 +680,7 @@ def test_settings_choose_mode_exact_themes_and_colorful_mode() -> None:
             DarkTheme.GRAVITY.value,
             DarkTheme.NORTHERN_LIGHTS.value,
             DarkTheme.ORCHID.value,
+            DarkTheme.TECH.value,
         )
         assert colorful.currentData() is False
         assert max_backups.currentData() == 0
@@ -587,13 +724,17 @@ def test_settings_show_version_and_open_support_links(
         version_row = window.findChild(QWidget, "currentAppVersion")
         assert version_row is not None
         version = version_row.findChild(QLabel, "settingDescription")
-        report_issue = window.findChild(ActionButton, "reportIssue")
+        help_support = window.findChild(ActionButton, "helpSupport")
         donate = window.findChild(ActionButton, "donate")
         assert version is not None
-        assert report_issue is not None
+        assert help_support is not None
         assert donate is not None
         assert version.text() == "2.3.4 · Unknown source"
 
+        help_support.click()
+        report_issue = window.findChild(ActionButton, "onboardingIssues")
+        assert report_issue is not None
+        assert not opened
         report_issue.click()
         donate.click()
         APPLICATION.processEvents()
@@ -685,6 +826,9 @@ def test_colorful_mode_tints_album_card_fill_selection_and_track_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(
         (
             Track(1, "First", "Artist", "Album One", 180_000, artwork_id=64),
@@ -694,6 +838,9 @@ def test_colorful_mode_tints_album_card_fill_selection_and_track_header(
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         provider = window.findChild(ArtworkPixmapProvider)
         grid = window.findChild(AlbumGridView, "albumGrid")
         splitter = window.findChild(LibrarySplitter, "librarySplitter")
@@ -773,10 +920,17 @@ def test_colorful_mode_tints_album_card_fill_selection_and_track_header(
 
 def test_library_views_use_virtualized_model_view_primitives() -> None:
     context = _context()
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(10_000))
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         window.show()
         APPLICATION.processEvents()
 
@@ -807,7 +961,7 @@ def test_library_views_use_virtualized_model_view_primitives() -> None:
             table.horizontalHeader().sectionResizeMode(1)
             is QHeaderView.ResizeMode.Interactive
         )
-        assert table.verticalScrollMode() is table.ScrollMode.ScrollPerItem
+        assert table.verticalScrollMode() is table.ScrollMode.ScrollPerPixel
         assert table.selectionBehavior() is table.SelectionBehavior.SelectRows
         index_widget: QWidget | None = table.indexWidget(table_model.index(0, 0))
         assert index_widget is None
@@ -818,6 +972,9 @@ def test_library_views_use_virtualized_model_view_primitives() -> None:
 
 def test_library_grids_equalize_cells_without_churning_model_state() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(100))
     window = MainWindow(context, auto_discover=False)
 
@@ -849,6 +1006,9 @@ def test_library_grids_equalize_cells_without_churning_model_state() -> None:
 
 def test_artist_album_grid_does_not_collapse_at_exact_fit_widths() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(100))
     window = MainWindow(context, auto_discover=False)
 
@@ -907,6 +1067,11 @@ def test_artist_album_grid_does_not_collapse_at_exact_fit_widths() -> None:
 
 def test_large_artist_album_grid_reflows_in_the_resize_event_turn() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
+    # Exercise the narrow viewport sizes using the Sidebar shell.
+    context.settings.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
     context.track_model.replace_tracks(_tracks(10_000))
     window = MainWindow(context, auto_discover=False)
 
@@ -1240,7 +1405,7 @@ def test_implemented_library_routes_are_distinct_real_pages() -> None:
         assert pages is not None
 
         expected_tables = {
-            PageId.TRACKS: ("tracks", 5),
+            PageId.TRACKS: ("tracks", 1),
             PageId.ARTISTS: ("artists-tracks", 1),
             PageId.GENRES: ("genres-tracks", 1),
             PageId.AUDIOBOOKS: ("audiobooks", 1),
@@ -1334,6 +1499,9 @@ def test_library_toolbar_titles_share_the_albums_heading_style() -> None:
 
 def test_collection_sort_options_are_page_specific_and_drive_the_grid() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(
         (
             Track(1, "One", "Alpha", "Only", 1, genre="Ambient"),
@@ -1370,8 +1538,8 @@ def test_collection_sort_options_are_page_specific_and_drive_the_grid() -> None:
         ),
         PageId.MUSIC_VIDEOS: (
             ("Album title", "title"),
-            ("Most videos", "track_count"),
-            ("Longest duration", "duration"),
+            ("Artist", "artist"),
+            ("Year", "year"),
             ("", None),
             ("Ascending", "__sort_ascending__"),
             ("Descending", "__sort_descending__"),
@@ -1475,6 +1643,9 @@ def test_collection_list_view_filters_album_grid_without_becoming_tracks(
     prefix: str,
 ) -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(40))
     window = MainWindow(context, auto_discover=False)
 
@@ -1637,6 +1808,9 @@ def test_player_clears_on_a_whole_library_snapshot_with_reused_track_ids() -> No
 
 def test_view_mode_selector_is_inset_within_the_browser_header() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     window = MainWindow(context, auto_discover=False)
 
     try:
@@ -1670,6 +1844,9 @@ def test_view_mode_selector_is_inset_within_the_browser_header() -> None:
 
 def test_browser_and_track_searches_keep_separate_contexts() -> None:
     context = _context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(30))
     window = MainWindow(context, auto_discover=False)
 
@@ -1732,10 +1909,16 @@ def test_legacy_splitter_state_cannot_collapse_track_title_bar() -> None:
 
     context = _context()
     context.settings.set_global(LIBRARY_SPLITTER_STATE, legacy_state)
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(_tracks(30))
     window = MainWindow(context, auto_discover=False)
 
     try:
+        sidebar = window.findChild(Sidebar)
+        assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.ALBUMS.value)
         window.show()
         APPLICATION.processEvents()
 

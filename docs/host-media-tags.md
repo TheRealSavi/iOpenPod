@@ -81,6 +81,28 @@ except that nonempty lyrics in the captured Host file supersede reviewed lyrics.
 Stock iPod lyrics still require verified embedded text and the database presence
 flag under ADR-0075.
 
+## Video artwork
+
+Video Sync prefers embedded artwork, then folder artwork such as `cover.jpg` or
+`poster.jpg`, then a frame from the video. Folder filenames are case-insensitive;
+the existing cover-name ordering remains unchanged, with `poster` also accepted.
+For containers unsupported by the native tag reader, FFprobe and FFmpeg recover
+attached cover images, including Matroska JPEG/PNG attachments, before folder art.
+Frame extraction happens during Sync preparation, using a frame at 10% of the
+duration, capped at 30 seconds. If duration is unknown, it tries 10 seconds and
+falls back to the first frame for short videos. Artwork preserves the displayed
+aspect ratio.
+
+An already matched video without artwork receives an artwork-only Update. Once
+generated, its cover remains stable on later scans; adding embedded or folder art
+replaces the fallback through the usual reviewed Update. Existing iPod artwork
+is retained when the Host has no artwork or cannot verify it. Removing a previously
+synced Host cover requests a frame instead. Failed extraction warns and leaves the
+video usable, retains any previous iPod cover, and permits retrying on a later Sync.
+The Host video is not modified, and this adds no setting or dependency.
+Downloaded video Podcasts also receive a frame when embedded, publisher, and
+chapter artwork are absent.
+
 ## Boundaries and remaining gaps
 
 This covers representable fields rather than every arbitrary Host tag. MusicBrainz
@@ -89,8 +111,11 @@ values, and arbitrary custom fields lack dedicated common representations. Podca
 GUIDs are not enclosure URLs; encoder names are not encoding-quality descriptions.
 Synchronized `SYLT` timing is not flattened into unsynchronized lyrics.
 
-Chapters still come from captured FFprobe inspection during preparation. Encoder
-delay/padding, sample counts, codec properties, and compatibility remain media
+Chapters still come from captured FFprobe inspection during preparation.
+Metadata-only Sync retains the existing Track's chapters and chapter bytes;
+an empty chapter tuple from Host Media Scan is not a request to remove them.
+Explicit Library chapter edits and captured media replacement can change chapters.
+Encoder delay/padding, sample counts, codec properties, and compatibility remain media
 inspection/preparation concerns. Descriptive tags do not override those facts.
 Existing iPod ratings and listening history retain the existing Sync Update policy.
 There is no new Host tag writing or database schema.

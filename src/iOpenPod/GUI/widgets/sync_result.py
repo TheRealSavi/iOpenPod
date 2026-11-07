@@ -11,6 +11,7 @@ from typing import Literal
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -33,6 +34,9 @@ class SyncResultMessage:
 
     severity: IssueSeverity
     text: str
+    detail: str = ""
+    references: tuple[str, ...] = ()
+    overflow_text: str = ""
 
 
 class SyncResultView(QScrollArea):
@@ -147,9 +151,7 @@ class SyncResultView(QScrollArea):
             IssueSeverity.WARNING,
             IssueSeverity.INFO,
         ):
-            matching = [
-                message.text for message in messages if message.severity is severity
-            ]
+            matching = [message for message in messages if message.severity is severity]
             if not matching:
                 continue
             section = QFrame(self._messages)
@@ -158,15 +160,13 @@ class SyncResultView(QScrollArea):
             section_layout.setContentsMargins(
                 LAYOUT.space_md, LAYOUT.space_sm, LAYOUT.space_md, LAYOUT.space_sm
             )
-            section_layout.setSpacing(LAYOUT.space_sm)
+            section_layout.setSpacing(LAYOUT.space_md)
             heading = self._label("syncResultMessageHeading", section)
             heading.setProperty("severity", severity.value)
             heading.setText(headings[severity])
             section_layout.addWidget(heading)
-            for text in matching:
-                message_label = self._label("syncResultMessage", section)
-                message_label.setText(text)
-                section_layout.addWidget(message_label)
+            for message in matching:
+                section_layout.addWidget(self._message_group(message, section))
             self._message_layout.addWidget(section)
         if not messages:
             empty = self._label("syncResultNoIssues", self._messages)
@@ -179,3 +179,39 @@ class SyncResultView(QScrollArea):
         self.technical_details.setVisible(
             bool(technical_text) and self._technical_toggle.isChecked()
         )
+
+    def _message_group(self, message: SyncResultMessage, parent: QWidget) -> QWidget:
+        group = QWidget(parent)
+        group.setObjectName("syncResultMessageGroup")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(LAYOUT.space_xs)
+        heading = self._label("syncResultMessage", group)
+        heading.setText(message.text)
+        layout.addWidget(heading)
+        if message.detail:
+            detail = self._label("syncResultMessageDetail", group)
+            detail.setText(message.detail)
+            layout.addWidget(detail)
+        if message.references:
+            references = QGridLayout()
+            references.setContentsMargins(LAYOUT.space_md, 0, 0, 0)
+            references.setHorizontalSpacing(LAYOUT.space_xs)
+            references.setVerticalSpacing(LAYOUT.space_2xs)
+            references.setColumnStretch(1, 1)
+            for row, reference in enumerate(message.references):
+                bullet = self._label("syncResultReferenceBullet", group)
+                bullet.setText("•")
+                bullet.setSizePolicy(
+                    QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred
+                )
+                references.addWidget(bullet, row, 0, Qt.AlignmentFlag.AlignTop)
+                label = self._label("syncResultReference", group)
+                label.setText(reference)
+                references.addWidget(label, row, 1)
+            if message.overflow_text:
+                overflow = self._label("syncResultMessageOverflow", group)
+                overflow.setText(message.overflow_text)
+                references.addWidget(overflow, len(message.references), 1)
+            layout.addLayout(references)
+        return group

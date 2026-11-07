@@ -32,7 +32,7 @@ _PHOTO_FIELDS = (
         "rating",
         str(QT_TRANSLATE_NOOP("MetadataFields", "Rating (0-100)")),
         "Photo",
-        FieldKind.INTEGER,
+        FieldKind.RATING,
     ),
     MetadataField(
         "original_date",

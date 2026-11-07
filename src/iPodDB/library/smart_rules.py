@@ -6,7 +6,6 @@ use IS_TRUE/IS_FALSE with value zero. Native field codes remain private.
 
 from enum import StrEnum
 
-from iPodDB.device_time import MAX_LOCAL_UNIX_TIME, MIN_LOCAL_UNIX_TIME
 from iPodDB.library.playlists import (
     SmartField,
     SmartLimitSort,
@@ -70,6 +69,10 @@ DATE_FIELDS = frozenset(
         SmartField.LAST_SKIPPED,
     )
 )
+
+# Firmware compares numeric operands as signed 64-bit integers. The semantic
+# number contract remains nonnegative, so the sign bit is not authorable.
+MAX_SMART_NUMERIC_VALUE = 0x7FFFFFFFFFFFFFFF
 
 
 def smart_value_kind(field: SmartField) -> SmartValueKind:
@@ -214,17 +217,14 @@ def _validate_rule(rule: SmartRule) -> None:
         if rule.value != 0:
             raise ValueError("Boolean conditions do not accept a value.")
         return
-    relative = rule.operator in (SmartOperator.IN_LAST, SmartOperator.NOT_IN_LAST)
-    lower = 1 if relative else MIN_LOCAL_UNIX_TIME if kind is SmartValueKind.DATE else 0
-    maximum = (
-        0x7FFFFFFFFFFFFFFF
-        if relative
-        else MAX_LOCAL_UNIX_TIME
-        if kind is SmartValueKind.DATE
-        else 100
-        if rule.field is SmartField.RATING
-        else 0xFFFFFFFFFFFFFFFF
-    )
+    if kind is SmartValueKind.DATE:
+        # Calendar ranges and relative periods are normalized during preparation.
+        # Preview/editor validation must not turn an approximate date into a gate.
+        if rule.operator is SmartOperator.BETWEEN and type(rule.upper_value) is not int:
+            raise ValueError("Date ranges require two whole-number timestamps.")
+        return
+    lower = 0
+    maximum = 100 if rule.field is SmartField.RATING else MAX_SMART_NUMERIC_VALUE
     if not lower <= rule.value <= maximum:
         raise ValueError("Smart Playlist value is outside the supported range.")
     if rule.operator is SmartOperator.BETWEEN and (

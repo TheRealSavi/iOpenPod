@@ -15,9 +15,12 @@ from iOpenPod.app.core.settings.definitions import (
     COLORFUL_MODE,
     DRAFT_ALL_CHANGES,
     IPOD_LIBRARY_VIEW_MODE,
+    ITUNES_107_ARTWORK,
     LAST_SELECTED_IPOD_VOLUME_ID,
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
     MANAGE_VOLUME_PRESENTATION,
+    NAVIGATION_STYLE,
+    PLAYER_AUTO_MINIMIZE,
     PLAYER_POSITION,
     TRACK_TITLE_BAR_STYLE,
     WINDOW_GEOMETRY,
@@ -25,6 +28,7 @@ from iOpenPod.app.core.settings.definitions import (
     IPodLibraryViewMode,
     LibraryDoubleClickShortcut,
     LightTheme,
+    NavigationStyle,
     PlayerPosition,
     SettingDefinition,
     TrackTitleBarStyle,
@@ -75,6 +79,29 @@ def test_default_global_and_reset_resolution() -> None:
     assert service.source(APPEARANCE_MODE) is SettingSource.DEFAULT
 
 
+def test_failed_global_write_restores_previous_value_without_notifying(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = GlobalSettingsStore()
+    service = _service(store)
+    service.set_global(APPEARANCE_MODE, "dark")
+    notifications: list[str] = []
+
+    def record_notification(key: str, _value: object) -> None:
+        notifications.append(key)
+
+    service.settingChanged.connect(record_notification)
+
+    def fail() -> None:
+        raise OSError("Disk full")
+
+    monkeypatch.setattr(store, "sync", fail)
+    with pytest.raises(OSError, match="Disk full"):
+        service.set_global(APPEARANCE_MODE, "light")
+    assert service.get(APPEARANCE_MODE) == "dark"
+    assert not notifications
+
+
 def test_legacy_recovery_hints_are_removed_without_changing_preferences(
     tmp_path: Path,
 ) -> None:
@@ -117,6 +144,24 @@ def test_invalid_write_is_rejected() -> None:
         raise AssertionError("An invalid theme value was accepted")
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_player_auto_minimize_defaults_on_and_persists_as_host_preference(
+    tmp_path: Path, enabled: bool
+) -> None:
+    settings_path = tmp_path / "settings.json"
+    service = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert service.get(PLAYER_AUTO_MINIMIZE) is True
+    service.set_global(PLAYER_AUTO_MINIMIZE, enabled)
+    restored = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert restored.get(PLAYER_AUTO_MINIMIZE) is enabled
+    restored.load_device("one", {PLAYER_AUTO_MINIMIZE.key: not enabled})
+    assert restored.get(PLAYER_AUTO_MINIMIZE) is enabled
+    with pytest.raises(ValueError, match="not device-overridable"):
+        restored.set_device(PLAYER_AUTO_MINIMIZE, not enabled)
+    restored.reset_global(PLAYER_AUTO_MINIMIZE)
+    assert restored.get(PLAYER_AUTO_MINIMIZE) is True
+
+
 def test_invalid_player_position_is_rejected() -> None:
     service = _service()
 
@@ -156,11 +201,81 @@ def test_exact_theme_cannot_be_saved_in_the_other_appearance_family(
 def test_ipod_view_mode_defaults_and_rejects_invalid_values() -> None:
     store = GlobalSettingsStore()
     service = _service(store)
-    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.SPLIT_TABLE.value
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
     store.set(IPOD_LIBRARY_VIEW_MODE.key, "unknown")
-    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.SPLIT_TABLE.value
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
     with pytest.raises(ValueError, match=IPOD_LIBRARY_VIEW_MODE.key):
         service.set_global(IPOD_LIBRARY_VIEW_MODE, "unknown")
+
+
+def test_navigation_style_defaults_validates_and_remains_a_host_preference() -> None:
+    store = GlobalSettingsStore()
+    service = _service(store)
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
+    store.set(NAVIGATION_STYLE.key, "unknown")
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
+    with pytest.raises(ValueError, match=NAVIGATION_STYLE.key):
+        service.set_global(NAVIGATION_STYLE, "unknown")
+
+    service.set_global(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
+    service.load_device(
+        "one", {NAVIGATION_STYLE.key: NavigationStyle.COMPACT_TOP_BAR.value}
+    )
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.SIDEBAR.value
+    assert service.source(NAVIGATION_STYLE) is SettingSource.GLOBAL
+    with pytest.raises(ValueError, match="not device-overridable"):
+        service.set_device(NAVIGATION_STYLE, NavigationStyle.SIDEBAR.value)
+    service.reset_global(NAVIGATION_STYLE)
+    assert service.get(NAVIGATION_STYLE) == NavigationStyle.COMPACT_TOP_BAR.value
+
+
+@pytest.mark.parametrize("style", NavigationStyle)
+def test_navigation_style_survives_restart(
+    tmp_path: Path, style: NavigationStyle
+) -> None:
+    settings_path = tmp_path / "settings-v2.json"
+    first = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    first.set_global(NAVIGATION_STYLE, style.value)
+
+    second = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert second.get(NAVIGATION_STYLE) == style.value
+
+
+@pytest.mark.parametrize("mode", IPodLibraryViewMode)
+def test_ipod_view_mode_survives_restart(
+    tmp_path: Path, mode: IPodLibraryViewMode
+) -> None:
+    settings_path = tmp_path / "settings-v2.json"
+    first = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    first.set_global(IPOD_LIBRARY_VIEW_MODE, mode.value)
+
+    second = _service(JsonSettingsStore(AtomicHostFile(settings_path)))
+    assert second.get(IPOD_LIBRARY_VIEW_MODE) == mode.value
+
+
+def test_itunes_11_view_mode_obeys_device_inheritance() -> None:
+    service = _service()
+    service.set_global(IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value)
+    service.load_device(
+        "one", {IPOD_LIBRARY_VIEW_MODE.key: IPodLibraryViewMode.SPLIT_TABLE.value}
+    )
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.SPLIT_TABLE.value
+    assert service.source(IPOD_LIBRARY_VIEW_MODE) is SettingSource.DEVICE
+
+    service.reset_device(IPOD_LIBRARY_VIEW_MODE)
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
+    assert service.source(IPOD_LIBRARY_VIEW_MODE) is SettingSource.GLOBAL
+
+    service.set_device(IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value)
+    service.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
+    )
+    assert service.get(IPOD_LIBRARY_VIEW_MODE) == IPodLibraryViewMode.ITUNES_11.value
+    service.unload_device()
+    assert (
+        service.get(IPOD_LIBRARY_VIEW_MODE)
+        == IPodLibraryViewMode.WHOLE_PAGE_TABLE.value
+    )
 
 
 def test_track_title_bar_style_defaults_and_rejects_invalid_values() -> None:
@@ -252,6 +367,8 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     first.set_global(APPEARANCE_LIGHT_THEME, LightTheme.PORCELAIN.value)
     first.set_global(APPEARANCE_DARK_THEME, DarkTheme.ORIGINAL.value)
     first.set_global(COLORFUL_MODE, True)
+    assert first.get(ITUNES_107_ARTWORK) is False
+    first.set_global(ITUNES_107_ARTWORK, True)
     first.set_global(DRAFT_ALL_CHANGES, True)
     first.set_global(MANAGE_VOLUME_PRESENTATION, False)
     first.set_global(IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.WHOLE_PAGE_TABLE.value)
@@ -269,6 +386,7 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     assert second.get(APPEARANCE_LIGHT_THEME) == LightTheme.PORCELAIN.value
     assert second.get(APPEARANCE_DARK_THEME) == DarkTheme.ORIGINAL.value
     assert second.get(COLORFUL_MODE) is True
+    assert second.get(ITUNES_107_ARTWORK) is True
     assert second.get(DRAFT_ALL_CHANGES) is True
     assert second.get(MANAGE_VOLUME_PRESENTATION) is False
     assert (
@@ -281,6 +399,7 @@ def test_json_store_immediately_persists_typed_settings_through_storage(
     assert json.loads(settings_path.read_text(encoding="utf-8")) == {
         "appearance/player-position": "bottom",
         "appearance/colorful-mode": True,
+        "appearance/itunes-107-artwork": True,
         "appearance/dark-theme": "original",
         "appearance/light-theme": "porcelain",
         "appearance/theme": "dark",

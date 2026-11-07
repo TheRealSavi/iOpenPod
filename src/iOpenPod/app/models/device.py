@@ -5,8 +5,10 @@ from enum import StrEnum
 
 from device_registry import DeviceProfile, IdentificationStatus
 from iOpenPod.app.core.settings.device import DeviceSettings
+from iOpenPod.app.genius_mixes import MixState
 from iOpenPod.app.models.ipod_preferences import IPodPreferenceSection
 from iPodDB.library import LibrarySnapshot
+from iPodDB.library.genius import GeniusBrowse
 from storage import FileFingerprint
 
 
@@ -30,6 +32,7 @@ class DeviceReadiness(StrEnum):
     CONFLICTING = "conflicting"
     RECOVERY_MODE = "recovery_mode"
     DATABASE_MISSING = "database_missing"
+    DATABASE_INITIALIZABLE = "database_initializable"
     DATABASE_UNSUPPORTED = "database_unsupported"
     INSPECTION_FAILED = "inspection_failed"
     SYNC_RECOVERY_REQUIRED = "sync_recovery_required"
@@ -80,6 +83,7 @@ class DeviceCandidate:
     def selectable(self) -> bool:
         return self.readiness in (
             DeviceReadiness.READY,
+            DeviceReadiness.DATABASE_INITIALIZABLE,
             DeviceReadiness.SYNC_RECOVERY_REQUIRED,
         )
 
@@ -136,6 +140,12 @@ class ActiveIPod:
     settings: DeviceSettings = field(default_factory=DeviceSettings)
     artwork_repairs_pending: bool = False
     photos_repairs_pending: bool = False
+    genius: GeniusBrowse = field(default_factory=GeniusBrowse)
+    genius_mix_state: MixState = field(default_factory=MixState)
+    firmware_version: str = ""
+    serial_number: str = ""
+    game_storage_bytes: int | None = None
+    album_artwork_storage_bytes: int | None = None
 
     @property
     def display_name(self) -> str:

@@ -1,4 +1,7 @@
-"""MHIP (Playlist Item) Chunk definition."""
+"""MHIP (Playlist Item) Chunk definition.
+
+Date qualification: docs/research/classic-datetime-file-map-2026-11-06.md.
+"""
 
 from dataclasses import dataclass
 
@@ -11,15 +14,28 @@ from iPodDB.shared.types import ChunkDefinition
 @dataclass(frozen=True, slots=True)
 class MhipHeader(ChunkHeader):
     child_count: int = cf(0x0C, "u32", counts_children=True)
-    podcast_group_flag: int = cf(0x10, "u16")
+    # On ordinary Track rows, any nonzero byte sets native Track +0x14 bit 2
+    # (unchecked); zero does not clear it. Group rows do not apply this override.
+    unchecked_override: int = cf(0x10, "u8")
+    # Any nonzero byte selects a group. These bytes retain their physical offsets
+    # when the firmware swaps the surrounding multi-byte fields.
+    group_marker: int = cf(0x11, "u8")
     unk_mhip_0x12: int = cf(0x12, "u16")
     group_id: int = cf(0x14, "u32")
     track_id: int = cf(0x18, "u32")
+    # Classic 2.0.1 ordinary rows can fill an empty native Track added-date slot
+    # from this word; zero falls back to a sampled calendar value. That is not
+    # all-four proof of a standalone "date added to this Playlist" meaning.
     timestamp: int = cf(0x1C, "u32")
     group_id_ref: int = cf(0x20, "u32")
     group_persistent_id: int = cf(0x24, "u64")
     track_persistent_id: int = cf(0x2C, "u64")
     mhip_persistent_id: int = cf(0x3C, "u64")
+
+    @property
+    def is_group(self) -> bool:
+        """A nonzero byte at 0x11 selects a group; byte 0x10 is independent."""
+        return bool(self.group_marker)
 
 
 DEFINITION: ChunkDefinition[MhipHeader] = ChunkDefinition(

@@ -18,6 +18,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.library._browse_index import resolve_indexes
+from iPodDB.library._date_resolution import resolve_dates
 from iPodDB.library._folder_validation import folder_issues
 from iPodDB.library._hierarchy import folder_hierarchy
 from iPodDB.library._identities import IdentityAllocator, allocate
@@ -25,10 +26,19 @@ from iPodDB.library._playlist_datasets import (
     affected_datasets,
     is_master,
     is_podcasts,
+    is_visible,
     playlist_rows,
     structure_issues,
 )
-from iPodDB.library._podcast_writing import normalize_podcast_order
+from iPodDB.library._playlist_mirroring import (
+    counterparts_match,
+    synchronize_counterparts,
+)
+from iPodDB.library._playlist_projection import project_playlist
+from iPodDB.library._podcast_writing import (
+    normalize_podcast_order,
+    podcast_rows_need_repair,
+)
 from iPodDB.library._resolved_write import FolderWrite, ResolvedWrite
 from iPodDB.library._source_warnings import source_warnings
 from iPodDB.library._write_analysis import analyze
@@ -46,7 +56,7 @@ from iPodDB.library.writing import (
 from iPodDB.shared.chunk import DatabaseDocument
 
 PRESERVATION = (
-    "Unchanged semantic values retain their native representation and Unknown Data.",
+    "Dataset 2 follows authoritative dataset 3; other unchanged semantic values retain their native representation and Unknown Data.",
     "Unrelated datasets, photo data, and retained artwork byte ranges remain intact.",
     "Retained Playlist occurrences keep their private metadata.",
     "Unsupported untouched Smart rules and saved membership remain unchanged.",
@@ -54,21 +64,23 @@ PRESERVATION = (
 
 
 def _values(
-    before: LibrarySnapshot, desired: LibrarySnapshot, issues: list[WriteIssue]
+    before: LibrarySnapshot,
+    desired: LibrarySnapshot,
+    issues: list[WriteIssue],
+    *,
+    incoming_media: frozenset[int],
 ) -> LibrarySnapshot:
     original = {t.track_id: t for t in before.tracks}
     tracks: list[Track] = []
     for track in desired.tracks:
         prior = original.get(track.track_id)
         meta = track.metadata
-        if prior is None or prior.metadata.lyrics != meta.lyrics:
-            meta = replace(meta, has_lyrics=bool(meta.lyrics))
         if (
             prior is None
-            or prior.play_count != track.play_count
-            or prior.metadata.played != meta.played
+            or prior.metadata.lyrics != meta.lyrics
+            or track.track_id in incoming_media
         ):
-            meta = replace(meta, played=track.play_count > 0 or meta.played)
+            meta = replace(meta, has_lyrics=bool(meta.lyrics))
         for attr in ("volume_adjustment_percent", "normalization_gain_db"):
             value = getattr(meta, attr)
             if prior is not None and value == getattr(prior.metadata, attr):
@@ -123,6 +135,17 @@ def resolve(
     source_revision: str,
     device_time: DeviceTimeContext,
 ) -> ResolvedWrite:
+    requested_draft = draft
+    requested = draft.snapshot
+    normalized, date_issues = resolve_dates(
+        original, requested, device_time, document, target.database_version
+    )
+    draft = replace(draft, snapshot=normalized)
+    captured_document = document
+    document = synchronize_counterparts(document)
+    mirror_repair = document is not captured_document or not counterparts_match(
+        document
+    )
     rows = playlist_rows(document)
     plan = analyze(
         source_revision,
@@ -142,17 +165,43 @@ def resolve(
             for kind, row in rows
         ),
     )
+    plan = replace(plan, draft=requested_draft, issues=(*plan.issues, *date_issues))
+    if mirror_repair:
+        plan = replace(
+            plan,
+            changes=(
+                *plan.changes,
+                LibraryChange(
+                    "library",
+                    None,
+                    "repair",
+                    "Playlist counterparts",
+                    ("playlist_counterparts",),
+                ),
+            ),
+        )
     repair_ids = frozenset(
         row.chunk.header.playlist_id
         for kind, row in rows
-        if draft.repair_podcast_links
+        if (draft.repair_podcast_links or draft.normalize_podcasts)
         and is_podcasts(kind, row.chunk.header)
         and row.chunk.header.playlist_id
         in {p.playlist_id for p in draft.snapshot.playlists}
-        and any(
-            not item.chunk.header.podcast_group_flag & 0x100
-            and not item.chunk.header.group_id_ref
-            for item in row.find_chunks(MhipHeader)
+        and (
+            draft.normalize_podcasts
+            or podcast_rows_need_repair(
+                tuple(item.chunk for item in row.find_chunks(MhipHeader)),
+                next(
+                    (
+                        tuple(item.chunk for item in flat.find_chunks(MhipHeader))
+                        for dataset, flat in rows
+                        if dataset == 2
+                        and flat.chunk.header.playlist_id
+                        == row.chunk.header.playlist_id
+                    ),
+                    None,
+                ),
+            )
         )
     )
     if repair_ids:
@@ -168,16 +217,97 @@ def resolve(
                 ),
             ),
         )
+    wanted_playlists = {p.playlist_id: p for p in draft.snapshot.playlists}
+    original_playlists = {p.playlist_id: p for p in original.playlists}
+    refresh_requested: set[int] = set()
+    refresh_issues: list[WriteIssue] = []
+    for identity in draft.refresh_smart_playlists:
+        playlist = wanted_playlists.get(identity)
+        prior = original_playlists.get(identity)
+        if (
+            identity in refresh_requested
+            or prior is None
+            or prior.kind is not PlaylistKind.SMART
+            or prior.system_managed
+            or prior.smart is None
+            or not prior.smart.editable
+            or not prior.smart.live_update
+            or playlist is None
+            or playlist.kind is not PlaylistKind.SMART
+            or playlist.system_managed
+            or playlist.smart is None
+            or not playlist.smart.editable
+            or not playlist.smart.live_update
+        ):
+            refresh_issues.append(
+                WriteIssue(
+                    "draft.invalid_smart_refresh",
+                    "Membership refresh requires a retained, supported live Smart Playlist, requested once.",
+                    subject="playlist",
+                    record_id=identity,
+                )
+            )
+        else:
+            refresh_requested.add(identity)
+    known_tracks = frozenset(t.track_id for t in original.tracks)
+    refresh_ids = frozenset(
+        row.chunk.header.playlist_id
+        for kind, row in rows
+        if row.chunk.header.playlist_id in refresh_requested
+        and is_visible(kind, row.chunk.header)
+        for actual in (project_playlist(row, known_tracks, device_time),)
+        if tuple((entry.track_id, entry.position) for entry in actual.entries)
+        != tuple(
+            (entry.track_id, entry.position)
+            for entry in wanted_playlists[row.chunk.header.playlist_id].entries
+        )
+    )
+    if refresh_ids:
+        plan = replace(
+            plan,
+            changes=(
+                *plan.changes,
+                *(
+                    LibraryChange(
+                        "playlist",
+                        identity,
+                        "repair",
+                        wanted_playlists[identity].name,
+                        ("entries",),
+                    )
+                    for identity in sorted(refresh_ids)
+                    if not any(
+                        c.subject == "playlist"
+                        and c.record_id == identity
+                        and "entries" in c.fields
+                        for c in plan.changes
+                    )
+                ),
+            ),
+            issues=(*plan.issues, *refresh_issues),
+        )
+    elif refresh_issues:
+        plan = replace(plan, issues=(*plan.issues, *refresh_issues))
     issues = [*plan.issues, *source_warnings(document, original)]
-    requested = draft.snapshot
-    desired = requested
+    desired = normalized
     generated = frozenset[int]()
     # Invalid parent graphs and malformed draft values must not enter derivation.
     if not plan.blocked:
         desired, generated = normalize_podcast_order(
-            document, original, requested, issues, repair_ids=repair_ids
+            document,
+            original,
+            normalized,
+            issues,
+            repair_ids=repair_ids,
+            normalize=draft.normalize_podcasts,
+            sqlite=target.sqlite_database,
         )
-        desired = _values(original, desired, issues)
+        desired = _values(
+            original,
+            desired,
+            issues,
+            incoming_media=frozenset(plan.required_media),
+        )
     if plan.blocked:
         return ResolvedWrite(
             replace(plan, issues=tuple(issues)),
@@ -197,7 +327,7 @@ def resolve(
             (),
         )
     affected = affected_datasets(original, desired)
-    if repair_ids:
+    if repair_ids or refresh_ids or mirror_repair:
         affected |= frozenset((2, 3))
     if plan.changes_itunes:
         datasets = document.find_chunks(MhsdHeader)
@@ -252,6 +382,7 @@ def resolve(
         )
         | frozenset(f.playlist_id for f in folders)
         | repair_ids
+        | refresh_ids
     )
     if draft.rebuild_album_indexes:
         for kind, row in rows:
@@ -273,18 +404,24 @@ def resolve(
                 for c in row.chunk.children
                 if isinstance(c.header, MhipHeader)
             ]
-            if Counter(
+            index_types = Counter(
                 c.header.mhod_type
                 for c in album_chunks
                 if isinstance(c.header, MhodHeader)
-            ) != Counter((52, 53)) or (
+            )
+            # Retained Apple-written indexes can omit alphabetical jump tables.
+            # Refresh preserves that layout; duplicates and orphan tables are ambiguous.
+            ambiguous_indexes = index_types not in (Counter((52,)), Counter((52, 53)))
+            if ambiguous_indexes or (
                 not structural
                 and Counter(members) != Counter(t.track_id for t in original.tracks)
             ):
                 issues.append(
                     WriteIssue(
                         "library.album_rebuild_ambiguous",
-                        "Album index rebuilding requires one index/jump-table pair and complete, unambiguous Master Playlist membership.",
+                        "Album index rebuilding requires exactly one Album index and at most one jump table."
+                        if ambiguous_indexes
+                        else "Album index rebuilding requires complete, unambiguous Master Playlist membership.",
                         phase="resolution",
                         subject="playlist",
                         record_id=row.chunk.header.playlist_id,
@@ -355,7 +492,7 @@ def resolve(
             for index in indexes
         )
     native_tracks = document.find_chunks(MhitHeader)
-    native_playlists = document.find_chunks(MhypHeader)
+    native_playlists = captured_document.find_chunks(MhypHeader)
     track_ids: dict[int, int] = {}
     playlist_ids: dict[int, int] = {}
     persistent_ids = {
@@ -450,12 +587,20 @@ def resolve(
         ),
         deleted_tracks=frozenset(old_tracks)
         - frozenset(t.track_id for t in desired.tracks),
+        refreshed_smart_playlists=refresh_ids,
     )
     generated_changes = compare_generated_values(requested, desired)
     resolution = LibraryResolution(
         desired,
         generated_changes,
         describe_effects(document, resolved, generated_changes),
-        PRESERVATION,
+        (
+            (
+                "Explicit Podcast normalization replaces its defined native relationships and authoring fields; unrelated values and Unknown Data remain retained.",
+                *PRESERVATION[1:],
+            )
+            if draft.normalize_podcasts
+            else PRESERVATION
+        ),
     )
     return replace(resolved, plan=replace(resolved.plan, resolution=resolution))

@@ -30,7 +30,6 @@
   "mypy-type-checker.reportingScope": "custom",
   "mypy-type-checker.preferDaemon": false,
 
-  "ruff.nativeServer": "on",
   "ruff.importStrategy": "fromEnvironment",
   "ruff.configurationPreference": "filesystemFirst",
   "ruff.format.backend": "internal",

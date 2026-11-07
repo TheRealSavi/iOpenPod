@@ -2,7 +2,7 @@
 layout: guide
 title: FLAC to iPod — Convert music during Sync | iOpenPod
 description: Use iOpenPod to convert a FLAC collection into audio your iPod supports. Learn about lossless output, smaller files, media tools, and Sync Review.
-heading: Bring your FLAC collection along.
+heading: Convert FLAC for your iPod
 lead: iOpenPod can convert FLAC and other supported source files during Sync. It prepares audio for your iPod; it does not add native FLAC playback to Apple's firmware.
 breadcrumb_title: FLAC to iPod
 body_class: iop2-page guide-page

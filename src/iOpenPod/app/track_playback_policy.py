@@ -1,4 +1,4 @@
-"""Application playback requirements for Podcasts and timed video media.
+"""Application playback requirements for Podcasts, Audiobooks, and timed video media.
 
 Apply to incoming or desired Library state only. Retained database projections
 remain truthful, and iPodDB keeps its lossless unchanged-document contract.
@@ -6,13 +6,15 @@ remain truthful, and iPodDB keeps its lossless unchanged-document contract.
 
 from contextlib import suppress
 from dataclasses import replace
-from datetime import UTC, datetime
+
+from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import track_podcast_identity
 from iPodDB.library import LibrarySnapshot, MediaType, Track
 
 _REQUIRED_TYPES = frozenset(
     (
+        MediaType.AUDIOBOOK,
         MediaType.PODCAST,
         MediaType.VIDEO_PODCAST,
         MediaType.VIDEO,
@@ -42,7 +44,9 @@ def enforce_track_playback_policy(track: Track) -> Track:
         year = track.year
         if not year and metadata.release_date:
             with suppress(OverflowError, OSError, ValueError):
-                year = datetime.fromtimestamp(metadata.release_date, UTC).year
+                year = (
+                    Instant.from_timestamp(metadata.release_date).to_fixed_offset().year
+                )
         types = track.media_types
         if not any(
             kind in types
@@ -52,7 +56,7 @@ def enforce_track_playback_policy(track: Track) -> Track:
                 MediaType.AUDIO_VIDEO,
             )
         ):
-            types = (MediaType.AUDIO, MediaType.PODCAST)
+            types = (MediaType.PODCAST,)
         track = replace(
             track,
             media_types=types,
@@ -60,9 +64,7 @@ def enforce_track_playback_policy(track: Track) -> Track:
             metadata=replace(
                 metadata,
                 podcast_guid=track_podcast_identity(track).guid,
-                disc_number=1,
-                last_modified=metadata.last_modified
-                or int(datetime.now(UTC).timestamp()),
+                last_modified=metadata.last_modified or Instant.now().timestamp(),
                 subtitle=metadata.subtitle or metadata.description[:255],
             ),
         )

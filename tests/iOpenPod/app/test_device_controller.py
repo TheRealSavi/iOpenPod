@@ -12,6 +12,7 @@ from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from iOpenPod.app.core.settings.definitions import (
+    ITUNES_107_ARTWORK,
     LAST_SELECTED_IPOD_VOLUME_ID,
     MANAGE_VOLUME_PRESENTATION,
 )
@@ -23,7 +24,10 @@ from iOpenPod.app.device_controller import (
     DeviceOperation,
     DeviceOperationFailure,
 )
+from iOpenPod.app.library_write import PreparationCancelledError
+from iOpenPod.app.models.device import ActiveIPod, DeviceCandidateId
 from iOpenPod.app.models.track_table_model import TrackTableModel
+from iOpenPod.app.services import volume_presentation
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iPodDB.iTunesDB.builder.build_iTunesDB import (
     new_itunes_chunk,
@@ -54,6 +58,74 @@ def _application() -> QApplication:
 
 
 APPLICATION = _application()
+
+
+def test_shutdown_cancels_in_progress_device_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = DeviceCoordinator(Storage(VirtualStoragePlatform()))
+    controller = DeviceController(
+        coordinator,
+        TrackTableModel(),
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    entered, observed = Event(), Event()
+
+    def selection(
+        candidate_id: DeviceCandidateId, *, cancelled: Event | None = None
+    ) -> ActiveIPod:
+        entered.set()
+        if cancelled is not None and cancelled.wait(2):
+            observed.set()
+        raise PreparationCancelledError("Device loading was cancelled")
+
+    monkeypatch.setattr(coordinator, "select_device", selection)
+    try:
+        controller.select_device("cancel-test")
+        assert entered.wait(2)
+        controller.shutdown()
+        assert observed.is_set(), (
+            "Shutdown waited without signalling selection cancellation"
+        )
+    finally:
+        controller.shutdown()
+
+
+def test_startup_restoration_uses_saved_artwork_style(tmp_path: Path) -> None:
+    root = _device_root(tmp_path / "device")
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root, volume_id="remembered")
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    settings.set_global(LAST_SELECTED_IPOD_VOLUME_ID, "remembered")
+    settings.set_global(ITUNES_107_ARTWORK, True)
+    storage = Storage(platform)
+    coordinator = DeviceCoordinator(storage)
+    controller = DeviceController(coordinator, TrackTableModel(), settings)
+    try:
+        controller.restore_previous_device()
+        _wait_until(lambda: controller.active_ipod is not None and not controller.busy)
+        active = controller.active_ipod
+        assert active is not None
+        with storage.open_session(storage.discover().volumes[0]) as session:
+            assert not volume_presentation.capture(
+                session,
+                active.library.device_name,
+                active.profile.product_image,
+                itunes_107=True,
+            ).writes
+        icon_path = root / "iPod_Control/iOpenPod/volume-icon.png"
+        angled_png = icon_path.read_bytes()
+        settings.set_global(ITUNES_107_ARTWORK, False)
+        coordinator.select_device(active.candidate.id)
+        assert icon_path.read_bytes() != angled_png
+        with storage.open_session(storage.discover().volumes[0]) as session:
+            assert not volume_presentation.capture(
+                session,
+                active.library.device_name,
+                active.profile.product_image,
+            ).writes
+    finally:
+        controller.shutdown()
 
 
 def test_startup_restoration_honors_disabled_drive_appearance(tmp_path: Path) -> None:

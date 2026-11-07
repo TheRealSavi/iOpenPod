@@ -43,6 +43,12 @@ this collector. Include the manifest-listed archives with the exact application
 source and build recipes in the publicly available release source kit. A local
 cache or a private GitHub repository is not access for binary recipients.
 
+Transient DNS, connection, timeout, and selected HTTP failures are retried up to
+four attempts per archive, with 2-, 4-, and 8-second delays. Diagnostics identify
+the archive and URL. Each attempt starts fresh and removes partial downloads on
+failure; size and SHA-256 mismatches, certificate failures, and permanent HTTP
+errors stop immediately. Cached archives are verified before reuse.
+
 ## Windows libsndfile build
 
 The original SoundFile wheel embeds libsndfile 1.2.2 with static codec libraries
@@ -101,7 +107,7 @@ after packaging the replacement.
 - **NumPy/SciPy OpenBLAS:** the release requirements pin scipy-openblas64
   0.3.34.106.0 and scipy-openblas32 0.3.31.22.0. The matching build repositories
   and their exact OpenBLAS submodule commits are preserved.
-- **Pillow 12.3.0:** the full tagged source includes its Windows build recipe and
+- **Pillow 13.0.0:** the full tagged source includes its Windows build recipe and
   upstream `wheels/dependency_licenses` text set, omitted by the Python sdist.
 - **PyInstaller:** its pinned source, GPL bootloader license with the distribution
   exception, and notices are included. The exception allows distributing bundled

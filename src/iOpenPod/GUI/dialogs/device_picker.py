@@ -31,6 +31,8 @@ from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 if TYPE_CHECKING:
     from PySide6.QtGui import QHideEvent, QShowEvent
 
+    from iOpenPod.GUI.presentation.theme.manager import ThemeManager
+
 _CANDIDATE_ID_ROLE = Qt.ItemDataRole.UserRole.value
 
 
@@ -41,8 +43,13 @@ class DevicePickerDialog(QDialog):
     deviceSelected = Signal(str)
     visibilityChanged = Signal(bool)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
+        self._theme = theme
+        if theme is not None:
+            theme.deviceArtworkChanged.connect(self._artwork_changed)
         self.setObjectName("devicePicker")
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setMinimumSize(520, 400)
@@ -58,9 +65,6 @@ class DevicePickerDialog(QDialog):
 
         self._title = QLabel(self)
         self._title.setObjectName("pageTitle")
-        self._description = QLabel(self)
-        self._description.setObjectName("pageDescription")
-        self._description.setWordWrap(True)
 
         self._search_status = QLabel(self)
         self._search_status.setObjectName("deviceSearchStatus")
@@ -77,6 +81,10 @@ class DevicePickerDialog(QDialog):
 
         self._detail = QLabel(self)
         self._detail.setObjectName("deviceCandidateDetail")
+        self._detail.setTextFormat(Qt.TextFormat.PlainText)
+        self._detail.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
         self._detail.setWordWrap(True)
 
         self._refresh = ActionButton(parent=self)
@@ -109,7 +117,6 @@ class DevicePickerDialog(QDialog):
         )
         layout.setSpacing(LAYOUT.space_sm)
         layout.addWidget(self._title)
-        layout.addWidget(self._description)
         layout.addWidget(self._search_status)
         layout.addWidget(self._candidates, 1)
         layout.addWidget(self._detail)
@@ -123,6 +130,9 @@ class DevicePickerDialog(QDialog):
         selected_id = self._selected_candidate_id()
         self._discovery = discovery
         self._refresh_candidates(selected_id)
+
+    def _artwork_changed(self) -> None:
+        self._refresh_candidates(self._selected_candidate_id())
 
     def set_busy(self, busy: bool) -> None:
         self._busy = busy
@@ -158,12 +168,6 @@ class DevicePickerDialog(QDialog):
     def retranslate_ui(self) -> None:
         self.setWindowTitle(self.tr("Choose an iPod"))
         self._title.setText(self.tr("Choose an iPod"))
-        self._description.setText(
-            self.tr(
-                "Select a recognized iPod. Its identity and library are checked "
-                "again before it becomes active."
-            )
-        )
         self._refresh.setText(QCoreApplication.translate("CommonActions", "Refresh"))
         self._linux_setup.setText(self.tr("Set Up Linux"))
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
@@ -202,6 +206,8 @@ class DevicePickerDialog(QDialog):
                     image_name,
                     LAYOUT.device_picker_image_size,
                     self.devicePixelRatioF(),
+                    itunes_107=self._theme is not None
+                    and self._theme.itunes_107_artwork,
                 )
             )
             item.setData(_CANDIDATE_ID_ROLE, candidate.id.value)
@@ -249,7 +255,7 @@ class DevicePickerDialog(QDialog):
         detail = self.tr("%1 · %2").replace("%1", profile).replace("%2", status)
         issue_details = tuple(_issue_text(self, issue) for issue in candidate.issues)
         if issue_details:
-            detail = f"{detail}\n{issue_details[0]}"
+            detail = "\n".join((detail, *issue_details))
         self._detail.setText(detail)
 
     def _show_linux_setup(self) -> None:
@@ -328,11 +334,14 @@ def _readiness_text(
         DeviceReadiness.DATABASE_MISSING: QCoreApplication.translate(
             "DevicePickerDialog", "No iTunesDB was found"
         ),
+        DeviceReadiness.DATABASE_INITIALIZABLE: QCoreApplication.translate(
+            "DevicePickerDialog", "Select to create the missing iPod Library"
+        ),
         DeviceReadiness.DATABASE_UNSUPPORTED: QCoreApplication.translate(
             "DevicePickerDialog", "This iPod database format is not supported yet"
         ),
         DeviceReadiness.INSPECTION_FAILED: QCoreApplication.translate(
-            "DevicePickerDialog", "The device filesystem could not be inspected"
+            "DevicePickerDialog", "Device access could not be prepared"
         ),
     }[readiness]
 
@@ -341,7 +350,7 @@ def _issue_text(
     _dialog: DevicePickerDialog,
     issue: DeviceCandidateIssue,
 ) -> str:
-    return {
+    summary = {
         DeviceCandidateIssueCode.TIMEZONE_UNCERTAIN: QCoreApplication.translate(
             "DevicePickerDialog",
             "Some dates need a timezone fallback or cannot be interpreted uniquely.",
@@ -391,6 +400,16 @@ def _issue_text(
             "Recovery files were removed. Safely eject before unplugging.",
         ),
         DeviceCandidateIssueCode.INSPECTION_FAILED: QCoreApplication.translate(
-            "DevicePickerDialog", "The device filesystem could not be inspected."
+            "DevicePickerDialog", "Device access could not be prepared."
         ),
     }[issue.code]
+    if (
+        issue.code
+        in {
+            DeviceCandidateIssueCode.VOLUME_PRESENTATION_INCOMPLETE,
+            DeviceCandidateIssueCode.INSPECTION_FAILED,
+        }
+        and issue.detail
+    ):
+        return f"{summary}\n{issue.detail}"
+    return summary

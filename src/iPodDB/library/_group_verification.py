@@ -4,7 +4,7 @@ This never calls reconciliation or trusts a candidate's projected iPod diagnosti
 Shared semantic grouping inputs do not specify or bless its native record IDs.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
@@ -16,14 +16,19 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
-from iPodDB.library._browse_groups import album_values, browse_groups
+from iPodDB.library._artist_groups import native_artist_name, shared_artist_changes
+from iPodDB.library._browse_groups import (
+    album_values,
+    native_browse_groups,
+    unchanged_podcast_album_fields,
+)
 from iPodDB.library._track_header_expansion import optional_field_available
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.models import LibrarySnapshot, MediaKind, Track
 from iPodDB.library.writing import IdentityMapping, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 
-def _text(chunk: ParsedChunk[ChunkHeader], kind: MhodType) -> str:
+def group_text(chunk: ParsedChunk[ChunkHeader], kind: MhodType) -> str:
     return next(
         (
             c.payload.value
@@ -60,6 +65,7 @@ def verify_browse_groups(
     mappings: tuple[IdentityMapping, ...],
     *,
     database_version: int | None = None,
+    normalize_podcasts: bool = False,
 ) -> tuple[WriteIssue, ...]:
     issues: list[WriteIssue] = []
     track_ids = {m.draft_id: m.output_id for m in mappings if m.subject == "track"}
@@ -74,6 +80,36 @@ def verify_browse_groups(
         if track_ids.get(t.track_id, t.track_id) in native
     }
     kinds = {s.chunk.header.dataset_type for s in original.find_chunks(MhsdHeader)}
+    artist_changes = shared_artist_changes(before.tracks, desired.tracks)
+    source_browse_ids = (
+        {
+            value
+            for chunk in old_native.values()
+            for value in (
+                chunk.header.album_id,
+                chunk.header.artist_id_ref,
+                chunk.header.composer_id,
+            )
+        }
+        | set(_rows(original, 4))
+        | set(_rows(original, 8))
+    )
+    source_sql_ids = {
+        row.header.sql_id
+        for kind in (4, 8)
+        for rows in _rows(original, kind).values()
+        for row in rows
+    }
+    output_sql_counts = Counter(
+        row.header.sql_id
+        for kind in (4, 8)
+        for rows in _rows(checked, kind).values()
+        for row in rows
+    )
+    artist_owners: dict[int, set[str]] = defaultdict(set)
+    for track in desired.tracks:
+        if track.track_id in output:
+            artist_owners[output[track.track_id].header.artist_id_ref].add(track.artist)
 
     def fail(
         code: str,
@@ -100,8 +136,8 @@ def verify_browse_groups(
         album = kind == 4
         field = "ipod.album_id" if album else "ipod.artist_id_ref"
         source_rows, rows = _rows(original, kind), _rows(checked, kind)
-        prior_groups = browse_groups(before.tracks, album=album)
-        groups = browse_groups(desired.tracks, album=album)
+        prior_groups = native_browse_groups(before.tracks, album=album)
+        groups = native_browse_groups(desired.tracks, album=album)
         source_refs = {
             i: c.header.album_id if album else c.header.artist_id_ref
             for i, c in old_native.items()
@@ -111,13 +147,33 @@ def verify_browse_groups(
             for i, c in output.items()
         }
         prior_owners: dict[int, set[int]] = defaultdict(set)
+        prior_members: dict[int, list[Track]] = defaultdict(list)
         for identity, reference in source_refs.items():
             prior_owners[reference].add(identity)
+            prior_members[reference].append(old_tracks[identity])
         for key, members in groups.items():
+            if (
+                album
+                and normalize_podcasts
+                and all(
+                    t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+                    for t in members
+                )
+            ):
+                # The explicit per-show policy is checked independently after
+                # reparse; it intentionally joins artist/season browse groups.
+                continue
             prior = prior_groups.get(key, ())
             member_ids = {t.track_id for t in members}
-            affected = member_ids != {t.track_id for t in prior} or (
-                album and bool(prior) and album_values(members) != album_values(prior)
+            split_artist = not album and members[0].artist in artist_changes
+            affected = (
+                member_ids != {t.track_id for t in prior}
+                or (
+                    album
+                    and bool(prior)
+                    and album_values(members) != album_values(prior)
+                )
+                or split_artist
             )
             if not affected or kind not in kinds:
                 for t in members:
@@ -158,8 +214,34 @@ def verify_browse_groups(
                     and prior_owners[next(iter(previous_refs))] == member_ids
                 ):
                     candidates = previous_refs - {0}
+            if split_artist:
+                split_sources = artist_changes[members[0].artist]
+                candidates = {
+                    i
+                    for i in split_sources
+                    if len(source_rows.get(i, [])) == 1
+                    and native_artist_name(source_rows[i][0]) == members[0].artist
+                }
+                if len(split_sources) != 1 or any(
+                    len(source_rows.get(i, [])) != 1 for i in split_sources
+                ):
+                    fail(
+                        "group_identity",
+                        first_id,
+                        field,
+                        "A split artist must have one unambiguous source record.",
+                        output[first_id],
+                    )
+            if not album and len(artist_owners[identity]) != 1:
+                fail(
+                    "shared_artist",
+                    first_id,
+                    field,
+                    f"Artist {identity} is shared by distinct exact names.",
+                    output[first_id],
+                )
             if (candidates and candidates != {identity}) or (
-                not candidates and identity in source_rows
+                not candidates and identity in source_browse_ids
             ):
                 fail(
                     "group_identity",
@@ -189,27 +271,48 @@ def verify_browse_groups(
                         f"Dataset {kind}, group {identity}: retained SQL identity changed.",
                         row,
                     )
-            elif not row.header.sql_id or any(
-                row.header.sql_id == r.header.sql_id
-                for rs in source_rows.values()
-                for r in rs
+            elif (
+                not row.header.sql_id
+                or row.header.sql_id in source_sql_ids
+                or output_sql_counts[row.header.sql_id] != 1
             ):
                 fail(
                     "sql_identity",
                     first_id,
                     field,
-                    f"Dataset {kind}, new group {identity}: SQL identity is zero or collides with a retained record.",
+                    f"Dataset {kind}, new group {identity}: SQL identity is zero or collides with another record.",
                     row,
                 )
             expected: tuple[tuple[MhodType, str], ...]
             if album and isinstance(row.header, MhiaHeader):
                 values = album_values(members)
-                expected = (
-                    (MhodType.ALBUM_ITEM_ALBUM, values.title),
-                    (MhodType.ALBUM_ITEM_ARTIST, values.artist),
-                    (MhodType.ALBUM_ITEM_SORT_ARTIST, values.sort_artist),
-                    (MhodType.ALBUM_ITEM_PODCAST_URL, values.podcast_url),
-                    (MhodType.ALBUM_ITEM_SHOW, values.show),
+                source_row = retained[0] if len(retained) == 1 else None
+                preserved = unchanged_podcast_album_fields(
+                    prior_members.get(identity, ()),
+                    members,
+                )
+                expected = tuple(
+                    (
+                        mhod,
+                        group_text(source_row, mhod)
+                        if name in preserved and source_row is not None
+                        else value,
+                    )
+                    for name, mhod, value in (
+                        ("title", MhodType.ALBUM_ITEM_ALBUM, values.title),
+                        ("artist", MhodType.ALBUM_ITEM_ARTIST, values.artist),
+                        (
+                            "sort_artist",
+                            MhodType.ALBUM_ITEM_SORT_ARTIST,
+                            values.sort_artist,
+                        ),
+                        (
+                            "podcast_url",
+                            MhodType.ALBUM_ITEM_PODCAST_URL,
+                            values.podcast_url,
+                        ),
+                        ("show", MhodType.ALBUM_ITEM_SHOW, values.show),
+                    )
                 )
                 owners = {
                     output[i].header.db_track_id for i in member_ids if i in output
@@ -222,13 +325,23 @@ def verify_browse_groups(
                         f"Album {identity}: representative {row.header.album_track_db_id} is not one of {sorted(owners)}.",
                         row,
                     )
+                source_header = (
+                    source_row.header
+                    if source_row is not None
+                    and isinstance(source_row.header, MhiaHeader)
+                    else None
+                )
                 if (
                     row.header.album_compilation_flag,
                     row.header.season_number,
                     row.header.content_type_flag,
                 ) != (
-                    int(values.compilation),
-                    values.season,
+                    source_header.album_compilation_flag
+                    if "compilation" in preserved and source_header is not None
+                    else int(values.compilation),
+                    source_header.season_number
+                    if "season" in preserved and source_header is not None
+                    else values.season,
                     values.content_type,
                 ):
                     fail(
@@ -241,7 +354,7 @@ def verify_browse_groups(
             else:
                 expected = ((MhodType.ARTIST_ITEM_ARTIST, members[0].artist),)
             for mhod, expected_value in expected:
-                actual = _text(row, mhod)
+                actual = group_text(row, mhod)
                 if actual != expected_value:
                     fail(
                         "group_metadata",
@@ -306,13 +419,15 @@ def verify_browse_groups(
             value == 0
             if not composer_key
             else bool(value)
-            and (options == {value} if options else value not in old_ids | group_ids)
+            and (value in options if options else value not in old_ids | group_ids)
         )
         if composer_key:
             valid = (
                 valid
                 and composer_owners[value] == {composer_key}
-                and allocated.setdefault(composer_key, value) == value
+                and (
+                    bool(options) or allocated.setdefault(composer_key, value) == value
+                )
             )
         if not valid:
             fail(

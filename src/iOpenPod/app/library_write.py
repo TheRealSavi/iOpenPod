@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from threading import Event
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
     import threading
     from collections.abc import Callable
 
+    from iOpenPod.app.core.eta import EtaEstimate
     from iOpenPod.app.media.importing import LibraryMediaSource
     from iOpenPod.app.media.progress import MediaPreparationProgress
     from iOpenPod.app.models.device import ActiveIPod
@@ -16,6 +18,7 @@ if TYPE_CHECKING:
         ArtworkAsset,
         ArtworkPixels,
         ArtworkRead,
+        FileDependency,
         LibrarySnapshot,
         LibraryWritePlan,
         LibraryWriteResult,
@@ -65,8 +68,25 @@ class LibraryPreparationRequest:
     replace_photos: tuple[int, ...] = field(default=(), kw_only=True)
     discard_removed_track_media: bool = field(default=False, kw_only=True)
     regenerate_sqlite: bool = field(default=False, kw_only=True)
+    # Sync builds native relationships for every eligible music Track. Ordinary
+    # metadata saves preserve existing Genius state instead of regenerating it.
+    regenerate_genius: bool = field(default=False, kw_only=True)
+    compute_missing_bpm: bool = field(default=False, kw_only=True)
+    # Runtime control belongs to this Sync; it never changes persisted settings.
+    genius_analysis_skip: threading.Event | None = field(
+        default=None, compare=False, repr=False, kw_only=True
+    )
+    phase_analysis_skip: Event = field(
+        default_factory=Event, compare=False, repr=False, kw_only=True
+    )
+    add_genius_mixes: tuple[str, ...] = field(default=(), kw_only=True)
+    remove_genius_collections: tuple[str, ...] = field(default=(), kw_only=True)
+    rotate_genius_mixes: bool = field(default=False, kw_only=True)
     rebuild_album_indexes: bool = field(default=False, kw_only=True)
     repair_podcast_links: bool = field(default=False, kw_only=True)
+    normalize_podcasts: bool = field(default=False, kw_only=True)
+    # Retained media whose embedded covers supplied new native artwork.
+    artwork_dependencies: tuple[FileDependency, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,9 +108,12 @@ class WriteProgress:
     most recently started or completed by the stage; it is deliberately not a
     permission-bearing path.
 
-    ``active_items`` is the complete immutable snapshot of currently running Host
-    preparations. It excludes waiting and finished items; measurements describe
-    each item's current phase rather than readiness for publication.
+    ``active_items`` is the complete immutable snapshot of currently admitted
+    per-item preparations. It excludes waiting and finished items; measurements
+    describe each item's current phase rather than readiness for publication.
+
+    ``eta`` is an optional caller-timed estimate for this stage alone; its work
+    units may be weighted independently of the visible item counts.
     """
 
     phase: str
@@ -100,6 +123,7 @@ class WriteProgress:
     current_item: str = ""
     unit: str = ""
     active_items: tuple[WriteItemProgress, ...] = field(default=(), kw_only=True)
+    eta: EtaEstimate | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

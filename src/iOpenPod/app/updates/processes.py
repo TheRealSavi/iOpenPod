@@ -10,7 +10,10 @@ import subprocess
 import sys
 from ctypes import wintypes
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def child_environment() -> dict[str, str]:
@@ -26,6 +29,9 @@ def child_environment() -> dict[str, str]:
 
 
 def independent_process(arguments: list[str]) -> subprocess.Popen[bytes]:
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NO_WINDOW
     return subprocess.Popen(
         arguments,
         env=child_environment(),
@@ -33,7 +39,7 @@ def independent_process(arguments: list[str]) -> subprocess.Popen[bytes]:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        creationflags=creationflags,
         start_new_session=sys.platform != "win32",
     )
 
@@ -107,7 +113,8 @@ class ParentProcess:
                 raise OSError("Could not identify the application process")
             actual = Path(buffer.value)
         else:
-            self._pidfd = os.pidfd_open(pid)
+            pidfd_open = cast("Callable[[int], int]", vars(os)["pidfd_open"])
+            self._pidfd = pidfd_open(pid)
             actual = Path(os.readlink(f"/proc/{pid}/exe"))
         if actual != executable:
             self.close()

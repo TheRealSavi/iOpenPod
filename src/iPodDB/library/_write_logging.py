@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from collections.abc import Sequence
 from reprlib import Repr
 
 from iPodDB.library.file_content import content_sha256
@@ -15,6 +16,20 @@ from iPodDB.library.writing import (
 
 logger = logging.getLogger(__name__)
 _summary = Repr(maxstring=240, maxother=240, maxtuple=12)
+_DETAIL_LIMIT = 12
+
+
+def _sample[T](revision: str, label: str, values: Sequence[T]) -> Sequence[T]:
+    if len(values) > _DETAIL_LIMIT:
+        logger.debug(
+            "Library diagnostic sample source=%s kind=%s total=%d shown=%d omitted=%d",
+            revision,
+            label,
+            len(values),
+            _DETAIL_LIMIT,
+            len(values) - _DETAIL_LIMIT,
+        )
+    return values[:_DETAIL_LIMIT]
 
 
 def log_plan(plan: LibraryWritePlan, before: LibrarySnapshot) -> None:
@@ -83,7 +98,7 @@ def log_plan(plan: LibraryWritePlan, before: LibrarySnapshot) -> None:
             ("photos", None): new.photos,
             ("library", None): new,
         }
-        for change in changes:
+        for change in _sample(revision, f"{origin} changes", changes):
             key = change.subject, change.record_id
             logger.debug(
                 "Library change source=%s origin=%s subject=%s id=%s action=%s name=%r fields=%s",
@@ -91,10 +106,10 @@ def log_plan(plan: LibraryWritePlan, before: LibrarySnapshot) -> None:
                 origin,
                 *key,
                 change.action,
-                change.name,
-                change.fields,
+                change.name[:240],
+                _summary.repr(change.fields),
             )
-            for field in change.fields:
+            for field in _sample(revision, "change fields", change.fields):
                 prior, desired = old_records.get(key), new_records.get(key)
                 for part in field.split("."):
                     prior = getattr(prior, part, None)
@@ -109,7 +124,7 @@ def log_plan(plan: LibraryWritePlan, before: LibrarySnapshot) -> None:
                     _summary.repr(desired),
                 )
     if resolution is not None:
-        for effect in resolution.effects:
+        for effect in _sample(revision, "effects", resolution.effects):
             logger.debug(
                 "Library effect source=%s code=%s subject=%s id=%s dataset=%s causes=%s fields=%s reason=%s",
                 revision,
@@ -124,12 +139,12 @@ def log_plan(plan: LibraryWritePlan, before: LibrarySnapshot) -> None:
     logger.debug(
         "Library requirements source=%s media=%s artwork=%s artwork_inventory=%s sidecar_inventory=%s",
         revision,
-        plan.required_media,
-        plan.required_artwork,
+        _summary.repr(plan.required_media),
+        _summary.repr(plan.required_artwork),
         plan.requires_artwork_inventory,
         plan.requires_sidecar_inventory,
     )
-    for issue in plan.issues:
+    for issue in _sample(revision, "analysis issues", plan.issues):
         logger.debug("Library analysis issue source=%s %s", revision, issue)
 
 
@@ -145,15 +160,15 @@ def log_resources(revision: str, resources: WriteResources) -> None:
         None if resources.file_inventory is None else len(resources.file_inventory),
         resources.pending_playback_sidecars,
     )
-    for media in resources.media:
+    for media in _sample(revision, "media resources", resources.media):
         logger.debug("Library media source=%s %s", revision, media)
-    for asset in resources.artwork:
+    for asset in _sample(revision, "artwork resources", resources.artwork):
         if isinstance(asset, TimedArtworkAsset):
             logger.debug(
                 "Library timed artwork source=%s id=%d times=%s",
                 revision,
                 asset.artwork_id,
-                tuple(f.display_time_ms for f in asset.frames),
+                _summary.repr(tuple(f.display_time_ms for f in asset.frames)),
             )
             continue
         logger.debug(
@@ -164,7 +179,9 @@ def log_resources(revision: str, resources: WriteResources) -> None:
             asset.pixels.height,
             len(asset.pixels.rgb888),
         )
-    for dependency in resources.file_inventory or ():
+    for dependency in _sample(
+        revision, "file dependencies", resources.file_inventory or ()
+    ):
         logger.debug("Library file dependency source=%s %s", revision, dependency)
 
 
@@ -177,7 +194,7 @@ def log_result(revision: str, result: LibraryWriteResult) -> None:
         result.prepared is not None,
         len(result.issues),
     )
-    for issue in result.issues:
+    for issue in _sample(revision, "preparation issues", result.issues):
         logger.debug("Library preparation issue source=%s %s", revision, issue)
     for measurement in result.measurements:
         logger.debug(
@@ -201,9 +218,9 @@ def log_result(revision: str, result: LibraryWriteResult) -> None:
             None if data is None else len(data),
             None if data is None else hashlib.sha256(data).hexdigest(),
         )
-    for mapping in prepared.identities:
+    for mapping in _sample(revision, "identities", prepared.identities):
         logger.debug("Library identity source=%s %s", revision, mapping)
-    for file in prepared.artwork_files:
+    for file in _sample(revision, "artwork files", prepared.artwork_files):
         logger.debug(
             "Library output source=%s artifact=%r bytes=%d sha256=%s",
             revision,
@@ -211,5 +228,5 @@ def log_result(revision: str, result: LibraryWriteResult) -> None:
             len(file.data),
             content_sha256(file.data),
         )
-    for retained in prepared.retained_artwork:
+    for retained in _sample(revision, "retained artwork", prepared.retained_artwork):
         logger.debug("Library retained artwork source=%s %s", revision, retained)

@@ -42,6 +42,27 @@ def test_device_tracks_create_subscriptions_and_explicit_membership() -> None:
     assert subscription.episodes[0].listened is False
 
 
+@pytest.mark.parametrize("timestamp", [-2_082_844_799, -1, 10**30])
+def test_unusual_device_dates_do_not_block_podcast_reconciliation(
+    timestamp: int,
+) -> None:
+    track = _device_episode(play_count=2)
+    track = replace(
+        track,
+        metadata=replace(
+            track.metadata,
+            release_date=timestamp,
+            date_added=timestamp,
+            last_played=timestamp,
+        ),
+    )
+    snapshot = reconcile_device_podcasts(PodcastSnapshot(writable=True), (track,))
+    episode = snapshot.subscriptions[0].episodes[0]
+    assert episode.published_at == timestamp
+    assert episode.play_count == 2
+    assert snapshot.writable
+
+
 def test_observed_listening_history_survives_episode_removal_from_ipod() -> None:
     connected = reconcile_device_podcasts(
         PodcastSnapshot(writable=True),

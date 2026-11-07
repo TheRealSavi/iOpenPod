@@ -1,0 +1,243 @@
+{
+  "source": "Real Qt widgets with fictional Library data and supplied GenericArt artwork.",
+  "artwork": [
+    {
+      "file": "25 blimps back.png",
+      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79",
+      "album": "25 Blimps",
+      "artist": "Airship Club",
+      "genre": "Ambient"
+    },
+    {
+      "file": "ADMIT IT space.png",
+      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66",
+      "album": "Admit It",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
+    },
+    {
+      "file": "all i need.png",
+      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9",
+      "album": "All I Need",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
+    },
+    {
+      "file": "baby blue.png",
+      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f",
+      "album": "Baby Blue",
+      "artist": "June Aviary",
+      "genre": "Indie Pop"
+    },
+    {
+      "file": "CD.png",
+      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5",
+      "album": "Compact Disc",
+      "artist": "Prism Relay",
+      "genre": "Electronic"
+    },
+    {
+      "file": "coachella wave.png",
+      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f",
+      "album": "Desert Wave",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "color way.png",
+      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f",
+      "album": "Colorway",
+      "artist": "Chromatic Bloom",
+      "genre": "Psychedelic Pop"
+    },
+    {
+      "file": "daylight.png",
+      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b",
+      "album": "Daylight",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "ECLIPSE.png",
+      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a",
+      "album": "Eclipse",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
+    },
+    {
+      "file": "GHOSTS VHS glow.png",
+      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5",
+      "album": "Ghosts on VHS",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
+    },
+    {
+      "file": "highs and lows.png",
+      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225",
+      "album": "Highs and Lows",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
+    },
+    {
+      "file": "KIDS SEE GHOSTS.png",
+      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d",
+      "album": "Kids See Ghosts",
+      "artist": "Cloud Parade",
+      "genre": "Psychedelic Pop"
+    },
+    {
+      "file": "love story.png",
+      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d",
+      "album": "Love Story",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "OCEAN WAVES.png",
+      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441",
+      "album": "Ocean Waves",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
+    },
+    {
+      "file": "peaceful.png",
+      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f",
+      "album": "Peaceful",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
+    },
+    {
+      "file": "REFLECT.png",
+      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6",
+      "album": "Reflect",
+      "artist": "Glass District",
+      "genre": "Electronic"
+    },
+    {
+      "file": "risky.png",
+      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8",
+      "album": "Risky",
+      "artist": "Velvet Signal",
+      "genre": "Alternative"
+    },
+    {
+      "file": "RUNAWAY ORCHESTRATED ALBM ART.png",
+      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b",
+      "album": "Runaway Orchestrated",
+      "artist": "The Northlight Orchestra",
+      "genre": "Orchestral"
+    },
+    {
+      "file": "SO GOOD TO ME.png",
+      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b",
+      "album": "So Good to Me",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "STARS.png",
+      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247",
+      "album": "Stars",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "stay in touch.png",
+      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878",
+      "album": "Stay in Touch",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
+    },
+    {
+      "file": "sunday mail.png",
+      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0",
+      "album": "Sunday Mail",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "sunset DE.png",
+      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed",
+      "album": "Sunset: Deluxe Edition",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
+    },
+    {
+      "file": "TDK.png",
+      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe",
+      "album": "Type II",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
+    },
+    {
+      "file": "thank god for drugs.png",
+      "sha256": "07dd29a2760a66bd2f75ac05718cddfd1fab4ddc99f612888f2f6d4736bba5e1"
+    },
+    {
+      "file": "Tropical satellite.png",
+      "sha256": "6ffac1657c152ac01ff070aff6100a2ed43f393f1cbc336fc7a158b79705f29e"
+    },
+    {
+      "file": "Untitled-1.png",
+      "sha256": "437b186e4aeef0afb177a621a64ffbdc9ae77a3dc1dded3f3a93a7167012b489"
+    },
+    {
+      "file": "WALK ON WATER.png",
+      "sha256": "2e48f12a18f944ab40cd677747f855a0900eb695808eef3d5b469a0a5ed96a38"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "device-classic.png",
+      "sha256": "e676da112fe07bc7df8f2d6ec2610a109ae3fa4d2c212a5f60ca23740a7c52c9"
+    },
+    {
+      "file": "device-standard.png",
+      "sha256": "aec7c7521fd6c81960ff60e6e90bd13cf1db21a14a601c6055a7041e58fc2a4b"
+    },
+    {
+      "file": "library-inline.png",
+      "sha256": "e7867da617f413b4ec84dbdca7170337443ebb623344cf71c1d190ce5bc86002"
+    },
+    {
+      "file": "library-split.png",
+      "sha256": "1c4f8495f81cdc527db004270a3d44fa7300cc6bd753faffa34172657fe00a28"
+    },
+    {
+      "file": "library-whole.png",
+      "sha256": "a464efca32ba682ce40dce99ecef29a619dec1f961ea8e44710fb011fdf2b485"
+    },
+    {
+      "file": "navigation-compact.png",
+      "sha256": "4bee043fcef2cf3efef9d61915848e354528fe1b889ad612f72416d3e6df249b"
+    },
+    {
+      "file": "navigation-sidebar.png",
+      "sha256": "4d4097ff1576f0540a926645557285384397f4af970ef5817199e342621aa463"
+    },
+    {
+      "file": "sync-folders.png",
+      "sha256": "c4dea8ce3743b3d261ac6280dcaffbb6efc2ecb07577252de3f4192f99b55b86"
+    },
+    {
+      "file": "sync-review.png",
+      "sha256": "f2f84da363eb7d14029675fc4bbbf680b08d6ac447f4f6e15ce15145a42dcc22"
+    },
+    {
+      "file": "sync-selection.png",
+      "sha256": "0c075559c6018cfd9e37aec83318373e3b7b5dea26f5af327b4edebe513ccebd"
+    },
+    {
+      "file": "sync-start-compact.png",
+      "sha256": "eff3e677e05683e6b0306a97975a7527066c6c86cd4ac5130c339d6bb53e4e68"
+    },
+    {
+      "file": "sync-start-sidebar.png",
+      "sha256": "68b4b09c266cb171a8aa99cb6fddda806cc9e5989203897be21753f73824b92f"
+    },
+    {
+      "file": "transcoding.png",
+      "sha256": "743d39570a7df29ee3fc685cfbd7f11fc382296c85cfc94ea252f8bfe9d89ff9"
+    }
+  ]
+}

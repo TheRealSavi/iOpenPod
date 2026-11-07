@@ -30,6 +30,7 @@ class ArtworkView(QWidget):
         self._artwork_provider = artwork_provider
         self._seed = seed
         self._artwork_id = 0
+        self._display_time_ms: int | None = None
         self._artwork_ids: tuple[int, int, int, int] | None = None
         self.setAccessibleName(self.tr("Placeholder artwork"))
         theme_manager.effectiveThemeChanged.connect(self._theme_changed)
@@ -42,11 +43,17 @@ class ArtworkView(QWidget):
         self._seed = seed
         self.update()
 
-    def set_artwork_id(self, artwork_id: int) -> None:
-        normalized = max(0, artwork_id)
-        if normalized == self._artwork_id and self._artwork_ids is None:
+    def set_artwork_id(
+        self, artwork_id: int, *, display_time_ms: int | None = None
+    ) -> None:
+        if (
+            artwork_id == self._artwork_id
+            and self._artwork_ids is None
+            and display_time_ms == self._display_time_ms
+        ):
             return
-        self._artwork_id = normalized
+        self._artwork_id = artwork_id
+        self._display_time_ms = display_time_ms
         self._artwork_ids = None
         self._refresh_accessible_name()
         self.update()
@@ -58,6 +65,7 @@ class ArtworkView(QWidget):
             return
         self._artwork_ids = artwork_ids
         self._artwork_id = 0
+        self._display_time_ms = None
         self._refresh_accessible_name()
         self.update()
 
@@ -80,6 +88,7 @@ class ArtworkView(QWidget):
             self._artwork_id,
             max(1, min(self.width(), self.height())),
             self.devicePixelRatioF(),
+            display_time_ms=self._display_time_ms,
         )
         if pixmap is None:
             paint_artwork_placeholder(
@@ -108,7 +117,7 @@ class ArtworkView(QWidget):
             self.tr("Collection artwork")
             if self._artwork_ids is not None
             else self.tr("Album artwork")
-            if self._artwork_id > 0
+            if self._artwork_id != 0
             else self.tr("Placeholder artwork")
         )
 

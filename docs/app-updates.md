@@ -160,7 +160,10 @@ compiled bridge retains the native blocks and uses the existing Qt event loop.
 ### Signing and first release setup
 
 `packaging/update-keys.json` pins the release trust key. Its matching private seed
-is configured as the repository Actions secret `IOPENPOD_UPDATE_PRIVATE_KEY`.
+is configured as `IOPENPOD_UPDATE_PRIVATE_KEY` in the protected `release-signing`
+GitHub environment, never as a repository Actions secret. That environment requires
+`TheRealSavi` to approve each signing deployment and permits only the `main` branch
+and `v*` tags. Self-review remains allowed for the sole maintainer.
 Commit the public configuration before building the first signed release. Ed25519
 release signing does not require an Apple Developer account.
 
@@ -171,18 +174,20 @@ The setup and publication procedure is:
    Choose an existing directory outside this checkout. The command creates a new
    private directory, writes a base64 Ed25519 seed without displaying it, and pins
    its public key in `packaging/update-keys.json` if no key was configured.
-2. Back up the private key securely. Set the repository Actions secret
+2. Back up the private key securely. Set the `release-signing` environment secret
    `IOPENPOD_UPDATE_PRIVATE_KEY` to the private file's contents. Commit the public
    key configuration before building the first updater-enabled release.
 3. Build and validate a numeric `v<version>` release. Native archives embed the
    public trust configuration. macOS bundles also embed Sparkle's feed/key settings.
 4. The release workflow publishes four update archives and two macOS first-install
    disk images, then calls
-   **Publish signed update feed** when public keys are present. That workflow checks
+   **Publish signed update feed** when public keys are present. Approve the
+   `release-signing` deployment through **Review deployments**. That workflow checks
    GitHub's published hashes, signs the JSON and appcasts, cross-verifies signatures
    with Sparkle's tool, and updates the feed branch without force-pushing.
 5. Feed metadata expires after 45 days. Dispatch **Publish signed update feed**
-   with the latest published numeric version to renew it. Older versions cannot
+   on `main` with the latest published numeric version to renew it, then approve
+   the signing deployment. Older versions cannot
    replace newer history. Concurrent publication cannot overwrite another commit.
 
 Do not publish the private seed, pass it as a command argument, or delete release
@@ -190,6 +195,14 @@ history to make a downgrade appear current. Losing or replacing the trust root
 requires a reviewed migration; the current publisher has no automatic key-rotation
 mode. Developer ID signing/notarization and Gatekeeper acceptance remain separate
 from Ed25519 authentication. Ad-hoc Mac builds are supported during setup.
+
+When migrating an existing repository secret, first verify the private backup
+matches the committed public key and copy it into `release-signing`. Deploy the
+environment-aware workflows before removing the repository copy. Do not rotate
+the key or change `packaging/update-keys.json` as part of this move. Old workflow
+runs that lack the environment can no longer sign after migration; renew the feed
+from current `main` instead. See
+[ADR-0189](adr/0189-protect-github-release-credentials.md).
 
 ### Standalone validation
 

@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 from tests.iPodDB.binary_fixtures import mhod as _mhod
 from tests.iPodDB.binary_fixtures import parse_mhod as _parse_mhod
+from whenever import Instant
 
 from iPodDB.iTunesDB.parser.parser_definition import PARSER_DEFINITION
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
@@ -118,12 +119,12 @@ def _smart_rule(
     action_id: int,
     data: bytes,
     *,
-    group_marker: int = 0,
+    raw_flag_word: int = 0,
     header_data: bytes = bytes(40),
 ) -> bytes:
     assert len(header_data) == 40
     return (
-        struct.pack(">III", field_id, action_id, group_marker)
+        struct.pack(">III", field_id, action_id, raw_flag_word)
         + header_data
         + struct.pack(">I", len(data))
         + data
@@ -214,7 +215,8 @@ def test_smart_preferences_are_entirely_header_like() -> None:
     payload = chunk.payload_as(MhodSmartPrefsPayload)
 
     assert prefix.limit_value == 25
-    assert prefix.padding_0x26 == bytes(58)
+    assert prefix.attachment_inhibit == 0
+    assert prefix.padding_0x27 == bytes(57)
     assert payload == MhodSmartPrefsPayload()
 
 
@@ -246,7 +248,7 @@ def test_parses_recursive_smart_rules_and_big_endian_numeric_values() -> None:
         0,
         1,
         nested,
-        group_marker=0x01000000,
+        raw_flag_word=0x01000000,
         header_data=bytes(range(40)),
     )
     numeric_data = struct.pack(
@@ -298,7 +300,7 @@ def test_recursive_smart_rule_edits_recalculate_nested_lengths() -> None:
         conjunction=1,
     )
     body = _smart_rules_container(
-        _smart_rule(0, 1, nested, group_marker=0x01000000),
+        _smart_rule(0, 1, nested, raw_flag_word=0x01000000),
     )
     chunk = _parse_mhod(51, body)
     payload = chunk.payload_as(MhodSmartRulesPayload)
@@ -615,6 +617,78 @@ def test_playlist_property_edits_encode_from_typed_properties() -> None:
         "description": "Night drive",
         "shuffle": False,
     }
+
+
+@pytest.mark.parametrize("fmt", [plistlib.FMT_XML, plistlib.FMT_BINARY])
+def test_nested_plist_dates_are_utc_instants_across_property_edits(
+    fmt: plistlib.PlistFormat,
+) -> None:
+    # plistlib's naive datetime is confined to the wire boundary; this instant
+    # predates Unix and must not acquire a Host or device-local timezone.
+    before = Instant.from_utc(1960, 5, 6, 12, 34, 56)
+    after = Instant.from_utc(2026, 11, 1, 6, 30)
+    body = plistlib.dumps(
+        {"nested": [{"date": before.to_stdlib().replace(tzinfo=None)}]}, fmt=fmt
+    )
+    chunk = _parse_mhod(55, body)
+    payload = chunk.payload_as(MhodPlistPayload)
+    assert payload.data == body
+    assert payload.properties == {"nested": ({"date": before},)}
+    edited = chunk.edit_payload(
+        MhodPlistPayload,
+        lambda original: replace(original, properties={"nested": ({"date": after},)}),
+    )
+    reread = _encode_and_reparse(edited, MhodPayloadKind.PLIST)
+    assert reread.payload_as(MhodPlistPayload).properties == {
+        "nested": ({"date": after},)
+    }
+
+
+def test_binary_plist_date_retains_microseconds_when_a_sibling_changes() -> None:
+    instant = Instant.from_utc(2001, 1, 1, nanosecond=123456000)
+    body = plistlib.dumps(
+        {"date": instant.to_stdlib().replace(tzinfo=None), "description": "Before"},
+        fmt=plistlib.FMT_BINARY,
+    )
+    chunk = _parse_mhod(55, body)
+    edited = chunk.edit_payload(
+        MhodPlistPayload,
+        lambda original: replace(
+            original, properties={"date": instant, "description": "After"}
+        ),
+    )
+    reread = _encode_and_reparse(edited, MhodPayloadKind.PLIST)
+    assert reread.payload_as(MhodPlistPayload).properties == {
+        "date": instant,
+        "description": "After",
+    }
+
+
+@pytest.mark.parametrize(
+    "authored,resolved",
+    [
+        ("2001-01-01T00:00:00.000000001Z", "2001-01-01T00:00:00Z"),
+        ("2001-01-01T00:00:00.000001999Z", "2001-01-01T00:00:00.000001Z"),
+        ("2000-12-31T23:59:59.999999999Z", "2000-12-31T23:59:59.999999Z"),
+    ],
+)
+def test_authored_plist_nanoseconds_resolve_before_serialization(
+    authored: str, resolved: str
+) -> None:
+    body = plistlib.dumps({"description": "Before"}, fmt=plistlib.FMT_BINARY)
+    chunk = _parse_mhod(55, body)
+    edited = chunk.edit_payload(
+        MhodPlistPayload,
+        lambda original: replace(
+            original,
+            properties={"dates": (Instant(authored),), "description": "After"},
+        ),
+    )
+    expected = {"dates": (Instant(resolved),), "description": "After"}
+    assert edited.payload_as(MhodPlistPayload).properties == expected
+    assert chunk.payload_as(MhodPlistPayload).data == body
+    reread = _encode_and_reparse(edited, MhodPayloadKind.PLIST)
+    assert reread.payload_as(MhodPlistPayload).properties == expected
 
 
 def test_decoded_plist_rejects_an_ambiguous_raw_data_edit() -> None:

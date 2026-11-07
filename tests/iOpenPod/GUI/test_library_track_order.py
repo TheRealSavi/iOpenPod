@@ -7,6 +7,10 @@ from PySide6.QtCore import QModelIndex, Qt
 from tests.iOpenPod.GUI.application_shell_test_support import build_context
 
 from iOpenPod.app.context import AppContext
+from iOpenPod.app.core.settings.definitions import (
+    IPOD_LIBRARY_VIEW_MODE,
+    IPodLibraryViewMode,
+)
 from iOpenPod.app.models.album_list_model import AlbumRole
 from iOpenPod.app.models.collection_list_model import CollectionRole
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
@@ -26,6 +30,9 @@ type _Browsers = tuple[AppContext, LibraryPage, CollectionPage]
 @pytest.fixture
 def browsers() -> Iterator[_Browsers]:
     context = build_context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     provider = ArtworkPixmapProvider(context.artwork_controller)
     albums = LibraryPage(
         context.track_model,

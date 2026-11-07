@@ -17,10 +17,12 @@ from device_registry import (
     DeviceIdentifier,
     DeviceRegistry,
     EvidenceAuthority,
+    FeatureSupport,
     IdentificationResult,
     IdentificationStatus,
     UsbIdentifier,
     authority_covers_metadata,
+    normalize_product_serial,
     parse_sysinfo,
     parse_sysinfo_extended,
     reconcile_device_metadata,
@@ -37,17 +39,24 @@ from iOpenPod.app.core.settings.device import (
     save_device_settings,
 )
 from iOpenPod.app.display_text import exception_text, source_text
+from iOpenPod.app.genius_analysis import GeniusAnalysisService
+from iOpenPod.app.genius_generation import generate_genius_update
+from iOpenPod.app.genius_mixes import MixState, supports_mix_creation
 from iOpenPod.app.library_sync_helper import (
+    LIBRARY_SYNC_HELPER_PATH,
     IPodMediaLibrary,
     IPodMediaScanner,
     IPodMediaScanProgress,
     LibrarySyncHelperCancelledError,
+    LibrarySyncHelperError,
     SyncedImage,
     SyncedTrack,
     publish_sync_helper,
+    retain_retagged_sync_details,
 )
-from iOpenPod.app.library_write import WriteProgress
+from iOpenPod.app.library_write import WriteItemProgress, WriteProgress
 from iOpenPod.app.media.photo_image import photo_viewing_image
+from iOpenPod.app.media.progress import MediaPreparationPhase, MediaPreparationProgress
 from iOpenPod.app.models.artwork import ArtworkImage, ArtworkRequest
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -64,6 +73,7 @@ from iOpenPod.app.models.photos import (
     PhotoImage,
     PhotoRequest,
 )
+from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iOpenPod.app.playback.backend import PlaybackSourceError
 from iOpenPod.app.podcasts.models import (
     PodcastIssue,
@@ -71,19 +81,49 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
 from iOpenPod.app.services import (
+    game_download,
+    game_installation,
+    game_library,
+    game_uninstallation,
+    games,
+    library_initialization,
     library_resources,
     photo_shard_resources,
     volume_presentation,
 )
+from iOpenPod.app.services.classic_calendar import strongest_values
+from iOpenPod.app.services.device_storage import (
+    ALBUM_ARTWORK_STORAGE_ROOTS,
+    GAME_STORAGE_ROOTS,
+    capture_folder_storage_bytes,
+)
+from iOpenPod.app.services.genius_browse import capture_genius_browse
+from iOpenPod.app.services.genius_mixes import (
+    load_mix_state,
+    prepare_mix_changes,
+    prune_mix_ownership,
+)
 from iOpenPod.app.services.ipod_preferences import capture_ipod_preferences
 from iOpenPod.app.services.linux_identity import UDEV_RULE_VERSION
-from iOpenPod.app.smart_playlist_preview import refresh_smart_playlists
+from iOpenPod.app.services.phase import (
+    PhasePublication,
+    capture_phase_selection,
+    phase_playlist_changed,
+    prepare_phase,
+)
+from iOpenPod.app.smart_playlist_preview import (
+    can_refresh_smart_playlist,
+    refresh_smart_playlists,
+)
 from iPodDB.library import (
     IPodLibrary,
     PhotoPixelFormat,
     PhotoRepresentationKind,
     PhotoThumbnailFormat,
+    PlaylistKind,
+    resolve_phase_playlist,
 )
+from iPodDB.library.genius import GeniusCollectionKind, project_genius_browse
 from storage import (
     AccessMode,
     ConnectionGeneration,
@@ -122,12 +162,18 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from iOpenPod.app.backups.models import BackupDeviceContext
+    from iOpenPod.app.genius_analysis import (
+        GeniusAnalysisIssue,
+        GeniusAnalysisProgress,
+        GeniusAnalysisResult,
+    )
     from iOpenPod.app.library_write import (
         LibraryPreparationRequest,
         LibraryReview,
         LibrarySaveResult,
     )
     from iOpenPod.app.playback.backend import PlaybackSource
+    from iOpenPod.app.playlist_sync import PlaylistAssociation
     from iPodDB.library import (
         ArtworkGroupReference,
         Hash72Material,
@@ -263,13 +309,14 @@ class _ActiveConnection:
     record: _CandidateRecord
     active_ipod: ActiveIPod
     library_source: IPodLibrary
-    time_precondition: FilePrecondition | None = None
     sidecar_preconditions: tuple[FilePrecondition, ...] = ()
+    phase_precondition: FilePrecondition | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class _VolumePresentationPolicy:
     enabled: bool
+    itunes_107_artwork: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +327,8 @@ class _PreparedLibraryWrite:
     temporary_files: contextlib.ExitStack
     files: tuple[FilePrecondition, ...]
     discarded_track_media: tuple[library_resources.DiscardedTrackMedia, ...] = ()
+    genius_analysis: GeniusAnalysisResult | None = None
+    genius_mix_state: MixState | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,6 +357,13 @@ class _IthmbByteCacheKey:
     length: int
 
 
+def _ignore_game_progress(
+    _progress: game_installation.GameInstallationProgress
+    | game_uninstallation.GameRemovalProgress,
+) -> None:
+    """Allow game workflows to run without a progress observer."""
+
+
 class DeviceCoordinator:
     """Own one Active iPod while hiding all filesystem mechanics from the GUI.
 
@@ -324,6 +380,8 @@ class DeviceCoordinator:
         *,
         ithmb_cache_byte_limit: int = 16 * 1024 * 1024,
         ipod_media_scanner: IPodMediaScanner | None = None,
+        genius_analysis: GeniusAnalysisService | None = None,
+        phase_analysis: PhaseAnalysisService | None = None,
         volume_presentation_enabled: bool = True,
     ) -> None:
         if ithmb_cache_byte_limit <= 0:
@@ -347,6 +405,8 @@ class DeviceCoordinator:
         self._ithmb_bytes: OrderedDict[_IthmbByteCacheKey, bytes] = OrderedDict()
         self._podcast_store = PodcastDeviceStore()
         self._ipod_media_scanner = ipod_media_scanner or IPodMediaScanner()
+        self._genius_analysis = genius_analysis or GeniusAnalysisService()
+        self._phase_analysis = phase_analysis or PhaseAnalysisService()
         self._recovery_observations: dict[
             str, tuple[MountedVolume, FileFingerprint]
         ] = {}
@@ -364,7 +424,17 @@ class DeviceCoordinator:
         """Retire older policies without making the GUI wait for device I/O."""
         with self._presentation_policy_lock:
             if self._presentation_policy.enabled != enabled:
-                self._presentation_policy = _VolumePresentationPolicy(enabled)
+                self._presentation_policy = replace(
+                    self._presentation_policy, enabled=enabled
+                )
+
+    def set_itunes_107_artwork(self, enabled: bool) -> None:
+        """Capture the artwork choice with each Volume presentation policy."""
+        with self._presentation_policy_lock:
+            if self._presentation_policy.itunes_107_artwork != enabled:
+                self._presentation_policy = replace(
+                    self._presentation_policy, itunes_107_artwork=enabled
+                )
 
     @property
     def sync_cleanup_path(self) -> str:
@@ -384,7 +454,9 @@ class DeviceCoordinator:
         except SyncRecoveryRequiredError as error:
             self._recovery_observations[error.recovery_path] = (
                 session.mounted_volume,
-                session.fingerprint(DevicePath(error.recovery_path)),
+                session.transaction_journal_fingerprint(
+                    DevicePath(error.recovery_path)
+                ),
             )
             raise
 
@@ -593,6 +665,8 @@ class DeviceCoordinator:
         previous: IPodMediaLibrary | None,
         tracks: tuple[SyncedTrack, ...],
         images: tuple[SyncedImage, ...] = (),
+        *,
+        playlists: tuple[PlaylistAssociation, ...] = (),
     ) -> IPodMediaLibrary:
         """Refresh the non-authoritative helper after a verified Library commit."""
 
@@ -604,6 +678,7 @@ class DeviceCoordinator:
                 tracks,
                 images,
                 library_sha256=expected.database_fingerprint.sha256,
+                playlists=playlists,
             )
 
     def finalize_sync_success(self, expected: ActiveIPod, recovery_path: str) -> None:
@@ -700,7 +775,7 @@ class DeviceCoordinator:
                 if not mounted.volume.capabilities.safe_for_writes:
                     continue
                 with self._storage.open_session(mounted) as session:
-                    if session.exists(path):
+                    if session.has_transaction(path):
                         session.read_transaction_state(path)
                         matches.append(mounted)
             if len(matches) != 1:
@@ -762,7 +837,9 @@ class DeviceCoordinator:
                 candidate = self.candidate_id_for_volume(mounted.volume.id)
                 if candidate is None:
                     raise DeviceChangedError("The restored iPod is not ready to load.")
-                return self.select_device(candidate, reconcile_sidecars=False)
+                return self.select_device(
+                    candidate, reconcile_sidecars=False, initialize_missing=False
+                )
             except SyncRecoveryRequiredError:
                 # A different pending transaction remains actionable on its own.
                 raise
@@ -792,7 +869,6 @@ class DeviceCoordinator:
             raise DeviceAccessError("The Sync recovery journal path is invalid.")
         namespace = path.parent
         assert namespace is not None
-        retired = namespace.joinpath("declined-transaction.json")
         with self._lock:
             observed = self._recovery_observations.get(recovery_path)
             matches: list[tuple[MountedVolume, FileFingerprint | None]] = []
@@ -809,13 +885,18 @@ class DeviceCoordinator:
                         # A corrupt journal can be declined because its location
                         # and bytes were observed on this exact Physical Device.
                         matches.append(
-                            (mounted, observed[1] if session.exists(path) else None)
+                            (
+                                mounted,
+                                observed[1] if session.has_transaction(path) else None,
+                            )
                         )
-                    elif session.exists(path):
+                    elif session.has_transaction(path):
                         # Results from this run may precede discovery. Validate
                         # their journal identity before accepting a path alone.
                         session.read_transaction_state(path)
-                        matches.append((mounted, session.fingerprint(path)))
+                        matches.append(
+                            (mounted, session.transaction_journal_fingerprint(path))
+                        )
             if len(matches) != 1:
                 raise DeviceChangedError(
                     "Reconnect the same writable iPod before keeping its current contents."
@@ -827,7 +908,7 @@ class DeviceCoordinator:
                 mounted, access=AccessMode.READ_WRITE
             ) as session:
                 if expected is not None:
-                    session.move(path, retired, expected_source=expected)
+                    session.decline_transaction(path, expected=expected)
                 flushed = session.flush()
             self._recovery_observations.pop(recovery_path, None)
             self._deactivate_locked()
@@ -878,7 +959,7 @@ class DeviceCoordinator:
                 if not mounted.volume.capabilities.safe_for_writes:
                     continue
                 with self._storage.open_session(mounted) as session:
-                    if session.exists(path):
+                    if session.has_transaction(path):
                         state = session.read_transaction_state(path)
                         if state not in (
                             TransactionState.COMMITTED,
@@ -903,7 +984,7 @@ class DeviceCoordinator:
                 matches[0], access=AccessMode.READ_WRITE
             ) as session:
                 try:
-                    if not session.exists(path):
+                    if not session.has_transaction(path):
                         flushed = session.finalize_missing_transaction(path)
                     elif (
                         session.read_transaction_state(path)
@@ -1061,6 +1142,408 @@ class DeviceCoordinator:
                     requires_persistence=False,
                 )
 
+    def load_installed_games(
+        self, expected: ActiveIPod, cancelled: threading.Event
+    ) -> game_library.GameCatalog:
+        """Read game display metadata without reserving or mutating the device."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before loading games."
+                )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Loading games was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while loading games."
+                    )
+
+        return game_library.read_game_catalog(active.session, checkpoint)
+
+    def games_unavailable_reason(
+        self, expected: ActiveIPod, *, blocked_reason: str = ""
+    ) -> str:
+        """Expose capability qualification without device I/O on the GUI thread."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                return "Select an iPod before preparing game authorization."
+            evidence = active.record.device_evidence
+            if blocked_reason:
+                return games.describe_unavailability(evidence, blocked_reason)
+            if not active.record.mounted_volume.volume.capabilities.safe_for_writes:
+                return games.describe_unavailability(
+                    evidence, source_text("The selected iPod is read-only.")
+                )
+        return ""
+
+    def games_compatibility(self, expected: ActiveIPod) -> games.GameCompatibility:
+        """Capture the compatibility warning without performing device I/O."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before preparing games."
+                )
+            return games.compatibility(active.record.device_evidence, expected.profile)
+
+    def install_game_authorizations(
+        self,
+        expected: ActiveIPod,
+        cancelled: threading.Event,
+        *,
+        compatibility: games.GameCompatibility | None = None,
+    ) -> games.GamesResult:
+        """Merge authorization bytes through an identity-bound Storage Transaction."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before game authorization."
+                )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Game authorization was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected during game authorization."
+                    )
+
+        try:
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                    )
+                )
+                metadata, _issues = _read_device_metadata(session)
+                evidence = active.record.hardware_evidence.merged_with(metadata)
+                family = games.execution_family(
+                    evidence, expected.profile, compatibility
+                )
+                if family != games.execution_family(
+                    active.record.device_evidence, expected.profile, compatibility
+                ):
+                    raise DeviceChangedError("The iPod family changed after selection.")
+                guid = _read_device_guid(session, active.record.hardware_evidence)
+                if len(guid) != 8:
+                    raise DeviceChangedError(
+                        "The iPod has no unambiguous FireWire GUID."
+                    )
+                selected_guid = _read_device_guid(
+                    session, active.record.device_evidence
+                )
+                if guid != selected_guid:
+                    raise DeviceChangedError(
+                        "The iPod FireWire GUID changed after selection."
+                    )
+                source, source_guid = games.bundled_source()
+                prepared = games.prepare(
+                    session,
+                    source=source,
+                    source_guid=source_guid,
+                    destination_guid=guid,
+                    family=family,
+                    dependencies=dependencies,
+                )
+                checkpoint()
+                library_resources.recheck(session, dependencies)
+                if prepared.transaction is not None:
+                    committed = session.execute_transaction(
+                        prepared.transaction, checkpoint=checkpoint
+                    )
+                    if not committed.flush.complete:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        )
+                    _finalize_committed_transaction(
+                        session, committed.recovery.journal_path
+                    )
+                return prepared.result
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
+
+    def install_games(
+        self,
+        expected: ActiveIPod,
+        identifiers: tuple[str, ...],
+        cancelled: threading.Event,
+        *,
+        compatibility: games.GameCompatibility | None = None,
+        progress: Callable[
+            [game_installation.GameInstallationProgress], None
+        ] = _ignore_game_progress,
+    ) -> game_library.GameCatalog:
+        """Install selected Host games through one create-only transaction."""
+        phase = game_installation.GameInstallationPhase
+        report = game_installation.GameInstallationProgress
+        publication_started = False
+
+        def transaction_progress(value: TransactionProgress) -> None:
+            nonlocal publication_started
+            if value.state in {TransactionState.PUBLISHING, TransactionState.COMMITTED}:
+                publication_started = True
+            stage = (
+                phase.INSTALLING
+                if value.state is TransactionState.PUBLISHING
+                else phase.PREPARING
+            )
+            if value.state is TransactionState.COMMITTED:
+                stage = phase.VERIFYING
+            progress(report(stage, value.completed, value.total, value.path))
+
+        def transaction_activity(value: TransactionActivity) -> None:
+            progress(
+                report(
+                    phase.VERIFYING if publication_started else phase.PREPARING,
+                    value.completed,
+                    value.total or 0,
+                    value.path,
+                )
+            )
+
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before installing games."
+                )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Installing games was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while installing games."
+                    )
+
+        try:
+            progress(report(phase.PREPARING))
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                        games.AUTHORIZATION_PATH,
+                    )
+                )
+                metadata, _issues = _read_device_metadata(session)
+                evidence = active.record.hardware_evidence.merged_with(metadata)
+                family = games.execution_family(
+                    evidence, expected.profile, compatibility
+                )
+                if family != games.execution_family(
+                    active.record.device_evidence, expected.profile, compatibility
+                ):
+                    raise DeviceChangedError("The iPod family changed after selection.")
+                if not session.exists(games.AUTHORIZATION_PATH):
+                    raise DeviceAccessError(
+                        "Prepare game authorization before adding games."
+                    )
+                packages = game_download.resolve_packages(expected.profile, identifiers)
+                with game_installation.prepare_installation(
+                    session,
+                    packages,
+                    dependencies=dependencies,
+                    checkpoint=checkpoint,
+                    progress=progress,
+                ) as prepared:
+                    checkpoint()
+                    library_resources.recheck(session, dependencies)
+                    game_installation.validate_destinations(
+                        session, packages, checkpoint
+                    )
+                    # Empty folders are harmless if staging is interrupted and
+                    # reusable on retry. File bytes remain fully transactional.
+                    for directory in prepared.directories:
+                        checkpoint()
+                        session.create_directory(directory)
+                    committed = session.execute_transaction(
+                        prepared.transaction,
+                        checkpoint=checkpoint,
+                        progress=transaction_progress,
+                        activity=transaction_activity,
+                    )
+                    if not committed.flush.complete:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        )
+                    progress(report(phase.FINALIZING))
+                    _finalize_committed_transaction(
+                        session, committed.recovery.journal_path
+                    )
+                return game_library.read_game_catalog(session, checkpoint)
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
+
+    def prepare_game_files(
+        self,
+        expected: ActiveIPod,
+        cancelled: threading.Event,
+        *,
+        progress: Callable[
+            [game_installation.GameInstallationProgress], None
+        ] = _ignore_game_progress,
+    ) -> None:
+        """Prepare the complete Host collection before exposing the game picker."""
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Preparing game files was cancelled.")
+            with self._lock:
+                if (
+                    self._active is None
+                    or self._active.active_ipod is not expected
+                    or not self._active.session.is_active
+                ):
+                    raise DeviceChangedError(
+                        "The Active iPod changed while preparing game files."
+                    )
+
+        checkpoint()
+        game_download.GameDownloadService().prepare(checkpoint, progress)
+
+    def uninstall_game(
+        self,
+        expected: ActiveIPod,
+        game: game_library.InstalledGame,
+        cancelled: threading.Event,
+        *,
+        progress: Callable[
+            [game_uninstallation.GameRemovalProgress], None
+        ] = _ignore_game_progress,
+    ) -> game_library.GameCatalog:
+        """Remove one game's executable, data and stats with verified recovery."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before uninstalling the game."
+                )
+        if not expected.profile.capabilities.supports_games:
+            raise DeviceAccessError("This iPod does not support click-wheel games.")
+        phase = game_uninstallation.GameRemovalPhase
+        report = game_uninstallation.GameRemovalProgress
+
+        def transaction_progress(value: TransactionProgress) -> None:
+            stage = (
+                phase.REMOVING
+                if value.state is TransactionState.PUBLISHING
+                else phase.PREPARING
+            )
+            if value.state is TransactionState.COMMITTED:
+                stage = phase.VERIFYING
+            progress(report(stage, value.completed, value.total, value.path))
+
+        def transaction_activity(value: TransactionActivity) -> None:
+            progress(
+                report(phase.VERIFYING, value.completed, value.total or 0, value.path)
+            )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Uninstalling the game was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while uninstalling the game."
+                    )
+
+        try:
+            progress(report(phase.PREPARING))
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                    )
+                )
+                prepared = game_uninstallation.prepare_uninstallation(
+                    session, game, dependencies=dependencies, checkpoint=checkpoint
+                )
+                checkpoint()
+                library_resources.recheck(session, dependencies)
+                game_uninstallation.recheck_uninstallation(
+                    session, prepared, checkpoint
+                )
+                committed = session.execute_transaction(
+                    prepared.transaction,
+                    checkpoint=checkpoint,
+                    progress=transaction_progress,
+                    activity=transaction_activity,
+                )
+                if not committed.flush.complete:
+                    raise SyncRecoveryRequiredError(
+                        str(committed.recovery.journal_path)
+                    )
+                try:
+                    total = len(prepared.directories)
+                    for index, directory in enumerate(prepared.directories):
+                        checkpoint()
+                        progress(report(phase.CLEANING, index, total, directory.path))
+                        if session.exists(directory.path):
+                            session.remove_empty_directory(directory.path)
+                    progress(report(phase.CLEANING, total, total))
+                    progress(report(phase.FINALIZING))
+                    _finalize_committed_transaction(
+                        session, committed.recovery.journal_path
+                    )
+                except Exception as error:
+                    raise SyncRecoveryRequiredError(
+                        str(committed.recovery.journal_path)
+                    ) from error
+                with self._lock:
+                    if self._active is active and active.phase_precondition is not None:
+                        path = active.phase_precondition.path
+                        if any(
+                            item.path == path for item in prepared.transaction.removals
+                        ):
+                            active.phase_precondition = FilePrecondition(path, None)
+                return game_library.read_game_catalog(session, checkpoint)
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
+
     def save_settings(
         self,
         expected: ActiveIPod,
@@ -1137,6 +1620,7 @@ class DeviceCoordinator:
         podcast_state: LoadedPodcastState | None = None,
         podcast_subscriptions: bool = False,
         allow_unchanged: bool = False,
+        prepare_phase_companions: bool = True,
     ) -> LibraryReview:
         """Prepare a review with private Host staging and read-only device access.
 
@@ -1150,7 +1634,9 @@ class DeviceCoordinator:
             PreparationCancelledError,
             WriteProgress,
         )
+        from iOpenPod.app.sync_bpm import with_missing_bpm
         from iPodDB.library import (
+            IssueSeverity,
             LibraryWriteResult,
             WriteChecksum,
             WriteIssue,
@@ -1161,6 +1647,10 @@ class DeviceCoordinator:
 
         expected, snapshot = request.source, request.snapshot
 
+        def cancellation_checkpoint() -> None:
+            if cancelled.is_set():
+                raise PreparationCancelledError
+
         def checkpoint(
             phase: str,
             message: str,
@@ -1169,9 +1659,9 @@ class DeviceCoordinator:
             total: int | None = None,
             current_item: str = "",
             unit: str = "",
+            active_items: tuple[WriteItemProgress, ...] = (),
         ) -> None:
-            if cancelled.is_set():
-                raise PreparationCancelledError
+            cancellation_checkpoint()
             progress(
                 WriteProgress(
                     phase,
@@ -1180,6 +1670,7 @@ class DeviceCoordinator:
                     total=total,
                     current_item=current_item,
                     unit=unit,
+                    active_items=active_items,
                 )
             )
 
@@ -1230,6 +1721,7 @@ class DeviceCoordinator:
         plan: LibraryWritePlan | None = None
         resources: WriteResources | None = None
         result: LibraryWriteResult | None = None
+        genius_analysis: GeniusAnalysisResult | None = None
         checkpoint("source.check", "Checking source")
         temporary_files = contextlib.ExitStack()
         try:
@@ -1316,21 +1808,196 @@ class DeviceCoordinator:
                 cover_formats=application_cover_formats(expected.profile),
                 chapter_formats=application_chapter_formats(expected.profile),
             )
-            if active.time_precondition is None:
-                raise DeviceChangedError(
-                    "The iPod timezone settings could not be verified. Reload before saving."
-                )
-            library_resources.recheck(active.session, (active.time_precondition,))
+            # Calendar evidence is a best-effort interpretation captured at load.
+            # Changing or unreadable Preferences must not block a Library save.
             library_resources.recheck(active.session, active.sidecar_preconditions)
+            if active.phase_precondition is not None:
+                library_resources.recheck(active.session, (active.phase_precondition,))
+            snapshot = resolve_phase_playlist(
+                snapshot,
+                next((p.playlist_id for p in snapshot.playlists if p.is_phase), 0),
+            )
+            prepared_snapshot = snapshot
+            retained_live_smart_ids = frozenset(
+                playlist.playlist_id
+                for playlist in source.snapshot.playlists
+                if can_refresh_smart_playlist(playlist)
+            )
+            request = replace(request, snapshot=snapshot)
+            genius_update = None
+            genius_mix_state = None
+            mix_preconditions: tuple[FilePrecondition, ...] = ()
+            mix_write = None
+            known_collections = {
+                collection.collection_id: collection
+                for collection in expected.genius.collections
+            }
+            if (
+                len(set(request.remove_genius_collections))
+                != len(request.remove_genius_collections)
+                or not set(request.remove_genius_collections)
+                <= known_collections.keys()
+            ):
+                raise ValueError(
+                    "A selected Genius collection changed. Reload the iPod."
+                )
+            removed = tuple(
+                known_collections[identity]
+                for identity in request.remove_genius_collections
+            )
+            mix_removals = tuple(
+                collection.native_playlist_id
+                for collection in removed
+                if collection.kind is GeniusCollectionKind.MIX
+                and collection.native_playlist_id is not None
+            )
+            if any(
+                collection.kind is GeniusCollectionKind.MIX
+                and collection.native_playlist_id is None
+                for collection in removed
+            ):
+                raise ValueError("The selected Genius Mix has no native identity.")
+            for collection in removed:
+                if collection.kind is not GeniusCollectionKind.PLAYLIST:
+                    continue
+                if any(
+                    playlist.playlist_id == collection.native_playlist_id
+                    and playlist.kind is PlaylistKind.GENIUS
+                    for playlist in expected.library.playlists
+                ) and (
+                    any(
+                        playlist.playlist_id == collection.native_playlist_id
+                        for playlist in request.snapshot.playlists
+                    )
+                    or not request.delete_omissions
+                ):
+                    raise ValueError(
+                        "The selected Genius Playlist was not removed from the draft."
+                    )
+            if (
+                request.add_genius_mixes or request.rotate_genius_mixes or mix_removals
+            ) and (
+                not supports_mix_creation(expected.profile)
+                or not request.regenerate_genius
+            ):
+                raise ValueError(
+                    "Native Genius Mix creation is unavailable for this iPod."
+                )
+
+            def genius_checkpoint() -> None:
+                # The generator checks every Track and collision probe.
+                # Cancellation must not enqueue a GUI event for each check.
+                if cancelled.is_set():
+                    raise PreparationCancelledError
+
+            if request.regenerate_genius or request.compute_missing_bpm:
+                if (
+                    request.regenerate_genius
+                    and capabilities.genius.playlists is not FeatureSupport.SUPPORTED
+                ):
+                    raise ValueError(
+                        "Native Genius generation requires a supported iPod."
+                    )
+                checkpoint(
+                    "draft.genius",
+                    source_text("Preparing music analysis")
+                    if request.compute_missing_bpm
+                    else source_text("Preparing Genius for music Tracks"),
+                )
+
+                def genius_progress(value: GeniusAnalysisProgress) -> None:
+                    checkpoint(
+                        "draft.genius.audio",
+                        source_text("Analyzing music")
+                        if request.compute_missing_bpm
+                        else source_text("Analyzing music for Genius"),
+                        completed=value.completed,
+                        total=value.total,
+                        current_item=value.title,
+                        unit="tracks",
+                        active_items=tuple(
+                            WriteItemProgress(
+                                f"genius:{item.track_id}",
+                                item.title,
+                                MediaPreparationProgress(
+                                    MediaPreparationPhase.ANALYZING,
+                                    source_text("Analyzing audio")
+                                    if request.compute_missing_bpm
+                                    else source_text("Analyzing audio for Genius"),
+                                ),
+                            )
+                            for item in value.active
+                        ),
+                    )
+
+                if request.compute_missing_bpm:
+                    snapshot = with_missing_bpm(snapshot, expected.library, {})
+                analysis_snapshot = (
+                    snapshot
+                    if request.regenerate_genius
+                    else replace(
+                        snapshot,
+                        tracks=tuple(t for t in snapshot.tracks if t.metadata.bpm == 0),
+                    )
+                )
+                analysis_ids = {t.track_id for t in analysis_snapshot.tracks}
+                genius_analysis = self._genius_analysis.analyze(
+                    analysis_snapshot,
+                    active.session,
+                    media=tuple(
+                        source
+                        for source in request.media
+                        if source.media.track_id in analysis_ids
+                    ),
+                    checkpoint=genius_checkpoint,
+                    progress=genius_progress,
+                    skip_requested=(
+                        request.genius_analysis_skip.is_set
+                        if request.genius_analysis_skip is not None
+                        else None
+                    ),
+                )
+                if request.compute_missing_bpm:
+                    snapshot = with_missing_bpm(
+                        snapshot, expected.library, genius_analysis.profiles
+                    )
+                request = replace(request, snapshot=snapshot)
+            if request.regenerate_genius:
+                assert genius_analysis is not None
+                checkpoint(
+                    "draft.genius.rank", source_text("Ranking Genius candidates")
+                )
+                genius_update = generate_genius_update(
+                    snapshot,
+                    profiles=genius_analysis.profiles,
+                    checkpoint=genius_checkpoint,
+                )
+                if (
+                    request.add_genius_mixes
+                    or request.rotate_genius_mixes
+                    or mix_removals
+                ):
+                    genius_update, genius_mix_state, mix_preconditions, mix_write = (
+                        prepare_mix_changes(
+                            active.session,
+                            request,
+                            genius_update,
+                            profiles=genius_analysis.profiles,
+                            remove_ids=mix_removals,
+                        )
+                    )
             snapshot = refresh_smart_playlists(
                 snapshot,
                 checkpoint=lambda: checkpoint(
                     "draft.smart_playlists", source_text("Evaluating Smart Playlists")
                 ),
             )
-            request = replace(request, snapshot=snapshot)
+            request = with_rockbox_edits(
+                replace(request, snapshot=snapshot),
+                source,
+                prepared_snapshot=prepared_snapshot,
+            )
             checkpoint("draft.analysis", "Analyzing changes")
-            request = with_rockbox_edits(request, source)
             plan = source.analyze(
                 source.begin_draft(
                     snapshot,
@@ -1344,10 +2011,19 @@ class DeviceCoordinator:
                     and capabilities.database.uses_sqlite_database,
                     rebuild_album_indexes=request.rebuild_album_indexes,
                     repair_podcast_links=request.repair_podcast_links,
+                    normalize_podcasts=request.normalize_podcasts,
+                    refresh_smart_playlists=tuple(
+                        playlist.playlist_id
+                        for playlist in snapshot.playlists
+                        if can_refresh_smart_playlist(playlist)
+                        and playlist.playlist_id in retained_live_smart_ids
+                    ),
+                    genius_update=genius_update,
                 ),
                 target,
             )
             checkpoint("resources.capture", "Capturing required resources")
+            request = replace(request, snapshot=plan.draft.snapshot)
 
             def source_artwork_paths(
                 reference: ArtworkGroupReference,
@@ -1372,20 +2048,124 @@ class DeviceCoordinator:
                 temporary_files=temporary_files,
                 source_artwork_display_times=source.artwork_display_times,
                 source_artwork_paths=source_artwork_paths,
+                source_artwork_file_paths=source.artwork_file_paths,
                 additional_preconditions=(
                     *sqlite_postprocess_preconditions,
-                    active.time_precondition,
+                    *mix_preconditions,
+                    *(
+                        (active.phase_precondition,)
+                        if active.phase_precondition
+                        else ()
+                    ),
                 ),
                 volume_presentation_enabled=presentation_policy.enabled,
+                itunes_107_artwork=presentation_policy.itunes_107_artwork,
                 consumed_sidecars=source.consumed_sidecars,
                 loaded_sidecars=active.sidecar_preconditions,
             )
+            if mix_write is not None:
+                captured = replace(
+                    captured,
+                    genius_mix_write=mix_write,
+                )
             resources = captured.resources
+            if genius_analysis is not None:
+                genius_analysis = genius_analysis.with_tagged_media(resources.lyrics)
             result = source.prepare(plan, resources, progress=database_progress)
+            if result.prepared is not None and result.prepared.sqlite is not None:
+                planned_state = genius_mix_state or expected.genius_mix_state
+                live_tracks = {t.track_id for t in result.prepared.snapshot.tracks}
+                depleted = frozenset(
+                    collection.native_playlist_id
+                    for collection in expected.genius.collections
+                    if collection.kind is GeniusCollectionKind.MIX
+                    and collection.track_ids
+                    and not live_tracks.intersection(collection.track_ids)
+                    and collection.native_playlist_id is not None
+                )
+                if any(e.container_id in depleted for e in planned_state.entries):
+                    final_browse = project_genius_browse(
+                        replace(result.prepared.snapshot, playlists=()),
+                        sqlite_library=result.prepared.sqlite.library,
+                    )
+                    if final_browse.issues:
+                        raise ValueError("Prepared Genius Mixes could not be verified.")
+                    removed_mix_ids = depleted - {
+                        collection.native_playlist_id
+                        for collection in final_browse.collections
+                    }
+                    if removed_mix_ids:
+                        genius_mix_state, state_before, ownership_write = (
+                            prune_mix_ownership(
+                                active.session,
+                                expected.genius_mix_state,
+                                planned_state,
+                                removed_mix_ids,
+                            )
+                        )
+                        captured = replace(
+                            captured,
+                            genius_mix_write=ownership_write,
+                            files=(
+                                *tuple(
+                                    f
+                                    for f in captured.files
+                                    if f.path != state_before.path
+                                ),
+                                state_before,
+                            ),
+                        )
+            genius_issues: tuple[WriteIssue, ...] = ()
+            if genius_analysis is not None:
+                checkpoint(
+                    "draft.genius.verify",
+                    source_text("Verifying music sources")
+                    if request.compute_missing_bpm
+                    else source_text("Verifying Genius sources"),
+                )
+                genius_analysis.validate_sources(
+                    active.session,
+                    checkpoint=cancellation_checkpoint,
+                )
+                if genius_analysis.issues:
+                    track_by_id = {track.track_id: track for track in snapshot.tracks}
+
+                    def issue_detail(issue: GeniusAnalysisIssue) -> str:
+                        track = (
+                            track_by_id.get(issue.track_id)
+                            if issue.track_id is not None
+                            else None
+                        )
+                        if track is None:
+                            return issue.detail
+                        return (
+                            f"{track.title} (Track {track.track_id}, "
+                            f"{track.metadata.location}): {issue.detail}"
+                        )
+
+                    genius_issues = (
+                        WriteIssue(
+                            "genius.analysis_warning",
+                            (
+                                "Some music analysis or cache work was unavailable. "
+                                "BPM remains unchanged where no tempo could be measured."
+                                if request.compute_missing_bpm
+                                else "Some Genius audio analysis or cache work was unavailable. "
+                                "Tracks without an audio profile use metadata candidates."
+                            ),
+                            severity=IssueSeverity.WARNING,
+                            phase="resources",
+                            detail="\n".join(
+                                issue_detail(issue)
+                                for issue in genius_analysis.issues[:10]
+                            ),
+                        ),
+                    )
             result = replace(
                 result,
                 issues=(
                     *result.issues,
+                    *genius_issues,
                     *library_resources.preparation_issues(captured, result.prepared),
                 ),
             )
@@ -1400,6 +2180,55 @@ class DeviceCoordinator:
                 library_resources.recheck_discarded_track_media(
                     active.session, captured.discarded_track_media
                 )
+                phase_publication = (
+                    prepare_phase(
+                        active.session,
+                        source.snapshot,
+                        result.prepared.snapshot,
+                        checkpoint=cancellation_checkpoint,
+                        analyzer=self._phase_analysis,
+                        media_writes=captured.media_writes,
+                        skip_requested=request.phase_analysis_skip.is_set,
+                        analysis_progress=lambda value: progress(
+                            WriteProgress(
+                                "resources.phase",
+                                value.message,
+                                completed=value.completed,
+                                total=value.total,
+                                current_item=value.title,
+                                unit="tracks",
+                                eta=value.eta,
+                            )
+                        ),
+                    )
+                    if prepare_phase_companions
+                    and phase_playlist_changed(
+                        source.snapshot, result.prepared.snapshot, captured.media_writes
+                    )
+                    else PhasePublication(
+                        files=(active.phase_precondition,)
+                        if active.phase_precondition is not None
+                        else (),
+                    )
+                )
+                if active.phase_precondition is not None and any(
+                    file.path == active.phase_precondition.path
+                    and file != active.phase_precondition
+                    for file in phase_publication.files
+                ):
+                    raise DeviceChangedError(
+                        "The Phase Library changed during preparation. Reload the iPod."
+                    )
+                captured = replace(
+                    captured,
+                    files=tuple(
+                        {
+                            file.path: file
+                            for file in (*captured.files, *phase_publication.files)
+                        }.values()
+                    ),
+                    phase_writes=phase_publication.writes,
+                )
                 original = source.serialize()
                 write = library_resources.transaction(
                     active.session,
@@ -1413,10 +2242,6 @@ class DeviceCoordinator:
                     ),
                     allow_unchanged=allow_unchanged,
                 )
-                if write is None:
-                    # Changed reviews validate all captured files through their
-                    # transaction. Association-only Sync has no transaction.
-                    library_resources.recheck(active.session, captured.files)
                 if podcast_state is not None:
                     history = self._podcast_store.state_transaction(
                         podcast_state, include_subscriptions=podcast_subscriptions
@@ -1433,6 +2258,12 @@ class DeviceCoordinator:
                             dependencies=(*write.dependencies, *history.dependencies),
                         )
                     )
+                if write is None:
+                    # Association-only Sync has no transaction to validate.
+                    library_resources.recheck(active.session, captured.files)
+                else:
+                    # Validate the complete plan once, after adding Podcast
+                    # state, instead of rereading the Library files for each part.
                     active.session.validate_transaction(write)
             review = LibraryReview(
                 plan,
@@ -1459,6 +2290,8 @@ class DeviceCoordinator:
                         temporary_files.pop_all(),
                         captured.files,
                         captured.discarded_track_media,
+                        genius_analysis,
+                        genius_mix_state,
                     )
             return review
         except (StorageError, DeviceChangedError, ValueError, OSError) as error:
@@ -1508,11 +2341,14 @@ class DeviceCoordinator:
         cancelled: threading.Event,
         *,
         retain_recovery: bool = False,
+        validate_sources: Callable[[FilesystemSession], None] | None = None,
     ) -> LibrarySaveResult:
         """Publish the issued review and clean its verified transaction by default.
 
         Sync explicitly retains recovery until its post-commit provenance step,
         then owns finalization. Ordinary saves must not leave that work to callers.
+        Caller-owned source assertions run before staging and publication using
+        this save's bound Filesystem Session.
         """
         from iOpenPod.app.library_write import (
             LibrarySaveResult,
@@ -1569,6 +2405,11 @@ class DeviceCoordinator:
             # Construct the next authoritative source before touching the device.
             updated_source = IPodLibrary.parse(
                 prepared.itunes, device_time=active.library_source.device_time
+            ).with_phase_playlist(
+                next(
+                    (p.playlist_id for p in prepared.snapshot.playlists if p.is_phase),
+                    0,
+                )
             )
             if prepared.artwork is not None:
                 updated_source = updated_source.with_artwork(prepared.artwork)
@@ -1583,6 +2424,14 @@ class DeviceCoordinator:
                 with self._storage.open_session(
                     active.record.mounted_volume, access=AccessMode.READ_WRITE
                 ) as session:
+
+                    def cancel_checkpoint() -> None:
+                        if cancelled.is_set():
+                            raise PreparationCancelledError
+                        if self._active is not active or not active.session.is_active:
+                            raise DeviceChangedError(
+                                "The Active iPod changed during staging"
+                            )
 
                     def checkpoint() -> None:
                         if cancelled.is_set():
@@ -1640,6 +2489,13 @@ class DeviceCoordinator:
                                 raise DeviceChangedError(
                                     "The device HASH72 signing material changed"
                                 )
+                        if validate_sources is not None:
+                            validate_sources(session)
+                        if issued.genius_analysis is not None:
+                            issued.genius_analysis.validate_sources(
+                                session,
+                                checkpoint=cancel_checkpoint,
+                            )
 
                     progress(
                         WriteProgress(
@@ -1667,14 +2523,6 @@ class DeviceCoordinator:
                         )
                     )
 
-                    def cancel_checkpoint() -> None:
-                        if cancelled.is_set():
-                            raise PreparationCancelledError
-                        if self._active is not active or not active.session.is_active:
-                            raise DeviceChangedError(
-                                "The Active iPod changed during staging"
-                            )
-
                     def transaction_progress(event: TransactionProgress) -> None:
                         progress(
                             WriteProgress(
@@ -1692,8 +2540,58 @@ class DeviceCoordinator:
                                 session, issued.discarded_track_media
                             )
 
+                    transaction = issued.transaction
+                    if not retain_recovery:
+                        # Sync publishes its own provenance after committing. An
+                        # ordinary save must carry existing associations through
+                        # known tag rewrites without claiming a new Host Sync.
+                        replaced = set(plan.required_media) | set(
+                            plan.draft.replace_media
+                        )
+                        database_path = library_resources.database_path(
+                            expected.database_name
+                        )
+                        transaction = retain_retagged_sync_details(
+                            session,
+                            transaction,
+                            expected.library,
+                            updated_source.snapshot,
+                            tuple(
+                                identity
+                                for identity in plan.required_lyrics
+                                if identity not in replaced
+                            ),
+                            library_sha256=next(
+                                (
+                                    write.content.sha256
+                                    for write in transaction.writes
+                                    if write.path == database_path
+                                ),
+                                expected.database_fingerprint.sha256,
+                            ),
+                        )
+                    # Build optional browse state before publication, using the
+                    # prepared companion when it changes. Post-commit display
+                    # reads must not turn a verified save into a failed save.
+                    updated_genius = capture_genius_browse(
+                        session,
+                        updated_source.snapshot,
+                        sqlite=expected.profile.capabilities.database.uses_sqlite_database,
+                        excluded_sidecars=frozenset(
+                            removal.path.name.casefold()
+                            for removal in transaction.removals
+                            if removal.path.is_relative_to(
+                                DevicePath("iPod_Control/iTunes")
+                            )
+                        ),
+                        sqlite_library=(
+                            prepared.sqlite.library
+                            if prepared.sqlite is not None
+                            else None
+                        ),
+                    )
                     committed = session.execute_transaction(
-                        issued.transaction,
+                        transaction,
                         checkpoint=cancel_checkpoint,
                         progress=transaction_progress,
                         activity=lambda event: progress(
@@ -1715,10 +2613,24 @@ class DeviceCoordinator:
                         database_fingerprint=database_fingerprint,
                         artwork_database_fingerprint=fingerprints[_ARTWORKDB_PATH],
                         photos_database_fingerprint=fingerprints[_PHOTOSDB_PATH],
-                        artwork_repairs_pending=bool(updated_source.artwork_repairs),
+                        artwork_repairs_pending=bool(updated_source.artwork_repairs)
+                        or updated_source.artwork_geometry_repairs_pending(
+                            application_cover_formats(expected.profile)
+                        ),
                         photos_repairs_pending=bool(updated_source.photos_repairs),
+                        genius=updated_genius,
+                        genius_mix_state=issued.genius_mix_state
+                        or expected.genius_mix_state,
                     )
                     active.library_source = updated_source
+                    if active.phase_precondition is not None:
+                        path = active.phase_precondition.path
+                        active.phase_precondition = FilePrecondition(
+                            path,
+                            fingerprints.get(
+                                path, active.phase_precondition.fingerprint
+                            ),
+                        )
                     active.sidecar_preconditions = tuple(
                         FilePrecondition(
                             file.path, fingerprints.get(file.path, file.fingerprint)
@@ -1745,6 +2657,71 @@ class DeviceCoordinator:
                             ),
                         )
                     )
+                    if issued.genius_analysis is not None:
+                        try:
+                            self._genius_analysis.remember_committed(
+                                issued.genius_analysis,
+                                updated.library,
+                                session,
+                                fingerprints,
+                            )
+                        except Exception as error:
+                            # This disposable Host cache cannot undo a verified
+                            # Library commit or turn it into a failed save.
+                            issues += (
+                                WriteIssue(
+                                    "save.genius_cache_warning",
+                                    "Library changes were saved, but Genius audio profiles could not be cached for the iPod. A later Sync may repeat audio analysis.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                    detail=exception_text(error),
+                                ),
+                            )
+                    if (
+                        not retain_recovery
+                        and any(
+                            change.subject == "track" and change.action == "delete"
+                            for change in plan.changes
+                        )
+                        and not any(
+                            write.path == LIBRARY_SYNC_HELPER_PATH
+                            for write in transaction.writes
+                        )
+                    ):
+                        # Sync refreshes its helper separately. Ordinary removals
+                        # must also prune cached identities after verified commit,
+                        # without inventing new Sync Details or creating a cache.
+                        try:
+                            if session.exists(LIBRARY_SYNC_HELPER_PATH):
+                                helper = publish_sync_helper(
+                                    session,
+                                    updated.library,
+                                    None,
+                                    (),
+                                    library_sha256=database_fingerprint.sha256,
+                                )
+                                issues += tuple(
+                                    WriteIssue(
+                                        "save.sync_helper_warning",
+                                        item.detail,
+                                        severity=IssueSeverity.WARNING,
+                                        phase="save",
+                                    )
+                                    for item in helper.issues
+                                )
+                        except Exception as error:
+                            # The Library is already committed; keep its accepted
+                            # state even if this non-authoritative cache fails.
+                            issues += (
+                                WriteIssue(
+                                    "save.sync_helper_failed",
+                                    "Library changes were saved, but Sync history could not be updated. "
+                                    "Keep the iPod connected and rescan before another Sync.",
+                                    severity=IssueSeverity.WARNING,
+                                    phase="save",
+                                    detail=exception_text(error),
+                                ),
+                            )
                     if (
                         issued.presentation_policy.enabled
                         and expected.library.device_name != updated.library.device_name
@@ -1897,7 +2874,7 @@ class DeviceCoordinator:
                     str(error),
                     error.recovery_path,
                 )
-            except (StorageError, DeviceChangedError) as error:
+            except (StorageError, DeviceChangedError, LibrarySyncHelperError) as error:
                 return failure(
                     "save.source_unavailable",
                     "The iPod could not be saved. Reconnect or reload before retrying.",
@@ -2004,6 +2981,20 @@ class DeviceCoordinator:
                     )
                     + cleanup_issues,
                 )
+            if (
+                current is not None
+                and current.candidate.readiness is DeviceReadiness.INSPECTION_FAILED
+                and (
+                    previous is None
+                    or previous.candidate.readiness != current.candidate.readiness
+                    or previous.candidate.issues != current.candidate.issues
+                )
+            ):
+                logger.warning(
+                    "Could not prepare device access at %s: %s",
+                    mounted.mount_point.path,
+                    "; ".join(issue.detail for issue in current.candidate.issues),
+                )
             return current
         except SyncRecoveryRequiredError as error:
             # Discovery must still list every other iPod. Selection opens the
@@ -2030,6 +3021,8 @@ class DeviceCoordinator:
         *,
         reconcile_metadata: bool = True,
         reconcile_sidecars: bool = True,
+        initialize_missing: bool = True,
+        cancelled: threading.Event | None = None,
     ) -> ActiveIPod:
         """Commit captured sidecars before exposing the selected Library.
 
@@ -2037,6 +3030,11 @@ class DeviceCoordinator:
         kept database without immediately changing the user's recovery outcome.
         """
 
+        from iOpenPod.app.library_write import PreparationCancelledError
+
+        cancellation = cancelled if cancelled is not None else threading.Event()
+        if cancellation.is_set():
+            raise PreparationCancelledError("Device loading was cancelled.")
         with self._lock:
             self._deactivate_locked()
             record = self._records.get(candidate_id)
@@ -2044,6 +3042,9 @@ class DeviceCoordinator:
                 raise DeviceCandidateNotFoundError(
                     "This device is no longer connected. Refresh the Device Picker."
                 )
+            # Metadata reconciliation may normalize disagreeing files. Preserve
+            # captured evidence so that does not silently resolve a display conflict.
+            summary_evidence = record.device_evidence
             record = replace(
                 record,
                 candidate=replace(
@@ -2082,6 +3083,12 @@ class DeviceCoordinator:
                 cleanup_issues = self._cleanup_selected_transactions(record)
                 for issue in cleanup_issues:
                     record = _with_persistent_issue(record, issue)
+                if (
+                    initialize_missing
+                    and record.candidate.readiness
+                    is DeviceReadiness.DATABASE_INITIALIZABLE
+                ):
+                    record = self._initialize_missing_database(record)
                 record = self._reconcile_device_metadata(record)
             self._records[candidate_id] = record
 
@@ -2116,9 +3123,11 @@ class DeviceCoordinator:
                     preferences = capture_ipod_preferences(
                         session,
                         profile,
-                        firmware_versions=tuple(
-                            item.value
-                            for item in current.device_evidence.firmware_versions
+                        firmware_versions=strongest_values(
+                            current.device_evidence.firmware_versions
+                        ),
+                        updater_family_ids=strongest_values(
+                            current.device_evidence.updater_family_ids
                         ),
                     )
                     library = self._library_loader(snapshot.data).with_device_time(
@@ -2155,6 +3164,19 @@ class DeviceCoordinator:
                         "The iTunesDB changed while playback sidecars were loading. Reload the iPod."
                     )
 
+                genius = capture_genius_browse(
+                    session,
+                    library.snapshot,
+                    sqlite=profile.capabilities.database.uses_sqlite_database,
+                    sidecars=sidecars,
+                )
+                phase_id, phase_precondition = capture_phase_selection(session)
+                library = library.with_phase_playlist(phase_id)
+                if session.fingerprint(database_path) != current_fingerprint:
+                    raise DeviceChangedError(
+                        "The iTunesDB changed while Genius collections were loading. Reload the iPod."
+                    )
+
                 time_warnings = library.time_warnings
                 if time_warnings:
                     current = replace(
@@ -2166,13 +3188,42 @@ class DeviceCoordinator:
                                 *(
                                     DeviceCandidateIssue(
                                         DeviceCandidateIssueCode.TIMEZONE_UNCERTAIN,
-                                        issue.message,
+                                        f"{issue.message} {issue.detail}"
+                                        if issue.detail
+                                        else issue.message,
                                     )
                                     for issue in time_warnings
                                 ),
                             ),
                         ),
                     )
+                summary_evidence = summary_evidence.merged_with(current.device_evidence)
+
+                def storage_checkpoint() -> None:
+                    if cancellation.is_set():
+                        raise PreparationCancelledError("Device loading was cancelled.")
+
+                def capture_storage(roots: tuple[DevicePath, ...]) -> int | None:
+                    try:
+                        return capture_folder_storage_bytes(
+                            session, roots, storage_checkpoint
+                        )
+                    except (
+                        MountInspectionError,
+                        SessionClosedError,
+                        SessionInvalidatedError,
+                    ):
+                        raise
+                    except StorageError as error:
+                        logger.warning(
+                            "Could not measure storage in %s: %s", roots, error
+                        )
+                        return None
+
+                game_storage_bytes = capture_storage(GAME_STORAGE_ROOTS)
+                album_artwork_storage_bytes = capture_storage(
+                    ALBUM_ARTWORK_STORAGE_ROOTS
+                )
                 active_ipod = ActiveIPod(
                     candidate=current.candidate,
                     profile=profile,
@@ -2183,8 +3234,22 @@ class DeviceCoordinator:
                     photos_database_fingerprint=photos_fingerprint,
                     preferences=preferences.sections,
                     settings=load_device_settings(session),
-                    artwork_repairs_pending=bool(library.artwork_repairs),
+                    artwork_repairs_pending=bool(library.artwork_repairs)
+                    or library.artwork_geometry_repairs_pending(
+                        application_cover_formats(profile)
+                    ),
                     photos_repairs_pending=bool(library.photos_repairs),
+                    genius=genius,
+                    genius_mix_state=load_mix_state(session),
+                    firmware_version=_summary_identifier(
+                        summary_evidence.firmware_versions
+                    ),
+                    serial_number=_summary_identifier(
+                        summary_evidence.product_serials,
+                        normalize=normalize_product_serial,
+                    ),
+                    game_storage_bytes=game_storage_bytes,
+                    album_artwork_storage_bytes=album_artwork_storage_bytes,
                 )
                 if reconcile_metadata:
                     presentation_issues = self._reconcile_volume_presentation(
@@ -2215,14 +3280,14 @@ class DeviceCoordinator:
                     record=current,
                     active_ipod=active_ipod,
                     library_source=library,
-                    time_precondition=preferences.time_precondition,
                     sidecar_preconditions=sidecar_preconditions,
+                    phase_precondition=phase_precondition,
                 )
                 # The selection lock keeps this private connection out of the
                 # published application state until its transaction is verified.
                 self._active = connection
                 if reconcile_sidecars:
-                    self._commit_selected_sidecars(connection)
+                    self._commit_selected_sidecars(connection, cancellation)
                 active_ipod = connection.active_ipod
                 current = connection.record
                 self._records[candidate_id] = current
@@ -2244,7 +3309,11 @@ class DeviceCoordinator:
                 self._deactivate_locked()
                 raise
 
-    def _commit_selected_sidecars(self, active: _ActiveConnection) -> None:
+    def _commit_selected_sidecars(
+        self,
+        active: _ActiveConnection,
+        cancelled: threading.Event,
+    ) -> None:
         """Use the normal signed, verified save while selection owns the lock."""
         from iOpenPod.app.library_write import LibraryPreparationRequest
         from iPodDB.library import IssueSeverity, WriteIssue
@@ -2263,16 +3332,18 @@ class DeviceCoordinator:
             )
 
         source = active.library_source
-        if source.sidecar_issues:
+        if any(
+            issue.severity is IssueSeverity.ERROR for issue in source.sidecar_issues
+        ):
             raise load_error(source.sidecar_issues)
         if not source.consumed_sidecars:
             return
-        cancelled = threading.Event()
         expected = active.active_ipod
         review = self.prepare_library(
             LibraryPreparationRequest(expected.library, expected, 0, 0),
             lambda _: None,
             cancelled,
+            prepare_phase_companions=False,
         )
         if review.result.prepared is None:
             raise load_error(review.result.issues)
@@ -2382,7 +3453,8 @@ class DeviceCoordinator:
         self, record: _CandidateRecord, active: ActiveIPod
     ) -> tuple[DeviceCandidateIssue, ...]:
         """Provision only the selected iPod, with its saved name as a dependency."""
-        if not self.volume_presentation_enabled:
+        policy = self._current_presentation_policy()
+        if not policy.enabled:
             return ()
         if not record.mounted_volume.volume.capabilities.safe_for_writes:
             return (
@@ -2396,7 +3468,10 @@ class DeviceCoordinator:
                 record.mounted_volume, access=AccessMode.READ_WRITE
             ) as session:
                 presentation = volume_presentation.capture(
-                    session, active.library.device_name, active.profile.product_image
+                    session,
+                    active.library.device_name,
+                    active.profile.product_image,
+                    itunes_107=policy.itunes_107_artwork,
                 )
                 if presentation.writes:
                     changed = {write.path for write in presentation.writes}
@@ -3210,6 +4285,14 @@ class DeviceCoordinator:
             )
             readiness = database_readiness
             issues = (*issues, *database_issues)
+            if (
+                readiness is DeviceReadiness.DATABASE_MISSING
+                and mounted.volume.capabilities.safe_for_writes
+                and library_initialization.available(
+                    session, compressed=database.supports_compressed_database
+                )
+            ):
+                readiness = DeviceReadiness.DATABASE_INITIALIZABLE
 
         candidate = _candidate_from(
             mounted,
@@ -3226,6 +4309,110 @@ class DeviceCoordinator:
             live_sysinfo_extended,
             persistent_issues,
         )
+
+    def _initialize_missing_database(
+        self, record: _CandidateRecord
+    ) -> _CandidateRecord:
+        """Initialize only the selected, reidentified connection, before activation."""
+        from iPodDB.library import WriteChecksum, WriteTarget
+
+        try:
+            with self._storage.open_session(
+                record.mounted_volume, access=AccessMode.READ_WRITE
+            ) as session:
+                self._check_sync_recovery(session)
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (_SYSINFO_PATH, _SYSINFO_EXTENDED_PATH, _HASHINFO_PATH)
+                )
+                current = self._inspect_open_session(
+                    session,
+                    record.hardware_evidence,
+                    live_sysinfo_extended=record.live_sysinfo_extended,
+                    persistent_issues=record.persistent_issues,
+                )
+                _require_same_profile(record, current)
+                # An external writer may have supplied the database since discovery.
+                if current.database_path is not None:
+                    return current
+                profile = current.candidate.profile
+                if (
+                    profile is None
+                    or current.candidate.readiness
+                    is not DeviceReadiness.DATABASE_INITIALIZABLE
+                ):
+                    raise DeviceChangedError(
+                        "The selected iPod can no longer be initialized."
+                    )
+                database = profile.capabilities.database
+                checksum = WriteChecksum(database.checksum.value)
+                sqlite_checksum = WriteChecksum(database.sqlite_checksum.value)
+                guid = _read_device_guid(session, current.hardware_evidence)
+                material = None
+                if WriteChecksum.HASH72 in (checksum, sqlite_checksum):
+                    material = _read_hash72_material(
+                        session, b"", guid, max_database_bytes=_DATABASE_READ_LIMIT
+                    )
+                commands: tuple[str, ...] = ()
+                if database.uses_sqlite_database:
+                    commands, _ = _read_sqlite_postprocess_commands(session)
+                target = WriteTarget(
+                    checksum=checksum,
+                    database_version=database.binary_version,
+                    firewire_guid=guid,
+                    max_database_bytes=database.max_database_bytes,
+                    compressed_database=database.supports_compressed_database,
+                    sqlite_database=database.uses_sqlite_database,
+                    sqlite_checksum=sqlite_checksum,
+                    hash72_material=material,
+                    sqlite_postprocess_commands=commands,
+                )
+                plan = library_initialization.prepare(
+                    session,
+                    profile,
+                    target,
+                    current.candidate.display_name,
+                    dependencies,
+                )
+                # Check captured identity/signing files before any directory creation;
+                # Storage checks the same dependencies under its publication lease.
+                library_resources.recheck(session, dependencies)
+                self._check_sync_recovery(session)
+                for directory in library_initialization.DIRECTORIES:
+                    library_initialization.recheck(session)
+                    session.create_directory(directory)
+                committed = session.execute_transaction(
+                    plan, checkpoint=lambda: library_initialization.recheck(session)
+                )
+                if not committed.flush.complete:
+                    raise SyncRecoveryRequiredError(
+                        str(committed.recovery.journal_path)
+                    )
+                _finalize_committed_transaction(
+                    session, committed.recovery.journal_path
+                )
+                verified = self._inspect_open_session(
+                    session,
+                    current.hardware_evidence,
+                    live_sysinfo_extended=current.live_sysinfo_extended,
+                    persistent_issues=current.persistent_issues,
+                )
+                _require_same_profile(current, verified)
+                return verified
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except StorageError as error:
+            raise DeviceAccessError(str(error)) from error
+        except ValueError as error:
+            raise DeviceLibraryLoadError(
+                source_text(
+                    "The missing iPod Library could not be created safely. {detail}",
+                    detail=str(error),
+                )
+            ) from error
 
     def _reconcile_device_metadata(
         self,
@@ -3689,17 +4876,25 @@ def _hardware_probe_required(
         session,
         _SYSINFO_AUTHORITY_PATH,
     )
-    if not authority_covers_metadata(
-        authority,
-        sysinfo=sysinfo,
-        sysinfo_extended=extended,
-    ):
-        return True
     metadata_evidence = parse_sysinfo(sysinfo).merged_with(
         parse_sysinfo_extended(extended)
     )
     identification = registry.identify(hardware_evidence.merged_with(metadata_evidence))
-    return identification.status is not IdentificationStatus.EXACT
+    profile = identification.profile
+    if profile is None:
+        return True
+    return not authority_covers_metadata(
+        authority,
+        sysinfo=sysinfo,
+        sysinfo_extended=extended,
+        require_firmware_version=(
+            # An old firmware value must not be certified by metadata-only
+            # migration, including on models without firmware-gated features.
+            bool(metadata_evidence.firmware_versions)
+            or profile.capabilities.supports_games
+            or profile.capabilities.genius.mixes_minimum_firmware is not None
+        ),
+    )
 
 
 def _inspection_failed_record(
@@ -3757,11 +4952,11 @@ def _probe_evidence(
         observation_evidence = DeviceEvidence(
             product_serials=(
                 (
-                    *_apple_product_serial_identifier(
+                    *_product_serial_identifier(
                         observation.unit_serial,
                         source,
                     ),
-                    *_apple_product_serial_identifier(
+                    *_product_serial_identifier(
                         udev_product_serial,
                         "udev_scsi_id",
                     ),
@@ -3773,7 +4968,7 @@ def _probe_evidence(
                 observation.transport_serial,
                 source,
             ),
-            firmware_versions=_current_text_identifier(
+            transport_revisions=_current_text_identifier(
                 observation.firmware_revision,
                 source,
             ),
@@ -3824,11 +5019,11 @@ def _platform_probe_candidate_issues(
         for property_ in observation.host_properties
     }
     rule_version = properties.get("ID_IOPENPOD_RULE_VERSION", "").strip()
-    udev_product_serial = _valid_apple_product_serial(
+    udev_product_serial = normalize_product_serial(
         properties.get("ID_IOPENPOD_PRODUCT_SERIAL", "")
     )
     direct_product_serial = any(
-        _valid_apple_product_serial(observation.unit_serial)
+        normalize_product_serial(observation.unit_serial)
         for observation in result.observations
     )
     if rule_version == UDEV_RULE_VERSION:
@@ -3898,19 +5093,40 @@ def _current_text_identifier(
     )
 
 
-def _apple_product_serial_identifier(
+def _product_serial_identifier(
     value: str,
     source: str,
 ) -> tuple[DeviceIdentifier[str], ...]:
-    serial = _valid_apple_product_serial(value)
+    serial = normalize_product_serial(value)
     return _current_text_identifier(serial, source)
 
 
-def _valid_apple_product_serial(value: str) -> str:
-    serial = value.replace(" ", "").strip().upper()
-    if not re.fullmatch(r"[A-Z0-9]{11,12}", serial, flags=re.ASCII):
+def _summary_identifier(
+    identifiers: tuple[DeviceIdentifier[str], ...],
+    *,
+    normalize: Callable[[str], str] = str.strip,
+) -> str:
+    """Present one observed value without guessing through equally ranked conflicts.
+
+    Model-table derivations are not observations of this iPod. RetailOS firmware
+    and product serials are passed separately; transport revisions and GUIDs must
+    never substitute for either value on Device Summary.
+    """
+
+    observed = tuple(
+        (value, item.authority)
+        for item in identifiers
+        if item.authority > EvidenceAuthority.DERIVED
+        and (value := normalize(item.value))
+        and value.casefold() not in {"unknown", "unavailable", "n/a", "none"}
+    )
+    if not observed:
         return ""
-    return serial
+    authority = max(level for _, level in observed)
+    values = {
+        value.casefold(): value for value, level in observed if level == authority
+    }
+    return next(iter(values.values())) if len(values) == 1 else ""
 
 
 def _read_device_metadata(
@@ -4253,7 +5469,7 @@ def _raise_if_cleanup_completed(
     error: TransactionDurabilityPendingError,
 ) -> None:
     try:
-        removed = not session.exists(path)
+        removed = not session.has_transaction(path)
     except StorageError:
         return
     if removed:
@@ -4271,10 +5487,11 @@ def _terminal_transaction_journals(
 ) -> tuple[tuple[DevicePath, TransactionState], ...]:
     """Recognize crash recovery from durable device journals before any mutation."""
     recovery_root = DevicePath(".iopenpod-recovery")
-    if not session.exists(recovery_root):
-        return ()
+    journals = set(session.host_transaction_journals())
     cleanup: list[tuple[DevicePath, TransactionState]] = []
-    for entry in session.list_directory(recovery_root):
+    for entry in (
+        session.list_directory(recovery_root) if session.exists(recovery_root) else ()
+    ):
         if (
             entry.kind is not DeviceEntryKind.DIRECTORY
             or re.fullmatch(r"[0-9a-f]{32}", entry.path.name) is None
@@ -4283,6 +5500,8 @@ def _terminal_transaction_journals(
         journal = entry.path.joinpath("transaction.json")
         if not session.exists(journal):
             continue
+        journals.add(journal)
+    for journal in sorted(journals, key=str):
         try:
             status = session.read_transaction_status(journal)
         except (StorageError, ValueError) as error:

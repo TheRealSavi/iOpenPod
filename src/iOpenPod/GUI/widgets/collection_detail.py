@@ -1,7 +1,7 @@
 """Full-page Album and collection context around the shared Track table."""
 
-from PySide6.QtCore import QCoreApplication, QEvent, QLocale, Qt, Signal
-from PySide6.QtGui import QResizeEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QLocale, QObject, Qt, Signal
+from PySide6.QtGui import QMouseEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QBoxLayout,
     QHBoxLayout,
@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.models.album_list_model import AlbumSummary
-from iOpenPod.app.models.collection_list_model import CollectionSummary
+from iOpenPod.app.models.collection_list_model import CollectionKind, CollectionSummary
 from iOpenPod.app.models.library_filter_models import TrackFilterProxyModel
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.i18n.text import (
@@ -183,6 +183,8 @@ class CollectionDetailPage(QWidget):
         self._artwork.set_seed(summary.artwork_seed)
         if isinstance(summary, AlbumSummary):
             self._artwork.set_artwork_id(summary.artwork_id)
+        elif summary.kind is CollectionKind.TV_SHOW:
+            self._artwork.set_artwork_id(summary.representative_artwork_id)
         else:
             self._artwork.set_artwork_ids(summary.artwork_ids)
         self._refresh_context()
@@ -217,7 +219,36 @@ class CollectionDetailPage(QWidget):
     def event(self, event: QEvent) -> bool:
         if event.type() == QEvent.Type.LayoutRequest:
             self._arrange_header()
+        elif event.type() in {QEvent.Type.Show, QEvent.Type.Hide}:
+            application = QCoreApplication.instance()
+            if application is not None:
+                if event.type() == QEvent.Type.Show:
+                    application.installEventFilter(self)
+                else:
+                    application.removeEventFilter(self)
         return super().event(event)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        # Child controls may consume mouse events before they reach the page.
+        # Listen only while visible, and leave other windows/dialogs alone.
+        if (
+            event.type()
+            in {
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.MouseButtonRelease,
+                QEvent.Type.MouseButtonDblClick,
+            }
+            and isinstance(event, QMouseEvent)
+            and event.button() == Qt.MouseButton.BackButton
+            and self.isVisible()
+            and isinstance(watched, QWidget)
+            and watched.window() is self.window()
+        ):
+            if event.type() == QEvent.Type.MouseButtonRelease:
+                self._back.click()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)

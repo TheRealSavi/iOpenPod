@@ -27,12 +27,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QDialog,
-    QHBoxLayout,
-    QLabel,
     QMenu,
     QMessageBox,
-    QSlider,
-    QVBoxLayout,
     QWidget,
     QWidgetAction,
 )
@@ -54,15 +50,16 @@ from iOpenPod.app.models.track_table_model import TrackRole
 from iOpenPod.app.track_conversion import podcast_conversion_needed
 from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.metadata_editor import MetadataEditorDialog
+from iOpenPod.GUI.dialogs.playlist_duplicates import choose_playlist_additions
 from iOpenPod.GUI.dialogs.playlist_editor import PlaylistEditorDialog
 from iOpenPod.GUI.presentation.i18n.text import remove_tracks_text
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.icons import glyph_icon
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.track_table import TrackTable
+from iOpenPod.GUI.widgets.volume_adjustment import VolumeAdjustment
 from iPodDB.library import (
     ContentAdvisory,
-    MediaKind,
     MetadataValue,
     PlaylistKind,
     PlaylistSortOrder,
@@ -88,7 +85,6 @@ _ENQUEUE_SHORTCUT: ShortcutSpec = "Ctrl+Q"
 _PLAY_NEXT_SHORTCUT: ShortcutSpec = "Ctrl+Shift+Q"
 _MOVE_UP_SHORTCUT: ShortcutSpec = "Ctrl+Up"
 _MOVE_DOWN_SHORTCUT: ShortcutSpec = "Ctrl+Down"
-_VOLUME_ZERO_MAGNET_THRESHOLD = 12
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,10 +133,11 @@ class TrackActions(QObject):
         self._lyrics_provider = lyrics_provider
         self._double_click_selection: _DoubleClickSelection | None = None
 
-    def install(self, view: QAbstractItemView) -> None:
+    def install(self, view: QAbstractItemView, *, double_click: bool = True) -> None:
         view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         view.customContextMenuRequested.connect(self._menu_requested)
-        view.doubleClicked.connect(self._double_clicked)
+        if double_click:
+            view.doubleClicked.connect(self._double_clicked)
         view.viewport().installEventFilter(self)
         view.installEventFilter(self)
         for sequence, action in (
@@ -152,7 +149,9 @@ class TrackActions(QObject):
             (_MOVE_DOWN_SHORTCUT, "move_down"),
         ):
             shortcut = QShortcut(_key_sequence(sequence), view)
-            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            # Inline Track views live inside an Album grid's viewport. Activating
+            # ancestor shortcuts as well makes the same key sequence ambiguous.
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
             shortcut.setProperty("trackAction", action)
             shortcut.activated.connect(self._shortcut_activated)
 
@@ -206,7 +205,12 @@ class TrackActions(QObject):
             selection_model.setCurrentIndex(
                 index,
                 QItemSelectionModel.SelectionFlag.ClearAndSelect
-                | QItemSelectionModel.SelectionFlag.Rows,
+                | (
+                    QItemSelectionModel.SelectionFlag.Rows
+                    if view.selectionBehavior()
+                    == QAbstractItemView.SelectionBehavior.SelectRows
+                    else QItemSelectionModel.SelectionFlag.NoUpdate
+                ),
             )
         selection = self.selection(view)
         if selection.tracks:
@@ -277,13 +281,18 @@ class TrackActions(QObject):
                 selection.setCurrentIndex(
                     index,
                     QItemSelectionModel.SelectionFlag.ClearAndSelect
-                    | QItemSelectionModel.SelectionFlag.Rows,
+                    | (
+                        QItemSelectionModel.SelectionFlag.Rows
+                        if view.selectionBehavior()
+                        == QAbstractItemView.SelectionBehavior.SelectRows
+                        else QItemSelectionModel.SelectionFlag.NoUpdate
+                    ),
                 )
         indices = sorted(
             selection.selectedRows()
             if isinstance(view, TrackTable)
             else selection.selectedIndexes(),
-            key=lambda i: i.row(),
+            key=lambda i: (i.column(), i.row()),
         )
         tracks: list[Track] = []
         entry_ids: list[str] = []
@@ -321,16 +330,17 @@ class TrackActions(QObject):
                     and 0 <= source.row() < len(visible_entries)
                 ):
                     entry_ids.append(visible_entries[source.row()].entry_id)
+            elif isinstance(track := index.data(TrackRole.TRACK), Track):
+                tracks.append(track)
             else:
                 summary = index.data(AlbumRole.SUMMARY)
                 if isinstance(summary, AlbumSummary):
                     tracks.extend(
                         sorted(
                             (
-                                t
-                                for t in self.workspace.tracks
-                                if t.media_kind is MediaKind.MUSIC
-                                and t.album_key == summary.key
+                                track
+                                for track_id in summary.track_ids
+                                if (track := self.workspace.track(track_id)) is not None
                             ),
                             key=album_track_sort_key,
                         )
@@ -557,7 +567,7 @@ class TrackActions(QObject):
             if required_playback_flag:
                 item.setToolTip(
                     self.tr(
-                        "Podcasts and videos keep their place and are skipped "
+                        "Podcasts, audiobooks, and videos keep their place and are skipped "
                         "when shuffling."
                     )
                 )
@@ -688,9 +698,15 @@ class TrackActions(QObject):
             raise ValueError(
                 self.tr("The destination Playlist is no longer available.")
             )
-        self.workspace.set_tracks(
-            playlist_id, (*playlist.track_ids, *(t.track_id for t in selection.tracks))
+        additions = choose_playlist_additions(
+            playlist.track_ids,
+            tuple(t.track_id for t in selection.tracks),
+            self.window,
         )
+        if not additions:
+            return
+        self._require(selection)
+        self.workspace.set_tracks(playlist_id, (*playlist.track_ids, *additions))
 
     def new_playlist(self, selection: TrackSelection) -> None:
         self._require(selection)
@@ -741,72 +757,11 @@ class TrackActions(QObject):
     def _volume_slider_widget(
         self, selection: TrackSelection, unanimous: int | None
     ) -> QWidget:
-        widget = QWidget()
-        widget.setObjectName("volumeAdjustmentWidget")
-        widget.setMinimumWidth(230)
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(8)
-
-        value_label = QLabel(
-            QCoreApplication.translate("EditorLabels", "Mixed values")
-            if unanimous is None
-            else self._volume_adjustment_label(unanimous)
-        )
-        value_label.setObjectName("volumeAdjustmentValueLabel")
-        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(value_label)
-
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setObjectName("volumeAdjustmentSlider")
-        slider.setAccessibleName(self.tr("Volume adjustment"))
-        slider.setRange(-255, 255)
-        slider.setSingleStep(1)
-        slider.setPageStep(16)
-        slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        slider.setTickInterval(64)
-        slider.setTracking(False)
-        slider.setValue(unanimous if unanimous is not None else 0)
-        layout.addWidget(slider)
-
-        scale = QHBoxLayout()
-        scale.setContentsMargins(0, 0, 0, 0)
-        scale.setSpacing(6)
-        for text, alignment, stretch in (
-            ("\N{MINUS SIGN}100%", Qt.AlignmentFlag.AlignLeft, 0),
-            ("0%", Qt.AlignmentFlag.AlignCenter, 1),
-            ("+100%", Qt.AlignmentFlag.AlignRight, 0),
-        ):
-            label = QLabel(text)
-            label.setAlignment(alignment)
-            scale.addWidget(label, stretch)
-        layout.addLayout(scale)
-
+        widget = VolumeAdjustment(unanimous)
         current_revision = [selection.revision]
         last_applied: list[int | None] = [unanimous]
 
-        def show_value(value: int) -> None:
-            value_label.setText(self._volume_adjustment_label(value))
-
-        def magnetize(value: int) -> int:
-            return 0 if abs(value) <= _VOLUME_ZERO_MAGNET_THRESHOLD else value
-
-        def slider_moved(value: int) -> None:
-            value = magnetize(value)
-            if value == 0 and slider.sliderPosition() != 0:
-                slider.blockSignals(True)
-                slider.setSliderPosition(0)
-                slider.blockSignals(False)
-            show_value(value)
-
         def commit(value: int) -> None:
-            value = magnetize(value)
-            if slider.value() != value:
-                slider.blockSignals(True)
-                slider.setValue(value)
-                slider.setSliderPosition(value)
-                slider.blockSignals(False)
-            show_value(value)
             if last_applied[0] == value:
                 return
             self.workspace.apply_track_edits(
@@ -831,26 +786,13 @@ class TrackActions(QObject):
         def value_changed(value: int) -> None:
             self._guard(partial(commit, value))
 
-        @Slot()
-        def slider_released() -> None:
-            self._guard(partial(commit, slider.value()))
-
-        slider.sliderMoved.connect(slider_moved)
-        slider.valueChanged.connect(value_changed)
-        slider.sliderReleased.connect(slider_released)
+        widget.valueEdited.connect(value_changed)
         return widget
 
     def _podcasts_supported(self) -> bool:
         controller = self._device_controller
         active = None if controller is None else controller.active_ipod
         return active is None or active.profile.capabilities.audio.supports_podcasts
-
-    @staticmethod
-    def _volume_adjustment_label(value: int) -> str:
-        if value == 0:
-            return QApplication.translate("TrackActions", "No adjustment (0%)")
-        percent = round(value / 255 * 100)
-        return f"{percent:+d}%"
 
     def enqueue(self, selection: TrackSelection) -> None:
         self._require(selection, editing=False)

@@ -60,6 +60,17 @@ _INPUT_VALIDATION_FILES = {
     "smart_rules.py",
 }
 
+_QT_MESSAGE_CALLS = {
+    "tr",
+    "translate",
+    "QT_TR_NOOP",
+    "QT_TR_N_NOOP",
+    "QT_TRANSLATE_NOOP",
+    "QT_TRANSLATE_NOOP3",
+    "QT_TRANSLATE_N_NOOP",
+    "QT_TRANSLATE_N_NOOP3",
+}
+
 
 def _literals(node: ast.AST) -> Iterator[str]:
     """Read complete literal alternatives, never pieces of formatted messages."""
@@ -169,6 +180,16 @@ def supplemental_sources(root: Path = ROOT) -> set[tuple[str, str]]:
     return entries
 
 
+def _has_qt_messages(path: Path) -> bool:
+    """Keep non-message sources out of Qt's limited Python parser."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return any(
+        isinstance(node, ast.Call) and _call_name(node) in _QT_MESSAGE_CALLS
+        for node in ast.walk(tree)
+    )
+
+
 def extract_catalogs(catalogs: list[Path], *, root: Path = ROOT) -> None:
     """Update catalogs with the locked PySide6 tool and preserve translations."""
 
@@ -184,7 +205,13 @@ def extract_catalogs(catalogs: list[Path], *, root: Path = ROOT) -> None:
             ),
             encoding="utf-8",
         )
-        sources = sorted((root / "src/iOpenPod").rglob("*.py"))
+        # Large non-message f-strings (notably the stylesheet) can crash Qt's
+        # Windows extractor. Application contracts still enter through markers.
+        sources = sorted(
+            path
+            for path in (root / "src/iOpenPod").rglob("*.py")
+            if _has_qt_messages(path)
+        )
         source_list = Path(directory) / "sources.txt"
         source_list.write_text(
             "\n".join(str(path) for path in (*sources, marker_path)),

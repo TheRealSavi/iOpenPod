@@ -51,7 +51,7 @@ class PodcastSyncSettingsDialog(QDialog):
         self._slots = QSpinBox(self)
         self._slots.setObjectName("podcastSyncEpisodeSlots")
         self._slots.setMinimumHeight(LAYOUT.control_height)
-        self._slots.setRange(1, 50)
+        self._slots.setRange(0, 50)
         self._slots.setValue(settings.episode_slots)
         self._slots_label.setBuddy(self._slots)
 
@@ -194,6 +194,27 @@ class PodcastSyncSettingsDialog(QDialog):
         self._slots.setSuffix(
             self.tr(" episode") if self._slots.value() == 1 else self.tr(" episodes")
         )
+        automatic = self._slots.value() > 0
+        for control in (
+            self._fill_label,
+            self._fill,
+            self._clearing_title,
+            self._clear_listened,
+            self._age_label,
+            self._age,
+            self._method_label,
+            self._method,
+        ):
+            control.setEnabled(automatic)
+        if not automatic:
+            self._help.setText(
+                self.tr(
+                    "Automatic sync is disabled for this podcast. "
+                    "You can still add or remove episodes yourself."
+                )
+            )
+            self._help.setVisible(True)
+            return
         self._fill.setToolTip(
             self.tr("Adds the newest available episodes when there's room.")
             if newest

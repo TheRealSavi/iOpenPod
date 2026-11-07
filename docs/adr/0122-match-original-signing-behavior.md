@@ -1,5 +1,9 @@
 # ADR-0122: Match Original iOpenPod signing behavior
 
+> ADR-0169 corrects the Original HASHAB CDB convention described below: the digest
+> and published header both use scheme 3, and verification uses the stored
+> envelope's random bytes. The HASH58/HASH72 decisions remain in effect.
+
 - Status: Accepted
 - Date: 2026-10-06
 - Supersedes: ADR-0061's Nano 5 iTunesCDB checksum assignment
@@ -16,6 +20,11 @@ primitives already match that behavior, but the 2.0 Nano 5 profile assigned
 HASH58 to iTunesCDB, and its Classic write path left a retained HASH72 field
 stale. A recovery helper also normalized the retained database's scheme to 2,
 preventing verified recovery from a Classic's scheme-1 dual signature.
+
+The HASHAB description records the historical implementation, not proof of Apple
+compatibility. The two Apple Nano 6 captures examined for ADR-0169 contradict that
+digest convention; the supplied Original capture exhibits the same signing defect
+as 2.x.
 
 ## Decision
 

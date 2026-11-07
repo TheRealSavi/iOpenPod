@@ -69,6 +69,8 @@ class SyncStorageBar(QFrame):
     def __init__(self, theme: ThemeManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("syncStorageBar")
+        self._theme = theme
+        theme.deviceArtworkChanged.connect(self._refresh_image)
         self._device_name = ""
         self._product_image = "iPodGeneric.png"
         self._image = QLabel(self)
@@ -226,6 +228,7 @@ class SyncStorageBar(QFrame):
                 self._product_image,
                 LAYOUT.sidebar_device_image_size,
                 self.devicePixelRatioF(),
+                itunes_107=self._theme.itunes_107_artwork,
             )
         )
 

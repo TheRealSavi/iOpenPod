@@ -37,6 +37,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
     MhodPlaylistPositionPrefix,
 )
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
+    MhodStringPayload,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import DEFINITION as MHSD
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import DEFINITION as MHYP
@@ -416,16 +419,20 @@ def test_sort_order_change_reorders_occurrences_and_writes_fresh_positions() -> 
 
 
 @pytest.mark.parametrize("conflicting", [False, True])
-def test_dataset_mirrors_are_checked_before_edits(conflicting: bool) -> None:
+def test_dataset_mirrors_are_reconciled_before_edits(conflicting: bool) -> None:
     source = library(mirrored=True, conflicting=conflicting)
     desired = replace(
         source.snapshot,
         playlists=(replace(source.snapshot.playlists[0], name="Renamed"),),
     )
     result = source.prepare(source.analyze(source.begin_draft(desired)))
-    assert (result.prepared is None) == conflicting, result.issues
-    if conflicting:
-        assert any(issue.code == "playlist.ambiguous_mirror" for issue in result.issues)
+    assert result.prepared is not None, result.issues
+    checked = parse_iTunesDB(result.prepared.itunes)
+    for row in checked.find_chunks(MhypHeader):
+        if row.chunk.header.playlist_id == 10:
+            payload = row.chunk.children[0].payload
+            assert isinstance(payload, MhodStringPayload)
+            assert payload.value == "Renamed"
 
 
 def test_multiple_errors_reject_whole_candidate_and_keep_draft() -> None:

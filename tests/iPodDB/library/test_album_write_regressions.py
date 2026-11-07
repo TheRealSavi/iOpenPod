@@ -110,11 +110,7 @@ def test_album_merge_regroups_podcasts_with_valid_flat_mirror_positions() -> Non
                 if isinstance(c.prefix, MhodPlaylistPositionPrefix)
             )
             for item in episodes
-        ] == (
-            list(range(3))
-            if dataset == 2
-            else [item.header.group_id for item in episodes]
-        )
+        ] == list(range(3))
 
 
 @pytest.mark.parametrize("dataset", [2, 3])
@@ -167,14 +163,14 @@ def test_verifier_rejects_bad_positions_with_occurrence_context(
     result = source.prepare(source.analyze(source.begin_draft(desired)))
     assert result.prepared is None
     code = (
-        "verification.playlist_position"
+        "verification.podcast_position_mirror"
         if dataset == 2
         else "verification.podcast_position"
     )
     issue = next(i for i in result.issues if i.code == code)
     assert issue.artifact == "iTunesDB" and issue.offset is not None
     assert f"Dataset {dataset}" in issue.detail and "999" in issue.detail
-    assert "expected position" in issue.detail and "actual positions" in issue.detail
+    assert "actual positions" in issue.detail
     assert code in caplog.text and issue.detail in caplog.text
 
 

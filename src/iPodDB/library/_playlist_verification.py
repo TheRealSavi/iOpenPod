@@ -4,11 +4,15 @@ from collections import Counter
 from dataclasses import replace
 
 from iPodDB.device_time import TimeConversion, unix_to_mac
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
     MhodPlaylistPositionPrefix,
+)
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.genius_seed_mhod import (
+    MhodGeniusSeedPayload,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
     MhodLibraryIndexPayload,
@@ -33,6 +37,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library._album_index import master_tracks, verify_album_index
 from iPodDB.library._hierarchy import folder_hierarchy
 from iPodDB.library._index_verification import verify_index
@@ -41,12 +46,18 @@ from iPodDB.library._playlist_datasets import (
     is_master,
     is_podcasts,
     is_visible,
+    missing_podcast_companion,
     playlist_rows,
     structure_issues,
+)
+from iPodDB.library._playlist_mirroring import (
+    counterparts_match,
+    synchronize_counterparts,
 )
 from iPodDB.library._playlist_projection import project_playlist
 from iPodDB.library._projection import project_tracks
 from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.playlists import PlaylistKind
 from iPodDB.library.writing import IdentityMapping, IssueSeverity, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -55,6 +66,34 @@ def _bytes(chunk: ParsedChunk[ChunkHeader], data: bytes) -> bytes:
     return data[
         chunk.offset : chunk.offset + chunk.generic_header.length_or_child_count
     ]
+
+
+def _genius_payload_bytes(
+    chunk: ParsedChunk[MhypHeader], data: bytes, *, reseeded: bool = False
+) -> tuple[bytes, ...]:
+    """Native Genius seed and Smart bodies are retained as complete MHODs.
+
+    Library indexes and occurrence positions may change with Track deletion;
+    they are deliberately outside this fixed Genius metadata comparison.
+    """
+
+    return tuple(
+        # A reseeded known MHOD may change only its defined payload. Preserve
+        # its complete header; semantic verification checks the new seed below.
+        data[child.offset : child.offset + child.generic_header.header_length]
+        if reseeded
+        and isinstance(child.payload, MhodGeniusSeedPayload)
+        and child.payload.seed is not None
+        else _bytes(child, data)
+        for child in chunk.children
+        if isinstance(child.header, MhodHeader)
+        and child.header.mhod_type
+        in (
+            MhodType.SMART_PLAYLIST_PREFERENCES,
+            MhodType.SMART_PLAYLIST_RULES,
+            MhodType.GENIUS_PLAYLIST_SEED,
+        )
+    )
 
 
 def verify_playlists(
@@ -71,7 +110,21 @@ def verify_playlists(
     rebuild_album_indexes: bool = False,
     podcast_playlists: frozenset[int] = frozenset(),
     playlist_timestamp: int = 0,
+    normalize_podcasts: bool = False,
+    sqlite: bool = False,
+    refreshed_smart_playlists: frozenset[int] = frozenset(),
 ) -> tuple[WriteIssue, ...]:
+    # Reconciliation explicitly replaces conflicting dataset-2 relationships.
+    # Retention checks use that reviewed baseline; dataset 3 stays byte-retained.
+    mirrored = synchronize_counterparts(
+        original,
+        create_missing=any(
+            s.chunk.header.dataset_type == 2 for s in checked.find_chunks(MhsdHeader)
+        ),
+    )
+    if mirrored is not original:
+        original_bytes = write_iTunesDB(mirrored)
+        original = parse_iTunesDB(original_bytes)
     issues = list(
         structure_issues(
             checked,
@@ -150,6 +203,24 @@ def verify_playlists(
         )
 
     kinds = [s.chunk.header.dataset_type for s in checked.find_chunks(MhsdHeader)]
+    if not counterparts_match(checked):
+        fail(
+            "playlist_mirror",
+            "Playlist datasets do not match the authoritative dataset 3.",
+            2,
+        )
+    missing_podcasts = missing_podcast_companion(original)
+    if (
+        affected_datasets(before, desired).intersection((2, 3))
+        and missing_podcasts is not None
+        and missing_podcasts.chunk.header.playlist_id in wanted
+        and (2, missing_podcasts.chunk.header.playlist_id) not in output
+    ):
+        fail(
+            "playlist_missing_mirror",
+            "A required flat Podcasts counterpart was not created.",
+            2,
+        )
     if not deleted:
         original_firmware = tuple(
             _bytes(s.chunk, original_bytes)
@@ -168,7 +239,10 @@ def verify_playlists(
     if (
         affected_datasets(before, desired).intersection((2, 3))
         and 3 in kinds
-        and (2 not in kinds or kinds.index(3) > kinds.index(2))
+        and (
+            (2 not in kinds and not sqlite)
+            or (2 in kinds and kinds.index(3) > kinds.index(2))
+        )
     ):
         fail(
             "playlist_dataset_order",
@@ -220,16 +294,27 @@ def verify_playlists(
             expected_items = tuple(
                 s.chunk.header.track_id
                 for s in selection.find_chunks(MhipHeader)
-                if s.chunk.header.track_id not in deleted
+                if s.chunk.header.is_group or s.chunk.header.track_id not in deleted
             )
             actual_items = tuple(
                 s.chunk.header.track_id for s in retained.find_chunks(MhipHeader)
+            )
+            old_groups = tuple(
+                _bytes(s.chunk, original_bytes)
+                for s in selection.find_chunks(MhipHeader)
+                if s.chunk.header.is_group
+            )
+            new_groups = tuple(
+                _bytes(s.chunk, output_bytes)
+                for s in retained.find_chunks(MhipHeader)
+                if s.chunk.header.is_group
             )
             expected_header = replace(
                 chunk.header, mhip_child_count=retained.chunk.header.mhip_child_count
             )
             if (
                 old_metadata != new_metadata
+                or old_groups != new_groups
                 or expected_items != actual_items
                 or expected_header != retained.chunk.header
             ):
@@ -292,7 +377,7 @@ def verify_playlists(
                         chunk,
                     )
             if structural_tracks or baseline is None:
-                if desired.tracks:
+                if desired.tracks and not sqlite:
                     present_indexes = {
                         (c.header.mhod_type, c.prefix.sort_type)
                         for c in chunk.children
@@ -394,6 +479,17 @@ def verify_playlists(
                                 master_tracks(chunk, project_tracks(checked)),
                                 original_indexes[0],
                                 child.payload,
+                                normalize_podcasts=normalize_podcasts,
+                            )
+                        elif normalize_podcasts and not original_indexes:
+                            error = verify_album_index(
+                                original,
+                                checked,
+                                (),
+                                master_tracks(chunk, project_tracks(checked)),
+                                MhodLibraryIndexPayload((), b""),
+                                child.payload,
+                                normalize_podcasts=True,
                             )
                     else:
                         if len(prior_tracks) != len(before.tracks):
@@ -426,6 +522,33 @@ def verify_playlists(
                 )
             continue
         previous = prior.get(playlist.playlist_id)
+        if previous is not None and previous.kind is PlaylistKind.GENIUS:
+            source_row = baseline or old.get((3, identity)) or old.get((2, identity))
+            reseeded = (
+                previous.genius_seed_persistent_id != playlist.genius_seed_persistent_id
+            )
+            if source_row is None or _genius_payload_bytes(
+                source_row.chunk, original_bytes, reseeded=reseeded
+            ) != _genius_payload_bytes(chunk, output_bytes, reseeded=reseeded):
+                fail(
+                    "playlist_genius_payloads",
+                    "A native Genius Playlist's seed or retained Smart data changed.",
+                    kind,
+                    chunk,
+                )
+            if reseeded and any(
+                isinstance(child.payload, MhodGeniusSeedPayload)
+                and child.payload.seed is not None
+                and child.payload.seed.seed_track_persistent_id
+                != playlist.genius_seed_persistent_id
+                for child in chunk.children
+            ):
+                fail(
+                    "playlist_genius_seed",
+                    "The replacement Genius seed differs from the reviewed Playlist.",
+                    kind,
+                    chunk,
+                )
         if (
             playlist.playlist_id in generated_podcasts
             and not chunk.header.playlist_kind_flags & 1
@@ -451,7 +574,11 @@ def verify_playlists(
                 kind,
                 chunk,
             )
-        affected = playlist != previous or playlist.playlist_id in changed_folders
+        affected = (
+            playlist != previous
+            or playlist.playlist_id in changed_folders
+            or playlist.playlist_id in refreshed_smart_playlists
+        )
         if (
             kind in (2, 3)
             and chunk.header.playlist_kind_flags & 1
@@ -518,6 +645,14 @@ def verify_playlists(
                 entries=(),
             )
             actual = project_playlist(selection, track_ids, device_time)
+            actual = replace(actual, is_phase=playlist.is_phase)
+            if playlist.is_phase and affected and chunk.header.phase_game_flag != 25:
+                fail(
+                    "playlist_phase_marker",
+                    "The Phase Playlist producer marker is missing.",
+                    kind,
+                    chunk,
+                )
             if previous and previous.parent_id == playlist.parent_id:
                 parent_source = (
                     baseline or old.get((3, identity)) or old.get((2, identity))
@@ -550,8 +685,12 @@ def verify_playlists(
                     kind,
                     chunk,
                 )
-        membership_changed = previous is None or previous.entries != playlist.entries
-        if is_podcasts(kind, chunk.header) and (
+        membership_changed = (
+            previous is None
+            or previous.entries != playlist.entries
+            or playlist.playlist_id in refreshed_smart_playlists
+        )
+        podcast_changed = is_podcasts(kind, chunk.header) and (
             membership_changed
             or playlist.playlist_id in podcast_playlists
             or any(
@@ -559,12 +698,23 @@ def verify_playlists(
                 != albums.get(tracks.get(e.track_id, e.track_id))
                 for e in playlist.entries
             )
-        ):
+        )
+        if podcast_changed:
             groups: dict[int, str] = {}
             native_ids: set[int] = set()
             active_group = 0
+            previous_id = 0
             for item in items:
                 h = item.header
+                if h.group_id <= previous_id:
+                    fail(
+                        "podcast_row_order",
+                        "Podcast row identifiers must increase in serialized group and Episode order.",
+                        kind,
+                        chunk,
+                        item=item,
+                    )
+                previous_id = h.group_id
                 if not h.group_id or h.group_id in native_ids:
                     fail(
                         "podcast_group",
@@ -573,7 +723,7 @@ def verify_playlists(
                         chunk,
                     )
                 native_ids.add(h.group_id)
-                if h.podcast_group_flag & 0x100:
+                if h.is_group:
                     title = next(
                         (
                             c.payload.value
@@ -606,27 +756,90 @@ def verify_playlists(
                         for c in item.children
                         if isinstance(c.prefix, MhodPlaylistPositionPrefix)
                     ]
-                    if not positions or any(value != h.group_id for value in positions):
+                    if not positions or len(set(positions)) != 1:
                         fail(
                             "podcast_position",
-                            "Podcast episode position metadata must reference its native row identifier.",
+                            "Podcast episode position metadata is missing or ambiguous.",
                             kind,
                             chunk,
-                            detail=f"Track {h.track_id}, row ID {h.group_id}, expected position {h.group_id}, actual positions {positions}.",
+                            detail=f"Track {h.track_id}, row ID {h.group_id}, actual positions {positions}.",
                             item=item,
                         )
-        elif membership_changed or playlist.playlist_id in changed_folders:
+        if is_podcasts(kind, chunk.header) and (
+            podcast_changed or ((2, identity) not in old and (2, identity) in output)
+        ):
+            counterpart = output.get((2, identity))
+            if counterpart is not None:
+                grouped_ids = Counter(
+                    (item.header.track_id, item.header.group_id)
+                    for item in items
+                    if not item.header.is_group
+                )
+                flat_ids = Counter(
+                    (s.chunk.header.track_id, s.chunk.header.group_id)
+                    for s in counterpart.find_chunks(MhipHeader)
+                )
+                if grouped_ids != flat_ids:
+                    fail(
+                        "podcast_row_mirror",
+                        "Podcast counterparts must use matching Episode row identifiers.",
+                        2,
+                        counterpart.chunk,
+                    )
+                grouped_positions = {
+                    (item.header.track_id, item.header.group_id): {
+                        c.prefix.position
+                        for c in item.children
+                        if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+                    }
+                    for item in items
+                    if not item.header.is_group
+                }
+                for occurrence in counterpart.find_chunks(MhipHeader):
+                    item = occurrence.chunk
+                    flat_positions = {
+                        c.prefix.position
+                        for c in item.children
+                        if isinstance(c.prefix, MhodPlaylistPositionPrefix)
+                    }
+                    expected_positions = grouped_positions.get(
+                        (item.header.track_id, item.header.group_id)
+                    )
+                    if len(flat_positions) != 1 or flat_positions != expected_positions:
+                        fail(
+                            "podcast_position_mirror",
+                            "Podcast counterparts must use matching Episode positions.",
+                            2,
+                            counterpart.chunk,
+                            detail=f"Track {item.header.track_id}, row ID {item.header.group_id}, expected positions {expected_positions}, actual positions {flat_positions}.",
+                            item=item,
+                        )
+        elif (
+            membership_changed
+            or playlist.playlist_id in changed_folders
+            or (kind == 2 and baseline is None)
+        ):
+            grouped = output.get((3, identity))
+            podcast_counterpart = (
+                kind == 2
+                and grouped is not None
+                and is_podcasts(3, grouped.chunk.header)
+            )
             for position, item in enumerate(items):
-                if item.header.podcast_group_flag & 0x100 or item.header.group_id_ref:
+                if item.header.is_group or item.header.group_id_ref:
                     fail(
                         "podcast_dataset",
                         "Podcast grouping occurs outside dataset 3's special Podcasts playlist.",
                         kind,
                         chunk,
-                        detail=f"Occurrence {position}, Track {item.header.track_id}, group flag {item.header.podcast_group_flag}, group reference {item.header.group_id_ref}.",
+                        detail=f"Occurrence {position}, Track {item.header.track_id}, group marker {item.header.group_marker}, group reference {item.header.group_id_ref}.",
                         item=item,
                     )
                     break
+                if podcast_counterpart:
+                    # The grouped pass checks these positions against the matching
+                    # Episode, including values retained from older Apple row IDs.
+                    continue
                 positions = [
                     c.prefix.position
                     for c in item.children
@@ -673,13 +886,16 @@ def verify_playlists(
                     for r in row.payload.rules
                     if r.field_id == 0x28
                     and r.action_id == 1
+                    and not r.disabled
+                    and not r.is_nested
                     and isinstance(r.data, MhodSmartNumericRuleData)
                 )
                 if (
                     actual_children != expected_children
                     or len(actual_children) != len(row.payload.rules)
                     or not isinstance(row.prefix, MhodSmartRulesPrefix)
-                    or row.prefix.conjunction != 1
+                    or row.prefix.format_version > 1
+                    or not row.prefix.conjunction
                 ):
                     fail(
                         "folder_rules",

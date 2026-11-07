@@ -1,4 +1,9 @@
-"""MHOD type 51 smart-playlist rule definitions."""
+"""MHOD type 51 Smart Playlist rules, retaining native numeric/date operands.
+
+Wire coordinates and evidence: docs/research/classic-datetime-file-map-2026-11-06.md.
+Native calendar-day comparisons differ from the Host's rolling-duration preview;
+see docs/research/clock-adjustments-and-date-comparisons-2026-11-06.md.
+"""
 
 from dataclasses import dataclass
 
@@ -65,15 +70,16 @@ SMART_RULE_NUMERIC_FIELD_IDS = frozenset(
     }
 )
 
-SMART_RULE_GROUP_MARKER = 0x01000000
-
 
 @dataclass(frozen=True, slots=True)
 class MhodSmartRulesPrefix(MhodPayloadPrefix):
     magic: bytes = cf(0x18, "raw", size=4)
-    unk_0x1C: int = cf(0x1C, "be_u32")
+    # Classic separately swaps these halfwords and accepts versions 0 and 1.
+    format_version: int = cf(0x1C, "be_u16")
+    unknown_0x1E: int = cf(0x1E, "be_u16")
     rule_count: int = cf(0x20, "be_u32")
-    conjunction: int = cf(0x24, "be_u32")
+    unknown_0x24: bytes = cf(0x24, "raw", size=3)
+    conjunction: int = cf(0x27, "u8")
     header_data: bytes = cf(0x28, "raw", size=120)
 
 
@@ -82,29 +88,56 @@ class MhodSmartRulesContainerHeader(BinaryStruct):
     """An SLst header embedded inside a group rule's data."""
 
     magic: bytes = cf(0x00, "raw", size=4)
-    unk_0x04: int = cf(0x04, "be_u32")
+    format_version: int = cf(0x04, "be_u16")
+    unknown_0x06: int = cf(0x06, "be_u16")
     rule_count: int = cf(0x08, "be_u32")
-    conjunction: int = cf(0x0C, "be_u32")
+    unknown_0x0C: bytes = cf(0x0C, "raw", size=3)
+    conjunction: int = cf(0x0F, "u8")
     header_data: bytes = cf(0x10, "raw", size=120)
 
 
 @dataclass(frozen=True, slots=True)
 class MhodSmartRuleHeader(BinaryStruct):
+    """Offsets relative to one serialized rule, not MHOD or a native descriptor."""
+
     field_id: int = cf(0x00, "be_u32")
+    # Interpretation depends on field and action together. The Classic numeric
+    # adapter rewrites the relative action to inclusive range after date-sentinel
+    # substitution; do not infer a rolling duration from the action name alone.
     action_id: int = cf(0x04, "be_u32")
-    group_marker: int = cf(0x08, "be_u32")
+    # Both flags use zero/nonzero tests, not bit masks. Keep raw 1..255 values.
+    is_nested: int = cf(0x08, "u8")
+    disabled: int = cf(0x09, "u8")
+    unknown_0x0A: bytes = cf(0x0A, "raw", size=2)
     header_data: bytes = cf(0x0C, "raw", size=40)
     data_length: int = cf(0x34, "be_u32")
 
 
 @dataclass(frozen=True, slots=True)
 class MhodSmartNumericRuleFields(BinaryStruct):
+    """Six operands relative to the rule-data payload, not six timestamps.
+
+    Latest Classic date bounds use (base + displacement * scale) modulo 2**64
+    and signed 64-bit comparison. Scale is a multiplier (86400 means days), not a
+    month/week enum. The full 0x2dae2dae2dae2dae base sentinel independently selects
+    a lazily sampled calendar-day start/end; it is not recognized in the other
+    slots or for non-date fields. Track zero remains numeric zero on that route.
+
+    Absolute date bases are native calendar coordinates, not Unix instants.
+    Keep unsupported combinations and raw_data rather than forcing Host semantics.
+    """
+
+    # Lower base; date sentinel means inclusive 00:00:00 of the sampled day.
     from_value: int = cf(0x00, "be_u64")
+    # Lower signed displacement, despite the historical name "from_date".
     from_date: int = cf(0x08, "be_i64")
     from_units: int = cf(0x10, "be_u64")
+    # Upper base; its independent date sentinel means inclusive 23:59:59.
     to_value: int = cf(0x18, "be_u64")
     to_date: int = cf(0x20, "be_i64")
     to_units: int = cf(0x28, "be_u64")
+    # Classic's numeric operand converter and date-bound calculation leave
+    # these 20 bytes alone. Preserve them; that does not establish padding.
     unk_0x30: int = cf(0x30, "be_u32")
     unk_0x34: int = cf(0x34, "be_u32")
     unk_0x38: int = cf(0x38, "be_u32")
@@ -120,6 +153,8 @@ class MhodSmartStringRuleData:
 
 @dataclass(frozen=True, slots=True)
 class MhodSmartNumericRuleData:
+    """Decoded fields with the operand semantics above and exact original bytes."""
+
     from_value: int
     from_date: int
     from_units: int
@@ -142,8 +177,10 @@ class MhodSmartRawRuleData:
 @dataclass(frozen=True, slots=True)
 class MhodSmartRuleGroupData:
     magic: bytes
-    unk_0x04: int
+    format_version: int
+    unknown_0x06: int
     rule_count: int
+    unknown_0x0C: bytes
     conjunction: int
     header_data: bytes
     rules: tuple["MhodSmartRule", ...]
@@ -162,7 +199,9 @@ type MhodSmartRuleData = (
 class MhodSmartRule:
     field_id: int
     action_id: int
-    group_marker: int
+    is_nested: int
+    disabled: int
+    unknown_0x0A: bytes
     header_data: bytes
     data: MhodSmartRuleData
 

@@ -2,6 +2,9 @@
 
 > ADR-0093 makes terminal cleanup automatic after successful Library saves and
 > during selected-device loading; the Storage recovery checks remain required.
+>
+> ADR-0166 adds an explicit policy for staging replacements one at a time while
+> retaining complete recovery material on the device.
 
 - Status: Accepted
 - Date: 2026-09-11

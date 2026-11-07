@@ -86,6 +86,10 @@ class EqualizedGridView(QListView):
         position = scrollbar.value()
         maximum = scrollbar.maximum()
         super().updateGeometries()
+        if self.verticalScrollMode() is QListView.ScrollMode.ScrollPerPixel:
+            # Qt otherwise derives this from the card height, turning one wheel
+            # notch into several complete rows (or a full viewport).
+            scrollbar.setSingleStep(LAYOUT.scroll_line_height)
         # PySide's stub omits None, which Qt returns before a model is installed.
         model = cast("QAbstractItemModel | None", self.model())
         if (

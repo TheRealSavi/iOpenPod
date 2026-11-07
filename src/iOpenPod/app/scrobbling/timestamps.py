@@ -1,7 +1,10 @@
 """Keep original playback evidence while adjusting old Last.fm delivery dates."""
 
 from dataclasses import replace
-from datetime import datetime
+
+from whenever import SYSTEM_TZ, Instant
+
+from iOpenPod.app.core.dates import refresh_host_timezone
 
 from .models import LASTFM_MAX_AGE, Account, Service
 from .queue import QueueState
@@ -25,12 +28,26 @@ def adjust_lastfm_dates(
     )
     if not old:
         return 0
+    # Background delivery may run without a GUI activation since the Host zone
+    # changed. Failure defers optional delivery without changing queued evidence.
+    if not refresh_host_timezone():
+        return len(old)
     # "Today" follows the Host's local calendar, while the wire format stays UTC.
-    today = int(
-        datetime.fromtimestamp(now)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp()
-    )
+    try:
+        # A repeated midnight selects the earlier occurrence; a missing midnight
+        # moves forward across the gap. This is Host delivery policy, not a
+        # reconstruction of the iPod's historical city/DST setting (ADR-0240).
+        today = (
+            Instant.from_timestamp(now)
+            .to_tz(SYSTEM_TZ)
+            .to_plain()
+            .start_of("day")
+            .assume_tz(SYSTEM_TZ, disambiguation="compatible")
+            .timestamp()
+        )
+    except (OverflowError, OSError, ValueError):
+        # Keep queued listens for a later delivery without blocking Library Sync.
+        return len(old)
     previous = state.lastfm_reserved_through.get(account.identity, today - 1)
     earliest = max(today, previous + 1)
     candidate = now

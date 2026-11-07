@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import io
-import time
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import mutagen
 from mutagen.mp3 import BitrateMode
 from PIL import Image, ImageOps
+from whenever import Instant
 
 from iOpenPod.app.media.chapters import imported_chapters
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
@@ -145,7 +145,7 @@ class MusicImporter:
                     and getattr(getattr(parsed, "info", None), "bitrate_mode", None)
                     in (BitrateMode.VBR, BitrateMode.ABR)
                 ),
-                date_added=int(time.time()),
+                date_added=Instant.now().timestamp(),
                 last_modified=observed.fingerprint.modified_ns // 1_000_000_000,
                 location=location,
                 chapters=imported_chapters(observed.chapters),

@@ -385,37 +385,37 @@
   },
   {
     "component": "pillow",
-    "version": "12.3.0",
-    "file": "pillow-12.3.0-NOTICES.txt",
-    "sha256": "6027e9b33f91b5fa029bf1185b3a5d8e6b0375292e08b1ef659c93242b69af3e",
+    "version": "13.0.0",
+    "file": "pillow-13.0.0-NOTICES.txt",
+    "sha256": "e7fbd283c4ddd1dfc37fd04bdabbab7bfa6f32f3944524296fe89111481cc8d5",
     "members": [
       {
-        "member": "pillow-12.3.0/LICENSE",
+        "member": "pillow-13.0.0/LICENSE",
         "sha256": "15181e7363dca9aed78b79bebebc7fde7f1814b8bd311ea3b87ae8ccadfc185b"
       },
       {
-        "member": "pillow-12.3.0/Tests/fonts/DejaVuSans/LICENSE.txt",
+        "member": "pillow-13.0.0/Tests/fonts/DejaVuSans/LICENSE.txt",
         "sha256": "ba4aee7ef5b2ebc285e76df2497953d8a6e7480bc249f4e0a55f1199a3396622"
       },
       {
-        "member": "pillow-12.3.0/Tests/fonts/LICENSE.txt",
+        "member": "pillow-13.0.0/Tests/fonts/LICENSE.txt",
         "sha256": "b79f6f6a2fc060b2e0a6e7a6946c446ae199bec07b92a3df1295975e25c4d96b"
       },
       {
-        "member": "pillow-12.3.0/Tests/icc/LICENSE.txt",
+        "member": "pillow-13.0.0/Tests/icc/LICENSE.txt",
         "sha256": "09e62757edb34e284bc11c54e3429b438d9db37f46c9cb36bd57b1b25ae36184"
       },
       {
-        "member": "pillow-12.3.0/docs/COPYING",
+        "member": "pillow-13.0.0/docs/COPYING",
         "sha256": "d44ce2bbf81806be0eb34ec0ecb0cb013ccd56a94057daf214fb7381adde8f0c"
       },
       {
-        "member": "pillow-12.3.0/src/thirdparty/raqm/AUTHORS",
+        "member": "pillow-13.0.0/src/thirdparty/raqm/AUTHORS",
         "sha256": "e81eb8c13d248620f229af26700a5d8c928bac0fd971cae6e76e2f88228ea9e2"
       },
       {
-        "member": "pillow-12.3.0/src/thirdparty/raqm/COPYING",
-        "sha256": "4a574f631d5aee5223d108d3f7ec4f717343685d8a8904f42591be72c907ecba"
+        "member": "pillow-13.0.0/src/thirdparty/raqm/COPYING",
+        "sha256": "f6baa5c872ed0c35cde377735f930d97a23e08065d87cf34d766b3aad5beed1e"
       }
     ]
   },
@@ -2675,124 +2675,124 @@
   },
   {
     "component": "pillow-build",
-    "version": "12.3.0",
-    "file": "pillow-build-12.3.0-NOTICES.txt",
-    "sha256": "47ea6131a2bfc778d9db07e44d0b10250eae5e1644ce0ab5d20166298362bc02",
+    "version": "13.0.0",
+    "file": "pillow-build-13.0.0-NOTICES.txt",
+    "sha256": "ef330780d8a2d7f39353fee06c53c8d9b338f904dca23a97dafaa6d041ebf37d",
     "members": [
       {
-        "member": "Pillow-12.3.0/LICENSE",
+        "member": "Pillow-13.0.0/LICENSE",
         "sha256": "15181e7363dca9aed78b79bebebc7fde7f1814b8bd311ea3b87ae8ccadfc185b"
       },
       {
-        "member": "Pillow-12.3.0/Tests/fonts/DejaVuSans/LICENSE.txt",
+        "member": "Pillow-13.0.0/Tests/fonts/DejaVuSans/LICENSE.txt",
         "sha256": "ba4aee7ef5b2ebc285e76df2497953d8a6e7480bc249f4e0a55f1199a3396622"
       },
       {
-        "member": "Pillow-12.3.0/Tests/fonts/LICENSE.txt",
+        "member": "Pillow-13.0.0/Tests/fonts/LICENSE.txt",
         "sha256": "b79f6f6a2fc060b2e0a6e7a6946c446ae199bec07b92a3df1295975e25c4d96b"
       },
       {
-        "member": "Pillow-12.3.0/Tests/icc/LICENSE.txt",
+        "member": "Pillow-13.0.0/Tests/icc/LICENSE.txt",
         "sha256": "09e62757edb34e284bc11c54e3429b438d9db37f46c9cb36bd57b1b25ae36184"
       },
       {
-        "member": "Pillow-12.3.0/docs/COPYING",
+        "member": "Pillow-13.0.0/docs/COPYING",
         "sha256": "d44ce2bbf81806be0eb34ec0ecb0cb013ccd56a94057daf214fb7381adde8f0c"
       },
       {
-        "member": "Pillow-12.3.0/src/thirdparty/raqm/AUTHORS",
+        "member": "Pillow-13.0.0/src/thirdparty/raqm/AUTHORS",
         "sha256": "e81eb8c13d248620f229af26700a5d8c928bac0fd971cae6e76e2f88228ea9e2"
       },
       {
-        "member": "Pillow-12.3.0/src/thirdparty/raqm/COPYING",
-        "sha256": "4a574f631d5aee5223d108d3f7ec4f717343685d8a8904f42591be72c907ecba"
+        "member": "Pillow-13.0.0/src/thirdparty/raqm/COPYING",
+        "sha256": "f6baa5c872ed0c35cde377735f930d97a23e08065d87cf34d766b3aad5beed1e"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/AOM.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/AOM.txt",
         "sha256": "60f3f7e003a4a7736aad7c008380fbfbcd3bf19544c589efebba824a2b9e145b"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/BROTLI.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/BROTLI.txt",
         "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/BZIP2.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/BZIP2.txt",
         "sha256": "67fc67381a47fe66f07b5f6705472d26314e6bcdf949f92c2cdde64521bbfdce"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/DAV1D.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/DAV1D.txt",
         "sha256": "b327887de263238deaa80c34cdd2ff3e0ba1d35db585ce14a37ce3e74ee389e9"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/FREETYPE2.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/FREETYPE2.txt",
         "sha256": "84b0b727a89a1984d9a12fb55348496fa3025828b8d609129051961e4b98c4d6"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/HARFBUZZ.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/HARFBUZZ.txt",
         "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LCMS2.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LCMS2.txt",
         "sha256": "53ad5ca11b8f4079e9c9bfa61575927a33f53526d6d414287149ec3ab61e8e4d"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LIBAVIF.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LIBAVIF.txt",
         "sha256": "165abf92cc04b39e80d29cadea7a6a7e8fddf59407d4ad2616507a7ebe8216f9"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LIBJPEG.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LIBJPEG.txt",
         "sha256": "a5708c3347b03391c6aa9a0f549f8e2a33d04ceac0724151e5e6e217871d1bfb"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LIBLZMA.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LIBLZMA.txt",
         "sha256": "8b13e158c7a8297e4da9d4de46a741f341abec4a5b7b1094066aa7808b786ee4"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LIBPNG.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LIBPNG.txt",
         "sha256": "dfe5a536b0e5a531f844fb9c101a3089aca60772a503893b8e15f9457e369960"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LIBTIFF.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LIBTIFF.txt",
         "sha256": "92b72ba97e6c2749c2a94bc0ef646b47080217f1e772a482b33cf5a5f98a6506"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LIBWEBP.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LIBWEBP.txt",
         "sha256": "e293d1dddc9785200b1f58a4f5293543cf8566d9e0b8a3c02fad955035b19f42"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/LIBYUV.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/LIBYUV.txt",
         "sha256": "2b2cc1180c7e6988328ad2033b04b80117419db9c4c584918bbb3cfec7e9364f"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/OPENJPEG.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/OPENJPEG.txt",
         "sha256": "0e8aaf2ea15e8b9b2a42ceb2c9aa38bbb4bf2a9fafb7867e599ecd148cb109e9"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/RAQM.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/RAQM.txt",
         "sha256": "bd20511a077235fa2c2eb45c0bc79da29f1f300bb2506faf26b1c6bd6246fd0c"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/TCL_TK.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/TCL_TK.txt",
         "sha256": "d6dc66c73060f1873642d7d75169e88478642fb8d12a39841f085f72efc327c2"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/XAU.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/XAU.txt",
         "sha256": "56abe29bb1d9806a9e04fa9f80fed2c0f18027594df3f098148d814aef6bddfa"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/XCB.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/XCB.txt",
         "sha256": "c5ffbfeaa501071ceeb97b7de2c0d703fdaa35de01c0fb6cbac1c28453a3e9fd"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/XDMCP.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/XDMCP.txt",
         "sha256": "8a3c3f35b0dbcb60a4e242b9e4394a352a65bb27deb2938ea1e2e62a626e16e9"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/ZLIB.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/ZLIB.txt",
         "sha256": "900b8782a9168f127d0d7d7512a371933a0aeb805013446ce09c4618f354ba7d"
       },
       {
-        "member": "Pillow-12.3.0/wheels/dependency_licenses/ZSTD.txt",
+        "member": "Pillow-13.0.0/wheels/dependency_licenses/ZSTD.txt",
         "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
       }
     ]

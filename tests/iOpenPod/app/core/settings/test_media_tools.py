@@ -4,9 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from iOpenPod.app import genius_analysis
 from iOpenPod.app.core.settings import media_tools as configured
 from iOpenPod.app.core.settings.definitions import (
     FFMPEG_PATH,
+    FFPROBE_PATH,
     FPCALC_PATH,
     MEDIA_TOOL_PATHS,
 )
@@ -20,11 +22,21 @@ from iOpenPod.app.core.settings.stores import (
 from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.media.inspection import MediaInspector
 from iOpenPod.app.media.transcoding import MediaTranscoder
+from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iOpenPod.app.services import media_tools
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
-from storage import AtomicHostFile, HostPath, media_processing
+from storage import (
+    AtomicHostFile,
+    DevicePath,
+    FilesystemSession,
+    HostPath,
+    Storage,
+    media_probe,
+    media_processing,
+)
 from storage.host_tools import HostToolEnvironment
-from storage.media_processing import ToolOutput
+from storage.media_processing import MediaToolError, ToolOutput
+from storage.testing import VirtualStoragePlatform
 
 
 def test_paths_persist_independently_and_never_use_ipod_overrides(
@@ -172,3 +184,154 @@ def test_fpcalc_scan_keeps_its_path_but_next_scan_uses_updated_choice(
     assert fingerprinter.for_scan()._resolve_executable() == HostPath(  # pyright: ignore[reportPrivateUsage]
         tmp_path / "second"
     )
+
+
+@pytest.mark.parametrize("device_source", [False, True])
+def test_phase_uses_configured_ffmpeg_for_each_analysis_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, device_source: bool
+) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    tools = ConfiguredMediaTools(settings)
+    first = HostPath(tmp_path / "custom tools" / "ffmpeg")
+    second = HostPath(tmp_path / "replacement tools" / "ffmpeg")
+    automatic = HostPath(tmp_path / "automatic" / "ffmpeg")
+    settings.set_global(FFMPEG_PATH, str(first))
+    settings.set_global(FFPROBE_PATH, str(tmp_path / "independent probe" / "ffprobe"))
+    discoveries: list[str] = []
+    calls: list[HostPath] = []
+
+    def discover(name: str) -> HostPath:
+        discoveries.append(name)
+        assert name == "ffmpeg"
+        return automatic
+
+    def run(
+        executable: HostPath, _arguments: tuple[str, ...], **_kwargs: object
+    ) -> ToolOutput:
+        calls.append(executable)
+        return ToolOutput(bytes(30 * 22_050 * 4), b"")
+
+    def read_with_tool(
+        _session: FilesystemSession,
+        path: DevicePath,
+        executable: HostPath,
+        arguments: tuple[str, ...],
+        **kwargs: object,
+    ) -> ToolOutput:
+        assert path == DevicePath("music.wav")
+        return run(executable, arguments, **kwargs)
+
+    monkeypatch.setattr(configured, "find_media_tool", discover)
+    monkeypatch.setattr(genius_analysis, "run_media_tool", run)
+    monkeypatch.setattr(FilesystemSession, "read_with_tool", read_with_tool)
+    root = tmp_path / "device"
+    root.mkdir()
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = Storage(platform)
+    service = PhaseAnalysisService(find_tool=tools.find, use_sources=False)
+    source = (
+        DevicePath("music.wav") if device_source else HostPath(tmp_path / "music.wav")
+    )
+    with storage.open_session(storage.discover().volumes[0]) as session:
+
+        def analyze(run: PhaseAnalysisService) -> None:
+            result = run.analyze(
+                source,
+                input_suffix=".wav",
+                length_ms=30_000,
+                session=session,
+                checkpoint=lambda: None,
+            )
+            assert result.startswith(b"pha\x02")
+
+        current = service.for_analysis()
+        analyze(current)
+        settings.set_global(FFMPEG_PATH, str(second))
+        analyze(current)
+        analyze(service.for_analysis())
+        assert discoveries == []
+        settings.set_global(FFMPEG_PATH, "")
+        analyze(service.for_analysis())
+
+    assert calls == [first, first, second, automatic]
+    assert discoveries == ["ffmpeg"]
+
+
+def test_phase_reports_failed_ffmpeg_override_without_discovery_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    selected = HostPath(tmp_path / "missing custom tools" / "ffmpeg")
+    settings.set_global(FFMPEG_PATH, str(selected))
+    tools = ConfiguredMediaTools(settings)
+
+    def fail_discovery(_name: str) -> HostPath | None:
+        pytest.fail("Phase bypassed the configured FFmpeg override")
+
+    def run(
+        executable: HostPath, _arguments: tuple[str, ...], **_kwargs: object
+    ) -> ToolOutput:
+        assert executable == selected
+        raise MediaToolError("media.tool_failed", "Selected FFmpeg could not start")
+
+    monkeypatch.setattr(configured, "find_media_tool", fail_discovery)
+    monkeypatch.setattr(genius_analysis, "run_media_tool", run)
+    root = tmp_path / "device"
+    root.mkdir()
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = Storage(platform)
+    service = PhaseAnalysisService(find_tool=tools.find, use_sources=False)
+    with (
+        storage.open_session(storage.discover().volumes[0]) as session,
+        pytest.raises(ValueError, match="Selected FFmpeg could not start"),
+    ):
+        service.for_analysis().analyze(
+            HostPath(tmp_path / "music.wav"),
+            input_suffix=".wav",
+            length_ms=30_000,
+            session=session,
+            checkpoint=lambda: None,
+        )
+
+
+def test_inspection_invokes_independently_configured_ffprobe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    tools = ConfiguredMediaTools(settings)
+    first = HostPath(tmp_path / "custom probe tools" / "ffprobe")
+    second = HostPath(tmp_path / "replacement probe tools" / "ffprobe")
+    settings.set_global(FFMPEG_PATH, str(tmp_path / "other tools" / "ffmpeg"))
+    settings.set_global(FFPROBE_PATH, str(first))
+    path = tmp_path / "music.wav"
+    path.write_bytes(b"audio")
+    source = HostPath(path)
+    calls: list[HostPath] = []
+
+    def fail_discovery(_name: str) -> HostPath | None:
+        pytest.fail("Inspection bypassed the configured FFprobe override")
+
+    def run(
+        executable: HostPath,
+        _arguments: tuple[str, ...],
+        *,
+        input_file: HostPath,
+        **_kwargs: object,
+    ) -> ToolOutput:
+        assert input_file == source
+        calls.append(executable)
+        return ToolOutput(
+            b'{"format":{"format_name":"wav","size":"5"},'
+            b'"streams":[{"index":0,"codec_type":"audio","codec_name":"pcm_s16le"}]}',
+            b"",
+        )
+
+    monkeypatch.setattr(configured, "find_media_tool", fail_discovery)
+    monkeypatch.setattr(media_probe, "run_media_tool", run)
+    inspector = MediaInspector(find_tool=tools.find)
+    inspector.scan_metadata(source, checkpoint=lambda: None)
+    settings.set_global(FFPROBE_PATH, str(second))
+    inspector.scan_metadata(source, checkpoint=lambda: None)
+    assert calls == [first, second]

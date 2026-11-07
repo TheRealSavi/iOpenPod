@@ -5,6 +5,7 @@ import os
 import stat
 import sys
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -30,7 +31,9 @@ pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows network paths")
 def remote_drive(monkeypatch: pytest.MonkeyPatch) -> Mock:
     if sys.platform != "win32":
         pytest.skip("Windows drive classification")
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel = cast("type[ctypes.CDLL]", vars(ctypes)["WinDLL"])(
+        "kernel32", use_last_error=True
+    )
     drive_type = Mock(return_value=4)  # DRIVE_REMOTE
     monkeypatch.setattr(kernel, "GetDriveTypeW", drive_type)
 

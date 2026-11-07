@@ -42,6 +42,14 @@ class IPodLibraryViewMode(StrEnum):
 
     SPLIT_TABLE = "split-table"
     WHOLE_PAGE_TABLE = "whole-page-table"
+    ITUNES_11 = "itunes-11"
+
+
+class NavigationStyle(StrEnum):
+    """Stable navigation layouts for the application shell."""
+
+    SIDEBAR = "sidebar"
+    COMPACT_TOP_BAR = "compact-top-bar"
 
 
 class LibraryDoubleClickShortcut(StrEnum):
@@ -73,6 +81,7 @@ class DarkTheme(StrEnum):
     GRAVITY = "gravity"
     NORTHERN_LIGHTS = "northern-lights"
     ORCHID = "orchid"
+    TECH = "tech"
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +155,12 @@ LOGGING_PATH = SettingDefinition[str](
     default=str(default_log_path()),
 )
 
+ONBOARDING_COMPLETE = SettingDefinition[bool](
+    key="application/onboarding-complete",
+    value_type=bool,
+    default=False,
+)
+
 # Preserve the existing v2 key: its System/Light/Dark value is now named Mode in
 # the GUI, while the exact Light and Dark themes have independent keys below.
 APPEARANCE_MODE = SettingDefinition[str](
@@ -175,6 +190,12 @@ COLORFUL_MODE = SettingDefinition[bool](
     default=False,
 )
 
+ITUNES_107_ARTWORK = SettingDefinition[bool](
+    key="appearance/itunes-107-artwork",
+    value_type=bool,
+    default=False,
+)
+
 TRACK_TITLE_BAR_STYLE = SettingDefinition[str](
     key="appearance/track-title-bar-style",
     value_type=str,
@@ -188,6 +209,13 @@ PLAYER_POSITION = SettingDefinition[str](
     default=PlayerPosition.TOP.value,
     validator=_one_of(*(position.value for position in PlayerPosition)),
 )
+
+PLAYER_AUTO_MINIMIZE = SettingDefinition[bool](
+    key="appearance/player-auto-minimize",
+    value_type=bool,
+    default=True,
+)
+
 
 APPLICATION_LANGUAGE = SettingDefinition[str](
     key="appearance/language",
@@ -233,10 +261,17 @@ MANAGE_VOLUME_PRESENTATION = SettingDefinition[bool](
     default=True,
 )
 
+NAVIGATION_STYLE = SettingDefinition[str](
+    key="library/navigation-style",
+    value_type=str,
+    default=NavigationStyle.COMPACT_TOP_BAR.value,
+    validator=_one_of(*(style.value for style in NavigationStyle)),
+)
+
 IPOD_LIBRARY_VIEW_MODE = SettingDefinition[str](
     key="library/ipod-view-mode",
     value_type=str,
-    default=IPodLibraryViewMode.SPLIT_TABLE.value,
+    default=IPodLibraryViewMode.ITUNES_11.value,
     device_overridable=True,
     validator=_one_of(*(mode.value for mode in IPodLibraryViewMode)),
 )
@@ -322,10 +357,22 @@ SPOKEN_WORD_BITRATE = SettingDefinition[int](
     device_overridable=True,
     validator=lambda value: type(value) is int and value in (32, 48, 64, 80, 96),
 )
+COMPUTE_MISSING_BPM = SettingDefinition[bool](
+    key="sync/compute-missing-bpm",
+    value_type=bool,
+    default=False,
+    device_overridable=True,
+)
 COMPUTE_SOUND_CHECK = SettingDefinition[bool](
     key="sync/compute-sound-check",
     value_type=bool,
     default=False,
+    device_overridable=True,
+)
+ANALYZE_FOR_GENIUS = SettingDefinition[bool](
+    key="sync/analyze-for-genius",
+    value_type=bool,
+    default=True,
     device_overridable=True,
 )
 NORMALIZE_TAGS_AFTER_SYNC = SettingDefinition[bool](

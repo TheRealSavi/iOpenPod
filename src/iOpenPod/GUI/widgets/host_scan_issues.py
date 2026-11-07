@@ -1,4 +1,4 @@
-"""Persistent, bounded scan diagnostics beside Host selection and Review."""
+"""Persistent, bounded Host and iPod scan diagnostics beside selection and Review."""
 
 from __future__ import annotations
 
@@ -14,12 +14,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.host_media_library import HostMediaScanIssue
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 if TYPE_CHECKING:
-    from iOpenPod.app.host_media_library import HostMediaScanIssue
+    from iOpenPod.app.library_sync_helper import IPodMediaScanIssue
 
 
 class HostScanIssues(QFrame):
@@ -28,7 +29,7 @@ class HostScanIssues(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("hostScanIssues")
-        self._issues: tuple[HostMediaScanIssue, ...] = ()
+        self._issues: tuple[HostMediaScanIssue | IPodMediaScanIssue, ...] = ()
         self._summary = QLabel(self)
         self._summary.setTextFormat(Qt.TextFormat.PlainText)
         self._summary.setWordWrap(True)
@@ -55,7 +56,7 @@ class HostScanIssues(QFrame):
     def has_issues(self) -> bool:
         return bool(self._issues)
 
-    def load(self, issues: tuple[HostMediaScanIssue, ...]) -> None:
+    def load(self, issues: tuple[HostMediaScanIssue | IPodMediaScanIssue, ...]) -> None:
         self._issues = issues
         self._toggle.setChecked(False)
         self.retranslate_ui()
@@ -67,10 +68,14 @@ class HostScanIssues(QFrame):
             )
         )
         self._toggle.setText(self.tr("Show details"))
-        lines = [
-            f"{str(issue.path)[:500]}\n{workflow_text(issue.detail)[:1500]}"
-            for issue in self._issues[:50]
-        ]
+        lines: list[str] = []
+        for issue in self._issues[:50]:
+            subject = (
+                str(issue.path)
+                if isinstance(issue, HostMediaScanIssue)
+                else workflow_text(issue.subject)
+            )
+            lines.append(f"{subject[:500]}\n{workflow_text(issue.detail)[:1500]}")
         if len(self._issues) > 50:
             lines.append(self.tr("Showing the first 50 scan issues."))
         self._details.setPlainText("\n\n".join(lines))

@@ -1,6 +1,6 @@
 """Readable per-Track rejection details shared by Sync and manual scrobbling."""
 
-from datetime import UTC, datetime
+from whenever import Instant
 
 from .models import LASTFM_MAX_AGE, Account, RejectedListen, Service
 from .queue import PendingListen
@@ -41,7 +41,7 @@ def _listens(count: int) -> str:
 
 def _date(timestamp: int) -> str:
     try:
-        return datetime.fromtimestamp(timestamp, UTC).strftime("%Y-%m-%d %H:%M:%S")
+        return Instant.from_timestamp(timestamp).format("YYYY-MM-DD HH:mm:ss")
     except (OverflowError, OSError, ValueError):
         return f"UNIX timestamp {timestamp} (outside the supported date range)"
 

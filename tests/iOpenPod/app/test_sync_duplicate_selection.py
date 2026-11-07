@@ -122,12 +122,17 @@ def test_changing_pair_drops_old_removal_and_does_not_remove_previous_target(
     selection = _selection(host, comparison)
     (group,) = comparison.duplicate_groups
     path = group.hosts[0].host_path
+    assert not selection.track_on_ipod(1)
+    assert not selection.track_group_on_ipod((1, 2))
     first = SyncDuplicateResolution(
         group.group_id,
         pairs=(SyncDuplicatePair(path, 10),),
         removed_ipod_ids=frozenset({11}),
     )
     assert selection.set_duplicate_resolution(first)
+    assert selection.track_on_ipod(1)
+    assert selection.track_group_on_ipod((1, 2))
+    assert not selection.track_on_ipod(2)
     assert selection.selected_plan.count(SyncPlanAction.REMOVE) == 1
     second = SyncDuplicateResolution(
         group.group_id, pairs=(SyncDuplicatePair(path, 11),)

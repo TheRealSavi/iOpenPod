@@ -1,7 +1,7 @@
 """Media dependency setup, progress, and recovery without blocking the GUI."""
 
 from PySide6.QtCore import QEvent, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QTextCursor
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.media_tools_controller import MediaToolsController
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -161,7 +162,7 @@ class MediaToolsSetupDialog(QDialog):
 
     def _open_help(self) -> None:
         if self._controller.setup is not None:
-            QDesktopServices.openUrl(QUrl(self._controller.setup.plan.help_url))
+            open_desktop_url(QUrl(self._controller.setup.plan.help_url))
 
     def reject(self) -> None:
         if self._controller.installing:

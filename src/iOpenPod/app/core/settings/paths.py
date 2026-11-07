@@ -2,6 +2,16 @@ import os
 import sys
 from pathlib import Path
 
+from storage.host_files import application_cache_file
+
+
+def default_games_cache_path() -> Path:
+    platform_name = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
+    return (
+        application_cache_file("iOpenPod", "games", platform_name=platform_name)
+        / "version16"
+    )
+
 
 def default_log_path() -> Path:
     """Determines a sensible default log path for Mac/Win/Linux"""

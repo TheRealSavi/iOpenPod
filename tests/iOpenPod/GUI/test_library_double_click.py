@@ -103,11 +103,13 @@ def test_double_click_uses_selected_tracks_and_current_preference(
     window = MainWindow(context, auto_discover=False)
     playback = context.playback_controller
     try:
+        view_parent: QWidget = window
         if view_name == "playlistsTrackTable":
-            page = window.findChild(PlaylistPage)
+            page = window.findChild(PlaylistPage, "playlistsPage")
             assert page is not None
             page.select_playlist(playlist.playlist_id)
-        view = window.findChild(QAbstractItemView, view_name)
+            view_parent = page
+        view = view_parent.findChild(QAbstractItemView, view_name)
         assert view is not None
         view.clearSelection()
         for row in rows:
@@ -232,7 +234,7 @@ def test_playlist_buttons_keep_explicit_actions_with_edit_preference() -> None:
     window = MainWindow(context, auto_discover=False)
     playback = context.playback_controller
     try:
-        page = window.findChild(PlaylistPage)
+        page = window.findChild(PlaylistPage, "playlistsPage")
         assert page is not None
         page.select_playlist(playlist.playlist_id)
         button = page.findChild(QPushButton, "queuePlaylist")

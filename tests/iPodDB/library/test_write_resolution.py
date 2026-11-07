@@ -15,9 +15,11 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod import (
     MhodLibraryJumpTablePayload,
+    MhodLibraryJumpTablePrefix,
 )
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import (
+    AudioEncoding,
     IPodLibrary,
     MediaType,
     Playlist,
@@ -26,12 +28,15 @@ from iPodDB.library import (
     WritePhase,
     WriteResources,
     _write_preparation,
+    prepared_audio,
 )
 from iPodDB.library._field_policy import unclassified_fields
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 
-@pytest.mark.parametrize("corruption", ["permutation", "jump_letter", "missing"])
+@pytest.mark.parametrize(
+    "corruption", ["permutation", "jump_letter", "empty_jump_letter", "missing"]
+)
 def test_verification_rejects_plausible_but_wrong_browse_indexes(
     monkeypatch: pytest.MonkeyPatch, corruption: str
 ) -> None:
@@ -73,9 +78,14 @@ def test_verification_rejects_plausible_but_wrong_browse_indexes(
                         ),
                     ),
                 )
-            elif corruption == "jump_letter" and isinstance(
+            elif corruption in {"jump_letter", "empty_jump_letter"} and isinstance(
                 payload, MhodLibraryJumpTablePayload
             ):
+                if corruption == "empty_jump_letter" and (
+                    not isinstance(chunk.prefix, MhodLibraryJumpTablePrefix)
+                    or chunk.prefix.sort_type != 18
+                ):
+                    continue
                 document = document.replace_chunk(
                     selection,
                     replace(
@@ -83,7 +93,12 @@ def test_verification_rejects_plausible_but_wrong_browse_indexes(
                         payload=replace(
                             payload,
                             entries=tuple(
-                                replace(e, letter_code=ord("Z"))
+                                replace(
+                                    e,
+                                    letter_code=ord("0")
+                                    if corruption == "empty_jump_letter"
+                                    else ord("Z"),
+                                )
                                 for e in payload.entries
                             ),
                         ),
@@ -99,6 +114,55 @@ def test_verification_rejects_plausible_but_wrong_browse_indexes(
     assert result.prepared is None
     assert any(i.code == "verification.playlist_index" for i in result.issues)
     assert source.serialize() == original
+
+
+@pytest.mark.parametrize(
+    ("composer", "letter"), [("", 0), ("1984", 48), ("!!!", 48), ("Bach", 66)]
+)
+def test_composer_jump_tables_distinguish_empty_keys_when_created_and_rebuilt(
+    composer: str, letter: int
+) -> None:
+    source = library(mirrored=True)
+    first, second = source.snapshot.tracks
+    desired = replace(
+        source.snapshot,
+        tracks=(
+            replace(second, metadata=replace(second.metadata, composer=composer)),
+            first,
+        ),
+    )
+    expected = [(0, 0, 0, 2)] if not composer else [(0, 0, 0, 1), (letter, 0, 1, 1)]
+    # Create both Masters' indexes, then rebuild them through a title edit.
+    # The all-empty case matches the captured Composer bucket's U+0000 label.
+    for _ in range(2):
+        result = source.prepare(
+            source.analyze(source.begin_draft(desired)),
+            WriteResources(pending_playback_sidecars=False),
+        )
+        assert result.prepared is not None, result.issues
+        tables = [
+            selection.chunk.payload
+            for selection in parse_iTunesDB(result.prepared.itunes).find_chunks(
+                MhodHeader
+            )
+            if isinstance(selection.chunk.prefix, MhodLibraryJumpTablePrefix)
+            and selection.chunk.prefix.sort_type == 18
+            and isinstance(selection.chunk.payload, MhodLibraryJumpTablePayload)
+        ]
+        assert len(tables) == 2
+        for table in tables:
+            assert [
+                (e.letter_code, e.padding_0x02, e.start_index, e.entry_count)
+                for e in table.entries
+            ] == expected
+        source = IPodLibrary(result.prepared.itunes)
+        desired = replace(
+            source.snapshot,
+            tracks=(
+                replace(source.snapshot.tracks[0], title="AAA"),
+                source.snapshot.tracks[1],
+            ),
+        )
 
 
 def test_retained_tag_rewrite_requires_verified_file_even_when_lyrics_match() -> None:
@@ -120,7 +184,7 @@ def test_retained_tag_rewrite_requires_verified_file_even_when_lyrics_match() ->
     assert result.prepared.retained_files == (evidence.file,)
 
 
-@pytest.mark.parametrize("invalid", ["duplicate", "missing", "relocated", "replaced"])
+@pytest.mark.parametrize("invalid", ["duplicate", "missing", "relocated"])
 def test_retained_tag_rewrite_rejects_invalid_targets(invalid: str) -> None:
     source = lyrics_source()
     track, second = source.snapshot.tracks
@@ -264,11 +328,10 @@ def test_resolution_exposes_derived_flags_and_quantization_before_writing() -> N
     plan = source.analyze(source.begin_draft(desired))
     assert plan.resolution is not None
     resolved = plan.resolution.snapshot.tracks[0]
-    assert resolved.metadata.has_lyrics and resolved.metadata.played
+    assert resolved.metadata.has_lyrics and not resolved.metadata.played
     assert resolved.metadata.volume_adjustment_percent == 3 / 255 * 100
     assert set(plan.resolution.generated_changes[0].fields) == {
         "metadata.has_lyrics",
-        "metadata.played",
         "metadata.volume_adjustment_percent",
     }
     result = source.prepare(plan, WriteResources(lyrics=(lyrics_resource(resolved),)))
@@ -277,12 +340,16 @@ def test_resolution_exposes_derived_flags_and_quantization_before_writing() -> N
     assert sum(i.code == "track.quantized" for i in result.issues) == 1
 
 
-def test_positive_play_count_auto_resolves_an_unplayed_edit() -> None:
+def test_positive_play_count_does_not_override_an_unplayed_edit() -> None:
     source = library()
     seeded = replace(
         source.snapshot,
         tracks=(
-            replace(source.snapshot.tracks[0], play_count=1),
+            replace(
+                source.snapshot.tracks[0],
+                play_count=1,
+                metadata=replace(source.snapshot.tracks[0].metadata, played=True),
+            ),
             source.snapshot.tracks[1],
         ),
     )
@@ -303,9 +370,11 @@ def test_positive_play_count_auto_resolves_an_unplayed_edit() -> None:
 
     assert not any(issue.code == "track.invalid_value" for issue in plan.issues)
     assert plan.resolution is not None
-    assert plan.resolution.snapshot.tracks[0].metadata.played
+    assert not plan.resolution.snapshot.tracks[0].metadata.played
     result = loaded.prepare(plan)
     assert result.prepared is not None, result.issues
+    assert result.prepared.snapshot.tracks[0].play_count == 1
+    assert not result.prepared.snapshot.tracks[0].metadata.played
 
 
 def test_normalization_gain_quantization_is_not_reported_as_a_warning() -> None:
@@ -464,3 +533,58 @@ def test_independent_folder_constraints_are_collected_before_reconciliation() ->
     result = source.prepare(plan, progress=phases.append)
     assert result.prepared is None
     assert all(p.value != "reconciliation" for p in phases)
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+def test_incoming_tag_finalization_requires_media_and_final_tag_evidence(
+    replacement: bool,
+) -> None:
+    source = lyrics_source()
+    original = source.snapshot.tracks[0]
+    track = replace(
+        original,
+        track_id=original.track_id if replacement else -1,
+        size_bytes=len(b"verified tagged media"),
+        bitrate_kbps=128,
+        ipod=original.ipod if replacement else None,
+        metadata=replace(
+            original.metadata,
+            location="iPod_Control/Music/F00/new.mp3",
+            sample_rate_hz=44100,
+            file_format="MP3",
+        ),
+    )
+    tracks = (
+        (track, *source.snapshot.tracks[1:])
+        if replacement
+        else (*source.snapshot.tracks, track)
+    )
+    plan = source.analyze(
+        source.begin_draft(
+            replace(source.snapshot, tracks=tracks),
+            replace_media=(track.track_id,) if replacement else (),
+            retag_tracks=(track.track_id,),
+        )
+    )
+    assert not plan.blocked, plan.issues
+    assert plan.required_media == (track.track_id,)
+    assert plan.required_lyrics == (track.track_id,)
+    evidence = lyrics_resource(track)
+    media = prepared_audio(track.track_id, evidence.file, AudioEncoding.MP3)
+    assert source.prepare(plan, WriteResources(media=(media,))).prepared is None
+    assert source.prepare(plan, WriteResources(lyrics=(evidence,))).prepared is None
+    result = source.prepare(
+        plan,
+        WriteResources(
+            media=(media,), lyrics=(evidence,), pending_playback_sidecars=False
+        ),
+    )
+    assert result.prepared is not None, result.issues
+    assert (
+        next(
+            t
+            for t in result.prepared.snapshot.tracks
+            if t.metadata.location == track.metadata.location
+        ).size_bytes
+        == evidence.file.size
+    )

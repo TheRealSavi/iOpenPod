@@ -12,6 +12,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, 
 
 from iOpenPod.app.core.settings.definitions import (
     DRAFT_ALL_CHANGES,
+    ITUNES_107_ARTWORK,
     MANAGE_VOLUME_PRESENTATION,
     ROCKBOX_METADATA_SUPPORT,
 )
@@ -31,6 +32,7 @@ from iPodDB.library import (
     LibraryWriteResult,
     WriteIssue,
 )
+from iPodDB.library.genius import GeniusCollectionKind
 
 if TYPE_CHECKING:
     from iOpenPod.app.core.settings.service import SettingsService
@@ -138,6 +140,7 @@ class LibraryWriteController(QObject):
         self.review: LibraryReview | None = None
         self._inspection_review: LibraryReview | None = None
         self.save_result: LibrarySaveResult | None = None
+        self._current_progress: WriteProgress | None = None
         workspace.changed.connect(self._invalidate)
         devices.activeIPodChanged.connect(self._source_changed)
         devices.busyChanged.connect(self._device_availability_changed)
@@ -147,12 +150,23 @@ class LibraryWriteController(QObject):
         self._schedule_automatic_save()
 
     @property
+    def progress(self) -> WriteProgress | None:
+        """The latest stage of this running attempt, including measured counts."""
+        if self.state in (PreparationState.PREPARING, PreparationState.SAVING):
+            return self._current_progress
+        return None
+
+    @property
     def draft_all_changes(self) -> bool:
         return self._settings.get(DRAFT_ALL_CHANGES)
 
     @Slot(str, object)
     def _setting_changed(self, key: str, _value: object) -> None:
-        if key in (MANAGE_VOLUME_PRESENTATION.key, ROCKBOX_METADATA_SUPPORT.key):
+        if key in (
+            MANAGE_VOLUME_PRESENTATION.key,
+            ROCKBOX_METADATA_SUPPORT.key,
+            ITUNES_107_ARTWORK.key,
+        ):
             # An executing transaction finishes under its captured policy. All
             # other attempts must be prepared again with the new preference.
             if self.state is not PreparationState.SAVING:
@@ -310,6 +324,7 @@ class LibraryWriteController(QObject):
         if not self._devices.begin_library_save():
             return
         self._token += 1
+        self._current_progress = None
         self.state = PreparationState.SAVING
         self._record(
             "application.saving", "Saving requested for the reviewed candidate"
@@ -352,6 +367,17 @@ class LibraryWriteController(QObject):
             delete_omissions=self._workspace.delete_omissions,
             artwork=self._workspace.artwork_assets,
             media=self._workspace.media_sources,
+            add_genius_mixes=self._workspace.genius_mix_additions,
+            remove_genius_collections=self._workspace.genius_collection_removals,
+            regenerate_genius=bool(
+                self._workspace.genius_mix_additions
+                or any(
+                    collection.collection_id
+                    in self._workspace.genius_collection_removals
+                    and collection.kind is GeniusCollectionKind.MIX
+                    for collection in active.genius.collections
+                )
+            ),
             rockbox_metadata=self._settings.get(ROCKBOX_METADATA_SUPPORT),
             discard_removed_track_media=(
                 not self._workspace.media_sources
@@ -380,6 +406,7 @@ class LibraryWriteController(QObject):
         self.review = None
         self._inspection_review = None
         self.save_result = None
+        self._current_progress = None
         self.state = PreparationState.PREPARING
         job = _Work(self._token, self._service, self._request)
         self._jobs[self._token] = job
@@ -389,6 +416,22 @@ class LibraryWriteController(QObject):
         )
         self.changed.emit()
         self._pool.start(job)
+
+    @Slot()
+    def skip_phase_analysis(self) -> None:
+        if self.can_skip_phase_analysis and self._request is not None:
+            self._request.phase_analysis_skip.set()
+            self.changed.emit()
+
+    @property
+    def can_skip_phase_analysis(self) -> bool:
+        return (
+            self.state is PreparationState.PREPARING
+            and self.progress is not None
+            and self.progress.phase == "resources.phase"
+            and self._request is not None
+            and not self._request.phase_analysis_skip.is_set()
+        )
 
     @Slot()
     def cancel(self) -> None:
@@ -510,6 +553,8 @@ class LibraryWriteController(QObject):
                 "save.media_deletion_skipped",
                 "save.media_deletion_incomplete",
                 "save.media_deletion_flush_pending",
+                "save.sync_helper_warning",
+                "save.sync_helper_failed",
             )
             for issue in result.issues
         ):
@@ -520,10 +565,12 @@ class LibraryWriteController(QObject):
         if (
             token == self._token
             and not self._closed
+            and self.state in (PreparationState.PREPARING, PreparationState.SAVING)
             and isinstance(progress, WriteProgress)
         ):
             self._record(progress.phase, progress.message)
-            self.progressChanged.emit(progress.message)
+            self._current_progress = progress
+            self.progressChanged.emit(progress)
 
     @Slot(int, object)
     def _completed(self, token: int, value: object) -> None:

@@ -4,6 +4,8 @@ from datetime import datetime
 from types import MappingProxyType
 from typing import cast
 
+from whenever import Instant, PlainDateTime
+
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.plist_mhod import (
     MhodPlistPayload,
     PlistValue,
@@ -13,7 +15,16 @@ from iPodDB.shared.types import MhodPayloadParseContext
 
 
 def _normalize_plist_value(value: object) -> PlistValue:
-    if isinstance(value, bool | bytes | datetime | float | int | str):
+    if isinstance(value, datetime):
+        # Python 3.12 plistlib exposes UTC plist dates as naive datetime values.
+        # This is the wire-library adapter; the Database Document stores Instant.
+        # Unlike MHIT calendar words, a plist date denotes a UTC instant.
+        return (
+            PlainDateTime(value).assume_utc()
+            if value.tzinfo is None
+            else Instant(value)
+        )
+    if isinstance(value, bool | bytes | float | int | str):
         return value
 
     if isinstance(value, list):

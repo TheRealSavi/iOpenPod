@@ -96,6 +96,8 @@ def prepare_podcast_sync(
                     )
                 )
                 continue
+            if subscription.sync_settings.episode_slots == 0:
+                continue
             try:
                 fetched = client.fetch(subscription.feed_url)
             except PodcastFeedError as error:
@@ -107,7 +109,7 @@ def prepare_podcast_sync(
                             "kept unchanged; check the feed and retry Sync.",
                             title=subscription.title,
                         ),
-                        detail=str(error),
+                        detail=f"{subscription.feed_url}: {error}",
                     )
                 )
                 continue

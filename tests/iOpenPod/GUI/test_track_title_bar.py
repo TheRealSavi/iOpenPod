@@ -8,13 +8,16 @@ from PySide6.QtWidgets import QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import (
     APPLICATION,
     build_context,
+    show_albums,
     tracks,
 )
 
 from iOpenPod.app.core.settings.definitions import (
+    IPOD_LIBRARY_VIEW_MODE,
     TRACK_TITLE_BAR_STYLE,
     AppearanceMode,
     DarkTheme,
+    IPodLibraryViewMode,
     TrackTitleBarStyle,
 )
 from iOpenPod.GUI.main_window import MainWindow
@@ -98,9 +101,13 @@ def test_round_title_bar_switches_live_and_preserves_interaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = build_context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.track_model.replace_tracks(tracks(100))
     context.theme_manager.set_mode(mode)
     window = MainWindow(context, auto_discover=False)
+    show_albums(window)
     try:
         window.resize(1100, 760)
         window.show()
@@ -172,6 +179,9 @@ def test_saved_round_title_bar_applies_to_new_headers_and_survives_theme_changes
     None
 ):
     context = build_context()
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
+    )
     context.settings.set_global(TRACK_TITLE_BAR_STYLE, TrackTitleBarStyle.ROUND.value)
     window = MainWindow(context, auto_discover=False)
     try:

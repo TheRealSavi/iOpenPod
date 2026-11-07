@@ -116,3 +116,29 @@ def test_sysinfo_extended_uses_bounded_scalar_fallback() -> None:
 
     assert evidence.model_numbers[0].value == "MB565"
     assert evidence.product_serials == ()
+
+
+def test_sysinfo_keeps_release_and_transport_revision_separate_when_merged() -> None:
+    first = parse_sysinfo("visibleBuildID: 2.0.1\nFireWireVersion: 1.62\n")
+    second = parse_sysinfo_extended(
+        plistlib.dumps({"VisibleBuildID": "2.0.1", "scsi_revision": "1.62"}),
+        authority=EvidenceAuthority.CURRENT_HARDWARE,
+    )
+    merged = first.merged_with(second)
+    assert [item.value for item in merged.firmware_versions] == ["2.0.1", "2.0.1"]
+    assert [item.value for item in merged.transport_revisions] == ["1.62", "1.62"]
+    assert (
+        merged.transport_revisions[-1].authority is EvidenceAuthority.CURRENT_HARDWARE
+    )
+    assert parse_sysinfo("BuildID: 9.0.1\n").firmware_versions == ()
+
+
+def test_scalar_fallback_keeps_release_distinct_from_transport_revision() -> None:
+    evidence = parse_sysinfo_extended(
+        b"<plist><dict><key>FireWireVersion</key><string>1.62</string>"
+        b"<key>VisibleBuildID</key><string>2.0.1</string>"
+        b"<key>ImageSpecifications</key><array><key>1067</key><dict/>"
+        b"</array></dict></plist>"
+    )
+    assert evidence.firmware_versions[0].value == "2.0.1"
+    assert evidence.transport_revisions[0].value == "1.62"

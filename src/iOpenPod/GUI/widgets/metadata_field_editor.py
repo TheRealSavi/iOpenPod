@@ -1,6 +1,17 @@
 """Reusable directly editable metadata field controls."""
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Signal
+from collections.abc import Callable
+
+from PySide6.QtCore import (
+    QT_TRANSLATE_NOOP,
+    QCoreApplication,
+    QEvent,
+    QModelIndex,
+    QPersistentModelIndex,
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -8,6 +19,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -21,9 +35,20 @@ from iOpenPod.app.metadata_fields import (
     display_value,
     parse_field,
 )
+from iOpenPod.app.models.equalizer import equalizer_label
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
-from iPodDB.library import ContentAdvisory, MediaType, MetadataValue, TrackChapter
+from iOpenPod.GUI.widgets.volume_adjustment import VolumeAdjustment
+from iPodDB.library import (
+    ContentAdvisory,
+    EqualizerPreset,
+    MediaType,
+    MetadataValue,
+    TrackChapter,
+    decode_track_equalizer,
+    encode_track_equalizer,
+)
 
 _MEDIA_TYPE_LABELS = {
     MediaType.AUDIO: str(QT_TRANSLATE_NOOP("FieldEditor", "Music")),
@@ -44,17 +69,72 @@ _MEDIA_TYPE_LABELS = {
 }
 
 
+class _ChapterArtworkDelegate(QStyledItemDelegate):
+    """Request thumbnails only when the chapter's cell is painted."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.preview: Callable[[int, int, float], QPixmap | None] | None = None
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        styled = QStyleOptionViewItem(option)
+        self.initStyleOption(styled, index)
+        styled.text = "—"
+        styled.displayAlignment = Qt.AlignmentFlag.AlignCenter
+        pixmap = None
+        try:
+            start_ms = int(str(index.sibling(index.row(), 0).data()))
+        except ValueError:
+            pass
+        else:
+            if self.preview is not None:
+                pixmap = self.preview(start_ms, 40, option.widget.devicePixelRatioF())
+        if pixmap is not None:
+            styled.text = ""
+        option.widget.style().drawControl(
+            QStyle.ControlElement.CE_ItemViewItem, styled, painter, option.widget
+        )
+        if pixmap is not None:
+            QIcon(pixmap).paint(
+                painter,
+                option.rect.adjusted(6, 6, -6, -6),
+                Qt.AlignmentFlag.AlignCenter,
+            )
+
+
 class ChapterEditor(QWidget):
     """Edit a Track's ordered chapter markers."""
 
+    chaptersChanged = Signal()
+    artworkRequested = Signal(object)
+
     def __init__(self, chapters: tuple[TrackChapter, ...], parent: QWidget) -> None:
         super().__init__(parent)
-        self.table = QTableWidget(0, 2, self)
-        self.table.setHorizontalHeaderLabels([self.tr("Start (ms)"), self.tr("Title")])
+        self._setting_chapters = False
+        self.table = QTableWidget(0, 3, self)
+        self.table.setHorizontalHeaderLabels(
+            [self.tr("Start (ms)"), self.tr("Title"), self.tr("Artwork")]
+        )
         self.table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
         self.table.setMinimumHeight(230)
+        self.table.setColumnWidth(2, 80)
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Fixed
+        )
+        self.table.verticalHeader().setDefaultSectionSize(52)
+        self._artwork_delegate = _ChapterArtworkDelegate(self.table)
+        self.table.setItemDelegateForColumn(2, self._artwork_delegate)
+        self.table.itemChanged.connect(self._chapter_item_changed)
+        self.table.model().rowsRemoved.connect(self._chapters_changed)
+        self.table.cellClicked.connect(self._activate_artwork)
+        self.table.itemActivated.connect(self._artwork_item_activated)
         self.set_chapters(chapters)
         self._add_button = ActionButton(self.tr("Add chapter"), self)
         self._remove_button = ActionButton(
@@ -81,18 +161,66 @@ class ChapterEditor(QWidget):
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
             self.table.setHorizontalHeaderLabels(
-                [self.tr("Start (ms)"), self.tr("Title")]
+                [self.tr("Start (ms)"), self.tr("Title"), self.tr("Artwork")]
             )
+            for row in range(self.table.rowCount()):
+                self._set_artwork_item(row)
             self._add_button.setText(self.tr("Add chapter"))
             self._remove_button.setText(self.tr("Remove selected"))
             self._sort_button.setText(self.tr("Sort by time"))
         super().changeEvent(event)
 
     def set_chapters(self, chapters: tuple[TrackChapter, ...]) -> None:
-        self.table.setRowCount(len(chapters))
-        for row, chapter in enumerate(chapters):
-            self.table.setItem(row, 0, QTableWidgetItem(str(chapter.start_ms)))
-            self.table.setItem(row, 1, QTableWidgetItem(chapter.title))
+        self._setting_chapters = True
+        try:
+            self.table.setRowCount(len(chapters))
+            for row, chapter in enumerate(chapters):
+                self.table.setItem(row, 0, QTableWidgetItem(str(chapter.start_ms)))
+                self.table.setItem(row, 1, QTableWidgetItem(chapter.title))
+                self._set_artwork_item(row)
+        finally:
+            self._setting_chapters = False
+        self._chapters_changed()
+
+    def set_artwork_preview(
+        self, preview: Callable[[int, int, float], QPixmap | None]
+    ) -> None:
+        """Connect draft artwork without decoding images for hidden chapters."""
+        self._artwork_delegate.preview = preview
+        self.refresh_artwork()
+
+    def refresh_artwork(self) -> None:
+        self.table.viewport().update()
+
+    def _set_artwork_item(self, row: int) -> None:
+        item = QTableWidgetItem(self.tr("Choose artwork for this chapter"))
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+        item.setToolTip(item.text())
+        self.table.setItem(row, 2, item)
+
+    def _chapter_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() < 2:
+            self._chapters_changed()
+
+    def _chapters_changed(self, *_args: object) -> None:
+        if not self._setting_chapters:
+            self.chaptersChanged.emit()
+            self.refresh_artwork()
+
+    def _artwork_item_activated(self, item: QTableWidgetItem) -> None:
+        self._activate_artwork(item.row(), item.column())
+
+    def _activate_artwork(self, row: int, column: int) -> None:
+        if column != 2:
+            return
+        item = self.table.item(row, 0)
+        if item is not None:
+            try:
+                start_ms = int(item.text())
+            except ValueError:
+                return
+            if 0 <= start_ms < 0xFFFFFFFF:
+                self.artworkRequested.emit(start_ms)
 
     def value(self) -> tuple[TrackChapter, ...]:
         result: list[TrackChapter] = []
@@ -110,6 +238,7 @@ class ChapterEditor(QWidget):
         self.table.setItem(
             row, 1, QTableWidgetItem(self.tr("Chapter %1").replace("%1", str(row + 1)))
         )
+        self._set_artwork_item(row)
 
     def _remove(self) -> None:
         for row in sorted(
@@ -148,12 +277,48 @@ class FieldEditor(QFrame):
         self.setObjectName("metadataFieldRow")
         self.setProperty("modified", False)
 
-        field_label = QLabel(
-            QCoreApplication.translate("MetadataFields", spec.label), self
-        )
+        field_label = QLabel(self._label_text(), self)
         self._field_label = field_label
         field_label.setObjectName("metadataFieldLabel")
-        if spec.kind is FieldKind.MEDIA_TYPE:
+        self.editor: QWidget
+        self._rating_mixed_label: QLabel | None = None
+        if spec.kind is FieldKind.RATING:
+            assert isinstance(value, int)
+            rating_editor = StarRating(0 if mixed else value, self)
+            rating_editor.ratingEdited.connect(self._modified)
+            self.editor = rating_editor
+            self._rating_mixed_label = QLabel(self)
+            self._rating_mixed_label.setText(
+                QCoreApplication.translate("EditorLabels", "Mixed values")
+            )
+            self._rating_mixed_label.setVisible(mixed)
+        elif spec.kind is FieldKind.VOLUME_ADJUSTMENT:
+            assert isinstance(value, int | float)
+            volume_editor = VolumeAdjustment(
+                None if mixed else round(value * 255 / 100), self
+            )
+            volume_editor.valueEdited.connect(self._modified)
+            self.editor = volume_editor
+        elif spec.kind is FieldKind.EQUALIZER:
+            assert isinstance(value, str)
+            eq_editor = AppComboBox(self)
+            current_preset = decode_track_equalizer(value)
+            if mixed:
+                eq_editor.addItem(
+                    QCoreApplication.translate("EditorLabels", "Mixed values"), None
+                )
+            elif current_preset is None:
+                eq_editor.addItem(equalizer_label(None), None)
+            for preset in EqualizerPreset:
+                eq_editor.addItem(equalizer_label(preset), preset.value)
+            eq_editor.setCurrentIndex(
+                0
+                if mixed or current_preset is None
+                else eq_editor.findData(current_preset.value)
+            )
+            eq_editor.currentIndexChanged.connect(self._modified)
+            self.editor = eq_editor
+        elif spec.kind is FieldKind.MEDIA_TYPE:
             media_editor = AppComboBox(self)
             current = (
                 value[0]
@@ -194,7 +359,7 @@ class FieldEditor(QFrame):
                 )
             )
             media_editor.currentIndexChanged.connect(self._modified)
-            self.editor: QWidget = media_editor
+            self.editor = media_editor
         elif spec.kind in (FieldKind.BOOLEAN, FieldKind.ADVISORY):
             editor = AppComboBox(self)
             if mixed:
@@ -232,8 +397,7 @@ class FieldEditor(QFrame):
                 else ()
             )
             chapter_editor = ChapterEditor(chapters, self)
-            chapter_editor.table.itemChanged.connect(self._modified)
-            chapter_editor.table.model().rowsRemoved.connect(self._modified)
+            chapter_editor.chaptersChanged.connect(self._modified)
             self.editor = chapter_editor
         else:
             line = QLineEdit(self)
@@ -247,13 +411,18 @@ class FieldEditor(QFrame):
             )
             line.textChanged.connect(self._modified)
             self.editor = line
-        self.editor.setObjectName("field_" + spec.path)
+        if not isinstance(self.editor, StarRating | VolumeAdjustment):
+            self.editor.setObjectName("field_" + spec.path)
+        self.editor.setAccessibleName(field_label.text())
         reset = ActionButton(
             self.tr("Reset"),
             self,
             kind=ActionButtonKind.QUIET,
         )
         reset.setObjectName("metadataFieldReset")
+        reset_policy = reset.sizePolicy()
+        reset_policy.setRetainSizeWhenHidden(True)
+        reset.setSizePolicy(reset_policy)
         reset.setVisible(False)
         reset.clicked.connect(self.reset)
         self.reset_button = reset
@@ -268,12 +437,22 @@ class FieldEditor(QFrame):
         header.addWidget(reset)
         layout.addLayout(header)
         layout.addWidget(self.editor)
+        if self._rating_mixed_label is not None:
+            layout.addWidget(self._rating_mixed_label)
         self._syncing = False
 
+    def _label_text(self) -> str:
+        if self.spec.kind is FieldKind.RATING:
+            return QCoreApplication.translate("TrackActions", "Rating")
+        return QCoreApplication.translate("MetadataFields", self.spec.label)
+
     def retranslate_ui(self) -> None:
-        self._field_label.setText(
-            QCoreApplication.translate("MetadataFields", self.spec.label)
-        )
+        self._field_label.setText(self._label_text())
+        self.editor.setAccessibleName(self._field_label.text())
+        if self._rating_mixed_label is not None:
+            self._rating_mixed_label.setText(
+                QCoreApplication.translate("EditorLabels", "Mixed values")
+            )
         self.reset_button.setText(self.tr("Reset"))
         editor = self.editor
         if isinstance(editor, AppComboBox):
@@ -289,6 +468,8 @@ class FieldEditor(QFrame):
                         label = QCoreApplication.translate(
                             "EditorLabels", "Mixed values"
                         )
+                    elif self.spec.kind is FieldKind.EQUALIZER:
+                        label = equalizer_label(None)
                     else:
                         retained = (
                             " + ".join(
@@ -300,6 +481,8 @@ class FieldEditor(QFrame):
                             else str(self.initial)
                         )
                         label = self.tr("Current (%1)").replace("%1", retained)
+                elif self.spec.kind is FieldKind.EQUALIZER:
+                    label = equalizer_label(EqualizerPreset(value))
                 elif self.spec.kind is FieldKind.BOOLEAN:
                     label = self.tr("Yes") if value else self.tr("No")
                 elif self.spec.kind is FieldKind.ADVISORY:
@@ -336,7 +519,10 @@ class FieldEditor(QFrame):
         if self._syncing:
             return
         if (
-            (self.mixed or self.spec.kind is FieldKind.MEDIA_TYPE)
+            (
+                self.mixed
+                or self.spec.kind in (FieldKind.MEDIA_TYPE, FieldKind.EQUALIZER)
+            )
             and isinstance(self.editor, AppComboBox)
             and self.editor.currentData() is None
         ):
@@ -362,6 +548,8 @@ class FieldEditor(QFrame):
         if self._modified_state == modified:
             return
         self._modified_state = modified
+        if self._rating_mixed_label is not None:
+            self._rating_mixed_label.setVisible(self.mixed and not modified)
         self.reset_button.setVisible(modified)
         self.setProperty("modified", modified)
         style = self.style()
@@ -374,7 +562,15 @@ class FieldEditor(QFrame):
         self._syncing = True
         try:
             editor = self.editor
-            if isinstance(editor, QLineEdit):
+            if isinstance(editor, StarRating):
+                assert isinstance(self.initial, int)
+                editor.set_rating(0 if self.mixed else self.initial)
+            elif isinstance(editor, VolumeAdjustment):
+                assert isinstance(self.initial, int | float)
+                editor.set_value(
+                    None if self.mixed else round(self.initial * 255 / 100)
+                )
+            elif isinstance(editor, QLineEdit):
                 editor.setText(
                     "" if self.mixed else display_value(self.initial, self.spec.kind)
                 )
@@ -388,6 +584,10 @@ class FieldEditor(QFrame):
                         if isinstance(self.initial, tuple) and len(self.initial) == 1
                         else None
                     )
+                elif self.spec.kind is FieldKind.EQUALIZER:
+                    assert isinstance(self.initial, str)
+                    preset = decode_track_equalizer(self.initial)
+                    initial = None if preset is None else preset.value
                 index = editor.findData(initial)
                 editor.setCurrentIndex(0 if self.mixed or index < 0 else index)
             elif isinstance(editor, ChapterEditor):
@@ -406,6 +606,10 @@ class FieldEditor(QFrame):
 
     def value(self) -> MetadataValue:
         editor = self.editor
+        if isinstance(editor, StarRating):
+            return editor.rating
+        if isinstance(editor, VolumeAdjustment):
+            return editor.value / 255 * 100
         if isinstance(editor, QLineEdit):
             return parse_field(self.spec, editor.text())
         if isinstance(editor, QPlainTextEdit):
@@ -414,6 +618,8 @@ class FieldEditor(QFrame):
             return editor.value()
         if isinstance(editor, AppComboBox):
             value: object = editor.currentData()
+            if self.spec.kind is FieldKind.EQUALIZER and type(value) is int:
+                return encode_track_equalizer(EqualizerPreset(value))
             if self.spec.kind is FieldKind.ADVISORY and isinstance(value, str):
                 return ContentAdvisory(value)
             if self.spec.kind is FieldKind.MEDIA_TYPE and isinstance(value, str):

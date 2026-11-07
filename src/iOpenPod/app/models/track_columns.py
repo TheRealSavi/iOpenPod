@@ -2,12 +2,13 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from enum import IntEnum, auto
 from typing import cast
 
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication
+from whenever import SYSTEM_TZ, Instant
 
+from iOpenPod.app.models.equalizer import track_equalizer_label
 from iPodDB.library import ContentAdvisory, MediaKind, MediaType, Track
 
 type TrackSortValue = str | int | float | None
@@ -592,7 +593,7 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
         _column("Checked", lambda track: track.metadata.checked, _format_boolean),
         _column(
             "Played",
-            lambda track: track.play_count > 0 or track.metadata.played,
+            lambda track: track.metadata.played,
             _format_boolean,
         ),
         _column(
@@ -769,7 +770,9 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
             _format_positive_integer,
             right_aligned=True,
         ),
-        _column("Equalizer", lambda track: track.metadata.equalizer),
+        _column(
+            "Equalizer", lambda track: track_equalizer_label(track.metadata.equalizer)
+        ),
         _column("Location", lambda track: track.metadata.location),
         _column("Lyrics", lambda track: track.metadata.lyrics),
         _column("Keywords", lambda track: track.metadata.track_keywords),
@@ -913,10 +916,11 @@ def _format_sound_check(value: float | None) -> str:
 
 
 def _format_date(value: int) -> str:
-    if value <= 0:
+    # Zero alone is the semantic unset sentinel; pre-1970 dates remain valid.
+    if value == 0:
         return _MISSING
     try:
-        return datetime.fromtimestamp(value).strftime("%Y-%m-%d")
+        return Instant.from_timestamp(value).to_tz(SYSTEM_TZ).date().format_iso()
     except (OSError, OverflowError, ValueError):
         return _MISSING
 

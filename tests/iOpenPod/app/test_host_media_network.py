@@ -8,6 +8,7 @@ import sys
 import wave
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -28,7 +29,9 @@ def remote_drive(monkeypatch: pytest.MonkeyPatch) -> None:
     # drive classification is remote. This does not simulate SMB server behavior.
     if sys.platform != "win32":
         pytest.skip("Windows drive classification")
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel = cast("type[ctypes.CDLL]", vars(ctypes)["WinDLL"])(
+        "kernel32", use_last_error=True
+    )
     monkeypatch.setattr(kernel, "GetDriveTypeW", Mock(return_value=4))  # DRIVE_REMOTE
 
     def load_kernel(*args: object, **kwargs: object) -> ctypes.CDLL:
@@ -180,6 +183,10 @@ def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
     # because its parser rejected that reference before the cache was written.
     document = json.loads(cache.path.read_bytes())
     document["version"] = 12
+    for row in document["entries"]:
+        row["metadata"].pop("no_audio", None)
+        if row["kind"] == "playlist":
+            row["metadata"].pop("metadata_complete")
     entry = next(row for row in document["entries"] if row["kind"] == "playlist")
     entry["metadata"]["references"] = [os.fspath(song)]
     entry["warning"] = "Skipped 1 unsafe or non-local Playlist references."
@@ -215,7 +222,7 @@ def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
     assert not pending.issues
     assert pending.cache == HostMediaCacheStats(reused=2, inspected=1)
     stored = json.loads(cache.path.read_bytes())
-    assert stored["version"] == 14
+    assert stored["version"] == 16
     playlist_entry = next(row for row in stored["entries"] if row["kind"] == "playlist")
     assert playlist_entry["metadata"]["references"] == [
         os.fspath(song),

@@ -11,7 +11,14 @@ from time import monotonic, sleep
 import pytest
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QDialog, QLabel, QPlainTextEdit, QPushButton, QTreeWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QLabel,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QTreeWidget,
+)
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
@@ -25,6 +32,7 @@ from iOpenPod.app.core.settings.definitions import (
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.app.device_controller import DeviceController
+from iOpenPod.app.library_sync_helper import LIBRARY_SYNC_HELPER_PATH
 from iOpenPod.app.library_workspace import LibraryWorkspace, TrackUpdate
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
@@ -563,6 +571,49 @@ def test_connection_change_discards_an_in_flight_result(
         controller.shutdown()
 
 
+def test_review_skips_phase_without_cancelling_and_resets_for_new_request(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+) -> None:
+    class PhaseService(DelayedService):
+        def prepare_library(
+            self,
+            request: LibraryPreparationRequest,
+            progress: Callable[[WriteProgress], None],
+            cancelled: threading.Event,
+        ) -> LibraryReview:
+            progress(WriteProgress("resources.phase", "Analyzing Phase"))
+            result = super().prepare_library(request, progress, cancelled)
+            assert not cancelled.is_set()
+            return result
+
+    _, devices, workspace, _ = session
+    service = PhaseService()
+    controller = LibraryWriteController(service, workspace, devices, manual_settings())
+    dialog = LibraryReviewDialog(controller)
+    try:
+        skip = dialog.findChild(QPushButton, "skipPhaseAnalysis")
+        assert skip is not None and skip.isHidden()
+        for _ in range(2):
+            service.release.clear()
+            controller.prepare()
+            wait_for(lambda: controller.can_skip_phase_analysis)
+            assert controller.request is not None
+            assert not controller.request.phase_analysis_skip.is_set()
+            assert not skip.isHidden() and skip.isEnabled()
+            skip.click()
+            assert controller.request.phase_analysis_skip.is_set()
+            assert not skip.isEnabled()
+            assert controller.state is PreparationState.PREPARING
+            service.release.set()
+            wait_for(lambda: controller.state is PreparationState.BLOCKED)
+            assert skip.isHidden()
+    finally:
+        service.release.set()
+        controller.shutdown()
+        dialog.deleteLater()
+        APPLICATION.processEvents()
+
+
 class BrokenService(DelayedService):
     def prepare_library(
         self,
@@ -796,10 +847,15 @@ def test_workspace_track_deletion_is_reviewed_saved_and_cleared(
 
 
 @pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize("invalid_helper", [False, True])
 def test_workspace_track_deletion_permanently_removes_media(
-    tmp_path: Path, automatic: bool
+    tmp_path: Path, automatic: bool, invalid_helper: bool
 ) -> None:
     device = build_device(tmp_path)
+    if invalid_helper:
+        helper_path = device.root / str(LIBRARY_SYNC_HELPER_PATH)
+        helper_path.parent.mkdir(parents=True, exist_ok=True)
+        helper_path.write_bytes(b"invalid helper must be preserved")
     settings = (
         SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
         if automatic
@@ -814,6 +870,7 @@ def test_workspace_track_deletion_permanently_removes_media(
     controller = LibraryWriteController(
         device.coordinator, workspace, devices, settings
     )
+    warnings = QSignalSpy(controller.automaticSaveWarning)
     try:
         if not automatic:
             controller.prepare()
@@ -825,6 +882,14 @@ def test_workspace_track_deletion_permanently_removes_media(
         assert not media.exists()
         assert controller.save_result is not None
         assert controller.save_result.recovery_path == ""
+        assert warnings.count() == int(automatic and invalid_helper)
+        assert (
+            any(
+                issue.code == "save.sync_helper_failed"
+                for issue in controller.save_result.issues
+            )
+            == invalid_helper
+        )
     finally:
         controller.shutdown()
         devices.shutdown()
@@ -934,6 +999,73 @@ class DelayedSaveService:
         self.entered.set()
         self.release.wait(3)
         return self.coordinator.save_library(review, expected, progress, cancelled)
+
+
+def test_review_and_controller_retain_measured_progress_until_save_finishes(
+    session: tuple[DeviceCoordinator, DeviceController, LibraryWorkspace, Path],
+) -> None:
+    coordinator, devices, workspace, _ = session
+    service = DelayedSaveService(coordinator, after_save=True)
+    controller = LibraryWriteController(service, workspace, devices, manual_settings())
+    dialog = LibraryReviewDialog(controller)
+    updates: list[object] = []
+    controller.progressChanged.connect(updates.append)
+    try:
+        dialog.show()
+        controller.prepare()
+        bar = dialog.findChild(QProgressBar, "libraryReviewProgress")
+        warning = dialog.findChild(QLabel, "libraryReviewSafetyWarning")
+        label = dialog.findChild(QLabel, "libraryReviewStatus")
+        assert bar is not None and warning is not None and label is not None
+        assert bar.isVisible() and not warning.isVisible()
+        wait_for(lambda: controller.state is PreparationState.READY)
+        assert updates and all(isinstance(value, WriteProgress) for value in updates)
+        assert controller.progress is None and not bar.isVisible()
+
+        updates.clear()
+        controller.save()
+        assert controller.progress is None
+        assert bar.isVisible() and bar.maximum() == 0
+        assert warning.isVisible()
+        wait_for(service.entered.is_set)
+        APPLICATION.processEvents()
+        assert controller.state is PreparationState.SAVING
+        assert controller.progress is not None
+        assert any(
+            isinstance(value, WriteProgress)
+            and value.total
+            and value.completed is not None
+            for value in updates
+        )
+        assert warning.text() == "Do not disconnect your iPod"
+        assert warning.isVisible()
+
+        # A slow current stage remains visible on refresh or reopening the review.
+        measured = WriteProgress(
+            "save.storage.verifying_writes",
+            "Verifying files on the iPod…",
+            completed=2,
+            total=5,
+            current_item="iPod_Control/iTunes/iTunesDB",
+            unit="files",
+        )
+        controller._progress(controller._token, measured)  # pyright: ignore[reportPrivateUsage]
+        dialog.refresh()
+        assert label.text() == measured.message
+        assert bar.value() == 4_000 and bar.maximum() == 10_000
+        assert bar.toolTip() == measured.current_item
+        assert warning.isVisible()
+        controller._progress(controller._token - 1, WriteProgress("old", "Stale"))  # pyright: ignore[reportPrivateUsage]
+        assert controller.progress == measured
+        service.release.set()
+        wait_for(lambda: controller.state is PreparationState.SAVED)
+        assert controller.progress is None
+        assert not bar.isVisible() and not warning.isVisible()
+        assert "saved and verified" in label.text()
+    finally:
+        service.release.set()
+        dialog.close()
+        controller.shutdown()
 
 
 @pytest.mark.parametrize("after_save", (False, True))

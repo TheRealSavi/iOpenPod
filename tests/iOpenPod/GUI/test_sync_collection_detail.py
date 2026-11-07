@@ -4,7 +4,15 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QEvent, QModelIndex, QObject, QPoint, QRect, Qt
+from PySide6.QtCore import (
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPoint,
+    QRect,
+    Qt,
+    QVariantAnimation,
+)
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
@@ -31,6 +39,7 @@ from iOpenPod.app.models.selection_grouping import (
 from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackRole
 from iOpenPod.app.sync_plan import SyncPlan
+from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.host_library_browser import HostLibraryBrowser
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.collection_page import CollectionPage
@@ -43,6 +52,7 @@ from iOpenPod.GUI.widgets.artwork_view import ArtworkView
 from iOpenPod.GUI.widgets.collection_detail import CollectionDetailPage
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
+from iOpenPod.GUI.widgets.page_fade import PageFade
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.sync_selection_actions import SyncSelectionActions
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
@@ -62,7 +72,12 @@ type SyncBrowser = tuple[
 
 
 @pytest.fixture
-def browser() -> Iterator[SyncBrowser]:
+def stream_requests() -> list[int]:
+    return []
+
+
+@pytest.fixture
+def browser(stream_requests: list[int]) -> Iterator[SyncBrowser]:
     tracks = tuple(
         Track(
             offset + number,
@@ -95,7 +110,13 @@ def browser() -> Iterator[SyncBrowser]:
     provider = ArtworkPixmapProvider(controller)
     parent = QStackedWidget()
     host = HostLibraryBrowser(
-        settings, theme, provider, LibraryWorkspace(), parent, selection
+        settings,
+        theme,
+        provider,
+        LibraryWorkspace(),
+        parent,
+        selection,
+        choose_streams=stream_requests.append,
     )
     host.load(library)
     for page in host.pages:
@@ -134,6 +155,39 @@ def _click_card(grid: AlbumGridView | CollectionGridView, title: str) -> None:
 
 
 @pytest.mark.parametrize(
+    ("page_id", "title"),
+    (
+        (PageId.ALBUMS, "Album A"),
+        (PageId.ARTISTS, "Artist A"),
+        (PageId.GENRES, "Rock"),
+        (PageId.TV_SHOWS, "Show A"),
+        (PageId.MUSIC_VIDEOS, "Album A"),
+    ),
+)
+def test_stream_button_opens_chooser_from_collection(
+    browser: SyncBrowser, stream_requests: list[int], page_id: PageId, title: str
+) -> None:
+    host, selection, parent, _theme = browser
+    page = host.page_widgets[page_id]
+    parent.setCurrentWidget(page)
+    APPLICATION.processEvents()
+    grid = page.findChild(
+        AlbumGridView
+        if page_id in (PageId.ALBUMS, PageId.MUSIC_VIDEOS)
+        else CollectionGridView
+    )
+    assert isinstance(grid, AlbumGridView | CollectionGridView)
+    _click_card(grid, title)
+    table = page.findChild(TrackTable)
+    assert table is not None and table.isVisible()
+    index = table.model().index(0, TrackColumn.SYNC_SELECTION)
+    button = SyncTrackDelegate.button_rect(table.visualRect(index))
+    QTest.mouseClick(table.viewport(), Qt.MouseButton.LeftButton, pos=button.center())
+    assert stream_requests == [index.data(TrackRole.TRACK_ID)]
+    assert selection.selected_host_count == 0
+
+
+@pytest.mark.parametrize(
     ("page_id", "title", "ids"),
     (
         (PageId.ALBUMS, "Album A", {1, 2}),
@@ -151,7 +205,9 @@ def test_card_opens_full_page_with_search_and_stable_sync_selection(
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     grid = page.findChild(
-        AlbumGridView if page_id is PageId.ALBUMS else CollectionGridView
+        AlbumGridView
+        if page_id in (PageId.ALBUMS, PageId.MUSIC_VIDEOS)
+        else CollectionGridView
     )
     detail = page.findChild(CollectionDetailPage)
     table = page.findChild(TrackTable)
@@ -412,6 +468,35 @@ def test_genre_album_bulk_selection_respects_its_scoped_tracks(
     assert selection.track_check_state(2) is Qt.CheckState.Unchecked
 
 
+@pytest.mark.parametrize("going_back", (False, True))
+def test_fade_starts_with_the_complete_outgoing_page(
+    browser: SyncBrowser, going_back: bool
+) -> None:
+    host, _selection, parent, _theme = browser
+    parent.setObjectName("fadeTestWindow")
+    parent.setStyleSheet("#fadeTestWindow { background: #f8fafc; }")
+    page = host.page_widgets[PageId.ALBUMS]
+    parent.setCurrentWidget(page)
+    grid = page.findChild(AlbumGridView)
+    detail = page.findChild(CollectionDetailPage)
+    fade = page.findChild(PageFade)
+    assert grid is not None and detail is not None and fade is not None
+    animation = fade.findChild(QVariantAnimation)
+    assert animation is not None
+    if going_back:
+        _click_card(grid, "Album A")
+        animation.setCurrentTime(animation.duration())
+    before = parent.grab().toImage()
+    if going_back:
+        detail.backRequested.emit()
+    else:
+        grid.clicked.emit(_card(grid, "Album A"))
+    animation.pause()
+    animation.setCurrentTime(0)
+    first = parent.grab().toImage()
+    assert first == before, "The incoming page must not show through the first frame"
+
+
 def _detail_rect(widget: QWidget, detail: CollectionDetailPage) -> QRect:
     return QRect(widget.mapTo(detail, QPoint()), widget.size())
 
@@ -458,7 +543,10 @@ def test_opened_collection_preserves_all_four_artwork_tiles(
         artwork_id: int,
         _logical_size: int,
         _device_pixel_ratio: float,
+        *,
+        display_time_ms: int | None = None,
     ) -> QPixmap | None:
+        assert display_time_ms is None
         return covers.get(artwork_id)
 
     monkeypatch.setattr(ArtworkPixmapProvider, "pixmap", pixmap)

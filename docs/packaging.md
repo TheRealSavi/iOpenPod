@@ -29,7 +29,36 @@ The `packaging` dependency group locks PyInstaller and Hatchling separately from
 runtime dependencies. Build on each target OS and architecture; PyInstaller does
 not cross-compile. Use a fresh environment without the optional `synesthesia-gpu`
 extra. The native baseline includes ordinary analysis but excludes Demucs, Torch,
-and Torchaudio; optional GPU analysis needs a separate packaging/size decision.
+and Torchaudio. Optional Phase analysis is installed after an explicit request in
+Settings, into an isolated Host environment rather than the executable. The frozen
+bundle includes its worker and shared `phase_sources.py`, `phase_parts.py` and
+`phase_activity.py` source resources. Setup selects a platform-compatible CPU/CUDA stack and verifies
+real inference before activation. Acoustic analysis remains available on optional
+failure. See [ADR-0225](adr/0225-install-optional-phase-analysis-with-safe-fallbacks.md).
+
+Both executable specifications load `packaging/hooks/hook-whenever.py`. Whenever
+0.11 exposes its public API through lazy imports, so the hook includes its
+submodules, native extension/Python fallback, distribution metadata and `tzdata`
+resources. Windows Host-zone lookup also needs its `tzlocal` runtime dependency.
+An isolated Windows onefile smoke check exercised both providers, bundled IANA
+data with the OS timezone search path disabled, New York DST and Host-zone lookup.
+This does not replace the complete per-platform application/update-helper builds.
+See [the datetime guide](datetime-engineering.md#host-formats-precision-and-packaging).
+
+Every native release smoke test generates a Phase chart from authored audio and
+serializes it to the game's format, using the included acoustic analyzer. The
+worker's Python entry point and shared source modules are explicitly copied into
+the bundle because ordinary resource collection excludes Python files.
+To test a previously installed optional runtime from a frozen executable, run
+`iOpenPod --smoke-test --smoke-test-phase-runtime PATH_TO_PHASE_ANALYSIS`.
+This checks a standalone request and two requests sharing one preparation worker
+through the actual child-process boundary, including cleanup;
+use an installation with its model already downloaded for offline checks.
+`--smoke-test-report PATH` records failures when the executable has no console.
+The manual release workflow also offers `verify_phase_runtime`, which downloads
+and tests optional analysis in each native candidate through
+`scripts/check_phase_distribution.py`. This is opt-in because each runner needs
+several gigabytes of downloads and disk space; acoustic checks always run.
 
 On Windows the builder limits DLL discovery to Python and Windows system paths.
 Before `freeze`, run `uv run --locked python -m scripts.build_windows_sndfile` to
@@ -58,6 +87,11 @@ The copied Original iOpenPod icon is used in the application, executable, bundle
 desktop entry, and Store tiles. See its [provenance](../src/iOpenPod/assets/icons/README.md).
 The available master is 256 pixels. ICNS includes larger converted representations;
 the original high-resolution artwork is still needed for final store art review.
+
+Qt 6.11.2 and 6.12.0 on Wayland use a window-icon alpha workaround. Its
+[investigation and native acceptance steps](research/window-icon-wayland-alpha.md)
+must be revisited when changing Qt versions. Fedora KDE standalone title-bar
+rendering remains a native acceptance check.
 
 Outputs are under ignored `build/` and `dist/`. Store staging refuses to overwrite
 an existing staging directory so obsolete files cannot silently enter a package.
@@ -306,9 +340,13 @@ onto that shortcut. The matching ZIP remains the Sparkle update archive. Native 
 mounts each image, checks its layout and app signature, and compares its executable
 with the frozen app. A DMG does not replace Developer ID signing or notarization.
 The standard native candidate targets **macOS 12.3 or later**. The workflow builds
-separate Apple Silicon (`macos-14`) and Intel (`macos-15-intel`) candidates. These
+separate Apple Silicon (`macos-15`) and Intel (`macos-15-intel`) candidates. These
 newer runners establish buildability and launch on their own OS; **execution on
 macOS 12.3 on each architecture remains pending acceptance**.
+
+Build and release, Health, and signed update-feed jobs use `macos-15` for Apple
+Silicon after [GitHub retired macOS 14 runners](https://github.com/actions/runner-images/issues/13518)
+on November 2, 2026. Release assembly consumes `candidate-macos-15` artifacts.
 
 ### Build for macOS 12.3
 
@@ -440,7 +478,7 @@ into the frozen tree; libraries from a newer Host fail to load inside the runtim
 The Freedesktop SDK itself cannot run the freeze because it lacks the Kerberos
 library that PySide6's QtNetwork module links.
 
-Under [ADR-0151](adr/0151-bundle-media-tools-in-flatpak.md), the manifest builds
+Under [ADR-0247](adr/0247-bundle-media-tools-in-flatpak.md), the manifest builds
 x264, FFmpeg 7.1.5 (GPL configuration with x264 and LAME), and Chromaprint 1.6.2's
 fpcalc from pinned sources into `/app`. Storage's PATH discovery finds them without
 code changes; Path Overrides still take precedence.
@@ -507,8 +545,9 @@ exercise Windows x64, macOS arm64 and x86_64, and Linux x64 and validate wheel
 contents. Native environments exclude dev tools and optional GPU dependencies.
 
 Pushing a tag that exactly matches `v<version>` in `pyproject.toml` automatically
-builds and publishes a public GitHub Release, then publishes the same version to
-PyPI. A manual Build and release run on a version tag does the same. To create the
+builds release candidates, then waits for maintainer approval before publishing
+to GitHub, PyPI, and the signed update feed. A manual Build and release run on a
+version tag does the same. To create the
 tag through GitHub, open **Actions → Build and release → Run workflow**, select
 **main**, and enable **Publish to GitHub and PyPI**.
 The workflow reads the version from `pyproject.toml`, builds that exact commit,
@@ -517,6 +556,14 @@ An existing tag must already point at that commit; tags are never moved. A manua
 branch run with publication unchecked only retains candidate artifacts, as do pull
 requests. Other branches cannot request publication. No workflow publishes to a
 Store.
+
+Open the run's **Review deployments** to approve `github-release` before GitHub
+publication. After it succeeds, approve the `pypi` and `release-signing`
+deployments as they become ready. Only `TheRealSavi` is a required reviewer;
+self-review is allowed so the sole maintainer can release. Each environment
+allows the `main` branch and `v*` tags, with administrator approval bypass disabled.
+The `pypi` name and workflow identity remain unchanged for Trusted Publishing.
+Candidate runs and pull requests do not request release credentials or approvals.
 
 Publication waits for all four builds and their frozen smoke tests. It verifies
 each native archive and macOS disk image checksum, collects dependency inventories
@@ -554,8 +601,8 @@ with these GitHub values:
 | Workflow filename | `release.yml` |
 | Environment | `pypi` |
 
-Create the matching `pypi` environment in GitHub repository settings. If deployment
-branch/tag restrictions are enabled, allow both `main` (manual publication) and
+Create the matching protected `pypi` environment in GitHub repository settings.
+Require maintainer approval and allow both `main` (manual publication) and
 version tags matching `v*`. No PyPI API-token secret is needed. See
 [PyPI's setup guide](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
 

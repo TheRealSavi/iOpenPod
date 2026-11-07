@@ -19,6 +19,7 @@ from iOpenPod.GUI.presentation.artwork import (
     paint_artwork_pixmap,
     paint_artwork_placeholder,
 )
+from iOpenPod.GUI.presentation.icons import glyph_icon, phase_wordmark
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 if TYPE_CHECKING:
@@ -40,6 +41,80 @@ _RIBBON_ANGLE_DEGREES = 10.0
 class _BannerTile:
     artwork_id: int
     placeholder_seed: int
+
+
+class PhaseHeroWordmark(QWidget):
+    """Prominent, text-colored Phase lettering over the hero's artwork."""
+
+    def __init__(
+        self, theme_manager: ThemeManager, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("phaseHeroWordmark")
+        self.setAccessibleName("Phase")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setMinimumSize(108, 22)
+        self.setMaximumSize(246, 50)
+        self._theme_manager = theme_manager
+        theme_manager.effectiveThemeChanged.connect(self._theme_changed)
+
+    def sizeHint(self) -> QSize:
+        return QSize(246, 50)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        del event
+        height = max(1, min(self.height(), round(self.width() * 22 / 108)))
+        logo = phase_wordmark(
+            height, QColor(self._theme_manager.tokens.text), self.devicePixelRatioF()
+        )
+        size = logo.deviceIndependentSize()
+        painter = QPainter(self)
+        painter.drawPixmap(
+            QRectF(self.width() - size.width(), 0, size.width(), size.height()),
+            logo,
+            QRectF(logo.rect()),
+        )
+
+    @Slot(str)
+    def _theme_changed(self, _theme: str) -> None:
+        self.update()
+
+
+class GeniusHeroIcon(QWidget):
+    """The Genius atom over hero artwork, using the normal text color."""
+
+    def __init__(
+        self, theme_manager: ThemeManager, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("geniusHeroIcon")
+        self.setAccessibleName("Genius")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setMinimumSize(44, 44)
+        self.setMaximumSize(64, 64)
+        self._theme_manager = theme_manager
+        theme_manager.effectiveThemeChanged.connect(self._theme_changed)
+
+    def sizeHint(self) -> QSize:
+        return QSize(64, 64)
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        del event
+        painter = QPainter(self)
+        glyph_icon(
+            "atom",
+            min(self.width(), self.height()),
+            QColor(self._theme_manager.tokens.text),
+            self.devicePixelRatioF(),
+        ).paint(
+            painter,
+            self.rect(),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
+        )
+
+    @Slot(str)
+    def _theme_changed(self, _theme: str) -> None:
+        self.update()
 
 
 class PlaylistArtworkBanner(QWidget):
@@ -200,4 +275,4 @@ def _representative_tiles(
     return tuple(tiles[:_MAX_ALBUMS])
 
 
-__all__ = ["PlaylistArtworkBanner"]
+__all__ = ["GeniusHeroIcon", "PhaseHeroWordmark", "PlaylistArtworkBanner"]

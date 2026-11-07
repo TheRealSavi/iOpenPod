@@ -40,9 +40,9 @@ by the parent investigation. Planning explicitly selected all 15 fetched Episode
 with `automatic=False`. No downloads or device/database writes were executed.
 Private evidence includes source/input SHA-256 values, per-model counts, and the
 15 episode comparisons in
-[`catalog-matching.json`](../../.scratch/podcast-virtual-comparison/catalog-matching.json).
+`.scratch/podcast-virtual-comparison/catalog-matching.json`.
 The publisher input is
-[`publisher-inputs.json`](../../.scratch/podcast-virtual-comparison/publisher-inputs.json).
+`.scratch/podcast-virtual-comparison/publisher-inputs.json`.
 These ignored files remain local research artifacts.
 
 Every model produced the same measured result:
@@ -115,7 +115,11 @@ into the shared field-specific writer.
 
 ## Model-dependent layout and publication
 
-These are the current Device Registry authoring policies, not claims about maximum
+ADR-0171 subsequently changes Mini 2G and full-size iPod 5G/5.5G to baseline `0x30`
+and 624-byte headers, resolving the artist-reference conflict described below.
+The following table records the policies at the time of this investigation.
+
+These are Device Registry authoring policies, not claims about maximum
 firmware support. Source: [capability definitions](../../src/device_registry/data/catalog.py#L136)
 and [model assignments](../../src/device_registry/data/catalog.py#L212).
 

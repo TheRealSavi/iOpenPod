@@ -53,9 +53,11 @@ class Storage:
         platform: PlatformAdapter | None = None,
         *,
         writer_lock_directory: Path | None = None,
+        transaction_recovery_directory: Path | None = None,
     ) -> None:
         self._platform = platform or native_platform_adapter()
         self._writer_lock_directory = writer_lock_directory
+        self._transaction_recovery_directory = transaction_recovery_directory
         self._state_lock = threading.Lock()
         self._generations: dict[str, ConnectionGeneration] = {}
         self._observations: dict[str, VolumeObservation] = {}
@@ -215,6 +217,8 @@ class Storage:
                 platform=self._platform,
                 on_invalidate=self._forget_connection,
                 writer_lock_directory=self._writer_lock_directory,
+                transaction_recovery_directory=self._transaction_recovery_directory,
+                check_recovery_location=self.require_host_path_off_physical_device,
             )
         except OSError as error:
             self._forget_generation(mounted_volume)
@@ -320,12 +324,14 @@ class Storage:
 
         ancestor = _nearest_existing_ancestor(Path(os.fspath(path)))
         protected_id = None
-        candidate_id = None
+        shared_device = None
         try:
             protected_id = self._platform.physical_device_id_for_path(
                 current.mount_point.path
             )
-            candidate_id = self._platform.physical_device_id_for_path(ancestor)
+            shared_device = self._platform.paths_share_physical_device(
+                current.mount_point.path, ancestor
+            )
         finally:
             after = self._platform.reinspect(current)
             if not _same_connection(current, after):
@@ -336,12 +342,12 @@ class Storage:
         if (
             protected_id is None
             or protected_id != current.physical_device.id
-            or candidate_id is None
+            or shared_device is None
         ):
             raise MountInspectionError(
                 f"Storage could not identify comparable Physical Devices for {ancestor}"
             )
-        if candidate_id == current.physical_device.id:
+        if shared_device:
             raise HostPathOnPhysicalDeviceError(
                 "The Host path is on the selected Physical Device"
             )

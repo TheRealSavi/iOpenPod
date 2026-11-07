@@ -7,6 +7,7 @@ from dataclasses import replace
 from iPodDB.device_time import TimeConversion
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.library._sidecar_projection import PlaybackDateUpdate
 from iPodDB.library._track_header_expansion import (
     creation_header_length,
     extension_values,
@@ -18,7 +19,8 @@ from iPodDB.library._track_header_verification import (
     track_field_expectations,
     unmodeled_header_ranges,
 )
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.genius import GeniusUpdate
+from iPodDB.library.models import LibrarySnapshot, MediaKind
 from iPodDB.library.writing import IdentityMapping, WriteIssue, WriteResources
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import DatabaseDocument
@@ -40,6 +42,10 @@ def verify_native_tracks(
     *,
     database_version: int | None = None,
     artwork_tracks: tuple[int, ...] = (),
+    normalize_podcasts: bool = False,
+    genius_update: GeniusUpdate | None = None,
+    replaced_tracks: tuple[int, ...] = (),
+    playback_dates: tuple[PlaybackDateUpdate, ...] = (),
 ) -> tuple[WriteIssue, ...]:
     """Compare reparsed fields with source identities and captured caller facts.
 
@@ -53,6 +59,7 @@ def verify_native_tracks(
     source = {identity: chunk.header for identity, chunk in source_chunks.items()}
     output = {s.chunk.header.track_id: s for s in checked.find_chunks(MhitHeader)}
     previous = {t.track_id: t for t in before.tracks}
+    date_updates = {item.track_id: item for item in playback_dates}
     identities = {m.draft_id: m.output_id for m in mappings if m.subject == "track"}
     media = {m.track_id: m for m in resources.media}
     lyrics = {item.track_id: item for item in resources.lyrics}
@@ -67,6 +74,11 @@ def verify_native_tracks(
         original, before, desired, database_version, artwork_tracks
     )
     expanded = False
+    genius_ids = (
+        {}
+        if genius_update is None
+        else {t.track_id: t.genius_id for t in genius_update.tracks}
+    )
     for track in desired.tracks:
         tagged = lyrics.get(track.track_id)
         if tagged is not None:
@@ -82,6 +94,24 @@ def verify_native_tracks(
         expected_fields = track_field_expectations(
             original_chunk, prior_track, track, device_time, database_version
         )
+        dates = date_updates.get(track.track_id)
+        if dates is not None:
+            for field in ("last_played", "last_skipped"):
+                raw = getattr(dates, field)
+                if raw is not None:
+                    expected_fields[field] = raw
+        if genius_update is not None:
+            expected_fields["genius_id"] = genius_ids.get(track.track_id, 0)
+        elif track.track_id in replaced_tracks:
+            expected_fields["genius_id"] = 0
+        if (
+            normalize_podcasts
+            and (track.media_kind is MediaKind.PODCAST or track.metadata.podcast)
+            and field_fits("db_id_2_ref", output_chunk.generic_header.header_length)
+        ):
+            expected_fields["db_id_2_ref"] = (
+                original.header.db_id_2 or checked.header.db_id_2
+            )
         prepared = media.get(track.track_id)
         if prepared is not None:
             expected_fields.update(
@@ -148,6 +178,9 @@ def verify_native_tracks(
                 original_chunk,
                 {**extent_fields, **header_requirements.get(track.track_id, {})},
                 database_version,
+                required_presence=frozenset({"not_played_flag"})
+                if track.metadata.played != (track.play_count > 0)
+                else frozenset(),
             )
             check("header_length", length, output_chunk.generic_header.header_length)
             expanded |= length > original_chunk.generic_header.header_length

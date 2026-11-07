@@ -3,11 +3,11 @@ layout: guide
 title: Apple Devices or iTunes not recognizing your iPod? | iOpenPod
 description: Apple Devices not detecting an iPod, iPod Support download stuck, or iTunes Music tab missing? Check Windows app setup and try iOpenPod for local music.
 heading: Apple Devices or iTunes not recognizing your iPod on Windows?
-lead: A mounted iPod, a missing Music tab, and a stalled iPod Support download are different problems. Find the right next step—or use iOpenPod to manage your own music folders directly.
+lead: Check whether Windows can access the iPod before troubleshooting Apple Devices or iTunes. A missing Music tab and a stalled iPod Support download need different steps, covered below.
 breadcrumb_title: Apple Devices & iTunes on Windows
 body_class: iop2-page guide-page
 permalink: /guides/apple-devices-itunes-ipod-windows/
-cta_heading: Manage your iPod with a different Windows app.
+cta_heading: iOpenPod for Windows
 cta_description: Use iOpenPod to choose local music folders, inspect the proposed changes, and try one album on your supported iPod.
 related_guides:
   - /guides/sync-ipod-without-itunes/

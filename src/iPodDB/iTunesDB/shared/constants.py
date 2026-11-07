@@ -16,6 +16,9 @@ class MhodType(IntEnum):
     EQ_SETTING = 7
     COMMENT = 8
     CATEGORY = 9
+    # Legacy application interpretation, not a verified native meaning. Classic
+    # skips it; captured payloads include podcast HTML. See
+    # docs/research/mhod-10-provenance.md before changing its compatibility use.
     LYRICS = 10
     UNKNOWN_11 = 11
     COMPOSER = 12
@@ -55,6 +58,7 @@ class MhodType(IntEnum):
     SMART_PLAYLIST_RULES = 51
     LIBRARY_PLAYLIST_INDEX = 52
     LIBRARY_PLAYLIST_JUMP_TABLE = 53
+    GENIUS_PLAYLIST_SEED = 54
     PLAYLIST_PROPERTY_PLIST = 55
     COLUMN_SIZE_OR_PLAYLIST_ORDER = 100
     UNKNOWN_101 = 101
@@ -83,6 +87,7 @@ class MhodPayloadKind(StrEnum):
     CONTEXTUAL_100 = "contextual_100"
     PLAYLIST_POSITION = "playlist_position"
     SETTINGS = "settings"
+    GENIUS_SEED = "genius_seed"
 
 
 MediaType = Literal[

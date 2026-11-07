@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
 from typing import TYPE_CHECKING
 
@@ -22,10 +21,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from whenever import Instant, TimeDelta
 
+from iOpenPod.app.core.dates import parse_iso_instant
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -69,6 +71,9 @@ def kind_label(kind: PlaylistKind) -> str:
         ),
         PlaylistKind.FOLDER: QCoreApplication.translate(
             "PlaylistEditorDialog", "Playlist Folder"
+        ),
+        PlaylistKind.GENIUS: QCoreApplication.translate(
+            "PlaylistEditorDialog", "Genius Playlist"
         ),
     }[kind]
 
@@ -472,7 +477,10 @@ def _rule_value_text(
         and isinstance(value, int)
         and operator not in (SmartOperator.IN_LAST, SmartOperator.NOT_IN_LAST)
     ):
-        return datetime.fromtimestamp(value, UTC).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            return Instant.from_timestamp(value).format("YYYY-MM-DD HH:mm:ss")
+        except (OverflowError, ValueError):
+            return str(value)
     return str(value)
 
 
@@ -568,6 +576,20 @@ class _RuleRow(QWidget):
             self.upper.setText(
                 _rule_value_text(rule.field, rule.upper_value, rule.operator)
             )
+        self.rating = StarRating(
+            rule.value
+            if rule.field is SmartField.RATING and isinstance(rule.value, int)
+            else 0,
+            self,
+        )
+        self.rating.setAccessibleName(self.tr("Rule rating"))
+        self.upper_rating = StarRating(
+            rule.upper_value
+            if rule.field is SmartField.RATING and isinstance(rule.upper_value, int)
+            else 0,
+            self,
+        )
+        self.upper_rating.setAccessibleName(self.tr("Upper rule rating"))
         self.period_unit = AppComboBox(self)
         self.period_unit.setAccessibleName(self.tr("Rule time unit"))
         for name, factor in _PERIOD_UNITS:
@@ -598,6 +620,8 @@ class _RuleRow(QWidget):
         layout.addWidget(self.value, 5)
         layout.addWidget(self.choice, 5)
         layout.addWidget(self.upper, 5)
+        layout.addWidget(self.rating, 5)
+        layout.addWidget(self.upper_rating, 5)
         layout.addWidget(self.period_unit)
         layout.addWidget(self.remove)
         self.field.currentIndexChanged.connect(self._field_changed)
@@ -633,10 +657,11 @@ class _RuleRow(QWidget):
                 self.choice.addItem(_location_label(location), location.value)
             data = selected.value if isinstance(selected, SmartLocation) else None
         elif field is SmartField.PLAYLIST:
+            # Native Playlist IDs can exceed Qt's signed 64-bit integer range.
             for playlist_id, name in self._playlist_options:
-                self.choice.addItem(name, playlist_id)
+                self.choice.addItem(name, str(playlist_id))
             data = (
-                selected.playlist_id
+                str(selected.playlist_id)
                 if isinstance(selected, SmartPlaylistReference)
                 else None
             )
@@ -650,9 +675,14 @@ class _RuleRow(QWidget):
         self.choice.setCurrentIndex(index if index >= 0 else 0)
 
     def _operator_changed(self) -> None:
-        kind = smart_value_kind(SmartField(self.field.currentData()))
+        field = SmartField(self.field.currentData())
+        kind = smart_value_kind(field)
+        rating = field is SmartField.RATING
         choice = kind in (SmartValueKind.CHOICE, SmartValueKind.PLAYLIST)
-        self.value.setVisible(kind is not SmartValueKind.BOOLEAN and not choice)
+        self.value.setVisible(
+            kind is not SmartValueKind.BOOLEAN and not choice and not rating
+        )
+        self.rating.setVisible(rating)
         self.choice.setVisible(choice)
         relative = self.operator.currentData() in (
             SmartOperator.IN_LAST.value,
@@ -667,9 +697,9 @@ class _RuleRow(QWidget):
             else self.tr("Value")
         )
         self.value.setToolTip(self.value.placeholderText())
-        self.upper.setVisible(
-            self.operator.currentData() == SmartOperator.BETWEEN.value
-        )
+        between = self.operator.currentData() == SmartOperator.BETWEEN.value
+        self.upper.setVisible(between and not rating)
+        self.upper_rating.setVisible(between and rating)
 
     def rule(self) -> SmartRule:
         field = SmartField(self.field.currentData())
@@ -681,7 +711,12 @@ class _RuleRow(QWidget):
             self.upper.text().strip() if operator is SmartOperator.BETWEEN else None
         )
         kind = smart_value_kind(field)
-        if kind is SmartValueKind.BOOLEAN:
+        if field is SmartField.RATING:
+            value = self.rating.rating
+            upper = (
+                self.upper_rating.rating if operator is SmartOperator.BETWEEN else None
+            )
+        elif kind is SmartValueKind.BOOLEAN:
             value = 0
         elif kind is SmartValueKind.CHOICE:
             value = (
@@ -691,14 +726,12 @@ class _RuleRow(QWidget):
             )
         elif kind is SmartValueKind.PLAYLIST:
             playlist_id = self.choice.currentData()
-            if not isinstance(playlist_id, int):
+            if not isinstance(playlist_id, str):
                 raise ValueError(self.tr("Choose a Playlist for this rule."))
-            value = SmartPlaylistReference(playlist_id)
+            value = SmartPlaylistReference(int(playlist_id))
         elif kind is not SmartValueKind.TEXT:
 
             def number(text: str | int) -> int:
-                if field is SmartField.RATING:
-                    return self._rating(text)
                 if operator in (SmartOperator.IN_LAST, SmartOperator.NOT_IN_LAST):
                     try:
                         seconds = Decimal(text) * int(self.period_unit.currentData())
@@ -720,12 +753,14 @@ class _RuleRow(QWidget):
                     SmartOperator.NOT_IN_LAST,
                 ):
                     try:
-                        date = datetime.fromisoformat(str(text))
-                        if date.microsecond:
+                        # Editor text is UTC unless it carries an explicit offset.
+                        # Native Smart bounds remain whole-second integers; the
+                        # firmware's local-calendar comparison is resolved later
+                        # by iPodDB's best-effort date policy (ADR-0240).
+                        date = parse_iso_instant(str(text), naive_zone=TimeDelta.ZERO)
+                        if date.timestamp(unit="nanosecond") % 1_000_000_000:
                             raise ValueError("Date conditions use whole seconds")
-                        if date.tzinfo is None:
-                            date = date.replace(tzinfo=UTC)
-                        return int(date.timestamp())
+                        return date.timestamp()
                     except (ValueError, OverflowError, OSError):
                         raise ValueError(
                             self.tr("Enter a UTC date: YYYY-MM-DD HH:MM:SS.")
@@ -745,21 +780,6 @@ class _RuleRow(QWidget):
         )
         assert upper is None or isinstance(upper, str | int)
         return SmartRule(field, operator, value, upper)
-
-    def _rating(self, text: str | int) -> int:
-        try:
-            rating = Decimal(text) * 20
-            if (
-                not rating.is_finite()
-                or not 0 <= rating <= 100
-                or rating != rating.to_integral_value()
-            ):
-                raise ValueError
-            return int(rating)
-        except (DecimalException, ValueError):
-            raise ValueError(
-                self.tr("Use a rating between 0 and 5 stars, in steps of 0.05.")
-            ) from None
 
 
 class _RuleGroupEditor(QWidget):
@@ -874,7 +894,10 @@ class PlaylistEditorDialog(QDialog):
         parent: QWidget | None = None,
         *,
         playlists: tuple[Playlist, ...] = (),
+        phase_available: bool = False,
     ) -> None:
+        if kind is PlaylistKind.GENIUS:
+            raise ValueError("Native Genius Playlists are read-only.")
         super().__init__(parent)
         self.setObjectName("playlistEditor")
         self.setWindowTitle(
@@ -921,6 +944,16 @@ class PlaylistEditorDialog(QDialog):
             )
         self._sort_order.setCurrentIndex(self._sort_order.findData(initial_sort.value))
         form.addRow(self.tr("Sort order"), self._sort_order)
+        self.phase = QCheckBox(self.tr("Use as the Phase Playlist"), self)
+        self.phase.setObjectName("phasePlaylistOption")
+        self._was_phase = playlist.is_phase if playlist else False
+        self._phase_editable = kind in (
+            PlaylistKind.PLAYLIST,
+            PlaylistKind.SMART,
+        ) and not (playlist is not None and playlist.system_managed)
+        self.phase.setChecked(self._was_phase)
+        form.addRow(self.phase)
+        self.set_phase_available(phase_available)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(
             LAYOUT.space_md,
@@ -960,6 +993,10 @@ class PlaylistEditorDialog(QDialog):
     @property
     def sort_order(self) -> PlaylistSort:
         return playlist_sort_from_value(int(self._sort_order.currentData()))
+
+    def set_phase_available(self, available: bool) -> None:
+        """Allow the shared installation scan to finish while the editor is open."""
+        self.phase.setVisible(self._phase_editable and (available or self._was_phase))
 
     def _build_rules(self, layout: QVBoxLayout) -> None:
         self._match_rules = QCheckBox(self.tr("Match rules"), self)

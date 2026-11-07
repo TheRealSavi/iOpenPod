@@ -20,6 +20,8 @@ from tests.iOpenPod.GUI.application_shell_test_support import build_context
 
 from device_registry import DEFAULT_DEVICE_REGISTRY
 from iOpenPod.app.core.settings.definitions import (
+    ANALYZE_FOR_GENIUS,
+    COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
 )
 from iOpenPod.app.core.settings.service import SettingsService
@@ -36,6 +38,7 @@ from iOpenPod.app.models.library_filter_models import (
 )
 from iOpenPod.app.models.photo_list_model import PhotoListModel
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
+from iOpenPod.app.playlist_sync import PlaylistSyncChoice
 from iOpenPod.app.podcasts.models import PodcastSnapshot
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.scrobbling.settings import LASTFM_USERNAME, SCROBBLE_DURING_SYNC
@@ -88,23 +91,36 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
     workspace.load(active.library)
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     settings.set_global(COMPUTE_SOUND_CHECK, True)
+    settings.set_global(COMPUTE_MISSING_BPM, True)
+    settings.set_global(ANALYZE_FOR_GENIUS, False)
     settings.set_global(SCROBBLE_DURING_SYNC, True)
     settings.set_global(LASTFM_USERNAME, "listener")
     service = SyncExecutionStub()
     controller = SyncController(service, workspace, devices, settings)
     finished = QSignalSpy(controller.finished)
     try:
-        assert controller.start(*_inputs(), active)
+        choices = (PlaylistSyncChoice(1, included=False),)
+        assert controller.start(*_inputs(), active, playlist_choices=choices)
         wait_for(service.entered.is_set)
         assert workspace.locked and devices.busy
         settings.set_global(COMPUTE_SOUND_CHECK, False)
+        settings.set_global(COMPUTE_MISSING_BPM, False)
+        settings.set_global(ANALYZE_FOR_GENIUS, True)
         settings.set_global(SCROBBLE_DURING_SYNC, False)
         assert (
             service.request is not None and service.request.options.compute_sound_check
         )
+        assert not service.request.options.analyze_for_genius
+        assert service.request.options.compute_missing_bpm
+        assert service.request.playlist_choices == choices
         assert service.request.options.scrobble
         assert service.request.scrobble_accounts[0].username == "listener"
         assert not controller.start(*_inputs(), active)
+        controller.skip_genius_analysis()
+        assert service.request.genius_analysis_skip.is_set()
+        assert not service.request.phase_analysis_skip.is_set()
+        controller.skip_phase_analysis()
+        assert service.request.phase_analysis_skip.is_set()
         service.release.set()
         wait_for(lambda: finished.count() == 1)
         assert not workspace.locked and not devices.busy

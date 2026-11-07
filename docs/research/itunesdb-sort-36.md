@@ -57,7 +57,7 @@ The implementation uses the retained native reference; where it is absent, it us
 the first member by disc/track ordering. Invalid nonzero references block rebuilding.
 
 Disc and track numbers explain every strict within-album comparison in the
-examined captures when missing disc numbers follow numbered discs. Titles are not
+earlier music corpus when missing disc numbers follow numbered discs. Titles are not
 a reliable tie-breaker: the historical capture has seven albums whose tied members
 do not follow Master Playlist order, and thirteen that do not follow a title sort.
 Existing tie order is retained explicitly. New tied members follow existing ones
@@ -94,6 +94,44 @@ sorting must be rebuilt, with a `library.album_index` warning. That default uses
 the 2026-10-08 rules with punctuation retained. Selecting a matching profile
 establishes consistency with the captured comparisons, not a universal claim about
 iTunes locale collation. See [ADR-0137](../adr/0137-warn-and-default-unrecognized-album-collation.md).
+
+## Podcast member order investigated on 2026-10-19
+
+The [Finder captures](podcast-finder-captures-2026-10-18.md) add a distinct
+Podcast rule. Both Masters in Classic 6.5, Classic 6.5 Apple PlayCount, Mini 2,
+and Nano 2 put each show's Episodes newest first in sort 36. The same Masters'
+sort-4 indexes put those Episodes in ascending track-number order. Nano 5 has
+no sort-36 index. The four useful captures contain the same 15 Episodes; they
+are evidence across native outputs, not independent samples of sort keys.
+
+The initial Classic, Mini, and Nano Podcasts Playlists have MHYP `sort_order=3`
+(Title); Apple PlayCount has `sort_order=1` (Manual). Their semantic sort-36
+sequences agree, and every Master itself has `sort_order=1`. A Playlist's display
+sort therefore does not select this Master index's within-show direction.
+
+For Classic Apple PlayCount (SHA-256
+`80dd1963c87d252fc6da07be58a38f976f4587e640a8e5010e28e8732d9558e3`), changing only
+the ten zero disc numbers to one reproduced the rejected Refresh's complete
+sort-36 permutation under the earlier writer. That dependency change rebuilt
+every group using ascending music order. The Podcast members were not tied:
+Buzzcast's captured track numbers are `204, 203, 202, 187`; the other two shows
+likewise descend. Publication dates descend in exactly the same sequence.
+
+The corrected policy sorts wholly Podcast groups by descending publication date,
+with missing dates last and retained order breaking equal-date ties. New ties
+follow existing members in submitted order. Audio and Video Podcasts, and the
+retained Podcast flag, identify these groups. Mixed groups keep the existing
+disc/track rule. Publication-date and classification edits invalidate sort 36;
+ordinary no-op preparation still preserves the original bytes. Sort 4 and the
+special Podcasts Playlist's occurrence order have separate policies.
+
+Newest-first matches every useful capture. Choosing publication date rather than
+track number is an explicit authoring policy: these captures cannot distinguish
+the two because their values agree. Missing dates, equal dates, Video Podcasts,
+mixed groups, and disagreements between dates and numbers are policy extensions,
+not independently established Apple behavior. No physical Finder acceptance test
+was performed. The corrected writer reproduces the captured sort-36 order after
+the disc edits, with independent verification of its publication-date order.
 
 ## Reported failure reproduced on 2026-10-08
 
@@ -161,7 +199,8 @@ must not assume that equivalence. The previous handling of incomplete source
 Masters remains with existing source diagnostics and structural validation.
 
 The independent verifier does not call the index writer. It checks permutation,
-album contiguity, group order, disc/track order, retained ties, and trailing bytes.
+album contiguity, group order, disc/track or Podcast publication-date order,
+retained ties, and trailing bytes.
 For an unrecognized source collation it verifies group order under the explicit
 default, so the fallback warning does not become a verification error.
 The existing native group verifier separately checks the album references and

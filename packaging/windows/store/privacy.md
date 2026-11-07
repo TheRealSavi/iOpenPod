@@ -1,6 +1,6 @@
 # iOpenPod privacy policy
 
-Effective date: October 1, 2026
+Effective date: November 2, 2026
 
 iOpenPod is a desktop application published by TheRealSavi and developed by
 John Gibbons. Contact: <johngibbons167@gmail.com>.
@@ -33,6 +33,21 @@ download hosts receive package requests, your IP address, and ordinary connectio
 information under their own privacy practices. This setup does not send your media
 files or fingerprints to those services. Checking locally or skipping setup does
 not start package installation.
+
+## Optional Phase analysis installation
+
+Settings > Media Tools > Set Up Phase Analysis offers a separate optional
+download. Choosing Download and Install requests Python, analysis libraries and
+model files from Astral/GitHub, Python package indexes, PyTorch and the model
+provider's download hosts. Those providers receive requested package/model names,
+your IP address and ordinary connection information. No music, separated audio,
+analysis results or iPod identifiers are uploaded for this analysis.
+
+The runtime, packages and model cache stay in iOpenPod's local user-data folder.
+Inference runs locally in a child process using temporary decoded audio; those
+temporary files are removed after the process finishes. Opening or cancelling
+the dialog does not start installation. Acoustic analysis remains available if
+optional setup is skipped or fails.
 
 ## Podcast network requests
 

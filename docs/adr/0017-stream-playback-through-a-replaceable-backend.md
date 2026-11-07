@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-31
+- Extended by: ADR-0245's optional Qt video presentation attachment
 
 ## Context
 

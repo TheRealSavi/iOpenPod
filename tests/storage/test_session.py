@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
+from time import monotonic
 
 import pytest
 
@@ -51,6 +53,76 @@ def _session(
     return root, platform, session
 
 
+@pytest.mark.parametrize("contents", ["empty", "nonempty", "file"])
+def test_remove_empty_directory_preserves_parents_and_rejects_other_entries(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    root, _, session = _session(tmp_path)
+    parent = root / "parent"
+    parent.mkdir()
+    target = parent / "child"
+    if contents == "file":
+        target.write_bytes(b"preserve")
+    else:
+        target.mkdir()
+        if contents == "nonempty":
+            (target / "keep.bin").write_bytes(b"preserve")
+    try:
+        if contents == "empty":
+            session.remove_empty_directory(DevicePath("parent/child"))
+            assert not target.exists()
+        else:
+            with pytest.raises((StorageOperationError, UnsafeFilesystemPathError)):
+                session.remove_empty_directory(DevicePath("parent/child"))
+            assert (
+                target if contents == "file" else target / "keep.bin"
+            ).read_bytes() == b"preserve"
+        assert parent.is_dir()
+    finally:
+        session.close()
+
+
+def test_remove_empty_directory_rejects_read_only_disconnected_and_link_targets(
+    tmp_path: Path,
+) -> None:
+    root, platform, session = _session(tmp_path)
+    target = root / "empty"
+    target.mkdir()
+    platform.disconnect(root)
+    with pytest.raises(SessionInvalidatedError):
+        session.remove_empty_directory(DevicePath("empty"))
+    assert target.exists()
+    session.close()
+    other = tmp_path / "readonly"
+    other.mkdir()
+    root, _, session = _session(other, writable=False)
+    (root / "empty").mkdir()
+    try:
+        with pytest.raises(ReadOnlyFilesystemError):
+            session.remove_empty_directory(DevicePath("empty"))
+        assert (root / "empty").exists()
+    finally:
+        session.close()
+
+
+def test_remove_empty_directory_rejects_symlink(tmp_path: Path) -> None:
+    root, _, session = _session(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (root / "link").symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        session.close()
+        pytest.skip(f"Host does not permit symlink creation: {error}")
+    try:
+        with pytest.raises(UnsafeFilesystemPathError):
+            session.remove_empty_directory(DevicePath("link"))
+        assert outside.is_dir()
+    finally:
+        session.close()
+
+
 def test_reads_stats_and_lists_only_root_bound_device_paths(tmp_path: Path) -> None:
     root, _, session = _session(tmp_path)
     music = root / "Music"
@@ -68,6 +140,97 @@ def test_reads_stats_and_lists_only_root_bound_device_paths(tmp_path: Path) -> N
     assert session.stat(DevicePath("Music")).kind is DeviceEntryKind.DIRECTORY
     assert session.fingerprint(DevicePath("Music/a.mp3")) == snapshot.fingerprint
     assert session.free_space() > 0
+
+
+def test_read_only_tool_can_seek_without_capturing_the_device_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _, session = _session(tmp_path, writable=False)
+    source = root / "movie.bin"
+    with source.open("wb") as stream:
+        stream.write(b"head")
+        stream.seek(64 * 1024 * 1024)
+        stream.write(b"tail")
+
+    def reject_full_read(*args: object, **kwargs: object) -> None:
+        pytest.fail("A tool input must not copy or hash the whole file")
+
+    monkeypatch.setattr(FilesystemSession, "copy_to_host", reject_full_read)
+    monkeypatch.setattr(FilesystemSession, "fingerprint", reject_full_read)
+    monkeypatch.setattr(storage_filesystem, "read_and_fingerprint", reject_full_read)
+    output = session.read_with_tool(
+        DevicePath("movie.bin"),
+        HostPath(sys.executable),
+        (
+            "-c",
+            "import sys; f=open(sys.argv[1], 'rb'); a=f.read(4); f.seek(-4, 2); sys.stdout.buffer.write(a+f.read(4))",
+        ),
+        checkpoint=lambda: None,
+    )
+    assert output.stdout == b"headtail"
+    assert output.returncode == 0
+
+
+def test_device_tool_keeps_output_arguments_after_pinned_input(tmp_path: Path) -> None:
+    root, _, session = _session(tmp_path, writable=False)
+    (root / "audio.bin").write_bytes(b"audio")
+    output = session.read_with_tool(
+        DevicePath("audio.bin"),
+        HostPath(sys.executable),
+        (
+            "-c",
+            "import sys; assert sys.argv[2:] == ['--output', 'stdout']; "
+            "sys.stdout.buffer.write(open(sys.argv[1], 'rb').read())",
+        ),
+        arguments_after_input=("--output", "stdout"),
+        checkpoint=lambda: None,
+    )
+    assert output.stdout == b"audio"
+
+
+def test_device_tool_is_cancelled_when_its_session_is_invalidated(
+    tmp_path: Path,
+) -> None:
+    root, _, session = _session(tmp_path)
+    (root / "movie.bin").write_bytes(b"content")
+    marker = tmp_path / "started"
+
+    def checkpoint() -> None:
+        if marker.exists():
+            session.invalidate("Disconnected during analysis")
+
+    started = monotonic()
+    with pytest.raises(SessionInvalidatedError):
+        session.read_with_tool(
+            DevicePath("movie.bin"),
+            HostPath(sys.executable),
+            (
+                "-c",
+                "import sys,time,pathlib; f=open(sys.argv[2], 'rb'); pathlib.Path(sys.argv[1]).touch(); time.sleep(30)",
+                str(marker),
+            ),
+            checkpoint=checkpoint,
+        )
+    assert marker.exists()
+    assert monotonic() - started < 5
+    assert not session.is_active
+
+
+def test_device_tool_rejects_a_link_outside_its_volume(tmp_path: Path) -> None:
+    root, _, session = _session(tmp_path)
+    external = tmp_path / "outside.txt"
+    external.write_text("outside", encoding="utf-8")
+    try:
+        (root / "linked.txt").symlink_to(external)
+    except OSError:
+        pytest.skip("Creating symbolic links requires platform privileges")
+    with pytest.raises(UnsafeFilesystemPathError):
+        session.read_with_tool(
+            DevicePath("linked.txt"),
+            HostPath(sys.executable),
+            ("-c", "pass"),
+            checkpoint=lambda: None,
+        )
 
 
 @pytest.mark.parametrize(

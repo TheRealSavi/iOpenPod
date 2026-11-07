@@ -120,7 +120,20 @@ def test_invalid_episode_is_skipped_while_valid_episode_commits(
                 for track in result.active.library.tracks
                 if track.media_kind is MediaKind.PODCAST
             ] == ["Good Episode"]
-            assert original in result.active.library.tracks
+            retained = next(
+                track
+                for track in result.active.library.tracks
+                if track.track_id == original.track_id
+            )
+            assert original.ipod is not None and retained.ipod is not None
+            assert retained.ipod.genius_id
+            assert (
+                replace(
+                    retained,
+                    ipod=replace(retained.ipod, genius_id=original.ipod.genius_id),
+                )
+                == original
+            )
         else:
             assert result.status is SyncExecutionStatus.FAILED, result.issues
             assert not result.completed

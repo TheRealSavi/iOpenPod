@@ -1,9 +1,12 @@
 """Persistent source-list navigation and Active iPod placeholder."""
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QLocale, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QLocale, QObject, QPoint, Qt, Signal
+from PySide6.QtGui import QCursor, QHoverEvent, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QButtonGroup,
     QFrame,
     QHBoxLayout,
@@ -16,10 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from device_registry import DeviceProfile
 from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod, DeviceDiscovery
-from iOpenPod.GUI.navigation import PageId, page_label
+from iOpenPod.GUI.navigation import PageId, page_label, page_supported
 from iOpenPod.GUI.presentation.device_images import device_pixmap
 from iOpenPod.GUI.presentation.i18n.text import (
     device_count_text,
@@ -27,6 +29,7 @@ from iOpenPod.GUI.presentation.i18n.text import (
     track_count_text,
 )
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
+from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -35,6 +38,9 @@ from iOpenPod.GUI.widgets.themed_buttons import (
     IconButton,
     NavigationButton,
 )
+
+if TYPE_CHECKING:
+    from device_registry import DeviceProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,10 +55,13 @@ _MAINTENANCE = (
 )
 
 _LIBRARY = (
+    _NavigationDefinition(PageId.START, "ipod"),
     _NavigationDefinition(PageId.ALBUMS, "album"),
     _NavigationDefinition(PageId.ARTISTS, "user"),
     _NavigationDefinition(PageId.GENRES, "grid"),
     _NavigationDefinition(PageId.TRACKS, "music"),
+    _NavigationDefinition(PageId.GENIUS, "atom"),
+    _NavigationDefinition(PageId.GAMES, "games"),
     _NavigationDefinition(PageId.PHOTOS, "photo"),
     _NavigationDefinition(PageId.PODCASTS, "broadcast"),
     _NavigationDefinition(PageId.AUDIOBOOKS, "book"),
@@ -61,19 +70,16 @@ _LIBRARY = (
     _NavigationDefinition(PageId.MUSIC_VIDEOS, "video"),
     _NavigationDefinition(PageId.VIDEOS, "video"),
 )
-_VIDEO_PAGES = frozenset(
-    {
-        PageId.MOVIES,
-        PageId.TV_SHOWS,
-        PageId.MUSIC_VIDEOS,
-        PageId.VIDEOS,
-    }
-)
 
 
 class _DeviceIcon(QLabel):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
+        self._theme = theme
+        if theme is not None:
+            theme.deviceArtworkChanged.connect(self._refresh_icon)
         self.setObjectName("deviceIcon")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFixedSize(
@@ -103,6 +109,7 @@ class _DeviceIcon(QLabel):
                 self._image_name,
                 LAYOUT.sidebar_device_image_size,
                 self.devicePixelRatioF(),
+                itunes_107=self._theme is not None and self._theme.itunes_107_artwork,
             )
         )
 
@@ -112,10 +119,18 @@ class DeviceCard(QFrame):
 
     chooseRequested = Signal()
     ejectRequested = Signal()
+    summaryRequested = Signal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("deviceCard")
+        self.setProperty("summaryAvailable", False)
+        self.setProperty("summarySelected", False)
+        self.setProperty("summaryHovered", False)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self._summary_pressed = False
         self._active_ipod: ActiveIPod | None = None
         self._discovery = DeviceDiscovery(candidates=())
         self._busy = False
@@ -123,7 +138,7 @@ class DeviceCard(QFrame):
         self._workspace: LibraryWorkspace | None = None
         self._rename_revision: EditRevision | None = None
 
-        self._icon = _DeviceIcon(self)
+        self._icon = _DeviceIcon(self, theme=theme)
         self._name = QPushButton(self)
         self._name.setObjectName("deviceName")
         self._name.clicked.connect(self.start_rename)
@@ -240,7 +255,91 @@ class DeviceCard(QFrame):
         layout.addLayout(database_labels)
         layout.addWidget(self._database)
         layout.addWidget(self._choose)
+        for widget in (
+            self._icon,
+            self._model,
+            self._summary,
+            self._storage_label,
+            self._storage_value,
+            self._storage,
+            self._database_label,
+            self._database_value,
+            self._database,
+        ):
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.retranslate_ui()
+
+    def set_summary_selected(self, selected: bool) -> None:
+        self._set_summary_property("summarySelected", selected)
+
+    def _set_summary_property(self, name: str, value: bool) -> None:
+        if self.property(name) == value:
+            return
+        self.setProperty(name, value)
+        style = self.style()
+        style.unpolish(self)
+        style.polish(self)
+        self.update()
+
+    def _summary_target(self, position: QPoint) -> bool:
+        if self._active_ipod is None or not self.rect().contains(position):
+            return False
+        child = self.childAt(position)
+        while child is not None and child is not self:
+            if isinstance(child, (QAbstractButton, QLineEdit)):
+                return False
+            child = child.parentWidget()
+        return True
+
+    def event(self, event: QEvent) -> bool:
+        if isinstance(event, QHoverEvent) and event.type() in {
+            QEvent.Type.HoverEnter,
+            QEvent.Type.HoverMove,
+        }:
+            # Qt keeps a parent hovered over its children. Use the same hit test
+            # as summary clicks so embedded actions retain their own hover state.
+            self._set_summary_property(
+                "summaryHovered", self._summary_target(event.position().toPoint())
+            )
+        elif event.type() == QEvent.Type.HoverLeave:
+            self._set_summary_property("summaryHovered", False)
+        return super().event(event)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        self._summary_pressed = (
+            event.button() == Qt.MouseButton.LeftButton
+            and self._summary_target(event.position().toPoint())
+        )
+        if self._summary_pressed:
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        activate = (
+            self._summary_pressed
+            and event.button() == Qt.MouseButton.LeftButton
+            and self._summary_target(event.position().toPoint())
+        )
+        self._summary_pressed = False
+        if activate:
+            self.summaryRequested.emit()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if (
+            self.hasFocus()
+            and self._active_ipod is not None
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space)
+        ):
+            if not event.isAutoRepeat():
+                self.summaryRequested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def set_discovery(self, discovery: DeviceDiscovery) -> None:
         self._discovery = discovery
@@ -248,6 +347,7 @@ class DeviceCard(QFrame):
 
     def set_active_ipod(self, active_ipod: ActiveIPod | None) -> None:
         self._cancel_rename()
+        self._summary_pressed = False
         self._active_ipod = active_ipod
         self._refresh_state()
 
@@ -261,6 +361,7 @@ class DeviceCard(QFrame):
         self._refresh_state()
 
     def retranslate_ui(self) -> None:
+        self.setAccessibleName(self.tr("Open device summary"))
         self._storage_label.setText(self.tr("Storage"))
         self._storage.setAccessibleName(self.tr("Storage"))
         self._database_label.setText(self.tr("Database"))
@@ -281,6 +382,21 @@ class DeviceCard(QFrame):
 
     def _refresh_state(self) -> None:
         active = self._active_ipod
+        self._set_summary_property("summaryAvailable", active is not None)
+        self._set_summary_property(
+            "summaryHovered",
+            self.underMouse()
+            and self._summary_target(self.mapFromGlobal(QCursor.pos())),
+        )
+        self.setFocusPolicy(
+            Qt.FocusPolicy.StrongFocus if active is not None else Qt.FocusPolicy.NoFocus
+        )
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if active is not None
+            else Qt.CursorShape.ArrowCursor
+        )
+        self.setToolTip(self.tr("Open device summary") if active is not None else "")
         if active is None:
             self._cancel_rename()
             self._name.setEnabled(False)
@@ -451,12 +567,14 @@ class DeviceCard(QFrame):
         return self._name.text()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self._name_edit and event.type() == QEvent.Type.KeyPress:
-            from PySide6.QtGui import QKeyEvent
-
-            if isinstance(event, QKeyEvent) and event.key() == Qt.Key.Key_Escape:
-                self._cancel_rename()
-                return True
+        if (
+            watched is self._name_edit
+            and event.type() == QEvent.Type.KeyPress
+            and isinstance(event, QKeyEvent)
+            and event.key() == Qt.Key.Key_Escape
+        ):
+            self._cancel_rename()
+            return True
         return super().eventFilter(watched, event)
 
 
@@ -475,6 +593,7 @@ class Sidebar(QFrame):
         parent: QWidget | None = None,
         *,
         playlists: LibraryWorkspace | None = None,
+        theme: ThemeManager | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("appSidebar")
@@ -484,13 +603,17 @@ class Sidebar(QFrame):
         self._button_group = QButtonGroup(self)
         self._button_group.setExclusive(True)
         self._active_profile: DeviceProfile | None = None
+        self._has_genius_data = False
         self._normalization_count = 0
 
-        self._device_card = DeviceCard(self)
+        self._device_card = DeviceCard(self, theme=theme)
         if playlists is not None:
             self._device_card.set_workspace(playlists)
         self._device_card.chooseRequested.connect(self.chooseDeviceRequested.emit)
         self._device_card.ejectRequested.connect(self.ejectRequested.emit)
+        self._device_card.summaryRequested.connect(
+            lambda: self.pageRequested.emit(PageId.DEVICE_SUMMARY.value)
+        )
         self._sync = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
         self._sync.setObjectName("syncWithHost")
         self._sync.setEnabled(False)
@@ -574,10 +697,12 @@ class Sidebar(QFrame):
         layout.addWidget(self._review)
         layout.addWidget(scroll, 1)
         layout.addWidget(self._settings)
-        self.set_current_page(PageId.ALBUMS)
+        self.set_current_page(PageId.START)
         self.retranslate_ui()
+        self._refresh_page_visibility()
 
     def set_current_page(self, page_id: PageId) -> None:
+        self._device_card.set_summary_selected(page_id is PageId.DEVICE_SUMMARY)
         if page_id is not PageId.PLAYLISTS and self.playlist_tree is not None:
             self.playlist_tree.clear_selection()
         self._button_group.setExclusive(False)
@@ -591,6 +716,10 @@ class Sidebar(QFrame):
     def set_active_ipod(self, active_ipod: ActiveIPod | None) -> None:
         self._device_card.set_active_ipod(active_ipod)
         self._active_profile = active_ipod.profile if active_ipod is not None else None
+        self._has_genius_data = bool(
+            active_ipod
+            and (active_ipod.genius.collections or active_ipod.genius.issues)
+        )
         self._sync.setEnabled(active_ipod is not None)
         self._sync.setToolTip(
             ""
@@ -605,8 +734,9 @@ class Sidebar(QFrame):
     def page_available(self, page_id: PageId) -> bool:
         """Return whether the current Active iPod exposes one route."""
 
-        button = self._buttons.get(page_id)
-        return button is None or not button.isHidden()
+        return page_supported(page_id, self._active_profile) or (
+            page_id is PageId.GENIUS and self._has_genius_data
+        )
 
     def set_device_busy(self, busy: bool) -> None:
         self._device_card.set_busy(busy)
@@ -674,22 +804,13 @@ class Sidebar(QFrame):
         return button
 
     def _refresh_page_visibility(self) -> None:
-        profile = self._active_profile
         for page_id, button in self._buttons.items():
-            button.setVisible(_page_supported(page_id, profile))
+            button.setVisible(self.page_available(page_id))
+        if self.playlist_tree is not None:
+            self.playlist_tree.setVisible(self.page_available(PageId.PLAYLISTS))
 
 
 def _format_bytes(byte_count: int) -> str:
     return QLocale().formattedDataSize(
         max(0, byte_count), 1, QLocale.DataSizeFormat.DataSizeTraditionalFormat
     )
-
-
-def _page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
-    if page_id in _VIDEO_PAGES:
-        return profile is not None and profile.capabilities.video.supported
-    if page_id is PageId.PHOTOS:
-        return profile is not None and profile.capabilities.artwork.supports_photos
-    if page_id is PageId.PODCASTS:
-        return profile is not None and profile.capabilities.audio.supports_podcasts
-    return True

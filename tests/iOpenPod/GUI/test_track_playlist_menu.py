@@ -6,6 +6,7 @@ import pytest
 from PySide6.QtWidgets import QMenu, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import build_context
 
+from iOpenPod.GUI.widgets import track_actions
 from iOpenPod.GUI.widgets.track_actions import TrackActions, TrackSelection
 from iPodDB.library import (
     LibrarySnapshot,
@@ -56,8 +57,21 @@ def _destinations(actions: TrackActions) -> QMenu:
     ),
 )
 def test_destinations_filter_and_nest_playlists_with_only_leaf_actions(
-    actions: TrackActions, path: tuple[str, ...], destination_id: int
+    actions: TrackActions,
+    path: tuple[str, ...],
+    destination_id: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def add_again(
+        existing: tuple[int, ...], tracks: tuple[int, ...], parent: QWidget
+    ) -> tuple[int, ...]:
+        return tracks
+
+    monkeypatch.setattr(
+        track_actions,
+        "choose_playlist_additions",
+        add_again,
+    )
     source = (
         Playlist(22, "Coast", parent_id=11, entries=playlist_entries((1,))),
         Playlist(1, "Podcasts", system_managed=True),

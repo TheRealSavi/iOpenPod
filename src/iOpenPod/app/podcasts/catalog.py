@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from collections import Counter
 from dataclasses import replace
 from typing import TYPE_CHECKING
+
+from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import (
     episode_identity,
@@ -84,6 +85,8 @@ def reconcile_device_podcasts(
                 SubscriptionSource.DEVICE,
                 author=author,
                 artwork_id=track.artwork_id,
+                copyright=track.metadata.copyright,
+                category=track.metadata.category,
             )
         subscription_id = subscription.subscription_id
 
@@ -110,6 +113,7 @@ def reconcile_device_podcasts(
             episode = replace(
                 existing,
                 title=episode.title or existing.title,
+                author=existing.author or episode.author,
                 description=episode.description or existing.description,
                 guid=existing.guid or episode.guid,
                 enclosure_url=episode.enclosure_url or existing.enclosure_url,
@@ -329,9 +333,7 @@ def mark_episodes_listened(
         (record.subscription_id, record.episode_id): record
         for record in snapshot.history
     }
-    timestamp = int(time.time()) if changed_at is None else changed_at
-    if timestamp < 0:
-        raise ValueError("A listening-history time must not be negative")
+    timestamp = Instant.now().timestamp() if changed_at is None else changed_at
     for episode_id in selected:
         episode = episodes[episode_id]
         old = records.get((subscription_id, episode_id))
@@ -373,9 +375,7 @@ def mark_episode_selection_listened(
     if not selected_by_subscription:
         raise ValueError("No Podcast Episodes were selected")
 
-    timestamp = int(time.time()) if changed_at is None else changed_at
-    if timestamp < 0:
-        raise ValueError("A listening-history time must not be negative")
+    timestamp = Instant.now().timestamp() if changed_at is None else changed_at
     updated = snapshot
     for subscription_id in sorted(selected_by_subscription):
         updated = mark_episodes_listened(
@@ -473,6 +473,7 @@ def _episode_from_track(track: Track) -> PodcastEpisode:
         ),
         guid=guid,
         title=track.title.strip() or "Untitled Episode",
+        author=track.artist,
         description=track.metadata.description.strip(),
         subtitle=track.metadata.subtitle,
         content_advisory=track.metadata.content_advisory,

@@ -196,7 +196,9 @@ stages; an individual large stage is still synchronous.
 capability. New Tracks use that profile's MHIT layout; callers without a profile
 retain the generic 624-byte creation default. An edited Track whose native fields
 need more space may expand to the profile's header size; absent capabilities leave
-unrepresentable edits blocked. Requirements include later artwork and browse
+unrepresentable non-date edits blocked. Date-only layout limits retain the prior
+date and report a warning under [ADR-0240](adr/0240-treat-calendar-dates-as-best-effort-metadata.md).
+Requirements include later artwork and browse
 updates, including affected Tracks whose own metadata did not change. Composer
 text remains available without its optional native ID on older layouts. Required
 references in existing album/artist datasets must fit or preparation fails.
@@ -349,10 +351,11 @@ See [ADR-0053](adr/0053-project-photos-into-library-drafts.md) and
 
 `PlaylistEntry(entry_id, track_id, position)` identifies an occurrence within its
 Playlist and source revision. `position` is the optional value stored in the
-entry's MHIP type-100 child: zero-based for ordinary entries, with native episode
-IDs used by grouped Podcasts. Move existing entries to reorder duplicates. Keeping
-their source position values is valid; preparation derives the final ordinary
-positions and Podcast episode IDs. Newly supplied positions must match the desired
+entry's MHIP type-100 child: zero-based for ordinary entries; retained Podcasts
+can carry values from older Episode row IDs. Move existing entries to reorder
+duplicates. Keeping their source position values is valid; preparation derives
+positions for membership edits and maintains matching Podcast positions across
+datasets 2 and 3. Newly supplied positions must match the desired
 order. The
 `playlist_entries(track_ids, previous_entries)` helper retains matching occurrences
 in order, allocates new identities for new occurrences, and assigns consecutive
@@ -389,10 +392,14 @@ Lyrics require both the iTunesDB presence flag and text embedded in the media fi
 The existing type-10 MHOD projection remains for application compatibility; it is
 not evidence that stock firmware can display the lyrics. See the
 [libgpod/GTKpod research](research/itunesdb-lyrics.md) and
-[ADR-0075](adr/0075-publish-lyrics-with-media-file-tags.md).
+[ADR-0075](adr/0075-publish-lyrics-with-media-file-tags.md). Direct
+[Classic firmware findings](research/lyrics-firmware-adoption.md) additionally
+establish the low-bit flag and the native byte/decoder contracts.
 
 Changing or clearing `metadata.lyrics`, or supplying new/replacement media with
-known lyrics, adds the Track to `plan.required_lyrics`. Preparation requires a
+known lyrics, adds the Track to `plan.required_lyrics`. Replacing a Track that
+previously advertised lyrics also requires verification when the new text is
+empty, so the old flag cannot outlive the lyrics it referred to. Preparation requires a
 `PreparedLyrics(track_id, lyrics, file)` resource whose text matches the draft and
 whose `FileDependency` describes the resulting tagged file. Removing requirements
 from a public plan cannot bypass this check. File size and the retained secondary
@@ -409,6 +416,18 @@ ID3v2.3 UTF-16 policy. No new padding is added. This is independently required o
 any optional full metadata policy for Rockbox compatibility.
 Legacy ID3v2.2 edits are blocked because implicit conversion can discard unknown
 frames; an already matching file is retained byte-for-byte.
+
+For Classic Device Profiles, preparation additionally checks the final bytes
+against the native lyrics representation. ID3 has a 10,240-byte frame-body cap
+including its descriptor, while MP4 has a 10,240-byte UTF-8 text cap. The traced
+v2.4 reader disagrees with standard synchsafe frame sizes beyond 127 bytes;
+affected traversed frames prevent verification. Compatible small v2.4 layouts
+remain supported. An equal-text encoding mismatch can be repaired without changing
+the tag version, but preparation never silently truncates text or downgrades an
+entire tag. This check also follows optional full metadata tagging. Review notes
+that podcast/audiobook ExtraInfo prefers the description over lyrics. Other
+families and the broader Host reader retain their existing policies. See
+[ADR-0206](adr/0206-validate-native-lyrics-publication.md).
 
 The issued Storage Transaction publishes captured media before the database and
 retains originals for joint recovery. A changed or missing device file, unsafe
@@ -674,8 +693,14 @@ readable Library authority: device selection
 does not require or parse the SQLite files. Ordinary no-op serialization returns
 the exact retained CDB and does not touch SQLite. Every CDB-changing save generates
 and publishes all six SQLite artifacts from the independently reparsed candidate
-snapshot, replacing missing, stale, or damaged companions as one transaction
-generation. A user-directed Sync explicitly requests SQLite regeneration even
+snapshot as one transaction generation. Missing companions use the built-in schema;
+valid stale companions retain their schema and unprojected firmware metadata while
+CDB-owned values are refreshed. Unreadable or incompatible existing companions
+block preparation before publication. The application captures those bytes through
+Storage and supplies them through the public `iPodDB.library.SQLiteSource` contract
+in `WriteResources.sqlite_sources`.
+See [ADR-0150](adr/0150-retain-firmware-sqlite-metadata-and-dual-signatures.md).
+A user-directed Sync explicitly requests SQLite regeneration even
 without Library edits. That intent preserves unchanged CDB bytes, captures all six
 companion preconditions and signing evidence, and publishes the regenerated set
 through the same recoverable Storage Transaction. See
@@ -724,13 +749,24 @@ prefixes against the captured inventory's sizes and hashes. Replacing an image
 selection may append new image data; it must not relocate retained images or
 silently overwrite uncaptured source thumbnail files.
 
-Affected existing dataset mirrors keep their own metadata and occurrences, including
-duplicate Tracks. Empty Master-only mirrors accept the first Playlist. A source
-with only dataset 3 gains a flat dataset 2 companion for affected edits; conflicting
-existing counterparts block additions. New Playlists carry native identity mirrors
+Dataset 3 is authoritative for Playlist relationships. Every preparation makes
+existing dataset 2 agree: missing rows are created, conflicts corrected, extra
+rows removed, and order aligned. Matching records and surviving occurrence metadata
+remain retained. Podcast Episodes are grouped in dataset 3 and flat in dataset 2.
+Repairs appear in Review even without other edits; nested Smart references and
+folder changes use the same policy. Output verification rejects any remaining
+counterpart disagreement. Pure serialization retains the original bytes.
+Whole-dataset creation keeps the existing target policy. See
+[ADR-0223](adr/0223-reconcile-playlist-datasets-from-dataset3.md).
+New Playlists carry native identity mirrors
 and the Original writer's display preferences. Master membership, known browse
 indexes, album/artist/composer links, folder child rules and aggregates, and podcast
 groups are reconciled and checked independently after reparse.
+
+Rebuilt alphabetical jump tables use letter code `0` (`U+0000`) for an empty
+primary browse key, matching the captured empty Composer bucket. Numeric keys
+and nonempty keys without a supported alphanumeric character retain the ASCII
+`0` (`U+0030`) bucket. Independent verification checks this distinction.
 
 Sort-4 Albums indexes keep each semantic Album contiguous before sorting its
 Tracks. Normalized titles that compare equally (for example, `Nexus` and
@@ -745,8 +781,8 @@ To repair existing bad Albums indexes in the application, load the iPod, open
 **Sync with Host**, proceed to **Review Sync** with no media changes selected,
 and choose **Refresh Library**. Disable Playlist reconciliation in the review if
 only the database refresh is wanted. Non-SQLite iPods with Tracks, including
-Classic models, rebuild their retained Albums index/jump-table pairs. Normal Sync
-also requests this rebuild. SQLite iPods retain their existing complete SQLite
+Classic models, rebuild their retained Albums indexes and any existing jump tables.
+Normal Sync also requests this rebuild. SQLite iPods retain their existing complete SQLite
 regeneration workflow. Refresh uses normal signing, source-fingerprint checks,
 and a recoverable Storage Transaction; it does not require media reimport.
 
@@ -763,9 +799,12 @@ result = source.prepare(plan, resources)
 result still requires normal application review and Storage publication. The
 intent is also available on `LibraryPreparationRequest`. Repair-only preparation
 preserves Track metadata, native Album records, Master occurrences, unrelated
-indexes, and Unknown Data. Missing or duplicate halves of an existing sort-4 pair,
-or ambiguous Master membership, block repair. A source with neither half remains
-unchanged unless a structural edit independently requires index creation. Loading,
+indexes, and Unknown Data. Each retained sort-4 index may have zero or one jump
+table; refresh preserves an absent jump table. Duplicate indexes, duplicate or
+orphan jump tables, or ambiguous Master membership block repair. See
+[ADR-0194](adr/0194-allow-retained-album-indexes-without-jump-tables.md).
+A source with neither record remains unchanged unless a structural edit independently
+requires index creation. Loading,
 `serialize()`, and default no-op drafts do not repair or normalize source bytes.
 
 Retained sort-36 album indexes use a matching captured collation profile when group
@@ -775,6 +814,12 @@ change. This warning permits a Prepared Library; structural index errors still
 block preparation. Unchanged group sort values retain their source order. See
 [ADR-0137](adr/0137-warn-and-default-unrecognized-album-collation.md) and the
 [sort-36 research](research/itunesdb-sort-36.md).
+
+Within sort 36, wholly Podcast groups use descending publication date, with
+missing dates last and retained order breaking ties. Other groups retain the
+disc/track rule. This member order is independent of MHYP Playlist Sort Order;
+sort-4 Album indexes keep their own ascending rule. Publication-date and Podcast
+classification changes participate in sort-36 resolution and verification.
 
 Album browse rows maintain title, artist, sort artist, Podcast RSS URL, and show
 metadata. Shared optional values follow the Original writer: select the first
@@ -789,11 +834,54 @@ Podcast grouping belongs only to dataset 3's special Podcasts playlist, includin
 its first episode. Episodes are grouped by album, with the resulting order retained
 in the Prepared Library. Relevant podcast Track changes update special saved
 membership and can create that Playlist when dataset 3 establishes target support.
+Affected grouped rows receive increasing native row IDs in serialized order, with
+each show before its Episodes. Ordered prefixes retain their IDs; insertions and
+reorders renumber the affected suffix above all existing row IDs. Episode parent
+references follow their show IDs. Matching occurrences in the flat counterpart
+receive the same row IDs while keeping their separate persistent identities,
+private metadata, and retained ordering. Positions also match across counterparts:
+repair takes the flat position, falling back to the grouped value when absent,
+then to the Episode row ID when neither exists. Row renumbering alone does not
+replace a retained position. A newly created flat counterpart retains grouped
+positions; membership edits derive consecutive positions for both. Explicit
+`repair_podcast_links=True` also repairs non-increasing or missing row IDs and
+missing or mismatched counterpart positions;
+ordinary no-op preparation remains byte-exact. See
+[ADR-0149](adr/0149-author-podcasts-from-finder-capture-evidence.md).
 These routine membership and ordering changes do not produce informational
 diagnostics. See [ADR-0146](adr/0146-remove-routine-podcast-and-reencoding-notices.md).
+
+Explicit `normalize_podcasts=True` adopts the stronger Sync contract in
+[ADR-0152](adr/0152-normalize-podcast-sync-to-baseline.md). It applies even without
+Episode membership edits: one album per unambiguous show with a valid persistent
+Track backlink, matching root secondary references, persistent show identities,
+Release Date sort 24, baseline phase flags, and counterpart positions equal to row
+IDs. On non-SQLite targets it also repairs retained wrong sort-36 traversal and
+creates missing indexes.
+Canonical identities and compatible Unknown Data survive duplicate album merges;
+conflicting retained data blocks preparation. Application Sync opts in on both
+SQLite and non-SQLite targets containing Podcasts.
+The preceding preservation rules still describe ordinary drafts and standalone
+link repair. This intent never changes lossless parsing or ordinary no-op output.
+
+For SQLite targets, [ADR-0153](adr/0153-normalize-sqlite-podcast-sync.md) uses
+ascending per-show stored publication dates and reversed Release Date UI order.
+Missing native indexes and a missing flat counterpart remain optional. SQLite
+albums use Podcast kind 3 and feed/show ownership independently of optional
+Episode tags. Empty category templates remain native but are omitted from the
+normalized SQLite projection; populated categories and user Playlists survive.
+Partial bookmarks contribute to SQLite playback state without counting completed
+plays or marking the semantic Episode listened. Captured schemas, versions,
+supplemental metadata, and unrelated UI values retain ADR-0150's protection.
+
 The semantic writer does not evaluate Smart Playlists or firmware category rules.
 The Application Layer refreshes supported Smart Playlists with Live updating enabled
-before submission. Dataset 5
+before submission. It supplies explicit refresh intent for retained live Smart
+Playlists so iPodDB can update stale native counterparts even when the canonical
+copy is already current. Dataset-2 definitions, metadata, and membership now
+follow authoritative dataset 3 (ADR-0223). Each copy retains its own surviving
+occurrence metadata. This extends
+[ADR-0213](adr/0213-refresh-compatible-smart-playlist-counterparts.md). Dataset 5
 retains its native category fields and metadata, including categories that carry a
 Master flag. Ambiguous affected relationships block preparation; unrelated source
 anomalies remain with warnings. See [ADR-0024](adr/0024-reconcile-and-verify-playlists-by-dataset.md).
@@ -829,7 +917,17 @@ fabricated review.
 
 Saving revalidates all retained database fingerprints, signing identity, captured file
 preconditions, and any required positional sidecar inventory before publication.
-Storage recovery copies are retained beneath `.iopenpod-recovery` through commit,
+The complete Library and optional Podcast transaction is validated once at review.
+Host publication reuses original-copy fingerprints, performs its final staged-input
+checks after the preparation callback, and retains immediate deletion and final
+commit checks. Timestamp overrides are applied to private stages before output
+verification. See [ADR-0181](adr/0181-bound-sync-reads-to-workflow-boundaries.md).
+Host transaction copies hash the outgoing stream and defer individual destination
+readbacks to the final batch verification. Each published output is read once
+before commit, including timestamp-preserving writes and restoration. See
+[ADR-0182](adr/0182-verify-host-transaction-outputs-once-before-commit.md).
+Storage retains Library recovery copies on the Host through commit, with an
+authoritative Host journal and a device mirror beneath `.iopenpod-recovery`,
 independently of Backup Snapshots. `inspect_transaction` and `restore_transaction` verify the entire
 observation and original files before restoration; unrelated later edits block it.
 Terminal cleanup follows verified saves; Sync defers it until its Library Sync
@@ -837,6 +935,9 @@ Helper update has been attempted. Selection automatically cleans matching comple
 transactions only after all active journals have been checked for unfinished
 recovery. Interrupted publication requires the existing restore-or-keep choice,
 while an actual cleanup failure preserves its reason and journal location.
+Confirmed terminal cleanup reuses the recorded verification and durability without
+rereading media; unconfirmed results need one fresh verification pass after a
+successful flush. See [ADR-0180](adr/0180-reuse-confirmed-durability-during-host-recovery-cleanup.md).
 Automatic Library saves open warning diagnostics while retaining the saved Library
 and clean draft; reloading automatically retries cleanup. Sync and selection
 failures expose Retry Cleanup for remaining recovery files. The Track metadata

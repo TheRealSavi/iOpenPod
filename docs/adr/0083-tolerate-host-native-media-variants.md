@@ -1,5 +1,8 @@
 # ADR-0083: Tolerate Host-native media variants during preparation
 
+> [ADR-0157](0157-review-explicit-media-stream-selection.md) adds explicit per-Sync
+> stream choices. The automatic behavior below remains the default.
+
 - Status: Accepted
 - Date: 2026-09-26
 - Extends: ADR-0031, ADR-0074 and ADR-0082

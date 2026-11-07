@@ -8,6 +8,10 @@
 > ADR-0143 supersedes the aggregate encoded and decoded catalog byte limits below.
 > Individual fingerprint bounds, record-count limits, and the other reuse policies
 > remain in effect.
+>
+> ADR-0156 replaces native iPod scan captures with pinned, seekable device inputs
+> and permits reuse of confirmed no-audio results. Other analysis failures remain
+> retryable.
 
 ## Context
 

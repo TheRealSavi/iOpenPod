@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Protocol
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.core.settings.definitions import (
+    ANALYZE_FOR_GENIUS,
+    COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     NORMALIZE_TAGS_AFTER_SYNC,
@@ -32,7 +34,7 @@ from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
     SyncExecutionStatus,
     SyncOptions,
-    preview_playlist_sync,
+    review_playlist_sync,
 )
 from iPodDB.library import IssueSeverity, WriteIssue
 
@@ -46,6 +48,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.library_workspace import LibraryWorkspace
     from iOpenPod.app.library_write import WriteProgress
     from iOpenPod.app.models.device import ActiveIPod
+    from iOpenPod.app.playlist_sync import PlaylistSyncChoice
     from iOpenPod.app.podcasts.sync import PodcastSyncRequest
     from iOpenPod.app.sync_plan import SyncPlan
 
@@ -364,6 +367,7 @@ class SyncController(QObject):
         source: ActiveIPod,
         *,
         reconcile_playlists: bool = True,
+        playlist_choices: tuple[PlaylistSyncChoice, ...] = (),
         podcasts: PodcastSyncRequest | None = None,
     ) -> bool:
         self.last_error = ""
@@ -397,7 +401,13 @@ class SyncController(QObject):
             and not source.profile.capabilities.database.uses_sqlite_database
             and not source.library.tracks
             and not (
-                reconcile_playlists and preview_playlist_sync(plan, host, ipod, source)
+                reconcile_playlists
+                and any(
+                    item.actionable
+                    for item in review_playlist_sync(
+                        plan, host, ipod, source, playlist_choices
+                    )
+                )
             )
         ):
             self.last_error = "Select at least one change in Review."
@@ -412,7 +422,9 @@ class SyncController(QObject):
                 self._workspace.revision,
                 settings=read_transcoder_settings(self._settings),
                 options=SyncOptions(
+                    compute_missing_bpm=self._settings.get(COMPUTE_MISSING_BPM),
                     scrobble=self._settings.get(SCROBBLE_DURING_SYNC),
+                    analyze_for_genius=self._settings.get(ANALYZE_FOR_GENIUS),
                     compute_sound_check=self._settings.get(COMPUTE_SOUND_CHECK),
                     normalize_tags=self._settings.get(NORMALIZE_TAGS_AFTER_SYNC),
                     rotate_tall_photos=self._settings.get(ROTATE_TALL_PHOTOS),
@@ -420,6 +432,7 @@ class SyncController(QObject):
                     rockbox_metadata=self._settings.get(ROCKBOX_METADATA_SUPPORT),
                 ),
                 reconcile_playlists=reconcile_playlists,
+                playlist_choices=playlist_choices,
                 podcasts=podcasts,
                 scrobble_accounts=configured_accounts(self._settings),
             )
@@ -471,6 +484,16 @@ class SyncController(QObject):
     def cancel(self) -> None:
         if self._job is not None:
             self._job.cancelled.set()
+
+    @Slot()
+    def skip_genius_analysis(self) -> None:
+        if isinstance(self._job, _SyncWork):
+            self._job.request.genius_analysis_skip.set()
+
+    @Slot()
+    def skip_phase_analysis(self) -> None:
+        if isinstance(self._job, _SyncWork):
+            self._job.request.phase_analysis_skip.set()
 
     def recover(self) -> bool:
         result = self.result

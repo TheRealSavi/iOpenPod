@@ -25,6 +25,7 @@ from storage.models import (
     VolumeObservation,
 )
 from storage.platform.base import ObservationDiscoveryResult
+from storage.platform.common import paths_share_single_device
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -149,6 +150,11 @@ class VirtualStoragePlatform:
 
     def enable_volume_icon(self, observation: VolumeObservation) -> None:
         self.reinspect(observation)
+
+    def paths_share_physical_device(self, first: Path, second: Path) -> bool | None:
+        return paths_share_single_device(
+            self.physical_device_id_for_path, first, second
+        )
 
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:
         canonical = path.resolve(strict=True)

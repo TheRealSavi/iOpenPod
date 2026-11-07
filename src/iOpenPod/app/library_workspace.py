@@ -40,6 +40,11 @@ from iPodDB.library import (
     smart_playlist_references,
     validate_smart_playlist,
 )
+from iPodDB.library.genius import (
+    GeniusCollection,
+    GeniusCollectionKind,
+    reconcile_genius_playlists,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +111,8 @@ class LibraryWorkspace(QObject):
         self._tracks: dict[int, Track] = {}
         self._artwork_assets: dict[int, ArtworkAsset | TimedArtworkAsset] = {}
         self._media_sources: dict[int, LibraryMediaSource] = {}
+        self._genius_mix_additions: tuple[str, ...] = ()
+        self._genius_collection_removals: tuple[str, ...] = ()
         self._photos: PhotoLibrary | None = None
         self._photo_album_creation_type: int | None = None
         self._delete_omissions = False
@@ -549,6 +556,7 @@ class LibraryWorkspace(QObject):
         selected = self._selected_tracks(track_ids)
         if not selected:
             return
+        before = self.desired_snapshot()
         removed = {t.track_id for t in selected}
         self._tracks = {i: t for i, t in self._tracks.items() if i not in removed}
         self._media_sources = {
@@ -560,6 +568,8 @@ class LibraryWorkspace(QObject):
             )
             for i, p in self._playlists.items()
         }
+        reconciled = reconcile_genius_playlists(before, self.desired_snapshot())
+        self._playlists = {p.playlist_id: p for p in reconciled.playlists}
         self._delete_omissions = True
         self._retain_artwork_assets()
         self._publish()
@@ -871,7 +881,50 @@ class LibraryWorkspace(QObject):
             or self.tracks != snapshot.tracks
             or self._device_name != snapshot.device_name
             or self._photos != snapshot.photos
+            or bool(self._genius_mix_additions)
+            or bool(self._genius_collection_removals)
         )
+
+    @property
+    def genius_mix_additions(self) -> tuple[str, ...]:
+        return self._genius_mix_additions
+
+    @property
+    def genius_collection_removals(self) -> tuple[str, ...]:
+        return self._genius_collection_removals
+
+    def add_genius_mixes(self, keys: tuple[str, ...], expected: EditRevision) -> None:
+        """Stage explicit manual Mix intent through the existing save workflow."""
+        self.require_revision(expected)
+        desired = tuple(dict.fromkeys((*self._genius_mix_additions, *keys)))
+        if desired != self._genius_mix_additions:
+            self._genius_mix_additions = desired
+            self._publish()
+
+    def remove_genius_collection(
+        self, collection: GeniusCollection, expected: EditRevision
+    ) -> None:
+        """Stage an explicit native collection removal without touching its Tracks."""
+        self.require_revision(expected)
+        if collection.collection_id in self._genius_collection_removals:
+            return
+        if collection.kind is GeniusCollectionKind.PLAYLIST:
+            native_id = collection.native_playlist_id
+            playlist = self._playlists.get(native_id) if native_id is not None else None
+            if playlist is not None and native_id is not None:
+                if playlist.kind is not PlaylistKind.GENIUS:
+                    raise ValueError(
+                        "The selected native Playlist is not a Genius Playlist."
+                    )
+                del self._playlists[native_id]
+                self._delete_omissions = True
+        elif collection.kind is not GeniusCollectionKind.MIX:
+            raise ValueError("Unsupported Genius collection kind.")
+        self._genius_collection_removals = (
+            *self._genius_collection_removals,
+            collection.collection_id,
+        )
+        self._publish()
 
     def load(
         self,
@@ -895,6 +948,8 @@ class LibraryWorkspace(QObject):
         self._snapshot = snapshot
         self._artwork_assets.clear()
         self._media_sources.clear()
+        self._genius_mix_additions = ()
+        self._genius_collection_removals = ()
         self._delete_omissions = False
         self._device_name = "" if snapshot is None else snapshot.device_name
         self._photos = None if snapshot is None else snapshot.photos
@@ -984,12 +1039,13 @@ class LibraryWorkspace(QObject):
         description: str = "",
         track_ids: tuple[int, ...] = (),
         sort_order: PlaylistSort | None = None,
+        is_phase: bool = False,
     ) -> Playlist:
         self._require_editable()
         self._require_snapshot()
         name = self._validate_name(name)
         self._validate_parent(parent_id)
-        if kind not in tuple(PlaylistKind):
+        if kind not in (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER):
             raise ValueError("Choose a Playlist, Smart Playlist, or Playlist Folder.")
         if kind != PlaylistKind.SMART and smart is not None:
             raise ValueError("Only a Smart Playlist can have rules.")
@@ -1023,8 +1079,11 @@ class LibraryWorkspace(QObject):
             description=description,
             entries=entries,
             sort_order=resolved_sort_order,
+            is_phase=is_phase,
         )
         self._next_id -= 1
+        if is_phase:
+            self._clear_other_phase_playlists(playlist.playlist_id)
         self._playlists[playlist.playlist_id] = playlist
         self._publish()
         return playlist
@@ -1037,6 +1096,7 @@ class LibraryWorkspace(QObject):
         description: str | None = None,
         smart: SmartPlaylist | None = None,
         sort_order: PlaylistSort | None = None,
+        is_phase: bool | None = None,
     ) -> Playlist:
         """Apply changed rules and their saved matches as one reversible edit."""
 
@@ -1047,7 +1107,10 @@ class LibraryWorkspace(QObject):
             name=playlist.name if name is None else self._validate_name(name),
             description=playlist.description if description is None else description,
             sort_order=playlist.sort_order if sort_order is None else sort_order,
+            is_phase=playlist.is_phase if is_phase is None else is_phase,
         )
+        if playlist.kind is PlaylistKind.GENIUS:
+            raise ValueError("Native Genius Playlists are read-only.")
         membership_changed = False
         if smart is not None:
             if playlist.kind != PlaylistKind.SMART:
@@ -1083,7 +1146,19 @@ class LibraryWorkspace(QObject):
                     updated.sort_order,
                 ),
             )
+        if updated.is_phase:
+            cleared = self._clear_other_phase_playlists(updated.playlist_id)
+            if cleared and updated == playlist:
+                self._publish()
         return self._replace(updated)
+
+    def _clear_other_phase_playlists(self, selected_id: int) -> bool:
+        changed = False
+        for identity, playlist in tuple(self._playlists.items()):
+            if identity != selected_id and playlist.is_phase:
+                self._playlists[identity] = replace(playlist, is_phase=False)
+                changed = True
+        return changed
 
     def rename(self, playlist_id: int, name: str) -> Playlist:
         return self.update(playlist_id, name=name)
@@ -1122,7 +1197,7 @@ class LibraryWorkspace(QObject):
 
         self.require_revision(expected)
         playlist = self._require(playlist_id)
-        if playlist.system_managed:
+        if playlist.system_managed or playlist.kind is PlaylistKind.GENIUS:
             raise ValueError(
                 "This Playlist is managed by the iPod and cannot be removed."
             )
@@ -1132,6 +1207,10 @@ class LibraryWorkspace(QObject):
             while pending:
                 parent_id = pending.pop()
                 for child in self.children_of(parent_id):
+                    if child.kind is PlaylistKind.GENIUS:
+                        raise ValueError(
+                            "A folder containing a native Genius Playlist cannot be removed."
+                        )
                     if child.playlist_id not in removed_ids:
                         removed_ids.add(child.playlist_id)
                         pending.append(child.playlist_id)
@@ -1217,6 +1296,8 @@ class LibraryWorkspace(QObject):
     def can_move(self, playlist_id: int, parent_id: int | None) -> bool:
         if self._locked or playlist_id not in self._playlists:
             return False
+        if self._playlists[playlist_id].kind is PlaylistKind.GENIUS:
+            return False
         current_id = parent_id
         visited: set[int] = set()
         while current_id is not None:
@@ -1264,6 +1345,8 @@ class LibraryWorkspace(QObject):
         self._tracks = {track.track_id: track for track in snapshot.tracks}
         self._artwork_assets.clear()
         self._media_sources.clear()
+        self._genius_mix_additions = ()
+        self._genius_collection_removals = ()
         self._delete_omissions = False
         self._device_name = snapshot.device_name
         self._photos = snapshot.photos
@@ -1329,7 +1412,7 @@ class LibraryWorkspace(QObject):
         for playlist_id, playlist in tuple(self._playlists.items()):
             # Firmware grouping and native episode positions belong to iPodDB.
             # Even an unrelated Track edit must leave this retained Playlist alone.
-            if playlist.system_managed:
+            if playlist.system_managed or playlist.kind is PlaylistKind.GENIUS:
                 continue
             if not isinstance(playlist.sort_order, PlaylistSortOrder) or (
                 playlist.sort_order

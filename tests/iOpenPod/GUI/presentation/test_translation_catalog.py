@@ -59,7 +59,41 @@ def test_extraction_includes_dynamic_sources_in_runtime_contexts(catalog: Path) 
         ("Workflow", "Reparsing and verifying candidate output"),
         ("Workflow", "steps"),
         ("Workflow", "Rebuild descendant membership and direct-child rules."),
+        (
+            "Workflow",
+            "Multiple retained Chapter headers are not interpreted by this native index view. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "Chapter data has no header enabling the native named index. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "The retained Chapter header disables the native named index. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "Chapters without a name atom are omitted from the native named index. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "The native Chapter index keeps stored order and stops at the first future start. "
+            "Editable Chapter metadata is retained.",
+        ),
+        (
+            "Workflow",
+            "The native Chapter index selects the last eligible duplicate start. "
+            "Editable Chapter metadata is retained.",
+        ),
         ("EditorLabels", "Technical details"),
+        ("Equalizer", "Use iPod setting"),
+        ("Equalizer", "Acoustic"),
+        ("Equalizer", "Vocal Booster"),
+        ("Equalizer", "Unknown preset (preserved)"),
         ("PodcastPresentation", "Unknown publisher"),
     }
     assert not expected - messages.keys()
@@ -137,6 +171,34 @@ def test_catalog_update_preserves_existing_translations(
         for message in context.findall("message")
     }
     assert translations["CommonActions", "Cancel"] == "Abbrechen"
+
+
+def test_extraction_skips_sources_without_qt_messages(tmp_path: Path) -> None:
+    package = tmp_path / "src/iOpenPod"
+    package.mkdir(parents=True)
+    # Qt's Python extractor crashes on f-strings larger than 64 KiB on Windows.
+    # A stylesheet without translation calls should never reach that parser.
+    (package / "stylesheet.py").write_text(
+        'STYLE = f"' + "{tokens.accent} " * 5000 + '"\n', encoding="utf-8"
+    )
+    (package / "labels.py").write_text(
+        "class Window:\n"
+        "    def title(self):\n"
+        '        return self.tr("Hello")\n'
+        'QT_TRANSLATE_NOOP("Labels", "Ready")\n',
+        encoding="utf-8",
+    )
+    (package / "workflow.py").write_text('source_text("Working…")\n', encoding="utf-8")
+    catalog = tmp_path / "iopenpod_de.ts"
+    extract_catalogs([catalog], root=tmp_path)
+    messages = {
+        (context.findtext("name"), message.findtext("source"))
+        for context in ET.parse(catalog).findall("context")
+        for message in context.findall("message")
+    }
+    assert {("Window", "Hello"), ("Labels", "Ready"), ("Workflow", "Working…")} <= (
+        messages
+    )
 
 
 def test_compiled_catalog_translates_workflows_and_selects_plural_forms(

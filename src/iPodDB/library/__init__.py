@@ -4,12 +4,18 @@ Other sources construct the same immutable records directly. None need Chunk
 definitions, database documents, Qt, Storage, or an iPod diagnostic record.
 """
 
+from iPodDB.library._equalizer import (
+    EqualizerPreset,
+    decode_track_equalizer,
+    encode_track_equalizer,
+)
 from iPodDB.library.artwork import (
     ArtworkPixels,
     ArtworkRead,
     CoverFormat,
     CoverPixelFormat,
 )
+from iPodDB.library.creation import create_empty_library
 from iPodDB.library.database import IPodLibrary, LibraryDatabaseBytes
 from iPodDB.library.editing import (
     MetadataValue,
@@ -40,6 +46,8 @@ from iPodDB.library.models import (
     TrackChapter,
     TrackMetadata,
 )
+from iPodDB.library.native_chapters import NativeChapterEntry, NativeChapterIndex
+from iPodDB.library.phase import resolve_phase_playlist
 from iPodDB.library.photos import (
     IPodPhotoAlbumDetails,
     Photo,
@@ -94,7 +102,12 @@ from iPodDB.library.smart_rules import (
     smart_value_kind,
     validate_smart_playlist,
 )
-from iPodDB.library.sqlite import SQLiteDatabaseSet
+from iPodDB.library.sqlite import SQLiteDatabaseSet, SQLiteSource
+from iPodDB.library.video import (
+    SubtitleSelection,
+    VideoPlaybackMetadata,
+    is_video_track,
+)
 from iPodDB.library.writing import (
     ArtworkAsset,
     ArtworkGroupReference,
@@ -112,6 +125,7 @@ from iPodDB.library.writing import (
     PreparedLyrics,
     PreparedMedia,
     PreparedPhoto,
+    PreparedVideoMetadata,
     RetainedArtworkFile,
     SourceFile,
     TimedArtworkAsset,
@@ -130,6 +144,7 @@ from iPodDB.sidecars import (
     is_playback_sidecar,
     remap_playback_sidecar,
 )
+from iPodDB.SQLiteDB.video import video_metadata_required
 
 __all__ = [
     "MAX_SIDECAR_BYTES",
@@ -142,6 +157,7 @@ __all__ = [
     "ContentBuffer",
     "CoverFormat",
     "CoverPixelFormat",
+    "EqualizerPreset",
     "FileContentData",
     "FileDependency",
     "Hash72Material",
@@ -162,6 +178,8 @@ __all__ = [
     "MediaType",
     "MemoryContentBuffer",
     "MetadataValue",
+    "NativeChapterEntry",
+    "NativeChapterIndex",
     "Photo",
     "PhotoAlbum",
     "PhotoAlbumKind",
@@ -184,9 +202,11 @@ __all__ = [
     "PreparedLyrics",
     "PreparedMedia",
     "PreparedPhoto",
+    "PreparedVideoMetadata",
     "ReadableContent",
     "RetainedArtworkFile",
     "SQLiteDatabaseSet",
+    "SQLiteSource",
     "SmartField",
     "SmartLimitSort",
     "SmartLimitUnit",
@@ -201,6 +221,7 @@ __all__ = [
     "SmartRuleGroup",
     "SmartValueKind",
     "SourceFile",
+    "SubtitleSelection",
     "TimedArtworkAsset",
     "TimedArtworkFrame",
     "Track",
@@ -210,6 +231,7 @@ __all__ = [
     "TrackMetadata",
     "UnsupportedPlaylistSortOrder",
     "UnsupportedSmartRule",
+    "VideoPlaybackMetadata",
     "WriteChecksum",
     "WriteEffect",
     "WriteIssue",
@@ -219,11 +241,15 @@ __all__ = [
     "WriteTarget",
     "content_chunks",
     "content_sha256",
+    "create_empty_library",
+    "decode_track_equalizer",
     "edit_track_metadata",
     "editable_track_fields",
     "encode_photo_thumbnail",
+    "encode_track_equalizer",
     "incoming_track_issues",
     "is_playback_sidecar",
+    "is_video_track",
     "metadata_edit_issues",
     "order_playlist_entries",
     "parse_hash72_info",
@@ -236,9 +262,11 @@ __all__ = [
     "recover_hash72_checksum_book_material",
     "recover_hash72_material",
     "remap_playback_sidecar",
+    "resolve_phase_playlist",
     "select_photo_thumbnail",
     "smart_operators",
     "smart_playlist_references",
     "smart_value_kind",
     "validate_smart_playlist",
+    "video_metadata_required",
 ]

@@ -19,6 +19,10 @@ from iOpenPod.GUI.presentation.library_card import (
     library_card_artwork_rect,
     library_card_rect,
 )
+from iOpenPod.GUI.presentation.sync_media import (
+    paint_library_card_ipod_marker,
+    sync_checkbox_tokens,
+)
 from iOpenPod.GUI.presentation.theme.tokens import ThemeTokens, TypographyTokens
 
 _CHECKBOX_EXTENT = 36.0
@@ -29,8 +33,12 @@ _CHECKBOX_BORDER_WIDTH = 2.0
 def library_card_checkbox_rect(
     option: QStyleOptionViewItem,
     typography: TypographyTokens,
+    *,
+    artwork_height: int | None = None,
 ) -> QRectF:
-    artwork = library_card_artwork_rect(option, typography)
+    artwork = library_card_artwork_rect(
+        option, typography, artwork_height=artwork_height
+    )
     return QRectF(
         artwork.right() - _CHECKBOX_MARGIN - _CHECKBOX_EXTENT,
         artwork.top() + _CHECKBOX_MARGIN,
@@ -45,14 +53,21 @@ def paint_library_card_checkbox(
     state: Qt.CheckState,
     tokens: ThemeTokens,
     typography: TypographyTokens,
+    *,
+    on_ipod: bool | None = None,
+    artwork_height: int | None = None,
 ) -> None:
+    if on_ipod is not None:
+        if on_ipod:
+            paint_library_card_ipod_marker(painter, option, tokens, typography)
+        tokens = sync_checkbox_tokens(tokens, state, on_ipod)
     checked = state is Qt.CheckState.Checked
     partial = state is Qt.CheckState.PartiallyChecked
     active = checked or partial
     enabled = bool(option.state & QStyle.StateFlag.State_Enabled)
     hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
     focused = bool(option.state & QStyle.StateFlag.State_HasFocus)
-    rect = library_card_checkbox_rect(option, typography)
+    rect = library_card_checkbox_rect(option, typography, artwork_height=artwork_height)
     fill = (
         tokens.accent_hover
         if active and hovered
@@ -110,15 +125,18 @@ def handle_library_card_check_event(
     typography: TypographyTokens,
     *,
     checkbox_only: bool = True,
+    artwork_height: int | None = None,
 ) -> bool:
     if not index.flags() & Qt.ItemFlag.ItemIsUserCheckable:
         return False
     activate = False
     if isinstance(event, QMouseEvent):
         hit_rect = (
-            library_card_checkbox_rect(option, typography)
+            library_card_checkbox_rect(
+                option, typography, artwork_height=artwork_height
+            )
             if checkbox_only
-            else library_card_rect(option, typography)
+            else library_card_rect(option, typography, artwork_height=artwork_height)
         )
         activate = (
             event.type() is QEvent.Type.MouseButtonRelease

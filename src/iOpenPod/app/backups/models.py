@@ -6,9 +6,10 @@ import hashlib
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Self, cast
+
+from whenever import SYSTEM_TZ, Date, OffsetDateTime, PlainDateTime, Time
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -443,10 +444,18 @@ class SnapshotInfo:
     @property
     def display_date(self) -> str:
         try:
-            value = datetime.fromisoformat(self.timestamp)
-            if value.tzinfo is not None:
-                value = value.astimezone()
-            return value.strftime("%b %d, %Y · %I:%M %p")
+            # Native snapshots carry an offset and display in the Host zone.
+            # Legacy wall dates have no trustworthy zone: retain their fields.
+            try:
+                value = (
+                    OffsetDateTime.parse_iso(self.timestamp).to_tz(SYSTEM_TZ).to_plain()
+                )
+            except ValueError:
+                try:
+                    value = PlainDateTime.parse_iso(self.timestamp)
+                except ValueError:
+                    value = Date.parse_iso(self.timestamp).at(Time())
+            return f"{value.format('MMM DD, YYYY')} · {value.format('ii:mm aa')}"
         except ValueError:
             return self.timestamp
 

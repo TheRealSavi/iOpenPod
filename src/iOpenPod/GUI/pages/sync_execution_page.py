@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Literal
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QStackedWidget,
@@ -17,6 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.display_text import exception_text
+from iOpenPod.app.sync_diagnostics import save_sync_report
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
 from iOpenPod.GUI.presentation.i18n.text import english_count_fallback, item_count_text
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
@@ -30,6 +35,7 @@ from iOpenPod.GUI.widgets.sync_result import (
 )
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iPodDB.library import IssueSeverity
+from storage import StorageError
 
 if TYPE_CHECKING:
     from iOpenPod.app.library_write import WriteProgress
@@ -48,6 +54,8 @@ class SyncExecutionPage(QWidget):
     )
 
     cancelRequested = Signal()
+    skipGeniusRequested = Signal()
+    skipPhaseRequested = Signal()
     recoveryRequested = Signal()
     keepContentsRequested = Signal()
     exitRequested = Signal()
@@ -57,7 +65,10 @@ class SyncExecutionPage(QWidget):
         super().__init__(parent)
         self.setObjectName("syncExecutionPage")
         self._result: SyncExecutionResult | None = None
+        self._report_text = ""
         self._cancel_requested = False
+        self._genius_skip_requested = False
+        self._phase_skip_requested = False
         self._cancel_notice = False
         self._last_write_progress: WriteProgress | None = None
         self._completed_stages: list[int] = []
@@ -128,10 +139,22 @@ class SyncExecutionPage(QWidget):
         self._cancel = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
         self._cancel.setObjectName("cancelSyncExecution")
         self._cancel.clicked.connect(self._request_cancel)
+        self._skip_genius = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
+        self._skip_genius.setObjectName("skipGeniusAnalysis")
+        self._skip_genius.clicked.connect(self._request_genius_skip)
+        self._skip_phase = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
+        self._skip_phase.setObjectName("skipPhaseAnalysis")
+        self._skip_phase.clicked.connect(self._request_phase_skip)
+        self._skip_genius.hide()
+        self._skip_phase.hide()
         self._done = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
         self._done.setObjectName("finishSyncExecution")
         self._done.clicked.connect(self.exitRequested.emit)
         self._done.hide()
+        self._save_report = ActionButton(parent=self, kind=ActionButtonKind.SECONDARY)
+        self._save_report.setObjectName("saveSyncReport")
+        self._save_report.clicked.connect(self._save_sync_report)
+        self._save_report.hide()
         self._recover = ActionButton(parent=self, kind=ActionButtonKind.PRIMARY)
         self._recover.setObjectName("recoverSyncExecution")
         self._recover.clicked.connect(self.recoveryRequested.emit)
@@ -142,6 +165,9 @@ class SyncExecutionPage(QWidget):
         self._keep.hide()
         actions = QHBoxLayout()
         actions.addStretch()
+        actions.addWidget(self._save_report)
+        actions.addWidget(self._skip_genius)
+        actions.addWidget(self._skip_phase)
         actions.addWidget(self._cancel)
         actions.addWidget(self._recover)
         actions.addWidget(self._keep)
@@ -211,12 +237,16 @@ class SyncExecutionPage(QWidget):
         self.resultVisibilityChanged.emit()
 
     def begin(self) -> None:
+        self._save_report.hide()
+        self._report_text = ""
         self._phase_started = self._last_progress = monotonic()
         self._progress_phase = ""
         self._elapsed.clear()
         self._clock.start()
         self._result = None
         self._cancel_requested = False
+        self._genius_skip_requested = False
+        self._phase_skip_requested = False
         self._cancel_notice = False
         self._last_write_progress = None
         self._completed_stages.clear()
@@ -237,6 +267,10 @@ class SyncExecutionPage(QWidget):
         self._progress.show()
         self._cancel.setEnabled(True)
         self._cancel.show()
+        self._skip_genius.hide()
+        self._skip_phase.hide()
+        self._skip_genius.setEnabled(True)
+        self._skip_phase.setEnabled(True)
         self._done.hide()
         self._recover.hide()
         self._keep.hide()
@@ -255,6 +289,19 @@ class SyncExecutionPage(QWidget):
         self._render_progress(progress)
 
     def _render_progress(self, progress: WriteProgress) -> None:
+        analyzing_genius = progress.phase in (
+            "draft.genius",
+            "draft.genius.audio",
+        )
+        self._skip_genius.setVisible(analyzing_genius and self._recovery_mode is None)
+        self._skip_genius.setEnabled(
+            not self._genius_skip_requested and not self._cancel_requested
+        )
+        analyzing_phase = progress.phase == "resources.phase"
+        self._skip_phase.setVisible(analyzing_phase and self._recovery_mode is None)
+        self._skip_phase.setEnabled(
+            not self._phase_skip_requested and not self._cancel_requested
+        )
         stage_index = self._stage_index(progress.phase)
         self._set_stage(stage_index)
         title = self._stage_titles()[stage_index]
@@ -267,6 +314,14 @@ class SyncExecutionPage(QWidget):
             .replace("%2", str(len(self._STAGES)))
         )
         message = workflow_text(progress.message)
+        if analyzing_genius and self._genius_skip_requested:
+            message += " " + self.tr(
+                "Skipping remaining music analysis. Completed results will be kept."
+            )
+        if analyzing_phase and self._phase_skip_requested:
+            message += " " + self.tr(
+                "Skipping remaining Phase analysis. Completed charts will be kept."
+            )
         if self._cancel_requested:
             message += " " + self.tr(
                 "Cancellation requested; waiting for a safe stopping point. Keep the iPod connected."
@@ -296,7 +351,11 @@ class SyncExecutionPage(QWidget):
                 self.tr("This stage is working; its total is not item-counted.")
             )
             self._eta.reset()
-        preparing = progress.phase == "sync.prepare"
+        preparing = progress.phase in (
+            "sync.prepare",
+            "sync.podcast_prepare",
+            "draft.genius.audio",
+        )
         self._activity.setVisible(not preparing and self._result is None)
         self._preparation.set_items(progress.active_items if preparing else ())
         self._preparation_summary.setVisible(preparing)
@@ -338,8 +397,24 @@ class SyncExecutionPage(QWidget):
         self._cancel_requested = True
         self._cancel_notice = True
         self._cancel.setEnabled(False)
+        self._skip_genius.setEnabled(False)
+        self._skip_phase.setEnabled(False)
         self._render_cancel_notice()
         self.cancelRequested.emit()
+
+    def _request_genius_skip(self) -> None:
+        self._genius_skip_requested = True
+        self._skip_genius.setEnabled(False)
+        if self._last_write_progress is not None:
+            self._render_progress(self._last_write_progress)
+        self.skipGeniusRequested.emit()
+
+    def _request_phase_skip(self) -> None:
+        self._phase_skip_requested = True
+        self._skip_phase.setEnabled(False)
+        if self._last_write_progress is not None:
+            self._render_progress(self._last_write_progress)
+        self.skipPhaseRequested.emit()
 
     def _render_cancel_notice(self) -> None:
         self._detail.setText(
@@ -366,7 +441,10 @@ class SyncExecutionPage(QWidget):
         if result.status in (SyncExecutionStatus.SUCCESS, SyncExecutionStatus.PARTIAL):
             self._set_stage(len(self._STAGES))
         self._cancel.hide()
+        self._skip_genius.hide()
+        self._skip_phase.hide()
         self._done.show()
+        self._save_report.show()
         self._recover.setVisible(
             result.status is SyncExecutionStatus.RECOVERY_REQUIRED
             or (
@@ -379,6 +457,9 @@ class SyncExecutionPage(QWidget):
         self.retranslate_ui()
 
     def begin_recovery(self, *, cleanup: bool = False) -> None:
+        self._save_report.hide()
+        self._skip_genius.hide()
+        self._skip_phase.hide()
         self._views.setCurrentWidget(self._running_view)
         self._recovery_mode = "cleanup" if cleanup else "restore"
         self._last_write_progress = None
@@ -424,7 +505,16 @@ class SyncExecutionPage(QWidget):
         self._render_recovery()
 
     def retranslate_ui(self) -> None:
+        self._save_report.setText(self.tr("Save Sync report…"))
         self._cancel.setText(self.tr("Cancel Sync"))
+        self._skip_genius.setText(self.tr("Skip for this Sync"))
+        self._skip_phase.setText(self.tr("Skip Phase analysis"))
+        self._skip_phase.setToolTip(
+            self.tr(
+                "Continue Sync with completed charts. Tracks still needing analysis "
+                "stay in the Playlist but are unavailable in Phase until a later Phase edit."
+            )
+        )
         self._done.setText(self.tr("Return to Library"))
         self._recover.setText(self.tr("Restore Previous Library"))
         self._keep.setText(self.tr("Keep Current Contents"))
@@ -582,17 +672,15 @@ class SyncExecutionPage(QWidget):
             }.get(severity, severity)
             user_message = f"{workflow_text(message)}{count}"
             line = f"{severity_label} [{code}] {user_message}"
+            user_details: list[str] = []
             if code == "sync.scrobble_pending":
-                user_message = (
-                    self.tr(
-                        "Some listening history was not shared with your connected music services."
-                    )
-                    + "\n"
-                    + user_message
+                user_details.append(user_message)
+                user_message = self.tr(
+                    "Some listening history was not shared with your connected music services."
                 )
             if diagnostic:
                 line += "\n" + workflow_text(diagnostic)
-                user_message += "\n" + workflow_text(diagnostic)
+                user_details.append(workflow_text(diagnostic))
             references = list(
                 dict.fromkeys(
                     reference
@@ -600,22 +688,30 @@ class SyncExecutionPage(QWidget):
                     if (reference := self._issue_reference(issue))
                 )
             )
+            shown = tuple(references[:3])
+            overflow_text = ""
             if references:
-                shown = references[:3]
                 line += "\n" + "\n".join(references)
-                user_message += "\n" + "\n".join(shown)
                 if len(references) > len(shown):
                     remaining = len(references) - len(shown)
-                    user_message += "\n" + english_count_fallback(
+                    overflow_text = english_count_fallback(
                         "…and %n more file(s)",
                         self.tr("…and %n more file(s)", "", remaining),
                         remaining,
                     )
-                    user_message += "\n" + self.tr(
+                    overflow_text += "\n" + self.tr(
                         "More affected items are listed in Technical details."
                     )
             lines.append(line)
-            messages.append(SyncResultMessage(IssueSeverity(severity), user_message))
+            messages.append(
+                SyncResultMessage(
+                    IssueSeverity(severity),
+                    user_message,
+                    detail="\n".join(user_details),
+                    references=shown,
+                    overflow_text=overflow_text,
+                )
+            )
             counts[IssueSeverity(severity)] += len(issues)
         if result.recovery_path:
             lines.append(
@@ -638,6 +734,30 @@ class SyncExecutionPage(QWidget):
             "\n\n".join(lines),
             self.tr("Technical details"),
         )
+        self._report_text = "\n\n".join(
+            part for part in (title, description, detail, *lines) if part
+        )
+
+    def _save_sync_report(self) -> None:
+        if not self._report_text:
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            self.tr("Save Sync report"),
+            "iOpenPod-sync-report.txt",
+            self.tr("Text files (*.txt);;All files (*)"),
+        )
+        if not filename:
+            return
+        try:
+            save_sync_report(Path(filename), self._report_text)
+        except (OSError, ValueError, StorageError) as error:
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Icon.Warning)
+            dialog.setWindowTitle(self.tr("Sync report could not be saved"))
+            dialog.setTextFormat(Qt.TextFormat.PlainText)
+            dialog.setText(exception_text(error))
+            dialog.exec()
 
     def _issue_reference(self, issue: WriteIssue) -> str:
         if issue.artifact:

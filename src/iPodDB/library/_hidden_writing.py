@@ -25,14 +25,19 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._album_index import master_tracks
-from iPodDB.library._browse_groups import album_values, browse_groups, group_key
+from iPodDB.library._artist_groups import native_artist_name, shared_artist_changes
+from iPodDB.library._browse_groups import (
+    album_values,
+    native_browse_groups,
+    unchanged_podcast_album_fields,
+)
 from iPodDB.library._browse_index import BrowseIndex, resolve_indexes
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._identities import IdentityAllocator
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._track_header_expansion import field_fits
 from iPodDB.library._track_writing import edit_text
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.models import LibrarySnapshot, Track
 from iPodDB.library.writing import WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -184,6 +189,7 @@ def reconcile_hidden(
         ),
         64,
     )
+    artist_changes = shared_artist_changes(original.tracks, desired.tracks)
     # Album and artist datasets are optional in older formats. Retain unreferenced
     # records and their Unknown Data; only referenced groups are reconciled.
     for dataset_kind in (4, 8):
@@ -216,22 +222,28 @@ def reconcile_hidden(
             for c in dataset.chunk.children[0].children
             if isinstance(c.header, MhiaHeader | MhiiHeader)
         )
-        prior_members = browse_groups(original.tracks, album=album)
+        prior_members = native_browse_groups(original.tracks, album=album)
 
         original_groups: dict[tuple[str, ...], set[int]] = defaultdict(set)
         original_members: dict[tuple[str, ...], set[int]] = defaultdict(set)
         native_members: dict[int, set[int]] = defaultdict(set)
-        for track in original.tracks:
-            original_members[group_key(track, album=album)].add(track.track_id)
-            if track.ipod:
-                reference = track.ipod.album_id if album else track.ipod.artist_id_ref
-                if reference:
-                    original_groups[group_key(track, album=album)].add(reference)
-                    native_members[reference].add(track.track_id)
-        groups = browse_groups(desired.tracks, album=album)
+        native_tracks: dict[int, list[Track]] = defaultdict(list)
+        for key, members in prior_members.items():
+            for track in members:
+                original_members[key].add(track.track_id)
+                if track.ipod:
+                    reference = (
+                        track.ipod.album_id if album else track.ipod.artist_id_ref
+                    )
+                    if reference:
+                        original_groups[key].add(reference)
+                        native_members[reference].add(track.track_id)
+                        native_tracks[reference].append(track)
+        groups = native_browse_groups(desired.tracks, album=album)
         assigned: dict[int, int] = {}
         updated_rows = dict(rows)
         for key, members in groups.items():
+            split_artist = not album and members[0].artist in artist_changes
             candidates = original_groups.get(key, set())
             if not candidates:
                 previous_refs = {
@@ -243,8 +255,15 @@ def reconcile_hidden(
                     next(iter(previous_refs))
                 ) == {t.track_id for t in members}:
                     candidates = previous_refs
-            if original_members.get(key, set()) == {t.track_id for t in members} and (
-                not album or album_values(prior_members[key]) == album_values(members)
+            if split_artist:
+                candidates = set(artist_changes[members[0].artist])
+            if (
+                not split_artist
+                and original_members.get(key, set()) == {t.track_id for t in members}
+                and (
+                    not album
+                    or album_values(prior_members[key]) == album_values(members)
+                )
             ):
                 # A title, rating or other unrelated edit does not normalize the
                 # retained album/artist representation or repair missing links.
@@ -255,10 +274,28 @@ def reconcile_hidden(
                     sorted(candidates),
                 )
                 continue
+            shared_ids = tuple(
+                identity
+                for identity in sorted(original_groups.get(key, ()))
+                if native_members[identity] - original_members.get(key, set())
+            )
+            if album and shared_ids:
+                issues.append(
+                    WriteIssue(
+                        "library.ambiguous_group",
+                        "A changed native browse record is shared by incompatible groups.",
+                        field="album",
+                        detail=(
+                            f"Dataset {dataset_kind}, shared native IDs {shared_ids!r}; "
+                            f"requested group {key!r}."
+                        ),
+                    )
+                )
+                continue
             if len(candidates) > 1:
                 # Existing duplicate groups are harmless until their fields or
                 # membership change; keep each Track's existing association.
-                if all(t in original.tracks for t in members):
+                if not split_artist and all(t in original.tracks for t in members):
                     continue
                 issues.append(
                     WriteIssue(
@@ -302,16 +339,47 @@ def reconcile_hidden(
                 )
             else:
                 row = rows[identity]
+            if (
+                split_artist
+                and isinstance(row.header, MhiiHeader)
+                and native_artist_name(row) != members[0].artist
+            ):
+                # Only the matching exact name owns the retained ID. Clone
+                # all other names with fresh identities, keeping private
+                # header bytes and children from the shared source record.
+                identity = browse_allocator.take()
+                row = replace(
+                    row,
+                    header=replace(
+                        row.header,
+                        artist_id=identity,
+                        sql_id=sql_allocator.take(),
+                    ),
+                )
             exemplar = members[0]
             if album:
                 values = album_values(members)
-                for kind, text_value in (
-                    (MhodType.ALBUM_ITEM_ALBUM, values.title),
-                    (MhodType.ALBUM_ITEM_ARTIST, values.artist),
-                    (MhodType.ALBUM_ITEM_SORT_ARTIST, values.sort_artist),
-                    (MhodType.ALBUM_ITEM_PODCAST_URL, values.podcast_url),
-                    (MhodType.ALBUM_ITEM_SHOW, values.show),
+                preserved = unchanged_podcast_album_fields(
+                    native_tracks.get(identity, ()),
+                    members,
+                )
+                for name, kind, text_value in (
+                    ("title", MhodType.ALBUM_ITEM_ALBUM, values.title),
+                    ("artist", MhodType.ALBUM_ITEM_ARTIST, values.artist),
+                    (
+                        "sort_artist",
+                        MhodType.ALBUM_ITEM_SORT_ARTIST,
+                        values.sort_artist,
+                    ),
+                    (
+                        "podcast_url",
+                        MhodType.ALBUM_ITEM_PODCAST_URL,
+                        values.podcast_url,
+                    ),
+                    ("show", MhodType.ALBUM_ITEM_SHOW, values.show),
                 ):
+                    if name in preserved:
+                        continue
                     # Preserve absent empty optional fields, but clear stale values.
                     if text_value or any(
                         isinstance(c.header, MhodHeader) and c.header.mhod_type == kind
@@ -327,8 +395,12 @@ def reconcile_hidden(
                         header=replace(
                             row.header,
                             content_type_flag=values.content_type,
-                            album_compilation_flag=int(exemplar.metadata.compilation),
-                            season_number=exemplar.season_number,
+                            album_compilation_flag=row.header.album_compilation_flag
+                            if "compilation" in preserved
+                            else int(values.compilation),
+                            season_number=row.header.season_number
+                            if "season" in preserved
+                            else values.season,
                             album_track_db_id=row.header.album_track_db_id
                             if row.header.album_track_db_id in representatives
                             else min(representatives, default=0),
@@ -441,18 +513,17 @@ def _composers(
             continue
         key = track.metadata.composer.casefold()
         options = candidates.get(key, set())
-        if len(options) > 1:
-            issues.append(
-                WriteIssue(
-                    "library.ambiguous_composer",
-                    "The changed composer has conflicting native identities.",
-                    subject="track",
-                    record_id=track.track_id,
-                    field="metadata.composer",
-                )
-            )
-            continue
-        value = next(iter(options), 0)
+        previous = old.get(track.track_id)
+        retained_id = previous.ipod.composer_id if previous and previous.ipod else 0
+        # A name can have multiple retained IDs. Preserve this Track's ID for
+        # case-only edits; otherwise reuse the lowest matching native ID.
+        value = (
+            retained_id
+            if previous
+            and previous.metadata.composer.casefold() == key
+            and retained_id in options
+            else min(options, default=0)
+        )
         if key and not value:
             value = allocator.take()
             candidates[key] = {value}

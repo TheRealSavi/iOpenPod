@@ -40,9 +40,11 @@ picker discovers compiled catalogs automatically.
 
 Use the updater rather than a bare directory invocation of `pyside6-lupdate`:
 directory scans can silently skip Python files. The updater passes an explicit file
-list and generates temporary extraction markers for application-owned message
-sources, metadata field labels, and table column groups. Those markers are derived
+list containing Qt translation calls and generates temporary extraction markers for
+application-owned message sources, metadata field labels, and table column groups. Those markers are derived
 from the source contracts; there is no separately maintained English message list.
+Files without Qt translation calls, such as the generated stylesheet, stay out of
+Qt's Python parser because large formatted strings can crash the Windows extractor.
 
 ## Authoring copy
 

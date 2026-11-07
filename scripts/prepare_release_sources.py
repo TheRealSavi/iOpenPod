@@ -9,15 +9,21 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import socket
+import sys
 import tarfile
+import time
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from http.client import IncompleteRead
 from pathlib import Path, PurePosixPath
 from typing import cast
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "packaging" / "third-party" / "sources.json"
+DOWNLOAD_ATTEMPTS = 4
 
 
 @dataclass(frozen=True)
@@ -78,10 +84,54 @@ def verify(source: Source, directory: Path) -> Path:
 
 
 def fetch(source: Source, directory: Path) -> Path:
-    """Download atomically, never accepting a corrupt cached archive."""
+    """Retry transient network failures, never accepting a corrupt archive."""
     destination = directory / source.filename
     if destination.exists():
         return verify(source, directory)
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return _download_source(source, directory)
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            IncompleteRead,
+        ) as error:
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
+            if attempt == DOWNLOAD_ATTEMPTS or not _is_transient_download_error(error):
+                error.add_note(
+                    f"Source download failed: {source.filename} from {source.url} "
+                    f"(attempt {attempt}/{DOWNLOAD_ATTEMPTS})"
+                )
+                raise
+            delay = 2**attempt
+            print(
+                f"Download failed for {source.filename} from {source.url}: {error}. "
+                f"Retrying in {delay}s (attempt {attempt + 1}/{DOWNLOAD_ATTEMPTS}).",
+                file=sys.stderr,
+                flush=True,
+            )
+            time.sleep(delay)
+
+
+def _is_transient_download_error(error: BaseException) -> bool:
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in {408, 429, 500, 502, 503, 504}
+    if isinstance(error, urllib.error.URLError):
+        return isinstance(error.reason, BaseException) and _is_transient_download_error(
+            error.reason
+        )
+    if isinstance(error, socket.gaierror):
+        return error.errno == socket.EAI_AGAIN
+    return isinstance(error, (TimeoutError, ConnectionError, IncompleteRead))
+
+
+def _download_source(source: Source, directory: Path) -> Path:
+    """Publish one complete, verified download and clean up every failed attempt."""
+    destination = directory / source.filename
     temporary = destination.with_name(destination.name + ".partial")
     request = urllib.request.Request(
         source.url, headers={"User-Agent": "iOpenPod-release-sources/1"}

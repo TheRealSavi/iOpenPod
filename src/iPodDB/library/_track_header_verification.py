@@ -130,13 +130,15 @@ def track_field_expectations(
         if source
         else creation_header_length(database_version)
     )
-    needs_new_played_field = (
-        _NOT_PLAYED.offset + _NOT_PLAYED.size > header_length
+    needs_explicit_played_field = (
+        (
+            _NOT_PLAYED.offset + _NOT_PLAYED.size > header_length
+            or (prior is not None and prior.not_played_flag not in (1, 2))
+        )
         and meta.played != (desired.play_count > 0)
-        and before is not None
-        and desired.play_count != before.play_count
+        and (before is None or desired.play_count != before.play_count)
     )
-    if (changed("played") or needs_new_played_field) and (
+    if (changed("played") or needs_explicit_played_field) and (
         _NOT_PLAYED.offset + _NOT_PLAYED.size <= header_length
         or (
             meta.played != (desired.play_count > 0)

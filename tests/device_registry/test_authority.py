@@ -1,17 +1,218 @@
 """Pure tests for iOpenPod SysInfo authority reconciliation."""
 
+import hashlib
 import json
 import plistlib
 
+import pytest
+from whenever import Instant, patch_current_time
+
 from device_registry import (
     DEFAULT_DEVICE_REGISTRY,
+    SYSINFO_AUTHORITY_VERSION,
     DeviceEvidence,
     DeviceIdentifier,
     EvidenceAuthority,
     UsbIdentifier,
     authority_covers_metadata,
+    parse_sysinfo_extended,
     reconcile_device_metadata,
 )
+
+
+def _classic_7_hardware() -> DeviceEvidence:
+    return parse_sysinfo_extended(
+        plistlib.dumps(
+            {
+                "ModelNumStr": "MC293",
+                "SerialNumber": "TESTSERIAL7G",
+                "FireWireGUID": "000A270012345678",
+            }
+        ),
+        authority=EvidenceAuthority.CURRENT_HARDWARE,
+    )
+
+
+def test_reconciliation_does_not_copy_retailos_into_firewire_version() -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert profile is not None
+    live = plistlib.dumps(
+        {"VisibleBuildID": "2.0.1", "FireWireVersion": "1.62", "BuildID": "9.0.1"}
+    )
+    evidence = parse_sysinfo_extended(
+        live, authority=EvidenceAuthority.CURRENT_HARDWARE
+    )
+    plan = reconcile_device_metadata(
+        profile=profile,
+        evidence=evidence,
+        live_sysinfo_extended=live,
+        existing_sysinfo=b"visibleBuildID: 1.62\n",
+    )
+    extended = plistlib.loads(plan.sysinfo_extended)
+    assert extended["VisibleBuildID"] == "2.0.1"
+    assert extended["FireWireVersion"] == "1.62"
+    assert extended["BuildID"] == "9.0.1"
+    assert b"visibleBuildID: 2.0.1\n" in plan.sysinfo
+    assert b"FireWireVersion: 1.62\n" in plan.sysinfo
+    assert (
+        parse_sysinfo_extended(plan.sysinfo_extended).firmware_versions[0].value
+        == "2.0.1"
+    )
+
+
+def test_authority_observation_keeps_numeric_utc_microsecond_wire_format() -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert profile is not None
+    clock = Instant.from_utc(2026, 11, 6, 1, 2, 3, nanosecond=123456789)
+    with patch_current_time(clock, keep_ticking=False):
+        plan = reconcile_device_metadata(profile=profile, evidence=DeviceEvidence())
+    authority = json.loads(plan.authority)
+    assert (
+        authority["fields"]["ModelNumStr"]["updated"]
+        == "2026-11-06T01:02:03.123456+00:00"
+    )
+
+
+def test_transport_revision_retains_live_payload_provenance() -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MB565")
+    assert profile is not None
+    live = plistlib.dumps({"FireWireVersion": "1.62"})
+    plan = reconcile_device_metadata(
+        profile=profile,
+        evidence=parse_sysinfo_extended(
+            live,
+            source="windows_scsi",
+            authority=EvidenceAuthority.CURRENT_HARDWARE,
+        ),
+        live_sysinfo_extended=live,
+    )
+    authority = json.loads(plan.authority)
+    assert authority["files"]["SysInfoExtended"]["source"] == "windows_scsi"
+    assert authority["fields"]["FireWireVersion"]["source"] == "windows_scsi"
+    assert "visibleBuildID" not in authority["fields"]
+
+
+@pytest.mark.parametrize(
+    ("release", "release_authority", "extended_release", "covered"),
+    [
+        (None, EvidenceAuthority.CURRENT_HARDWARE, None, False),
+        ("2.0.4", EvidenceAuthority.DEVICE_METADATA, "2.0.4", False),
+        ("1.62", EvidenceAuthority.CURRENT_HARDWARE, None, False),
+        ("1.62", EvidenceAuthority.CURRENT_HARDWARE, "2.0.4", False),
+        ("2.0.2", EvidenceAuthority.CURRENT_HARDWARE, "2.0.2", True),
+        ("2.0.4", EvidenceAuthority.CURRENT_HARDWARE, "2.0.4", True),
+    ],
+)
+def test_firmware_cache_requires_hardware_provenance_and_consistent_files(
+    release: str | None,
+    release_authority: EvidenceAuthority,
+    extended_release: str | None,
+    covered: bool,
+) -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
+    assert profile is not None
+    versions = (
+        ()
+        if release is None
+        else (DeviceIdentifier(release, "test", release_authority),)
+    )
+    plan = reconcile_device_metadata(
+        profile=profile,
+        evidence=_classic_7_hardware().merged_with(
+            DeviceEvidence(firmware_versions=versions)
+        ),
+    )
+    extended = plistlib.loads(plan.sysinfo_extended)
+    if extended_release is None:
+        extended.pop("VisibleBuildID", None)
+    else:
+        extended["VisibleBuildID"] = extended_release
+    extended_bytes = plistlib.dumps(extended)
+    authority = json.loads(plan.authority)
+    # Model a legacy cache with matching hashes, not an external modification.
+    authority["file_hashes"]["SysInfoExtended"] = hashlib.sha256(
+        extended_bytes
+    ).hexdigest()
+    authority_bytes = json.dumps(authority)
+
+    assert authority_covers_metadata(
+        authority_bytes, sysinfo=plan.sysinfo, sysinfo_extended=extended_bytes
+    )
+    assert (
+        authority_covers_metadata(
+            authority_bytes,
+            sysinfo=plan.sysinfo,
+            sysinfo_extended=extended_bytes,
+            require_firmware_version=True,
+        )
+        is covered
+    )
+
+
+@pytest.mark.parametrize("invalidate_version", [False, True])
+def test_rewriting_a_legacy_cache_does_not_validate_its_firmware_version(
+    invalidate_version: bool,
+) -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
+    assert profile is not None
+    plan = reconcile_device_metadata(
+        profile=profile,
+        evidence=_classic_7_hardware().merged_with(
+            DeviceEvidence(
+                firmware_versions=(
+                    DeviceIdentifier(
+                        "1.62", "iokit", EvidenceAuthority.CURRENT_HARDWARE
+                    ),
+                )
+            )
+        ),
+    )
+    legacy_authority = json.loads(plan.authority)
+    if invalidate_version:
+        legacy_authority["version"] = SYSINFO_AUTHORITY_VERSION - 1
+    else:
+        legacy_authority["fields"]["visibleBuildID"].pop("value_kind")
+    cached_only = reconcile_device_metadata(
+        profile=profile,
+        evidence=parse_sysinfo_extended(plan.sysinfo_extended),
+        existing_sysinfo=plan.sysinfo,
+        existing_sysinfo_extended=plan.sysinfo_extended,
+        existing_authority=json.dumps(legacy_authority).encode(),
+    )
+    rewritten_authority = json.loads(cached_only.authority)
+    assert rewritten_authority["version"] == SYSINFO_AUTHORITY_VERSION
+    if invalidate_version:
+        firmware = rewritten_authority["fields"]["visibleBuildID"]
+        assert firmware["authority"] == "device_metadata"
+        assert "value_kind" not in firmware
+    assert not authority_covers_metadata(
+        cached_only.authority,
+        sysinfo=cached_only.sysinfo,
+        sysinfo_extended=cached_only.sysinfo_extended,
+        require_firmware_version=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "version", [None, 1, SYSINFO_AUTHORITY_VERSION + 1, "2", 2.0, False]
+)
+def test_cache_requires_the_current_integer_authority_version(version: object) -> None:
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
+    assert profile is not None
+    plan = reconcile_device_metadata(profile=profile, evidence=_classic_7_hardware())
+    assert authority_covers_metadata(
+        plan.authority, sysinfo=plan.sysinfo, sysinfo_extended=plan.sysinfo_extended
+    )
+    authority = json.loads(plan.authority)
+    if version is None:
+        authority.pop("version")
+    else:
+        authority["version"] = version
+    assert not authority_covers_metadata(
+        json.dumps(authority),
+        sysinfo=plan.sysinfo,
+        sysinfo_extended=plan.sysinfo_extended,
+    )
 
 
 def test_reconciliation_builds_original_compatible_metadata_and_authority() -> None:
@@ -72,17 +273,27 @@ def test_reconciliation_builds_original_compatible_metadata_and_authority() -> N
     assert extended["SerialNumber"] == "8P840FN62C7"
     assert extended["FireWireGUID"] == "000A270012345678"
     assert extended["ModelNumStr"] == "MB565"
+    assert extended["VisibleBuildID"] == "2.0.1"
+    assert "FireWireVersion" not in extended
     assert extended["usb_vid"] == 0x05AC
     assert extended["usb_pid"] == 0x1261
 
     authority = json.loads(plan.authority)
-    assert authority["version"] == 1
+    assert authority["version"] == SYSINFO_AUTHORITY_VERSION
     assert authority["fields"]["pszSerialNumber"]["source"] == "windows_scsi"
     assert set(authority["file_hashes"]) == {"SysInfo", "SysInfoExtended"}
     assert authority_covers_metadata(
         plan.authority,
         sysinfo=plan.sysinfo,
         sysinfo_extended=plan.sysinfo_extended,
+        require_firmware_version=True,
+    )
+    authority["file_hashes"].pop("SysInfoExtended")
+    assert not authority_covers_metadata(
+        json.dumps(authority),
+        sysinfo=plan.sysinfo,
+        sysinfo_extended=plan.sysinfo_extended,
+        require_firmware_version=True,
     )
 
 

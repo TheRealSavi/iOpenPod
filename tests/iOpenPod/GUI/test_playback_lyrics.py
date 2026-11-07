@@ -1,8 +1,10 @@
 """Lyrics tab integration with playback, Library edits, and plain-text display."""
 
 from dataclasses import replace
+from threading import Event
 
-from PySide6.QtCore import QEvent, Qt
+import pytest
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QPlainTextEdit, QTabWidget
 from pytest import MonkeyPatch
@@ -18,10 +20,75 @@ from tests.iOpenPod.lyrics_test_support import (
 
 from iOpenPod.app.library_workspace import TrackUpdate
 from iOpenPod.app.lyrics_controller import LyricsState
+from iOpenPod.app.playback.backend import PlaybackSource
 from iOpenPod.GUI.main_window import MainWindow
+from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.widgets.playback_pane import PlaybackPane
 from iOpenPod.GUI.widgets.themed_buttons import IconButton
-from iPodDB.library import LibrarySnapshot, TrackFieldEdit, TrackMetadata
+from iPodDB.library import LibrarySnapshot, Track, TrackFieldEdit, TrackMetadata
+
+
+class _LyricsPaintObserver(QObject):
+    def __init__(self, editor: QPlainTextEdit) -> None:
+        super().__init__(editor)
+        self.editor = editor
+        self.placeholders: list[str] = []
+        editor.viewport().installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.Paint:
+            self.placeholders.append(self.editor.placeholderText())
+        return super().eventFilter(watched, event)
+
+
+@pytest.mark.parametrize("read_succeeds", [True, False])
+def test_finished_empty_lyrics_repaint_without_leaving_tab(
+    monkeypatch: MonkeyPatch, read_succeeds: bool
+) -> None:
+    context = build_context()
+    track = build_tracks(1)[0]
+    provider = SourceProvider(
+        {track.track_id: MemorySource(media(lyrics=""))} if read_succeeds else {}
+    )
+    release = Event()
+
+    def open_source(track: Track) -> PlaybackSource:
+        assert release.wait(5)
+        return provider.open_playback_source(track)
+
+    monkeypatch.setattr(context.device_coordinator, "open_playback_source", open_source)
+    artwork = ArtworkPixmapProvider(context.artwork_controller)
+    pane = PlaybackPane(
+        context.playback_controller,
+        context.lyrics_controller,
+        context.theme_manager,
+        artwork,
+    )
+    pane.resize(pane.width(), 500)
+    try:
+        pane.show()
+        context.playback_controller.enqueue(track)
+        tabs = pane.findChild(QTabWidget, "playbackTabs")
+        lyrics = pane.findChild(QPlainTextEdit, "playbackLyricsText")
+        assert tabs is not None and lyrics is not None
+        observer = _LyricsPaintObserver(lyrics)
+        tabs.setCurrentIndex(2)
+        QTest.qWait(100)
+        assert observer.placeholders[-1] == "Loading lyrics…"
+        release.set()
+        finish_lyrics_workers(context.lyrics_controller)
+        QTest.qWait(50)
+        expected = (
+            "No lyrics available for this track."
+            if read_succeeds
+            else "Lyrics could not be loaded for this track."
+        )
+        assert lyrics.placeholderText() == expected
+        assert observer.placeholders[-1] == expected
+    finally:
+        release.set()
+        pane.close()
+        context.shutdown()
 
 
 def test_lyrics_follow_playback_and_live_edits_while_preserving_plain_text() -> None:

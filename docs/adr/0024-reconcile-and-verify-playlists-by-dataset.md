@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-09-05
 - Extends: ADR-0021 and ADR-0022
+- Amended by: [ADR-0213](0213-refresh-compatible-smart-playlist-counterparts.md)
+  for evaluated membership in compatible live Smart Playlist counterparts
 
 ## Context
 

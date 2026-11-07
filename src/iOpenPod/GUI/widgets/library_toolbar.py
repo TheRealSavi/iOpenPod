@@ -3,16 +3,11 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import QCoreApplication, QEvent, QSignalBlocker, Qt, Signal
-from PySide6.QtWidgets import (
-    QButtonGroup,
-    QFrame,
-    QHBoxLayout,
-    QSizePolicy,
-    QWidget,
-)
+from PySide6.QtWidgets import QWidget
 
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
+from iOpenPod.GUI.widgets.icon_segmented_control import IconSegmentedControl
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.themed_buttons import IconButton
 
@@ -47,6 +42,7 @@ class LibraryToolbar(PageHeader):
         self._grid_search_label = ""
         self._list_search_label = ""
         self._supports_list = True
+        self._allow_view_switch = True
         self._supports_search = True
         self._supports_selection_grouping = False
         self._sort_accessible_name = ""
@@ -74,10 +70,6 @@ class LibraryToolbar(PageHeader):
             self,
             checkable=True,
         )
-        self._view_group = QButtonGroup(self)
-        self._view_group.setExclusive(True)
-        self._view_group.addButton(self._grid_button)
-        self._view_group.addButton(self._list_button)
 
         self._selection_grouping = IconButton(
             "check-circle",
@@ -87,18 +79,8 @@ class LibraryToolbar(PageHeader):
         )
         self._selection_grouping.setObjectName("selectionGrouping")
 
-        view_switch = QFrame(self)
+        view_switch = IconSegmentedControl((self._grid_button, self._list_button), self)
         view_switch.setObjectName("segmentedControl")
-        view_switch.setProperty("viewModes", True)
-        view_switch.setSizePolicy(
-            QSizePolicy.Policy.Fixed,
-            QSizePolicy.Policy.Fixed,
-        )
-        view_layout = QHBoxLayout(view_switch)
-        view_layout.setContentsMargins(0, 0, 0, 0)
-        view_layout.setSpacing(0)
-        view_layout.addWidget(self._grid_button)
-        view_layout.addWidget(self._list_button)
         self._view_switch = view_switch
 
         self._search = SearchField(self)
@@ -163,6 +145,10 @@ class LibraryToolbar(PageHeader):
     def set_query(self, query: str) -> None:
         self._search.set_query(query)
 
+    def add_filter(self, control: QWidget) -> None:
+        """Place a page-specific filter before the shared search field."""
+        self._layout.insertWidget(self._layout.indexOf(self._search), control)
+
     def set_view_mode(self, mode: str) -> None:
         self._view_mode = "list" if self._supports_list and mode == "list" else "grid"
         blocker_grid = QSignalBlocker(self._grid_button)
@@ -171,6 +157,11 @@ class LibraryToolbar(PageHeader):
         self._list_button.setChecked(self._view_mode == "list")
         del blocker_list
         del blocker_grid
+        self._view_switch.sync_selection()
+        self._refresh_mode_copy()
+
+    def set_view_switch_visible(self, visible: bool) -> None:
+        self._allow_view_switch = visible
         self._refresh_mode_copy()
 
     def set_selection_grouping(self, enabled: bool) -> None:
@@ -250,7 +241,7 @@ class LibraryToolbar(PageHeader):
         self._search.setAccessibleName(search_label)
         self._sort.setVisible(bool(self._sort_options))
         self._selection_grouping.setVisible(self._supports_selection_grouping)
-        self._view_switch.setVisible(self._supports_list)
+        self._view_switch.setVisible(self._supports_list and self._allow_view_switch)
         self._search.setVisible(self._supports_search)
 
 

@@ -1,7 +1,5 @@
 """Read-only Photo preview, format selector, and semantic metadata inspector."""
 
-from datetime import UTC, datetime
-
 from PySide6.QtCore import QCoreApplication, QEvent, QLocale, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
@@ -16,6 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from whenever import Instant
 
 from iOpenPod.app.models.photos import FULL_RESOLUTION_REQUEST_ID
 from iOpenPod.GUI.presentation.artwork import paint_artwork_placeholder
@@ -590,10 +589,12 @@ class PhotoInspector(QFrame):
         )
 
     def _format_date(self, value: int) -> str:
-        if value <= 0:
+        if value == 0:
             return self.tr("Unknown")
         try:
-            return datetime.fromtimestamp(value, UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+            # This labels the Library's best-effort UTC projection, not proof of
+            # the photograph's original timezone (ADR-0240).
+            return Instant.from_timestamp(value).format("YYYY-MM-DD HH:mm:ss") + " UTC"
         except (OverflowError, OSError, ValueError):
             return self.tr("Unknown")
 

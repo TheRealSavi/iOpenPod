@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 import pytest
+from mutagen import PaddingInfo
 from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
@@ -200,3 +201,47 @@ def test_rockbox_mp4_non_compilation_survives_read_back() -> None:
     tags = MP4(io.BytesIO(output)).tags  # type: ignore[no-untyped-call]
     assert tags is not None
     assert tags["cpil"] is False
+
+
+@pytest.mark.parametrize("disk_backed", (False, True))
+@pytest.mark.parametrize("name", ("tone.mp3", "track.aac"))
+def test_stream_retagging_replaces_id3_without_changing_payload(
+    tmp_path: Path, disk_backed: bool, name: str
+) -> None:
+    tagger = ExportMediaTagger()
+    if name.endswith(".mp3"):
+        data = base64.b64decode((_FIXTURES / f"{name}.b64").read_bytes())
+    else:
+        data = tagger.prepare_bytes(b"raw AAC payload", name, _track())
+    payload = data[cast("int", _ID3_READER(io.BytesIO(data)).size) :]
+    path = tmp_path / name
+    path.write_bytes(data)
+    with path.open("r+b") if disk_backed else io.BytesIO(data) as stream:
+        for _ in range(2):
+            stream.seek(0)
+            tagger.prepare_stream(stream, name, _track())
+            stream.seek(0)
+            tags = _ID3_READER(stream)
+            assert str(cast("_ID3TagView", tags)["TIT2"]) == _track().title
+            stream.seek(tags.size)
+            assert stream.read() == payload
+
+
+@pytest.mark.parametrize("name", ["tone.mp3", "tone.m4a"])
+def test_retagging_reuses_existing_padding_without_growing_file(
+    tmp_path: Path, name: str
+) -> None:
+    path = _fixture(tmp_path, name)
+    factory: Any = MP3 if name.endswith("mp3") else MP4
+    audio = factory(path)
+
+    def padding(_info: PaddingInfo) -> int:
+        return 16 * 1024
+
+    audio.save(padding=padding)
+    data = path.read_bytes()
+    output = ExportMediaTagger().prepare_bytes(data, name, _track())
+    assert len(output) == len(data)
+    # Repeated normalization keeps the same allocation instead of stripping the
+    # existing tag space and shifting the media payload on every edit.
+    assert len(ExportMediaTagger().prepare_bytes(output, name, _track())) == len(data)

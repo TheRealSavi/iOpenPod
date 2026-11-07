@@ -7,14 +7,16 @@ import re
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
-from time import time
 from typing import TYPE_CHECKING
+
+from whenever import Instant
 
 from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.media.lyrics import rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
+from iOpenPod.app.services.video_metadata import capture_video_metadata
 from iPodDB.library import (
     MAX_SIDECAR_BYTES,
     ArtworkAsset,
@@ -23,17 +25,25 @@ from iPodDB.library import (
     FileContentData,
     FileDependency,
     IssueSeverity,
+    MediaKind,
     PhotoRepresentationKind,
     PlaybackSidecar,
+    PlaylistKind,
     PreparedLyrics,
     SourceFile,
+    SQLiteSource,
     WriteIssue,
     WriteResources,
     content_sha256,
     is_playback_sidecar,
     remap_playback_sidecar,
 )
-from iPodDB.SQLiteDB.inputs import SQLiteSource
+from iPodDB.library.genius import (
+    GeniusCollectionKind,
+    genius_playlist_number,
+    parse_genius_playlist,
+    remap_genius_playlist,
+)
 from storage import (
     DeviceEntryKind,
     DevicePath,
@@ -54,6 +64,7 @@ from storage.media_processing import media_workspace
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from typing import BinaryIO
 
     from iOpenPod.app.library_write import LibraryPreparationRequest
     from iPodDB.library import (
@@ -66,6 +77,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 ITUNESDB = DevicePath("iPod_Control/iTunes/iTunesDB")
 ITUNESCDB = DevicePath("iPod_Control/iTunes/iTunesCDB")
+CLASSIC_GENIUS = DevicePath("iPod_Control/iTunes/Extras.itdb")
 ARTWORKDB = DevicePath("iPod_Control/Artwork/ArtworkDB")
 PHOTOSDB = DevicePath("Photos/Photo Database")
 _ARTWORK = DevicePath("iPod_Control/Artwork")
@@ -86,6 +98,18 @@ SQLITE_DATABASE_PATHS = tuple(
         "Locations.itdb.cbk",
     )
 )
+
+
+def _tag_and_verify_native_lyrics(
+    stream: BinaryIO,
+    *,
+    tag: Callable[[BinaryIO], None],
+    file_name: str,
+    lyrics: str,
+) -> None:
+    """Check the tagger's final bytes in the same private staging file."""
+    tag(stream)
+    rewrite_lyrics_stream(stream, file_name, lyrics, native_compatibility=True)
 
 
 def database_path(database_name: str) -> DevicePath:
@@ -112,6 +136,12 @@ class DiscardedTrackMedia:
 
 
 @dataclass(frozen=True, slots=True)
+class CapturedGeniusPlaylists:
+    original_persistent_ids: tuple[int, ...]
+    sidecars: tuple[PlaybackSidecar, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class CapturedLibraryResources:
     resources: WriteResources
     files: tuple[FilePrecondition, ...]
@@ -120,6 +150,9 @@ class CapturedLibraryResources:
     presentation_writes: tuple[TransactionWrite, ...] = ()
     issues: tuple[WriteIssue, ...] = ()
     discarded_track_media: tuple[DiscardedTrackMedia, ...] = ()
+    genius_mix_write: TransactionWrite | None = None
+    genius_playlists: CapturedGeniusPlaylists | None = None
+    phase_writes: tuple[TransactionWrite, ...] = ()
 
 
 def pending_sidecars(
@@ -171,15 +204,34 @@ def _capture_sidecars(
     tuple[FilePrecondition, ...],
     tuple[TransactionWrite, ...],
     tuple[TransactionRemoval, ...],
+    tuple[PlaybackSidecar, ...],
 ]:
     original = tuple(t.track_id for t in request.source.library.tracks)
     desired = tuple(t.track_id for t in request.snapshot.tracks)
     files: list[FilePrecondition] = []
     writes: list[TransactionWrite] = []
     removals: list[TransactionRemoval] = []
+    genius: list[PlaybackSidecar] = []
     expected = {item.name.casefold(): item for item in consumed}
     found: set[str] = set()
     loaded_paths = {file.path for file in loaded}
+    selected_playlists = {
+        identity
+        for identity in request.remove_genius_collections
+        if any(
+            collection.collection_id == identity
+            and collection.kind is GeniusCollectionKind.PLAYLIST
+            for collection in request.source.genius.collections
+        )
+    }
+    if request.delete_omissions:
+        retained = {p.playlist_id for p in request.snapshot.playlists}
+        selected_playlists.update(
+            f"genius-playlist:{p.playlist_id:016x}"
+            for p in request.source.library.playlists
+            if p.kind is PlaylistKind.GENIUS and p.playlist_id not in retained
+        )
+    selected_found: set[str] = set()
     for entry in session.list_directory(_ITUNES):
         if not _is_pending_sidecar(entry.path):
             continue
@@ -190,6 +242,19 @@ def _capture_sidecars(
         checkpoint()
         snapshot = session.read_snapshot(entry.path, max_bytes=16 * 1024 * 1024)
         name = entry.path.name.casefold()
+        if selected_playlists and genius_playlist_number(name) is not None:
+            selected_id = f"genius-playlist:{name}"
+            try:
+                saved = parse_genius_playlist(snapshot.data).playlist
+                if saved is not None and saved.playlist_persistent_id is not None:
+                    selected_id = f"genius-playlist:{saved.playlist_persistent_id:016x}"
+            except ValueError:
+                pass
+            if selected_id in selected_playlists:
+                files.append(FilePrecondition(entry.path, snapshot.fingerprint))
+                removals.append(TransactionRemoval(entry.path, snapshot.fingerprint))
+                selected_found.add(selected_id)
+                continue
         if name in expected:
             if snapshot.data != expected[name].data:
                 raise FilePreconditionError(
@@ -208,6 +273,10 @@ def _capture_sidecars(
                 TransactionWrite(backup, snapshot.data, _content(snapshot.data), prior)
             )
             removals.append(TransactionRemoval(entry.path, snapshot.fingerprint))
+            continue
+        if genius_playlist_number(name) is not None:
+            files.append(FilePrecondition(entry.path, snapshot.fingerprint))
+            genius.append(PlaybackSidecar(entry.path.name, snapshot.data))
             continue
         if name == "play counts" or re.fullmatch(r"otgplaylistinfo(?:_[0-9]+)?", name):
             try:
@@ -234,7 +303,16 @@ def _capture_sidecars(
         raise FilePreconditionError(
             "A loaded playback sidecar disappeared; reload the iPod."
         )
-    return tuple(files), tuple(writes), tuple(removals)
+    canonical = {
+        f"genius-playlist:{playlist.playlist_id:016x}"
+        for playlist in request.source.library.playlists
+        if playlist.kind is PlaylistKind.GENIUS
+    }
+    if selected_playlists - canonical - selected_found:
+        raise FilePreconditionError(
+            "A selected Genius Playlist sidecar disappeared. Reload the iPod."
+        )
+    return tuple(files), tuple(writes), tuple(removals), tuple(genius)
 
 
 def recheck(session: FilesystemSession, files: tuple[FilePrecondition, ...]) -> None:
@@ -265,8 +343,10 @@ def capture(
     temporary_files: ExitStack,
     source_artwork_display_times: Callable[[int], tuple[int, ...]],
     source_artwork_paths: Callable[[ArtworkGroupReference], tuple[str, ...]],
+    source_artwork_file_paths: Callable[[], tuple[str, ...]] | None = None,
     additional_preconditions: tuple[FilePrecondition, ...] = (),
     volume_presentation_enabled: bool = True,
+    itunes_107_artwork: bool = False,
     consumed_sidecars: tuple[PlaybackSidecar, ...] = (),
     loaded_sidecars: tuple[FilePrecondition, ...] = (),
 ) -> CapturedLibraryResources:
@@ -277,6 +357,46 @@ def capture(
         FilePrecondition(PHOTOSDB, request.source.photos_database_fingerprint),
         *additional_preconditions,
     ]
+    retained_media = {t.metadata.location for t in request.source.library.tracks}
+    for dependency in request.artwork_dependencies:
+        checkpoint()
+        if dependency.relative_path not in retained_media:
+            raise ValueError(
+                "Embedded artwork dependencies must belong to retained Tracks."
+            )
+        path = DevicePath(dependency.relative_path)
+        fingerprint = session.fingerprint(path)
+        if (fingerprint.size, fingerprint.sha256) != (
+            dependency.size,
+            dependency.sha256,
+        ):
+            raise FilePreconditionError(f"Embedded artwork source changed: {path}")
+        files.append(FilePrecondition(path, fingerprint))
+    genius_source: bytes | None = None
+    desired_ids = {track.track_id for track in plan.draft.snapshot.tracks}
+    if not plan.target.sqlite_database and (
+        plan.draft.genius_update is not None
+        or any(
+            track.ipod is not None
+            and track.ipod.genius_id
+            and (
+                track.track_id not in desired_ids
+                or track.track_id in plan.draft.replace_media
+            )
+            for track in request.source.library.tracks
+        )
+    ):
+        checkpoint()
+        if primary != ITUNESDB:
+            raise ValueError("Classic Genius data requires an iTunesDB Library.")
+        if session.exists(CLASSIC_GENIUS):
+            captured = session.read_snapshot(
+                CLASSIC_GENIUS, max_bytes=_MAX_CAPTURE_BYTES
+            )
+            genius_source = captured.data
+            files.append(FilePrecondition(CLASSIC_GENIUS, captured.fingerprint))
+        else:
+            files.append(FilePrecondition(CLASSIC_GENIUS, None))
     sqlite_sources: list[SQLiteSource] = []
     if plan.changes_sqlite:
         for path in SQLITE_DATABASE_PATHS:
@@ -306,22 +426,44 @@ def capture(
     sources: list[SourceFile] = []
     media_writes: list[TransactionWrite] = []
     sidecar_removals: tuple[TransactionRemoval, ...] = ()
+    genius_playlists: CapturedGeniusPlaylists | None = None
     presentation_writes: tuple[TransactionWrite, ...] = ()
     if (
         volume_presentation_enabled
         and request.snapshot.device_name != request.source.library.device_name
     ):
         presentation = volume_presentation.capture(
-            session, request.snapshot.device_name, request.source.profile.product_image
+            session,
+            request.snapshot.device_name,
+            request.source.profile.product_image,
+            itunes_107=itunes_107_artwork,
         )
         files.extend(presentation.files)
         presentation_writes = presentation.writes
-    if plan.requires_sidecar_inventory:
-        sidecar_files, sidecar_writes, sidecar_removals = _capture_sidecars(
-            session, request, checkpoint, consumed_sidecars, loaded_sidecars
+    playlist_removal = any(
+        collection.collection_id in request.remove_genius_collections
+        and collection.kind is GeniusCollectionKind.PLAYLIST
+        for collection in request.source.genius.collections
+    )
+    if plan.requires_sidecar_inventory or playlist_removal:
+        sidecar_files, sidecar_writes, sidecar_removals, genius_sidecars = (
+            _capture_sidecars(
+                session, request, checkpoint, consumed_sidecars, loaded_sidecars
+            )
         )
         files.extend(sidecar_files)
         media_writes.extend(sidecar_writes)
+        if genius_sidecars:
+            original_pids = tuple(
+                t.ipod.db_track_id
+                for t in request.source.library.tracks
+                if t.ipod is not None
+            )
+            if len(original_pids) != len(request.source.library.tracks):
+                raise ValueError(
+                    "Saved Genius Playlists require persistent Track identities."
+                )
+            genius_playlists = CapturedGeniusPlaylists(original_pids, genius_sidecars)
     if len({m.media.track_id for m in request.media}) != len(request.media):
         raise ValueError("Incoming media repeats a Track identity.")
     required_media = set(plan.required_media)
@@ -438,23 +580,36 @@ def capture(
     }
     desired_tracks = {track.track_id: track for track in request.snapshot.tracks}
     assets_by_id = {asset.artwork_id: asset for asset in request.artwork}
-    retains_timed_source = any(
-        isinstance(
+    retained_cover_groups = tuple(
+        ArtworkGroupReference(track.artwork_id, time)
+        for track in request.source.library.tracks
+        if track.artwork_id
+        and track.track_id in desired_tracks
+        and isinstance(
             assets_by_id.get(desired_tracks[track.track_id].artwork_id), ArtworkAsset
         )
-        and any(time != 0 for time in source_artwork_display_times(track.artwork_id))
-        for track in request.source.library.tracks
-        if track.artwork_id and track.track_id in desired_tracks
+        for time in source_artwork_display_times(track.artwork_id)
+        if time != 0
+    )
+    retains_timed_source = bool(retained_cover_groups)
+    referenced_groups = (
+        *retained_cover_groups,
+        *(
+            frame.source
+            for asset in request.artwork
+            if not isinstance(asset, ArtworkAsset)
+            for frame in asset.frames
+            if isinstance(frame.source, ArtworkGroupReference)
+        ),
     )
     # Filling a missing layout may decode a retained group from a full shard.
-    # Capture only that group's known source paths, not unrelated full shards.
+    # Ordinary cover edits implicitly retain nonzero groups, including sentinels.
+    # Capture only required groups, not unrelated full shards.
     retained_source_paths = {
-        path.casefold()
-        for asset in request.artwork
-        if not isinstance(asset, ArtworkAsset)
-        for frame in asset.frames
-        if isinstance(frame.source, ArtworkGroupReference)
-        for path in source_artwork_paths(frame.source)
+        str(path).casefold(): path
+        for reference in referenced_groups
+        for name in source_artwork_paths(reference)
+        for path in (_artwork_source_path(name),)
     }
     regenerate_all = (
         bool(replacement_assets)
@@ -469,8 +624,35 @@ def capture(
     )
     reserved_artwork: list[str] = []
     artwork_issues: list[WriteIssue] = []
+    geometry_paths = {p.casefold() for p in plan.artwork_geometry_paths}
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
-        for entry in session.list_directory(_ARTWORK):
+        entries = list(session.list_directory(_ARTWORK))
+        listed_paths = {str(entry.path).casefold() for entry in entries}
+        known_source_paths = {
+            str(path).casefold(): path
+            for name in (
+                source_artwork_file_paths()
+                if source_artwork_file_paths is not None
+                else ()
+            )
+            if not DevicePath(name).name.startswith("._")
+            for path in (_artwork_source_path(name),)
+        }
+        known_source_paths.update(retained_source_paths)
+        # Retained metadata also needs fingerprint-only evidence, including paths
+        # for unchanged Tracks and typed records absent from display projection.
+        # Storage validates every component, rejects links and revalidates the
+        # session; unrelated subdirectories are never recursively scanned.
+        for key, path in known_source_paths.items():
+            if key not in listed_paths:
+                checkpoint()
+                if key not in retained_source_paths and not session.exists(path):
+                    # Missing metadata-only resources stay unavailable evidence;
+                    # iPodDB decides whether an explicit regeneration can replace
+                    # their last owner. A required frame must still fail below.
+                    continue
+                entries.append(session.stat(path))
+        for entry in entries:
             if entry.path.name.startswith(
                 "._"
             ) or not entry.path.name.casefold().endswith(".ithmb"):
@@ -485,12 +667,15 @@ def capture(
                 )
             # Capture appendable prefixes and any full source shards needed to
             # decode a retained frame for a missing representation.
-            if (
+            if str(entry.path).casefold() in geometry_paths or (
                 request.artwork
-                and entry.path.name.casefold().startswith(cover_prefixes)
                 and (
-                    entry.size < plan.target.max_artwork_file_bytes
-                    or str(entry.path).casefold() in retained_source_paths
+                    str(entry.path).casefold() in retained_source_paths
+                    or (
+                        entry.path.parent == _ARTWORK
+                        and entry.path.name.casefold().startswith(cover_prefixes)
+                        and entry.size < plan.target.max_artwork_file_bytes
+                    )
                 )
             ):
                 try:
@@ -568,6 +753,20 @@ def capture(
         for w in lyric_writes
         if w.expected is not None
     )
+    video_metadata, video_files, video_issues = capture_video_metadata(
+        session, request, plan, tuple(media_writes), tuple(sqlite_sources), checkpoint
+    )
+    captured_paths = {str(item.path).casefold(): item for item in files}
+    for item in video_files:
+        key = str(item.path).casefold()
+        previous = captured_paths.get(key)
+        if previous is not None and previous.fingerprint != item.fingerprint:
+            raise FilePreconditionError(
+                f"Video metadata and other captured dependencies disagree: {item.path}"
+            )
+        if previous is None:
+            files.append(item)
+            captured_paths[key] = item
     retained = {
         t.metadata.location.casefold()
         for t in request.snapshot.tracks
@@ -699,8 +898,10 @@ def capture(
         pending_playback_sidecars=False if plan.requires_sidecar_inventory else None,
         create_file_buffer=staging.new_buffer,
         reserved_artwork_paths=tuple(reserved_artwork),
-        playlist_timestamp=int(time()),
+        playlist_timestamp=Instant.now().timestamp(),
         sqlite_sources=tuple(sqlite_sources),
+        genius_source=genius_source,
+        video_metadata=video_metadata,
     )
     logger.debug(
         "Captured Library resources files=%d artwork_bytes=%d removals=%d",
@@ -714,9 +915,25 @@ def capture(
         tuple(removals),
         tuple(media_writes),
         presentation_writes,
-        (*lyric_issues, *artwork_issues, *photo_issues),
+        (*lyric_issues, *artwork_issues, *photo_issues, *video_issues),
         tuple(discarded_track_media),
+        genius_playlists=genius_playlists,
     )
+
+
+def _artwork_source_path(value: str) -> DevicePath:
+    """Validate an explicit retained source without deriving its format from its name."""
+    path = DevicePath(value)
+    if (
+        not path.is_relative_to(_ARTWORK)
+        or len(path.parts) <= len(_ARTWORK.parts)
+        or path.name.startswith("._")
+        or not path.name.casefold().endswith(".ithmb")
+    ):
+        raise ValueError(
+            f"Retained artwork source is outside the supported namespace: {path}"
+        )
+    return path
 
 
 def _removed_photo_path(representation: PhotoRepresentation) -> DevicePath:
@@ -843,11 +1060,13 @@ def _capture_file_tags(
                             request.source.profile, pixels
                         )
                     artwork = covers[track.artwork_id]
+                native_lyrics = request.source.profile.family == "iPod Classic"
                 transform = (
                     partial(
                         rewrite_lyrics_stream,
                         file_name=str(path),
                         lyrics=track.metadata.lyrics,
+                        native_compatibility=native_lyrics,
                     )
                     if update is None
                     else partial(
@@ -858,6 +1077,16 @@ def _capture_file_tags(
                         preserve_artwork=update.preserve_artwork,
                     )
                 )
+                if native_lyrics and update is not None:
+                    # Full metadata/artwork tagging is another writer. Verify
+                    # the final bytes and repair a lyrics-only encoding mismatch
+                    # before issuing PreparedLyrics evidence for this file.
+                    transform = partial(
+                        _tag_and_verify_native_lyrics,
+                        tag=transform,
+                        file_name=str(path),
+                        lyrics=track.metadata.lyrics,
+                    )
                 output = workspace.transform_stream(private_source, transform)
                 content = FileContent.from_fingerprint(output.fingerprint)
                 if content.size <= remaining:
@@ -890,6 +1119,21 @@ def _capture_file_tags(
                 FileDependency(str(path), content.size, content.sha256),
             )
         )
+        if (
+            native_lyrics
+            and track.metadata.lyrics
+            and track.media_kind in (MediaKind.PODCAST, MediaKind.AUDIOBOOK)
+        ):
+            issues.append(
+                WriteIssue(
+                    "lyrics.description_precedence",
+                    "iPod Classic displays the description before embedded lyrics for podcasts and audiobooks. The full lyrics are retained in the media file.",
+                    severity=IssueSeverity.WARNING,
+                    record_id=identity,
+                    field="lyrics",
+                    artifact=str(path),
+                )
+            )
     return tuple(lyrics), tuple(writes), tuple(issues)
 
 
@@ -904,8 +1148,52 @@ def transaction(
     primary_database: DevicePath = ITUNESDB,
     allow_unchanged: bool = False,
 ) -> StorageTransaction | None:
+    """Compose Library changes; the caller validates the complete transaction."""
     before = {f.path: f.fingerprint for f in captured.files}
     writes: list[TransactionWrite] = list(captured.media_writes)
+    removals = list(captured.removals)
+    if captured.genius_playlists is not None:
+        desired_pids = tuple(
+            t.ipod.db_track_id for t in prepared.snapshot.tracks if t.ipod is not None
+        )
+        if len(desired_pids) != len(prepared.snapshot.tracks):
+            raise ValueError("Prepared Genius Tracks lack persistent identities.")
+        canonical_seeds = {
+            p.playlist_id: p.genius_seed_persistent_id
+            for p in prepared.snapshot.playlists
+            if p.kind is PlaylistKind.GENIUS
+        }
+        for sidecar in captured.genius_playlists.sidecars:
+            path = DevicePath(f"{_ITUNES}/{sidecar.name}")
+            expected = before[path]
+            if expected is None:
+                raise ValueError(
+                    "A saved Genius Playlist requires captured source bytes."
+                )
+            original_pids = captured.genius_playlists.original_persistent_ids
+            output: bytes | None
+            if desired_pids[: len(original_pids)] == original_pids:
+                # Unchanged and append-only order requires no interpretation.
+                output = sidecar.data
+            else:
+                saved = parse_genius_playlist(sidecar.data).playlist
+                output = remap_genius_playlist(
+                    sidecar.data,
+                    original_pids,
+                    desired_pids,
+                    replacement_seed=(
+                        canonical_seeds.get(saved.playlist_persistent_id)
+                        if saved is not None
+                        and saved.playlist_persistent_id is not None
+                        else None
+                    ),
+                )
+            if output is None:
+                removals.append(TransactionRemoval(path, expected))
+            elif output != sidecar.data:
+                writes.append(
+                    TransactionWrite(path, output, _content(output), expected)
+                )
     for file in prepared.artwork_files:
         path = DevicePath(file.relative_path)
         if not path.is_relative_to(_ARTWORK) or not path.name.casefold().endswith(
@@ -961,9 +1249,28 @@ def transaction(
         for artifact_name, data in prepared.sqlite.artifacts():
             path = sqlite_database_path(artifact_name)
             writes.append(TransactionWrite(path, data, _content(data), before[path]))
+    if prepared.genius is not None or captured.resources.genius_source is not None:
+        if primary_database != ITUNESDB or prepared.sqlite is not None:
+            raise ValueError("Classic Genius data cannot accompany a SQLite Library.")
+        if CLASSIC_GENIUS not in before:
+            raise ValueError("Classic Genius data requires a captured precondition.")
+        if prepared.genius != captured.resources.genius_source:
+            if prepared.genius is None:
+                raise ValueError("A Library save cannot discard retained Genius data.")
+            writes.append(
+                TransactionWrite(
+                    CLASSIC_GENIUS,
+                    prepared.genius,
+                    _content(prepared.genius),
+                    before[CLASSIC_GENIUS],
+                )
+            )
     # Names follow the Library's publication, with icons before their text references.
     writes.extend(captured.presentation_writes)
-    changed = {w.path for w in writes} | {r.path for r in captured.removals}
+    if captured.genius_mix_write is not None:
+        writes.append(captured.genius_mix_write)
+    writes.extend(captured.phase_writes)
+    changed = {w.path for w in writes} | {r.path for r in removals}
     if changed & {file.path for file in captured.discarded_track_media}:
         raise ValueError("A Track media file cannot be written and deleted together.")
     # Prepared dependencies are content assertions, never authority to open a new path.
@@ -989,19 +1296,19 @@ def transaction(
     if (
         allow_unchanged
         and not writes
-        and not captured.removals
+        and not removals
         and not captured.discarded_track_media
     ):
         # Sync may establish an association without changing Library bytes. Keep
         # dependency verification, but never invent an empty Storage transaction.
         return None
-    plan = StorageTransaction(
+    return StorageTransaction(
         tuple(writes),
-        captured.removals,
+        tuple(removals),
         tuple(f for f in captured.files if f.path not in changed),
+        stage_one_at_a_time=bool(captured.media_writes),
+        host_recovery=session.supports_host_transaction_recovery,
     )
-    session.validate_transaction(plan)
-    return plan
 
 
 def preparation_issues(

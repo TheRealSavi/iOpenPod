@@ -21,6 +21,8 @@ from device_registry.models import (
     DeviceCapabilities,
     DeviceProfile,
     DisplayCapabilities,
+    FeatureSupport,
+    GeniusCapabilities,
     ModelIdentity,
     RegistryCatalog,
     SerialSuffixDefinition,
@@ -34,6 +36,19 @@ _MIB = 1024 * 1024
 _STANDARD_DATABASE_LIMIT = 32 * _MIB
 # Device hardware limits prepared writes; Host reads have a separate bound.
 _LARGE_DATABASE_LIMIT = 64 * _MIB
+
+# Native feature policy, not an assertion that iOpenPod can author/preserve it.
+# Sources and firmware boundary: docs/genius-capabilities.md and ADR-0175.
+_NO_GENIUS = GeniusCapabilities()
+_GENIUS_PLAYLISTS = GeniusCapabilities(playlists=FeatureSupport.SUPPORTED)
+_GENIUS_PLAYLISTS_AND_MIXES = GeniusCapabilities(
+    playlists=FeatureSupport.SUPPORTED, mixes=FeatureSupport.SUPPORTED
+)
+_GENIUS_CLASSIC_7G = GeniusCapabilities(
+    playlists=FeatureSupport.SUPPORTED,
+    mixes=FeatureSupport.UNKNOWN,
+    mixes_minimum_firmware=(2, 0, 3),
+)
 
 
 def _artwork_format(
@@ -95,9 +110,9 @@ _ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1055: _artwork_format(1055, 128, 128, 256),
     1056: _artwork_format(1056, 128, 128, 256),
     1060: _artwork_format(1060, 320, 320, 640),
-    # Original iOpenPod creates 56-row F1061 images; retained 55-row images
-    # are selected from ArtworkDB evidence during preparation.
-    1061: _artwork_format(1061, 56, 56, 112),
+    # Native Classic 6/6.5/7 and nano 3: 55 pixels plus two padding bytes per row.
+    # Legacy 56-pixel rasters are repaired separately, never used as a capability.
+    1061: _artwork_format(1061, 55, 55, 112),
     1066: _artwork_format(1066, 64, 64, 128, usage=ArtworkUsage.PHOTO_THUMBNAIL),
     1067: _artwork_format(
         1067,
@@ -125,6 +140,13 @@ _ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
 
 def _artwork_formats(*format_ids: int) -> tuple[ArtworkFormat, ...]:
     return tuple(_ARTWORK_FORMATS_BY_ID[format_id] for format_id in format_ids)
+
+
+def _chapter_formats(*format_ids: int) -> tuple[ArtworkFormat, ...]:
+    return tuple(
+        replace(format_, usage=ArtworkUsage.CHAPTER)
+        for format_ in _artwork_formats(*format_ids)
+    )
 
 
 _NANO_7G_COVER_FORMATS = (
@@ -159,6 +181,7 @@ def _capabilities(
     compressed_database: bool = False,
     sqlite_database: bool = False,
     sqlite_checksum: DatabaseChecksum = DatabaseChecksum.NONE,
+    genius: GeniusCapabilities = _NO_GENIUS,
 ) -> DeviceCapabilities:
     width, height, color = display
     video_capabilities = (
@@ -175,6 +198,7 @@ def _capabilities(
         )
     )
     return DeviceCapabilities(
+        genius=genius,
         display=DisplayCapabilities(width=width, height=height, color=color),
         audio=AudioCapabilities(
             supports_podcasts=podcasts,
@@ -215,12 +239,10 @@ _CLASSIC_CAPABILITIES = _capabilities(
     display=(320, 240, True),
     gapless=True,
     cover_formats=_artwork_formats(1055, 1060, 1061, 1068),
-    # libgpod's Classic chapter fallback (itdb_device.c, commit 7982c555).
-    # This is source-supported policy, not queried firmware metadata.
-    chapter_formats=tuple(
-        replace(format_, usage=ArtworkUsage.CHAPTER)
-        for format_ in _artwork_formats(1055, 1029)
-    ),
+    # Classic 120GB RetailOS 2.0.1 advertises these ChapterImageSpecs and registers
+    # player selectors 15/16 as F1055/F1029. Other Classics retain the established
+    # family policy; this is static firmware evidence, not a live capability query.
+    chapter_formats=_chapter_formats(1055, 1029),
     photo_formats=_artwork_formats(1067, 1024, 1066),
     chapter_images=True,
     sparse_artwork=True,
@@ -235,6 +257,11 @@ _CLASSIC_CAPABILITIES = _capabilities(
 _MINI_CAPABILITIES = _capabilities(
     display=(138, 110, False),
     music_directories=6,
+)
+_MINI_2G_CAPABILITIES = replace(
+    _MINI_CAPABILITIES,
+    # ADR-0171: the standard Track layout retains native artist references.
+    database=replace(_MINI_CAPABILITIES.database, binary_version=0x30),
 )
 
 _EARLY_IPOD_CAPABILITIES = _capabilities(
@@ -255,11 +282,14 @@ _IPOD_4G_COLOR_CAPABILITIES = _capabilities(
 _IPOD_5G_CAPABILITIES = _capabilities(
     display=(320, 240, True),
     cover_formats=_artwork_formats(1028, 1029),
+    # Video RetailOS 1.3 declares this pair separately in ChapterImageSpecs.
+    chapter_formats=_chapter_formats(1028, 1029),
     photo_formats=_artwork_formats(1036, 1024, 1015, 1019),
+    chapter_images=True,
     # Firmware-independent Baseline output; the 640x480 mode additionally needs
     # Apple's low-complexity restrictions and firmware evidence (see media policy).
     video=(320, 240, 768, "1.3"),
-    database_version=0x19,
+    database_version=0x30,
     music_directories=20,
 )
 _IPOD_5_5G_CAPABILITIES = replace(
@@ -280,10 +310,14 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod", "5th Gen"): _IPOD_5G_CAPABILITIES,
     ("iPod", "5.5th Gen"): _IPOD_5_5G_CAPABILITIES,
     ("iPod Classic", "6th Gen"): _CLASSIC_CAPABILITIES,
-    ("iPod Classic", "6.5th Gen"): _CLASSIC_CAPABILITIES,
-    ("iPod Classic", "7th Gen"): _CLASSIC_CAPABILITIES,
+    ("iPod Classic", "6.5th Gen"): replace(
+        _CLASSIC_CAPABILITIES, genius=_GENIUS_PLAYLISTS
+    ),
+    ("iPod Classic", "7th Gen"): replace(
+        _CLASSIC_CAPABILITIES, genius=_GENIUS_CLASSIC_7G
+    ),
     ("iPod Mini", "1st Gen"): _MINI_CAPABILITIES,
-    ("iPod Mini", "2nd Gen"): _MINI_CAPABILITIES,
+    ("iPod Mini", "2nd Gen"): _MINI_2G_CAPABILITIES,
     ("iPod Nano", "1st Gen"): _capabilities(
         display=(176, 132, True),
         cover_formats=_artwork_formats(1031, 1027),
@@ -300,7 +334,10 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         display=(320, 240, True),
         gapless=True,
         cover_formats=_artwork_formats(1061, 1055, 1068, 1060),
+        # Nano 3 RetailOS 1.1.3 also requires the separate F1029 Chapter raster.
+        chapter_formats=_chapter_formats(1055, 1029),
         photo_formats=_artwork_formats(1067, 1024, 1066),
+        chapter_images=True,
         sparse_artwork=True,
         video=(320, 240, 768, "1.3"),
         subtitles=True,
@@ -310,9 +347,12 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         music_directories=20,
     ),
     ("iPod Nano", "4th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS,
         display=(240, 320, True),
         gapless=True,
         cover_formats=_artwork_formats(1055, 1068, 1071, 1074, 1078, 1084),
+        # Nano 4 RetailOS 1.0.4 advertises its shared F1071 Chapter layout.
+        chapter_formats=_chapter_formats(1071),
         photo_formats=_artwork_formats(1024, 1066, 1079, 1083),
         chapter_images=True,
         sparse_artwork=True,
@@ -324,10 +364,16 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         music_directories=20,
     ),
     ("iPod Nano", "5th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS_AND_MIXES,
         display=(240, 376, True),
         gapless=True,
         cover_formats=_artwork_formats(1056, 1078, 1073, 1074),
+        # Nano 5 RetailOS 1.0.2 advertises F1073 in ChapterImageSpecs.
+        # The shared pixels still require the separate Chapter capability so
+        # explicit timelines enable the CDB/Extras artwork flag (ADR-0139).
+        chapter_formats=_chapter_formats(1073),
         photo_formats=_artwork_formats(1087, 1079, 1066),
+        chapter_images=True,
         sparse_artwork=True,
         video=(640, 480, 2500, "3.0"),
         subtitles=True,
@@ -341,6 +387,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         sqlite_checksum=DatabaseChecksum.HASH72,
     ),
     ("iPod Nano", "6th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS_AND_MIXES,
         display=(240, 240, True),
         gapless=True,
         cover_formats=_artwork_formats(1073, 1085, 1089, 1074),
@@ -358,6 +405,7 @@ _CAPABILITIES_BY_IDENTITY: dict[tuple[str, str], DeviceCapabilities] = {
         sqlite_checksum=DatabaseChecksum.HASHAB,
     ),
     ("iPod Nano", "7th Gen"): _capabilities(
+        genius=_GENIUS_PLAYLISTS_AND_MIXES,
         display=(240, 432, True),
         gapless=True,
         cover_formats=_NANO_7G_COVER_FORMATS,
@@ -446,6 +494,9 @@ _MODEL_ROWS: tuple[tuple[str, str, str, str, str], ...] = (
     ("M9805", "iPod Mini", "2nd Gen", "6GB", "Pink"),
     ("M9806", "iPod Mini", "2nd Gen", "4GB", "Green"),
     ("M9807", "iPod Mini", "2nd Gen", "6GB", "Green"),
+    # HP variants: docs/research/hp-ipod-mini-identification.md.
+    ("MP5001", "iPod Mini", "2nd Gen", "4GB", "Silver"),
+    ("MP5002", "iPod Mini", "2nd Gen", "6GB", "Silver"),
     # iPod Nano 1st generation
     ("MA004", "iPod Nano", "1st Gen", "2GB", "White"),
     ("MA005", "iPod Nano", "1st Gen", "4GB", "White"),
@@ -656,7 +707,20 @@ def _profile_capabilities(
     generation: str,
     capacity: str,
 ) -> DeviceCapabilities:
-    capabilities = _CAPABILITIES_BY_IDENTITY[(family, generation)]
+    capabilities = replace(
+        _CAPABILITIES_BY_IDENTITY[(family, generation)],
+        supports_games=(
+            (family == "iPod" and generation in {"5th Gen", "5.5th Gen"})
+            or (
+                family == "iPod Classic"
+                and generation in {"6th Gen", "6.5th Gen", "7th Gen"}
+            )
+            or (
+                family == "iPod Nano"
+                and generation in {"3rd Gen", "4th Gen", "5th Gen"}
+            )
+        ),
+    )
     if family != "iPod" or generation not in {"5th Gen", "5.5th Gen"}:
         return capabilities
     high_memory = capacity in {"60GB", "80GB"} or model_number in {

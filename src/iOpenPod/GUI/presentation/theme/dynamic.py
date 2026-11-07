@@ -35,6 +35,27 @@ class RoundHeaderColors:
     bottom: QColor
 
 
+@dataclass(frozen=True, slots=True)
+class GeniusArtworkColors:
+    """Opaque, contrast-safe colors for the Genius chooser's symbolic artwork."""
+
+    field: QColor
+    ink: QColor
+    line: QColor
+
+
+def genius_artwork_colors(color: str, tokens: ThemeTokens) -> GeniusArtworkColors:
+    """Keep the catalog hue while adapting its artwork to the active theme."""
+
+    field = _blend(_rgb(color), _rgb(tokens.surface), 0.32)
+    ink = _normalized_for_contrast(_rgb(color), field, _TEXT_CONTRAST)
+    return GeniusArtworkColors(
+        field=QColor(*field),
+        ink=QColor(*ink),
+        line=QColor(*_blend(ink, field, 0.22)),
+    )
+
+
 def colorful_card_fill(
     color: RGBColor,
     tokens: ThemeTokens,
@@ -113,6 +134,44 @@ def round_header_colors(color: RGBColor, tokens: ThemeTokens) -> RoundHeaderColo
     )
 
 
+def contrasting_ink(fill: str, tokens: ThemeTokens) -> str:
+    """Choose the more readable theme foreground for a semantic solid fill."""
+
+    background = _rgb(fill)
+    return max(
+        (tokens.text, tokens.accent_ink),
+        key=lambda color: _contrast_ratio(_rgb(color), background),
+    )
+
+
+def now_playing_scrim_opacity(
+    darkest: RGBColor, lightest: RGBColor, tokens: ThemeTokens
+) -> float:
+    """Mute blurred artwork until both theme text roles remain readable.
+
+    Channel extrema bound every pixel, including subsequent smooth scaling.
+    A single uniform scrim preserves the cover's spatial color relationships.
+    """
+
+    canvas = _rgb(tokens.window)
+    for percent in range(36, 101, 4):
+        opacity = percent / 100
+        low = _blend(canvas, darkest, opacity)
+        high = _blend(canvas, lightest, opacity)
+        if all(
+            _contrast_ratio(low, _rgb(text)) >= _TEXT_CONTRAST + 0.05
+            and _contrast_ratio(high, _rgb(text)) >= _TEXT_CONTRAST + 0.05
+            and not (
+                _relative_luminance(low)
+                <= _relative_luminance(_rgb(text))
+                <= _relative_luminance(high)
+            )
+            for text in (tokens.text, tokens.text_secondary)
+        ):
+            return opacity
+    return 1.0
+
+
 def _readable_header_shade(
     base: RGBColor,
     light: RGBColor,
@@ -180,8 +239,12 @@ def _linearize(channel: float) -> float:
 
 __all__ = [
     "ColorfulHeaderColors",
+    "GeniusArtworkColors",
     "RoundHeaderColors",
     "colorful_card_fill",
     "colorful_header_colors",
+    "contrasting_ink",
+    "genius_artwork_colors",
+    "now_playing_scrim_opacity",
     "round_header_colors",
 ]

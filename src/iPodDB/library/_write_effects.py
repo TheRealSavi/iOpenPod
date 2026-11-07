@@ -9,7 +9,11 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.library._field_policy import BROWSE_FIELDS, PODCAST_FIELDS, changed_fields
-from iPodDB.library._playlist_datasets import is_master, playlist_rows
+from iPodDB.library._playlist_datasets import (
+    is_master,
+    missing_podcast_companion,
+    playlist_rows,
+)
 from iPodDB.library._resolved_write import ResolvedWrite
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.writing import LibraryChange, WriteChecksum, WriteEffect
@@ -85,7 +89,10 @@ def describe_effects(
             c.subject == "track"
             and (c.action != "edit" or BROWSE_FIELDS.intersection(c.fields))
         )
-        or (c.subject == "library" and c.fields in (("tracks",), ("album_indexes",)))
+        or (
+            c.subject == "library"
+            and c.fields in (("tracks",), ("album_indexes",), ("podcast_structure",))
+        )
     )
     podcast_causes = tuple(
         i
@@ -94,7 +101,9 @@ def describe_effects(
             c.subject == "track"
             and (c.action != "edit" or PODCAST_FIELDS.intersection(c.fields))
         )
-        or (c.subject == "library" and c.fields == ("tracks",))
+        or (
+            c.subject == "library" and c.fields in (("tracks",), ("podcast_structure",))
+        )
     )
     topology_causes = tuple(
         i
@@ -168,6 +177,14 @@ def describe_effects(
             WriteEffect(code, subject, identity, reason, causes, fields, dataset)
         )
 
+    if plan.draft.normalize_podcasts and podcast_causes:
+        effect(
+            "library.podcast_structure",
+            "library",
+            None,
+            "Normalize Podcast album ownership, representative links, show identities and target-specific Playlist traversal.",
+            ("podcast_structure",),
+        )
     for change in generated_changes:
         effect(
             "library.derived_values",
@@ -183,6 +200,15 @@ def describe_effects(
                 change.record_id,
                 "Allocate native identities and metadata for the generated record.",
             )
+    if any("playlist_counterparts" in c.fields for c in plan.changes):
+        effect(
+            "playlist.reconcile",
+            "library",
+            None,
+            "Make dataset 2 match the Playlists in dataset 3, retaining flat Podcast entries.",
+            ("playlist_counterparts",),
+            2,
+        )
     for identity in sorted(changed):
         effect(
             "playlist.counterparts",
@@ -214,6 +240,22 @@ def describe_effects(
             "playlist.companion",
             "library",
             None,
+            "Create the missing flat dataset 2 companion from dataset 3.",
+            dataset=2,
+        )
+    missing_podcasts = missing_podcast_companion(document)
+    if (
+        affected.intersection((2, 3))
+        and missing_podcasts is not None
+        and any(
+            p.playlist_id == missing_podcasts.chunk.header.playlist_id
+            for p in desired.playlists
+        )
+    ):
+        effect(
+            "playlist.companion",
+            "playlist",
+            missing_podcasts.chunk.header.playlist_id,
             "Create the missing flat dataset 2 companion from dataset 3.",
             dataset=2,
         )
@@ -249,6 +291,9 @@ def describe_effects(
                 f"Maintain browse order and alphabetical groups for sort type {index.sort_type}.",
             )
     album_index_fields = {
+        "media_types",
+        "metadata.podcast",
+        "metadata.release_date",
         "artist",
         "album_artist",
         "album",

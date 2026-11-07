@@ -7,6 +7,17 @@ import subprocess
 import time
 from ctypes import wintypes as w
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+def _windows_error() -> OSError:
+    """Resolve Windows-only exports at the native call boundary."""
+    last_error = cast("Callable[[], int]", vars(ctypes)["get_last_error"])
+    win_error = cast("Callable[[int], OSError]", vars(ctypes)["WinError"])
+    return win_error(last_error())
 
 
 class _StartupInfo(ctypes.Structure):
@@ -80,7 +91,8 @@ class WindowsCandidateProcess:
     """A candidate may be stopped only while device work is bootstrap-blocked."""
 
     def __init__(self, arguments: list[str], environment: dict[str, str]) -> None:
-        self._kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        win_dll = cast("type[ctypes.CDLL]", vars(ctypes)["WinDLL"])
+        self._kernel = win_dll("kernel32", use_last_error=True)
         kernel = self._kernel
         kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, w.LPCWSTR]
         kernel.CreateJobObjectW.restype = w.HANDLE
@@ -120,7 +132,7 @@ class WindowsCandidateProcess:
         ]
         self._job = kernel.CreateJobObjectW(None, None)
         if not self._job:
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()
         self._process = _ProcessInfo()
         self._arguments = arguments
         try:
@@ -149,13 +161,13 @@ class WindowsCandidateProcess:
                 ctypes.byref(startup),
                 ctypes.byref(self._process),
             ):
-                raise ctypes.WinError(ctypes.get_last_error())
+                raise _windows_error()
             # The initial thread is suspended: even the onefile bootloader cannot
             # create an unowned child between process creation and job assignment.
             if not kernel.AssignProcessToJobObject(self._job, self._process.process):
-                raise ctypes.WinError(ctypes.get_last_error())
+                raise _windows_error()
             if kernel.ResumeThread(self._process.thread) == 0xFFFFFFFF:
-                raise ctypes.WinError(ctypes.get_last_error())
+                raise _windows_error()
             kernel.CloseHandle(self._process.thread)
             self._process.thread = None
         except BaseException:
@@ -174,19 +186,19 @@ class WindowsCandidateProcess:
         if not self._kernel.SetInformationJobObject(
             self._job, 9, ctypes.byref(limits), ctypes.sizeof(limits)
         ):
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()
 
     def poll(self) -> int | None:
         result = self._kernel.WaitForSingleObject(self._process.process, 0)
         if result == 258:
             return None
         if result != 0:
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()
         code = w.DWORD()
         if not self._kernel.GetExitCodeProcess(
             self._process.process, ctypes.byref(code)
         ):
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()
         return code.value
 
     def wait(self, timeout: float | None = None) -> int:
@@ -204,14 +216,14 @@ class WindowsCandidateProcess:
 
     def stop(self) -> None:
         if not self._kernel.TerminateJobObject(self._job, 1):
-            raise ctypes.WinError(ctypes.get_last_error())
+            raise _windows_error()
         deadline = time.monotonic() + 15
         while True:
             accounting = _Accounting()
             if not self._kernel.QueryInformationJobObject(
                 self._job, 1, ctypes.byref(accounting), ctypes.sizeof(accounting), None
             ):
-                raise ctypes.WinError(ctypes.get_last_error())
+                raise _windows_error()
             if accounting.active == 0:
                 self.wait(timeout=15)
                 return

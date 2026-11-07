@@ -17,16 +17,37 @@ sessions.
   typography, metric, and interaction foundations for the desktop GUI.
 - [`eta.md`](eta.md) — reusable stage ETA model, integration, and accuracy limits.
 - [iPod timestamp conversion](ipod-time.md)
+- [Datetime engineering guide](datetime-engineering.md) — code inventory, Whenever
+  boundaries, file interpretation, firmware hints and unresolved questions.
+- [Further firmware contract corrections](research/classic201-additional-contracts-2026-10-26.md) —
+  Podcast group markers, Smart boolean and numeric operands, city identity fixes,
+  and remaining research-to-product work.
+- [Classic clock evidence](research/classic201-clock-semantics-2026-10-26.md) —
+  firmware calendar provenance, playback date replacement, Smart endpoint
+  preservation and qualified Preferences observations.
 - [Firmware playback sidecars](playback-sidecars.md) — parsing, Library projection,
   transactional consumption, and recovery of playback history and OTG Playlists.
 - [`ipod-preferences.md`](ipod-preferences.md) — typed, lossless firmware Preferences
   and iTunesPrefs readers/writers, supported layouts, and model limitations.
+- [Native iPod EQ](research/ipod-eq-firmware.md) — firmware preset IDs, Preferences,
+  Track encoding and precedence, custom-preset limits, and native execution evidence.
+- [EQ viewing and configuration](research/ipod-eq-implementation-readiness.md) —
+  concrete application seams, saved versus runtime state, Track editing,
+  Sync ownership, CDB/SQLite differences, and publication acceptance criteria.
+- [EQ evolution and device support](research/ipod-eq-evolution-and-device-support.md) —
+  Mini 2 and Video 5/5.5 versus four Classics: shared filters, different saved
+  representations and Flat rules, and exact support boundaries for iOpenPod.
+- [iPod mini 2 firmware workspace](../../ipod-firmware-lab/notes/mini2-firmware-workspace.md) —
+  verified RetailOS 1.4.1 extraction, Ghidra project, searchable decompilation,
+  and startup-map evidence in the sibling firmware lab.
 - [`sync-workflow-audit-2026-09-26.md`](sync-workflow-audit-2026-09-26.md) — scan and Sync findings, fixes, and remaining limits.
 - [`sync-artwork-audit-2026-10-08.md`](sync-artwork-audit-2026-10-08.md) — artwork loss reproductions, automatic repairs, publication safety, and source research.
 - [Photo shard research](research/photo-sharding-2026-10-08.md) — shared per-format
   iTHMB files, allocation bounds, Photo-specific records, and verified append policy.
 - [Podcast Finder captures](research/podcast-finder-captures-2026-10-18.md) — four-model
   metadata, grouping, embedded artwork/chapter evidence, and tested import behavior.
+- [Apple Podcasts capabilities](research/apple-podcasts-capabilities-2026-10-19.md) —
+  public API, publisher metadata, artwork/chapter sources, and native iPod implementation gaps.
 - [Virtual Podcast comparison](research/podcast-virtual-comparison-2026-10-18.md) —
   actual four-model Podcast Sync output versus Apple, including identity matching,
   Nano SQLite classification, and metadata differences.
@@ -34,6 +55,13 @@ sessions.
   regenerated virtual devices, corrected metadata, timed artwork, and integrity checks.
 - [Finder and Play Counts compatibility](research/finder-playcounts-compatibility-2026-10-18.md) —
   paired Nano 5 evidence, missing-date handling, dual signatures, and retained SQLite metadata.
+- [Native Genius capabilities](genius-capabilities.md) — Device Registry feature
+  matrix, firmware requirements, evidence rules, and validation limits.
+- [Native Genius data](ipod-genius.md) — pure codecs, coordinated preparation,
+  saved Playlist variants, and Mix preservation.
+- [Native Genius generation](research/genius-generation-2026-10-24.md) — offline
+  format research, successful Classic Playlist and nano 7G Mix experiments, and
+  current retention gaps.
 - [`packaging.md`](packaging.md) — native builds, store metadata, validation, and
   unresolved store-release requirements.
 - [`licensing.md`](licensing.md) — GPL distribution, corresponding source,

@@ -15,7 +15,6 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QDesktopServices, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -81,6 +80,7 @@ from iOpenPod.GUI.presentation.backup_messages import (
     BackupMessageSeverity,
     backup_message_for,
 )
+from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
 from iOpenPod.GUI.presentation.device_images import device_pixmap
 from iOpenPod.GUI.presentation.i18n.text import english_count_fallback
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
@@ -91,6 +91,8 @@ from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 if TYPE_CHECKING:
+    from PySide6.QtGui import QShowEvent
+
     from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -142,8 +144,13 @@ def _terminal_outcome(value: object) -> BackupTerminalOutcome | None:
 
 
 class _BackupDeviceArt(QLabel):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, *, theme: ThemeManager | None = None
+    ) -> None:
         super().__init__(parent)
+        self._theme = theme
+        if theme is not None:
+            theme.deviceArtworkChanged.connect(self._refresh)
         self._image_name = "iPodGeneric.png"
         self.setObjectName("backupDeviceArt")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -170,6 +177,7 @@ class _BackupDeviceArt(QLabel):
                 self._image_name,
                 _DEVICE_ART_SIZE,
                 self.devicePixelRatioF(),
+                itunes_107=self._theme is not None and self._theme.itunes_107_artwork,
             )
         )
 
@@ -388,6 +396,8 @@ class BackupPage(QWidget):
         self._settings = settings
         self._theme_manager = theme_manager
         self._inventory = controller.inventory
+        self._inventory_loaded = bool(self._inventory.devices)
+        self._inventory_failed = False
         self._catalog: BackupCatalog | None = controller.catalog
         self._selected_device_id = ""
         self._pending_catalog_id = ""
@@ -444,8 +454,13 @@ class BackupPage(QWidget):
 
         self._content = QStackedWidget(self)
         self._content.setObjectName("backupContent")
+        self._loading = QLabel(self.tr("Loading backups…"), self)
+        self._loading.setObjectName("backupLoadingPage")
+        self._loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._loading.setWordWrap(True)
         self._empty = self._build_empty()
         self._browser = self._build_browser()
+        self._content.addWidget(self._loading)
         self._content.addWidget(self._empty)
         self._content.addWidget(self._browser)
 
@@ -456,7 +471,7 @@ class BackupPage(QWidget):
         layout.addWidget(self._recovery_banner)
         layout.addWidget(self._content, 1)
 
-        self._refresh.clicked.connect(controller.refresh)
+        self._refresh.clicked.connect(self.refresh)
         self._recover_button.clicked.connect(self._recover_restore)
         self._import_button.clicked.connect(self._import_original)
         self._backup_now.clicked.connect(controller.create_snapshot)
@@ -482,15 +497,15 @@ class BackupPage(QWidget):
     def _build_empty(self) -> QWidget:
         page = QWidget(self)
         page.setObjectName("backupEmptyPage")
-        art = _BackupDeviceArt(page)
-        self._empty_title = QLabel(self.tr("Your first backup starts here"), page)
+        art = _BackupDeviceArt(page, theme=self._theme_manager)
+        self._empty_title = QLabel(self.tr("No backups found"), page)
         self._empty_title.setObjectName("backupEmptyTitle")
         self._empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_title.setWordWrap(True)
         self._empty_detail = QLabel(
             self.tr(
-                "Connect your iPod to save a copy you can restore later. "
-                "Have backups from Original iOpenPod? Choose Import Backups."
+                "No backups are saved in this location. "
+                "Use Import Backups to import an Original iOpenPod archive."
             ),
             page,
         )
@@ -546,7 +561,7 @@ class BackupPage(QWidget):
         detail.setObjectName("backupDetail")
         hero = QFrame(detail)
         hero.setObjectName("backupHero")
-        self._device_art = _BackupDeviceArt(hero)
+        self._device_art = _BackupDeviceArt(hero, theme=self._theme_manager)
         self._device_name = QLabel(hero)
         self._device_name.setObjectName("backupDeviceName")
         self._device_name.setTextFormat(Qt.TextFormat.PlainText)
@@ -688,7 +703,16 @@ class BackupPage(QWidget):
     def refresh(self) -> None:
         if not self._controller.busy:
             self._has_loaded = True
+            self._inventory_failed = False
+            self._render_loading()
             self._controller.refresh()
+
+    def _render_loading(self) -> None:
+        self._loading.setText(
+            self.tr("Unable to load backups. Select Refresh to try again.")
+            if self._inventory_failed
+            else self.tr("Loading backups…")
+        )
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
@@ -711,11 +735,12 @@ class BackupPage(QWidget):
             self._snapshots_label.setText(self.tr("Saved backups"))
             self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
             self._device_rail.set_title(self.tr("Your iPods"))
-            self._empty_title.setText(self.tr("Your first backup starts here"))
+            self._render_loading()
+            self._empty_title.setText(self.tr("No backups found"))
             self._empty_detail.setText(
                 self.tr(
-                    "Connect your iPod to save a copy you can restore later. "
-                    "Have backups from Original iOpenPod? Choose Import Backups."
+                    "No backups are saved in this location. "
+                    "Use Import Backups to import an Original iOpenPod archive."
                 )
             )
             self._empty_backup.setText(self.tr("Back Up Now"))
@@ -731,6 +756,8 @@ class BackupPage(QWidget):
         if not isinstance(value, BackupInventory):
             return
         self._inventory = value
+        self._inventory_loaded = True
+        self._inventory_failed = False
         self._render_inventory()
 
     def _render_inventory(self) -> None:
@@ -774,9 +801,12 @@ class BackupPage(QWidget):
                 self._devices_list.setCurrentRow(selected_row)
         self._device_rail.set_count(len(self._inventory.devices))
         self._render_recovery()
-        self._content.setCurrentWidget(
-            self._browser if self._inventory.devices else self._empty
-        )
+        if not self._inventory_loaded:
+            self._content.setCurrentWidget(self._loading)
+        else:
+            self._content.setCurrentWidget(
+                self._browser if self._inventory.devices else self._empty
+            )
         if selected_row >= 0:
             item = self._devices_list.item(selected_row)
             self._queue_catalog(str(item.data(Qt.ItemDataRole.UserRole)))
@@ -843,7 +873,7 @@ class BackupPage(QWidget):
         self._device_model.setText(model or self.tr("iPod"))
         connected = self._inventory.connected_device_id == device.device_id
         self._device_summary.setText(
-            self.tr("Save a copy of your iPod to come back to later.")
+            self.tr("This iPod is connected.")
             if connected
             else self.tr("Connect this iPod to back it up or restore a saved backup.")
         )
@@ -897,11 +927,7 @@ class BackupPage(QWidget):
             self._cards.append(card)
         if not catalog.snapshots:
             empty = QLabel(
-                self.tr("No backups yet. Make your first copy with Back Up Now.")
-                if connected
-                else self.tr(
-                    "No backups yet. Connect this iPod to make your first copy."
-                ),
+                self.tr("No backups saved for this iPod."),
                 self._snapshot_host,
             )
             empty.setObjectName("backupArchiveEmpty")
@@ -1037,7 +1063,10 @@ class BackupPage(QWidget):
         self._progress_eta.reset()
         self._availability_changed()
         if not busy:
-            QTimer.singleShot(0, self._load_pending_catalog)
+            if not self._has_loaded:
+                QTimer.singleShot(0, self.refresh)
+            else:
+                QTimer.singleShot(0, self._load_pending_catalog)
             QTimer.singleShot(1_500, self._hide_progress_if_idle)
 
     @Slot()
@@ -1082,7 +1111,12 @@ class BackupPage(QWidget):
 
     @Slot(object)
     def _operation_failed(self, value: object) -> None:
-        if not isinstance(value, BackupOperationFailure) or not self.isVisible():
+        if not isinstance(value, BackupOperationFailure):
+            return
+        if value.operation is BackupOperation.REFRESH and not self._inventory_loaded:
+            self._inventory_failed = True
+            self._render_loading()
+        if not self.isVisible():
             return
         diagnostic = self.tr("Code: %1").replace("%1", value.failure.code.value)
         if value.failure.detail:
@@ -1215,7 +1249,7 @@ class BackupPage(QWidget):
                 self.tr("Make your first backup and its folder will appear here."),
             )
             return
-        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+        if not open_desktop_url(QUrl.fromLocalFile(str(path))):
             QMessageBox.warning(
                 self,
                 self.tr("Could Not Open Backup Folder"),
@@ -1233,8 +1267,14 @@ class BackupPage(QWidget):
         if key != BACKUP_LOCATION.key:
             return
         self._has_loaded = False
+        self._inventory_loaded = False
+        self._inventory_failed = False
+        self._inventory = BackupInventory(())
         self._catalog = None
         self._selected_device_id = ""
+        self._pending_catalog_id = ""
+        self._render_loading()
+        self._render_inventory()
         if self.isVisible():
             QTimer.singleShot(0, self.refresh)
 

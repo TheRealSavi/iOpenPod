@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import errno
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 import pytest
 
-from storage import DeviceBusyError, HostResourceLease
+from storage import (
+    DeviceBusyError,
+    HostResourceLease,
+    StorageOperationError,
+    _writer_lock,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,3 +38,20 @@ def test_host_resource_leases_are_scoped_by_identity(tmp_path: Path) -> None:
         HostResourceLease("backup-repository:second", lock_directory),
     ):
         pass
+
+
+@pytest.mark.parametrize("number", (errno.EMFILE, errno.EIO, errno.ENOSPC))
+def test_lock_resource_errors_are_not_reported_as_another_process(
+    monkeypatch: pytest.MonkeyPatch, number: int
+) -> None:
+    error = OSError(number, "resource unavailable")
+
+    def fail(*_args: object) -> None:
+        raise error
+
+    monkeypatch.setattr(_writer_lock, "_windows_locking", fail)
+    monkeypatch.setattr(_writer_lock, "_posix_flock", fail)
+    with pytest.raises(StorageOperationError, match="resource unavailable") as raised:
+        _writer_lock._lock_file(BytesIO(), "Host staging cleanup")  # pyright: ignore[reportPrivateUsage]
+    assert not isinstance(raised.value, DeviceBusyError)
+    assert raised.value.__cause__ is error

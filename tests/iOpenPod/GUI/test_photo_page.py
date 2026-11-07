@@ -15,7 +15,13 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QDrag, QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PySide6.QtGui import (
+    QDrag,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QMouseEvent,
+)
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -71,7 +77,8 @@ from iOpenPod.GUI.widgets.photo_album_membership_grid import (
 from iOpenPod.GUI.widgets.photo_grid import PhotoGridView
 from iOpenPod.GUI.widgets.photo_inspector import PhotoInspector
 from iOpenPod.GUI.widgets.search_field import SearchField
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.star_rating import StarRating
+from iOpenPod.GUI.widgets.themed_buttons import ActionButton, IconButton, IconButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import (
     LibrarySnapshot,
@@ -252,6 +259,19 @@ def test_photos_route_is_a_three_pane_grid_browser(browser: _Browser) -> None:
     assert source_list.title_label.text() == "PHOTO ALBUMS"
     assert source_list.count_label.text() == "2"
     assert source_list.minimumWidth() == LAYOUT.photo_album_pane_minimum_width
+    create = source_list.findChild(IconButton, "photoCreateAlbum")
+    assert create is not None and create.isVisible()
+    assert not header.isAncestorOf(create)
+    assert create.x() > source_list.count_label.geometry().right()
+    assert (
+        create.geometry().center().y()
+        == source_list.title_label.geometry().center().y()
+    )
+    assert create.geometry().right() == (
+        source_list.rect().right()
+        - source_list.contentsMargins().right()
+        - LAYOUT.space_md
+    )
     assert splitter is not None and splitter.orientation() is Qt.Orientation.Horizontal
     assert splitter.count() == 3
     assert splitter.handleWidth() == LAYOUT.source_list_splitter_handle_width <= 4
@@ -468,13 +488,15 @@ def test_photo_toolbar_searches_and_sorts_the_current_album(
     assert _photo_ids(grid) == (1, 2, 3)
 
 
-def test_photo_header_creates_and_selects_an_empty_album(
+def test_photo_sidebar_plus_creates_and_selects_an_empty_album(
     browser: _Browser,
 ) -> None:
-    create = browser.page.findChild(ActionButton, "photoCreateAlbum")
+    create = browser.page.findChild(IconButton, "photoCreateAlbum")
     albums = browser.page.findChild(QListView, "photoAlbumList")
     assert create is not None and albums is not None
-    assert create.text() == "New Album"
+    assert create.text() == ""
+    assert not create.icon().isNull()
+    assert create.kind is IconButtonKind.QUIET
     assert create.accessibleName() == "Create a new Photo Album"
     assert create.isEnabled()
 
@@ -510,7 +532,7 @@ def test_photo_header_creates_and_selects_an_empty_album(
 def test_photo_album_creation_action_tracks_workspace_availability(
     browser: _Browser,
 ) -> None:
-    create = browser.page.findChild(ActionButton, "photoCreateAlbum")
+    create = browser.page.findChild(IconButton, "photoCreateAlbum")
     assert create is not None and create.isEnabled()
 
     browser.context.library_workspace.set_locked(True)
@@ -523,6 +545,23 @@ def test_photo_album_creation_action_tracks_workspace_availability(
     APPLICATION.processEvents()
     assert not create.isEnabled()
     assert create.toolTip() == "Choose an iPod with a readable Photo Database."
+
+
+@pytest.mark.parametrize(
+    "timestamp,label",
+    [(-1, "1969-12-31 23:59:59 UTC"), (0, "Unknown"), (10**30, "Unknown")],
+)
+def test_photo_dates_display_signed_values_and_tolerate_unknowns(
+    browser: _Browser, timestamp: int, label: str
+) -> None:
+    inspector = browser.page.findChild(PhotoInspector, "photoInspector")
+    assert inspector is not None
+    photo = replace(_PHOTOS.photos[0], original_date=timestamp, taken_date=timestamp)
+    inspector.set_photo(photo, _PHOTOS)
+    metadata = inspector.findChild(QTreeWidget, "photoMetadata")
+    assert metadata is not None
+    section = _metadata_section(metadata, "Photo")
+    assert section["Original date"] == section["Taken date"] == label
 
 
 def test_grid_selection_populates_inspector_metadata_and_format_picker(
@@ -705,18 +744,40 @@ def test_photo_metadata_editor_applies_only_explicit_fields_to_the_batch(
         rating = dialog.rows["rating"]
         original_date = dialog.rows["original_date"]
         assert rating.mixed and original_date.mixed
-        assert isinstance(rating.editor, QLineEdit)
+        assert isinstance(rating.editor, StarRating)
         assert isinstance(original_date.editor, QLineEdit)
-        assert rating.editor.text() == original_date.editor.text() == ""
+        assert original_date.editor.text() == ""
+        dialog.show()
+        APPLICATION.processEvents()
+        center = rating.editor.rect().center()
+        APPLICATION.sendEvent(
+            rating.editor,
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(center),
+                QPointF(rating.editor.mapToGlobal(center)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+        assert rating.editor.text() == "★★★☆☆"
+        assert not rating.is_modified()
 
-        rating.editor.setText("90")
+        QTest.mouseClick(
+            rating.editor, Qt.MouseButton.LeftButton, pos=rating.editor.rect().center()
+        )
+        assert rating.value() == 60 and rating.is_modified()
+        rating.reset()
+        assert not rating.is_modified() and rating.mixed
+        QTest.keyClick(rating.editor, Qt.Key.Key_5)
         original_date.editor.setText("1700001234")
         dialog.accept()
 
         assert dialog.result() == QDialog.DialogCode.Accepted
         photos = browser.context.library_workspace.photos
         assert photos is not None
-        assert tuple(photo.rating for photo in photos.photos) == (90, 90, 80)
+        assert tuple(photo.rating for photo in photos.photos) == (100, 100, 80)
         assert tuple(photo.original_date for photo in photos.photos) == (
             1_700_001_234,
             1_700_001_234,
@@ -735,18 +796,67 @@ def test_photo_metadata_editor_applies_only_explicit_fields_to_the_batch(
         dialog.close()
 
 
+@pytest.mark.parametrize("photo_ids", ((1,), (1, 2)))
+def test_photo_rating_stars_preserve_untouched_values_and_clear_explicitly(
+    browser: _Browser, photo_ids: tuple[int, ...]
+) -> None:
+    workspace = browser.context.library_workspace
+    photo = workspace.photo(1)
+    assert photo is not None
+    workspace.replace_photo(replace(photo, rating=81), workspace.edit_revision)
+    original = workspace.photos
+    dialog = PhotoMetadataEditorDialog(workspace, photo_ids, browser.page)
+    try:
+        row = dialog.rows["rating"]
+        assert isinstance(row.editor, StarRating)
+        assert row.editor.rating == (81 if len(photo_ids) == 1 else 0)
+        QTest.keyClick(row.editor, Qt.Key.Key_3)
+        row.reset()
+        dialog.accept()
+        assert workspace.photos == original
+    finally:
+        dialog.close()
+
+    cancelled = PhotoMetadataEditorDialog(workspace, photo_ids, browser.page)
+    try:
+        stars = cancelled.rows["rating"].editor
+        assert isinstance(stars, StarRating)
+        QTest.keyClick(stars, Qt.Key.Key_5)
+        cancelled.reject()
+        assert workspace.photos == original
+    finally:
+        cancelled.close()
+
+    cleared = PhotoMetadataEditorDialog(workspace, photo_ids, browser.page)
+    try:
+        stars = cleared.rows["rating"].editor
+        assert isinstance(stars, StarRating)
+        QTest.keyClick(stars, Qt.Key.Key_3)
+        QTest.keyClick(stars, Qt.Key.Key_3)
+        assert stars.rating == 0
+        cleared.accept()
+        assert original is not None
+        for before in original.photos:
+            after = workspace.photo(before.photo_id)
+            assert after == (
+                replace(before, rating=0) if before.photo_id in photo_ids else before
+            )
+    finally:
+        cleared.close()
+
+
 def test_photo_metadata_editor_rejects_invalid_and_stale_edits(
     browser: _Browser,
 ) -> None:
     workspace = browser.context.library_workspace
     invalid = PhotoMetadataEditorDialog(workspace, (1,), browser.page)
     try:
-        rating = invalid.rows["rating"]
-        assert isinstance(rating.editor, QLineEdit)
-        rating.editor.setText("101")
+        date = invalid.rows["original_date"]
+        assert isinstance(date.editor, QLineEdit)
+        date.editor.setText("invalid date")
         invalid.accept()
         error = invalid.findChild(QLabel, "metadataEditError")
-        assert error is not None and "Rating" in error.text()
+        assert error is not None and "Original date" in error.text()
         assert invalid.result() != QDialog.DialogCode.Accepted
         assert not workspace.dirty
     finally:

@@ -55,7 +55,7 @@ class CollectionKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CollectionSummary:
-    """One collection card with a deterministic four-tile collage."""
+    """One collection's membership and deterministic presentation artwork."""
 
     kind: CollectionKind
     key: str
@@ -66,11 +66,14 @@ class CollectionSummary:
     artwork_ids: tuple[int, int, int, int]
     artwork_seed: int
     track_ids: tuple[int, ...] = ()
+    artwork_id: int = 0
 
     @property
     def representative_artwork_id(self) -> int:
         """Return the first usable cover shared by collection presentation."""
 
+        if self.kind is CollectionKind.TV_SHOW:
+            return self.artwork_id
         return next(
             (artwork_id for artwork_id in self.artwork_ids if artwork_id > 0),
             0,
@@ -85,6 +88,7 @@ class _CollectionAccumulator:
     duration_ms: int = 0
     item_artwork: dict[str, int] = field(default_factory=dict[str, int])
     track_ids: list[int] = field(default_factory=list[int])
+    artwork_id: int = 0
 
 
 class CollectionRole(IntEnum):
@@ -98,6 +102,7 @@ class CollectionRole(IntEnum):
     ARTWORK_IDS = Qt.ItemDataRole.UserRole.value + 8
     ARTWORK_SEED = Qt.ItemDataRole.UserRole.value + 9
     SEARCH_TEXT = Qt.ItemDataRole.UserRole.value + 10
+    ON_IPOD = Qt.ItemDataRole.UserRole.value + 11
 
 
 class CollectionListModel(QAbstractListModel):
@@ -166,6 +171,8 @@ class CollectionListModel(QAbstractListModel):
         summary = self._collections[index.row()]
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
             return self._sync_selection.track_group_check_state(summary.track_ids)
+        if role == CollectionRole.ON_IPOD and self._sync_selection is not None:
+            return self._sync_selection.track_group_on_ipod(summary.track_ids)
         if role == Qt.ItemDataRole.DisplayRole:
             return summary.title or _unknown_title(summary.kind)
         if role == CollectionRole.SUMMARY:
@@ -232,6 +239,8 @@ class CollectionListModel(QAbstractListModel):
             accumulator.track_count += 1
             accumulator.duration_ms += max(0, track.length_ms)
             accumulator.track_ids.append(track.track_id)
+            if accumulator.artwork_id <= 0 < track.artwork_id:
+                accumulator.artwork_id = track.artwork_id
             retained_artwork = accumulator.item_artwork.get(item_key)
             if retained_artwork is None or (retained_artwork <= 0 < track.artwork_id):
                 accumulator.item_artwork[item_key] = track.artwork_id
@@ -247,6 +256,7 @@ class CollectionListModel(QAbstractListModel):
                 artwork_ids=_four_tiles(tuple(item.item_artwork.values())),
                 artwork_seed=stable_artwork_seed(f"{self._kind.value}\x1f{item.key}"),
                 track_ids=tuple(item.track_ids),
+                artwork_id=item.artwork_id,
             )
             for item in accumulators.values()
         )
@@ -275,7 +285,7 @@ class CollectionListModel(QAbstractListModel):
         self.dataChanged.emit(
             self.index(0, 0),
             self.index(len(self._collections) - 1, 0),
-            [Qt.ItemDataRole.CheckStateRole.value],
+            [Qt.ItemDataRole.CheckStateRole.value, CollectionRole.ON_IPOD],
         )
 
 

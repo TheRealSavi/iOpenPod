@@ -63,6 +63,9 @@ stubs produces annotation errors throughout existing code. A clean Mac developme
 type-check environment requires a separate typing correction. This change does
 not weaken the project's Mypy rules or claim that the older stubs pass them.
 
+[ADR-0170](0170-correct-development-qt-typing.md) adds a development-only annotation
+overlay for this Qt version. The runtime and deployment target remain unchanged.
+
 Compilation and launch on newer CI runners do not establish compatibility with
 every system symbol or the Metal backend on 12.3. Acceptance on **macOS 12.3 on
 both architectures** remains required before claiming verified support. It must

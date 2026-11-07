@@ -47,7 +47,8 @@ the HTTP operation: URLs are restricted to HTTP(S), requests have deadlines and 
 limits, redirects are revalidated, descriptions become plain text, and parsed data
 is translated into typed immutable records. The optional discovery dialog searches
 Apple's public podcast directory and also accepts a direct RSS URL. Opening a
-Podcast Subscription immediately refreshes its feed. Network and device work run
+Podcast Subscription requests an automatic refresh, subject to the navigation-age
+amendment below. Network and device work run
 outside the GUI thread, and results started for an earlier Active iPod are
 discarded.
 
@@ -60,6 +61,10 @@ current iPod artwork while remote artwork is unavailable and a deterministic loc
 placeholder only when neither source can produce a cover.
 
 ## Amendment: publisher-feed artwork only (2026-09-25)
+
+> [ADR-0155](0155-preview-publisher-covers-in-podcast-discovery.md) subsequently
+> replaces the text-only discovery presentation below with lazy publisher-feed
+> cover previews. Apple directory promotional images remain excluded.
 
 The original decision also retained Apple directory artwork as a subscription
 fallback. Apple's [Search API terms](https://performance-partners.apple.com/search-api)
@@ -82,3 +87,13 @@ It does not authorize direct Podcast media download, automatic retention, or
 add/remove publication. Those operations must join the Library Draft, review, and
 Storage Transaction workflow when general Sync and non-music import are designed;
 the browser must not create a second device-media writer.
+
+## Amendment: fifteen-minute navigation refresh (2026-10-19)
+
+Navigation reuses each Subscription's persisted last successful refresh time.
+Opening a show requests its feed only when it has never refreshed or at least
+15 minutes have elapsed. All Podcasts checks that age separately for each show
+and skips entries without a feed URL. A failed attempt does not advance the time.
+Manual refresh remains immediate and starts a new freshness interval on success.
+This reuses the existing timestamp and document format; Episode catalogs remain
+runtime projections. It adds no periodic background refresh.

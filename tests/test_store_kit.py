@@ -64,6 +64,10 @@ def test_archive_paths_reject_traversal_and_windows_aliases(value: str) -> None:
         "packaging/test.pfx",
         "tests/fixtures/iTunesDB/captured-album-index-36.b64",
         "tests/fixtures/SQLiteDB/observed-postprocess-commands.plist",
+        "src/iOpenPod/assets/games/archives/All/1D000.zip",
+        "src/iOpenPod/assets/games/archives/SHA256SUMS",
+        "src/iOpenPod/assets/games/iPod.Games.Files.7z",
+        "src/iOpenPod/assets/games/All/game.ZIP",
     ],
 )
 def test_private_inputs_never_enter_public_source(value: str) -> None:
@@ -80,6 +84,8 @@ def test_private_inputs_never_enter_public_source(value: str) -> None:
         "scripts/package_app.py",
         "tests/fixtures/media/tone.wav.b64",
         "LICENSES/DJShott-icon.txt",
+        "src/iOpenPod/assets/games/game-catalog.json",
+        "src/iOpenPod/assets/games/game-downloads.json",
         ".github/workflows/release.yml",
     ],
 )

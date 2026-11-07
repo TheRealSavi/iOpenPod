@@ -16,6 +16,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader, header_size_for_v
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
+    ChapterDataFlags,
     MhodChapterDataChapter,
     MhodChapterDataHedrHeader,
     MhodChapterDataPayload,
@@ -44,6 +45,7 @@ from iPodDB.library._native_values import (
     volume_adjustment_to_native,
 )
 from iPodDB.library._projection import unknown_media_bits
+from iPodDB.library._sidecar_projection import PlaybackDateUpdate
 from iPodDB.library._track_header_expansion import (
     creation_header_length,
     extension_values,
@@ -51,10 +53,12 @@ from iPodDB.library._track_header_expansion import (
     required_header_length,
 )
 from iPodDB.library.models import ContentAdvisory, MediaType, Track, TrackMetadata
+from iPodDB.library.native_chapters import interpret_native_chapters
 from iPodDB.library.writing import (
     IssueSeverity,
     PreparedLyrics,
     PreparedMedia,
+    TimedArtworkAsset,
     WriteIssue,
 )
 from iPodDB.shared.binary_struct import binary_fields
@@ -75,7 +79,79 @@ _SORT_INDICATORS = next(
 
 
 def _chapter_hedr() -> MhodChapterDataHedrHeader:
-    return MhodChapterDataHedrHeader(atom_type=b"hedr", unk_0x08=1, unk_0x18=1)
+    return MhodChapterDataHedrHeader(
+        atom_type=b"hedr", unk_0x08=1, unk_0x18=ChapterDataFlags.HAS_NAMED_CHAPTERS
+    )
+
+
+def _coordinate_chapter_artwork(
+    chunk: ParsedChunk[MhitHeader],
+    asset: TimedArtworkAsset,
+    track_id: int,
+    issues: list[WriteIssue],
+) -> ParsedChunk[MhitHeader]:
+    matches = [
+        i
+        for i, child in enumerate(chunk.children)
+        if isinstance(child.payload, MhodChapterDataPayload)
+    ]
+    if not matches:
+        return chunk
+    index = matches[-1]
+    child = chunk.children[index]
+    payload = child.payload_as(MhodChapterDataPayload)
+    if (
+        payload.hedr is None
+        or payload.hedr_trailing_data
+        or any(atom.atom_type == b"hedr" for atom in payload.other_atoms)
+        or not any(
+            chapter.name_header is not None or chapter.name
+            for chapter in payload.chapters
+        )
+    ):
+        issues.append(
+            WriteIssue(
+                "chapter.artwork_ineligible",
+                "Timed artwork has no complete, recognized named Chapter header. The retained "
+                "Chapter data is unchanged; Classic chapter artwork may be unavailable.",
+                IssueSeverity.WARNING,
+                subject="track",
+                record_id=track_id,
+                field="metadata.chapters",
+            )
+        )
+        return chunk
+    # Explicit timed artwork with authored named Chapters enables both known
+    # gates. Unknown header bits and all Chapter positions/atoms stay retained.
+    payload = replace(
+        payload,
+        hedr=replace(
+            payload.hedr,
+            unk_0x18=int(
+                payload.hedr.flags
+                | ChapterDataFlags.HAS_NAMED_CHAPTERS
+                | ChapterDataFlags.HAS_CHAPTER_ARTWORK
+            ),
+        ),
+    )
+    native = interpret_native_chapters(payload)
+    times = tuple(sorted(frame.display_time_ms for frame in asset.frames))
+    if tuple(chapter.start_ms for chapter in native.entries) != times:
+        issues.append(
+            WriteIssue(
+                "chapter.artwork_timeline_mismatch",
+                "Named Chapter positions and artwork image times differ. Classic "
+                "image refresh compares their indices; playback needs device "
+                "validation. No positions were changed.",
+                IssueSeverity.WARNING,
+                subject="track",
+                record_id=track_id,
+                field="metadata.chapters",
+            )
+        )
+    children = list(chunk.children)
+    children[index] = replace(child, payload=payload)
+    return replace(chunk, children=tuple(children))
 
 
 def edit_text[H: ChunkHeader](
@@ -260,6 +336,8 @@ def edit_track(
     lyrics: PreparedLyrics | None = None,
     database_version: int | None = None,
     required_fields: Mapping[str, ChunkFieldValue] | None = None,
+    timed_artwork: TimedArtworkAsset | None = None,
+    playback_dates: PlaybackDateUpdate | None = None,
 ) -> ParsedChunk[MhitHeader]:
     if chunk is None:
         length = creation_header_length(database_version)
@@ -308,6 +386,11 @@ def edit_track(
             values[native] = unix_to_mac(
                 value, timezone_offset, utc=attr == "release_date"
             )
+    if playback_dates is not None:
+        for date_field in ("last_played", "last_skipped"):
+            raw = getattr(playback_dates, date_field)
+            if raw is not None:
+                values[date_field] = raw
     if old is None or new.media_types != old.media_types:
         values["media_type"] = encode_media_types(
             new.media_types,
@@ -335,13 +418,15 @@ def edit_track(
         values["sample_rate_2"] = float(meta.sample_rate_hz)
     if meta.checked != prior.checked or old is None:
         values["checked_flag"] = int(not meta.checked)
-    needs_new_played_field = (
-        _NOT_PLAYED.offset + _NOT_PLAYED.size > chunk.generic_header.header_length
+    needs_explicit_played_field = (
+        (
+            _NOT_PLAYED.offset + _NOT_PLAYED.size > chunk.generic_header.header_length
+            or header.not_played_flag not in (1, 2)
+        )
         and meta.played != (new.play_count > 0)
-        and old is not None
-        and new.play_count != old.play_count
+        and (old is None or new.play_count != old.play_count)
     )
-    if meta.played != prior.played or needs_new_played_field:
+    if meta.played != prior.played or needs_explicit_played_field:
         if (
             _NOT_PLAYED.offset + _NOT_PLAYED.size <= chunk.generic_header.header_length
             or (
@@ -515,6 +600,8 @@ def edit_track(
                     MHOD, MhodHeader(mhod_type=MhodType.CHAPTER_DATA), payload=payload
                 )
             )
+    if timed_artwork is not None:
+        chunk = _coordinate_chapter_artwork(chunk, timed_artwork, new.track_id, issues)
     if media is not None:
         values.update(
             filetype=media.filetype,
@@ -534,7 +621,14 @@ def edit_track(
         ) or header.size_2:
             values["size_2"] = lyrics.file.size
     length = required_header_length(
-        chunk, {**values, **(required_fields or {})}, database_version
+        chunk,
+        {**values, **(required_fields or {})},
+        database_version,
+        # An absent marker falls back to play count, even though its parser
+        # default is 2. Explicit unplayed state can therefore require growth.
+        required_presence=frozenset({"not_played_flag"})
+        if "not_played_flag" in values and meta.played != (new.play_count > 0)
+        else frozenset(),
     )
     if (
         _SORT_INDICATORS.offset

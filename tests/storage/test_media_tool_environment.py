@@ -91,3 +91,29 @@ def test_media_children_use_host_libraries_without_changing_parent(
         "PATH": parent.get("PATH"),
     }
     assert dict(os.environ) == parent
+
+
+@pytest.mark.parametrize("frozen", [False, True])
+def test_host_tools_remove_only_bundled_qt_search_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, frozen: bool
+) -> None:
+    bundle = tmp_path / "bundle"
+    host = tmp_path / "host"
+    monkeypatch.setattr(
+        host_tools,
+        "sys",
+        SimpleNamespace(platform="linux", frozen=frozen, _MEIPASS=str(bundle)),
+    )
+    bundled_paths = (
+        "QT_PLUGIN_PATH",
+        "QT_QPA_PLATFORM_PLUGIN_PATH",
+        "QML2_IMPORT_PATH",
+        "QML_IMPORT_PATH",
+    )
+    for key in bundled_paths:
+        monkeypatch.setenv(key, os.pathsep.join((str(bundle / "plugins"), str(host))))
+    parent = dict(os.environ)
+    child = host_tools.host_tool_environment()
+    for key in bundled_paths:
+        assert child[key] == (str(host) if frozen else parent[key])
+    assert dict(os.environ) == parent

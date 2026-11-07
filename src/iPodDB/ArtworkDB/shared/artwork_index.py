@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
     from iPodDB.ArtworkDB.shared.chunk_defs.mhni import MhniHeader
-    from iPodDB.shared.chunk import DatabaseDocument, ParsedChunk
+    from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,17 +69,29 @@ class ArtworkIndex:
 
     items: tuple[ArtworkItem, ...]
     _by_image_id: Mapping[int, ArtworkItem] = field(init=False, repr=False)
-    _by_db_track_id: Mapping[int, ArtworkItem] = field(init=False, repr=False)
+    _by_db_track_id: Mapping[int, ArtworkItem | None] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         by_image_id: dict[int, ArtworkItem] = {}
-        by_db_track_id: dict[int, ArtworkItem] = {}
+        by_db_track_id: dict[int, ArtworkItem | None] = {}
         for item in self.items:
             if item.image_id in by_image_id:
                 raise ValueError(f"Duplicate ArtworkDB image ID: {item.image_id}")
             by_image_id[item.image_id] = item
             if item.db_track_id_ref:
-                by_db_track_id.setdefault(item.db_track_id_ref, item)
+                if item.db_track_id_ref in by_db_track_id:
+                    # Native list and sorted-index searches do not establish a
+                    # stable duplicate winner. Preserve direct lookup, but do
+                    # not invent a reverse-owner association.
+                    if by_db_track_id[item.db_track_id_ref] is not None:
+                        _LOGGER.warning(
+                            "Ambiguous ArtworkDB reverse Track identity %#x; "
+                            "retaining images without choosing a reverse owner",
+                            item.db_track_id_ref,
+                        )
+                    by_db_track_id[item.db_track_id_ref] = None
+                else:
+                    by_db_track_id[item.db_track_id_ref] = item
         object.__setattr__(self, "_by_image_id", MappingProxyType(by_image_id))
         object.__setattr__(
             self,
@@ -97,6 +109,19 @@ class ArtworkIndex:
 EMPTY_ARTWORK_INDEX = ArtworkIndex(())
 
 
+def thumbnail_payload(
+    chunk: ParsedChunk[ChunkHeader],
+) -> MhodContainerPayload | None:
+    """Return a recognized type-2 thumbnail, excluding other MHNI containers."""
+    if (
+        isinstance(chunk.header, MhodHeader)
+        and chunk.header.mhod_type == ArtworkMhodType.THUMBNAIL_IMAGE
+        and isinstance(chunk.payload, MhodContainerPayload)
+    ):
+        return chunk.payload
+    return None
+
+
 def build_artwork_index(
     database: DatabaseDocument[MhfdHeader],
 ) -> ArtworkIndex:
@@ -105,14 +130,14 @@ def build_artwork_index(
     items: list[ArtworkItem] = []
     for selection in database.find_chunks(MhiiHeader):
         header = selection.chunk.header
+        containers = tuple(
+            payload
+            for child in selection.chunk.children
+            if (payload := thumbnail_payload(child)) is not None
+        )
         locations: list[IthmbLocation] = []
-        for child in selection.chunk.children:
-            if not isinstance(child.header, MhodHeader) or not isinstance(
-                child.payload,
-                MhodContainerPayload,
-            ):
-                continue
-            location = _location_from_container(child.payload)
+        for container in containers:
+            location = _location_from_container(container)
             if location is not None:
                 locations.append(location)
         items.append(
@@ -124,9 +149,8 @@ def build_artwork_index(
                 display_times=tuple(
                     sorted(
                         {
-                            child.payload.child.header.unk_mhni_0x24
-                            for child in selection.chunk.children
-                            if isinstance(child.payload, MhodContainerPayload)
+                            container.child.header.image_time_key
+                            for container in containers
                         }
                     )
                 ),
@@ -151,7 +175,9 @@ def _location_from_container(
             header.format_id,
         )
         return None
-    byte_length = header.image_size or header.image_size_2
+    # +0x18 is the native read count. The separate +0x28 allocation field
+    # cannot supply missing pixel length or authorize a larger ranged read.
+    byte_length = header.image_size
     if byte_length <= 0:
         # A location without an encoded size cannot authorize a Storage ranged
         # read. Preserve the lossless document, but omit this unsafe projection.
@@ -165,7 +191,7 @@ def _location_from_container(
         height=header.image_height,
         horizontal_padding=header.horizontal_padding,
         vertical_padding=header.vertical_padding,
-        display_time_ms=header.unk_mhni_0x24,
+        display_time_ms=header.image_time_key,
     )
 
 
@@ -186,4 +212,5 @@ __all__ = [
     "ArtworkItem",
     "IthmbLocation",
     "build_artwork_index",
+    "thumbnail_payload",
 ]

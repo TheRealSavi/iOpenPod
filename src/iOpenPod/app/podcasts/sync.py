@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import normalize_feed_url, track_podcast_identity
 from iOpenPod.app.podcasts.models import (
@@ -68,9 +69,7 @@ def plan_podcast_sync(
         return PodcastSyncPlan(
             issues=(_issue("read_only", "Podcast state is read-only."),)
         )
-    timestamp = int(time.time()) if now is None else now
-    if timestamp < 0:
-        raise ValueError("Podcast Sync time must not be negative")
+    timestamp = Instant.now().timestamp() if now is None else now
     subscriptions = {
         item.subscription_id: item for item in request.snapshot.subscriptions
     }
@@ -96,6 +95,8 @@ def plan_podcast_sync(
     if request.automatic:
         for identity in scoped:
             managed_subscription = subscriptions[identity]
+            if managed_subscription.sync_settings.episode_slots == 0:
+                continue
             current = _current_episodes(managed_subscription, tracks)
             if current is None:
                 issues.append(

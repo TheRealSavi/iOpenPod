@@ -1,7 +1,7 @@
-"""Pure HASH58 finalization using field locations from the shared definition.
+"""Pure database signature finalization and verification.
 
-Protocol evidence: libgpod itdb_hash58.c and the Original iOpenPod hash58 vectors.
-AES substitution tables are calculated from the standard finite-field definition.
+Database field locations come from the shared definition. HASHAB scheme and
+random-envelope evidence is recorded in ADR-0169.
 """
 
 import hashlib
@@ -199,13 +199,56 @@ def _hashab_module() -> tuple[wasmtime.Engine, wasmtime.Module]:
     return engine, module
 
 
-def compute_hashab(digest: bytes, guid: bytes) -> bytes:
-    """Return the 57-byte HASHAB for a SHA1 and device FireWire GUID."""
+_HASHAB_DEFAULT_RANDOM = b"ABCDEFGHIJKLMNOPQRSTUVW"
+# Inverse of the exposed random-byte positions in upstream calcHashAB.c's
+# permutation_56 (commit f80d46432204c6238cad7d8ca3b3dd52ea66836b).
+_HASHAB_RANDOM_OFFSETS = (
+    23,
+    13,
+    29,
+    12,
+    37,
+    8,
+    4,
+    6,
+    10,
+    41,
+    53,
+    27,
+    5,
+    43,
+    28,
+    45,
+    16,
+    46,
+    34,
+    9,
+    19,
+    2,
+    56,
+)
+
+
+def compute_hashab(
+    digest: bytes,
+    guid: bytes,
+    *,
+    random_part: bytes = _HASHAB_DEFAULT_RANDOM,
+) -> bytes:
+    """Return a HASHAB envelope, retaining deterministic authoring by default.
+
+    Verification supplies the random bytes recovered from the stored envelope.
+    The pinned upstream wrapper has no random-input export, so replace its unique
+    fixed input in this fresh instance's memory. Never modify the bundled asset
+    or share writable memory between calls.
+    """
 
     if len(digest) != 20:
         raise ValueError("HASHAB requires a 20-byte SHA1 digest.")
     if len(guid) != 8:
         raise ValueError("HASHAB requires exactly eight FireWire GUID bytes.")
+    if len(random_part) != len(_HASHAB_DEFAULT_RANDOM):
+        raise ValueError("HASHAB requires exactly 23 random bytes.")
     engine, module = _hashab_module()
     store = wasmtime.Store(engine)
     instance = wasmtime.Instance(store, module, [])
@@ -218,34 +261,63 @@ def compute_hashab(digest: bytes, guid: bytes) -> bytes:
     sha1_pointer = int(get_sha1(store))
     guid_pointer = int(get_guid(store))
     output_pointer = int(get_output(store))
+    initial_memory = bytes(memory.read(store, 0, memory.data_len(store)))
+    if initial_memory.count(_HASHAB_DEFAULT_RANDOM) != 1:
+        raise RuntimeError("The pinned HASHAB module has an unexpected random input.")
+    memory.write(store, random_part, initial_memory.index(_HASHAB_DEFAULT_RANDOM))
     memory.write(store, digest, sha1_pointer)
     memory.write(store, guid, guid_pointer)
     calculate(store)
     return bytes(memory.read(store, output_pointer, output_pointer + 57))
 
 
-def sign_hashab(data: bytes, guid: bytes) -> bytes:
-    """Finalize one physical iTunesDB/iTunesCDB with HASHAB."""
-
+def _hashab_buffers(data: bytes) -> tuple[bytearray, bytearray, int]:
     output, normalized, header_size = _signature_buffers(data)
     for name in ("db_id", "unk0x32", "hash58", "hash72", "hashab"):
         _zero_signature_field(normalized, header_size, name)
-    # HASHAB's digest uses the libgpod wire discriminator (4), while physical
-    # Nano 6/7 databases written by iTunes retain 3 in the published header.
-    _set_scheme(output, normalized, header_size, 4)
+    return output, normalized, header_size
+
+
+def sign_hashab(data: bytes, guid: bytes) -> bytes:
+    """Sign the final physical bytes with the published HASHAB scheme (3)."""
+
+    output, normalized, header_size = _hashab_buffers(data)
+    _set_scheme(output, normalized, header_size, 3)
     schema = _FIELDS["hashab"]
     output[schema.offset : schema.offset + schema.size] = compute_hashab(
         hashlib.sha1(normalized).digest(), guid
     )
-    scheme = _FIELDS["hashing_scheme"]
-    output[scheme.offset : scheme.offset + scheme.size] = (3).to_bytes(
-        scheme.size, "little"
-    )
     return bytes(output)
 
 
+def verify_hashab_signature(digest: bytes, guid: bytes, signature: bytes) -> bool:
+    """Verify a stored HASHAB envelope using its own exposed random bytes."""
+
+    if (
+        len(digest) != 20
+        or len(guid) != 8
+        or len(signature) != 57
+        or signature[:2] != b"\x03\x00"
+    ):
+        return False
+    random_part = bytes(signature[offset] for offset in _HASHAB_RANDOM_OFFSETS)
+    expected = compute_hashab(digest, guid, random_part=random_part)
+    return hmac.compare_digest(signature, expected)
+
+
 def verify_hashab(data: bytes, guid: bytes) -> bool:
-    return hmac.compare_digest(data, sign_hashab(data, guid))
+    """Verify HASHAB over the stored scheme, without re-signing the database."""
+
+    try:
+        _output, normalized, _header_size = _hashab_buffers(data)
+    except ValueError:
+        return False
+    scheme = _FIELDS["hashing_scheme"]
+    if int.from_bytes(data[scheme.offset : scheme.offset + scheme.size], "little") != 3:
+        return False
+    schema = _FIELDS["hashab"]
+    signature = data[schema.offset : schema.offset + schema.size]
+    return verify_hashab_signature(hashlib.sha1(normalized).digest(), guid, signature)
 
 
 def has_hash72_signature(data: bytes) -> bool:

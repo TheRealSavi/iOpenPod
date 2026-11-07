@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-30
+- Amended by: [ADR-0240](0240-treat-calendar-dates-as-best-effort-metadata.md), allowing approximate dates while preserving native playback words
 - Extends: ADR-0019, ADR-0029, ADR-0030, ADR-0098
 - Supersedes: ADR-0085's preservation-only treatment of understood, loaded sidecars
 - Extended by: [ADR-0144](0144-expand-track-headers-with-device-capabilities.md)

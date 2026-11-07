@@ -12,7 +12,6 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
-from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,6 +19,7 @@ from xml.etree import ElementTree as ET
 
 from Crypto.Signature import eddsa
 from scripts.package_updates import public_keys, sparkle_sdk
+from whenever import Instant, hours, seconds
 
 from iOpenPod.app.updates.releases import (
     CURRENT_UPDATER_PROTOCOL,
@@ -174,7 +174,7 @@ def create_feed(
     *,
     root: Path = ROOT,
     previous: bytes | None = None,
-    now: datetime | None = None,
+    now: Instant | None = None,
 ) -> None:
     version_tuple(version)
     keys = public_keys(root)
@@ -187,14 +187,14 @@ def create_feed(
         raise ValueError(
             "The signing credential does not match the primary embedded trust key"
         )
-    clock = now or datetime.now(UTC)
+    clock = now or Instant.now()
     floor = ReleaseFloor()
     if previous is not None:
         # Expired feeds remain authenticated history; they are never installable.
         envelope = read_json(previous)
         payload = read_json(base64.b64decode(str(envelope["payload"]), validate=True))
         old = verify_release(
-            previous, keys, now=datetime.fromisoformat(str(payload["issued"]))
+            previous, keys, now=Instant.parse_iso(str(payload["issued"]))
         )
         floor = ReleaseFloor(old.sequence, old.version, old.digest)
         if version_tuple(version) < version_tuple(old.version):
@@ -257,15 +257,21 @@ def create_feed(
             "repository": REPOSITORY,
             "version": version,
             "tag": f"v{version}",
-            "sequence": max(int(clock.timestamp()), floor.sequence + 1),
-            "issued": clock.isoformat(),
-            "expires": (clock + timedelta(days=45)).isoformat(),
+            "sequence": max(clock.timestamp(), floor.sequence + 1),
+            "issued": _wire_timestamp(clock),
+            "expires": _wire_timestamp(clock + hours(45 * 24)),
             "assets": assets,
         },
         seed,
     )
     verify_release(encoded, keys, now=clock, floor=floor)
     (output / "stable.json").write_bytes(encoded)
+
+
+def _wire_timestamp(value: Instant) -> str:
+    """Retain the signed feed's numeric UTC offset and microsecond precision."""
+    utc = value.round("microsecond", mode="floor").to_fixed_offset(seconds(0))
+    return utc.format_iso(unit="microsecond" if utc.nanosecond else "second")
 
 
 def _appcast(

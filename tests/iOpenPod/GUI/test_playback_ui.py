@@ -13,13 +13,14 @@ from PySide6.QtCore import (
     QTimer,
 )
 from PySide6.QtGui import QColor, QContextMenuEvent, QDropEvent, QMouseEvent
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
     QLabel,
     QListView,
     QMenu,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QStackedWidget,
     QStyleOptionToolButton,
@@ -36,15 +37,22 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
 )
 from tests.iOpenPod.playback_test_support import FakePlaybackBackend
 
-from iOpenPod.app.core.settings.definitions import AppearanceMode
+from iOpenPod.app.core.settings.definitions import (
+    PLAYER_AUTO_MINIMIZE,
+    PLAYER_POSITION,
+    AppearanceMode,
+    PlayerPosition,
+)
 from iOpenPod.app.models.library_drag import (
     PlaylistSelectionMimeData,
     TrackSelectionMimeData,
 )
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
+from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets import player_bar as player_bar_module
+from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
@@ -840,6 +848,79 @@ def test_player_idle_state_collapses_until_a_track_is_current() -> None:
         context.shutdown()
 
 
+@mark.parametrize("position", tuple(PlayerPosition))
+@mark.parametrize("saved_off", (False, True))
+def test_player_auto_minimize_setting_applies_live_and_on_startup(
+    position: PlayerPosition, saved_off: bool
+) -> None:
+    context = build_context()
+    context.settings.set_global(PLAYER_POSITION, position.value)
+    if saved_off:
+        context.settings.set_global(PLAYER_AUTO_MINIMIZE, False)
+    window = MainWindow(context, auto_discover=False)
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        player = window.findChild(PlayerBar)
+        surface = window.findChild(QWidget, "nowPlayingSurface")
+        settings = window.findChild(SettingsPage)
+        assert player is not None and surface is not None and settings is not None
+        appearance = settings.findChild(QScrollArea, "appearanceSettingsScroll")
+        assert appearance is not None
+        combo = appearance.findChild(AppComboBox, "playerAutoMinimizeCombo")
+        assert combo is not None and combo.currentData() is (not saved_off)
+        assert player.height() == (
+            LAYOUT.player_height if saved_off else LAYOUT.player_idle_height
+        )
+
+        combo.setCurrentIndex(combo.findData(False))
+        QTest.qWait(LAYOUT.player_transition_ms + 40)
+        assert context.settings.get(PLAYER_AUTO_MINIMIZE) is False
+        assert surface.isVisible() and surface.property("playbackState") == "idle"
+        assert player.height() == LAYOUT.player_height
+        idle_track = player.track
+        assert idle_track is None
+        title = player.findChild(QLabel, "playerTrackTitle")
+        play = player.findChild(IconButton, "playerPlayPause")
+        assert title is not None and title.text() == "Nothing playing"
+        assert play is not None and not play.isEnabled()
+        changes = QSignalSpy(context.settings.settingChanged)
+        APPLICATION.sendEvent(settings, QEvent(QEvent.Type.LanguageChange))
+        assert combo.currentData() is False and changes.count() == 0
+
+        track = build_tracks(1)[0]
+        context.playback_controller.enqueue(track)
+        combo.setCurrentIndex(combo.findData(True))
+        context.playback_controller.toggle_play_pause()
+        QTest.qWait(LAYOUT.player_transition_ms + 40)
+        assert player.track == track and surface.isVisible()
+        assert player.height() == LAYOUT.player_height
+        context.playback_controller.clear_session()
+        QTest.qWait(LAYOUT.player_transition_ms + 40)
+        assert player.height() == LAYOUT.player_idle_height and surface.isHidden()
+
+        combo.setCurrentIndex(combo.findData(False))
+        QTest.qWait(LAYOUT.player_transition_ms + 40)
+        assert player.height() == LAYOUT.player_height
+        queue_toggle = player.findChild(IconButton, "playerQueueToggle")
+        queue_pane = window.findChild(QWidget, "playbackPane")
+        assert queue_toggle is not None and queue_pane is not None
+        queue_toggle.click()
+        QTest.qWait(LAYOUT.playback_pane_animation_ms + 40)
+        assert queue_pane.isVisible()
+        context.settings.reset_global(PLAYER_AUTO_MINIMIZE)
+        QTest.qWait(
+            max(LAYOUT.player_transition_ms, LAYOUT.playback_pane_animation_ms) + 40
+        )
+        assert (
+            combo.currentData() is True and player.height() == LAYOUT.player_idle_height
+        )
+        assert not queue_toggle.isChecked() and queue_pane.isHidden()
+    finally:
+        window.close()
+        context.shutdown()
+
+
 def test_player_rating_stars_edit_the_current_track_draft() -> None:
     context = build_context()
     track = build_tracks(1)[0]
@@ -856,7 +937,20 @@ def test_player_rating_stars_edit_the_current_track_draft() -> None:
         assert rating.isEnabled()
         assert rating.text() == "☆☆☆☆☆"
 
-        QTest.mouseMove(rating, rating.rect().center())
+        # QTest.mouseMove can omit an event when a prior test left the global
+        # cursor at this position. Send the hover directly, as with Leave below.
+        center = rating.rect().center()
+        APPLICATION.sendEvent(
+            rating,
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(center),
+                QPointF(rating.mapToGlobal(center)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
         assert rating.text() == "★★★☆☆"
         assert rating.property("ratingHover") is True
         draft_track = context.library_workspace.track(track.track_id)
@@ -1034,7 +1128,9 @@ def test_player_progress_advances_between_backend_updates() -> None:
         progress = window.findChild(QSlider, "playerProgress")
         assert progress is not None
         backend.emit_position(10_000)
-        QTest.qWait(80)
+        timer = window.findChild(QTimer, "playerProgressTimer")
+        assert timer is not None and timer.isActive()
+        assert QSignalSpy(timer.timeout).wait(1000)
         assert progress.value() > 10_000
         assert context.playback_controller.position_ms == 10_000
         assert backend.seeks == []

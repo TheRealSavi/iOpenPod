@@ -3,11 +3,11 @@
 import base64
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
 
 import pytest
 from Crypto.PublicKey import ECC
 from Crypto.Signature import eddsa
+from whenever import Instant, hours, minutes, seconds
 
 from iOpenPod.app.updates.releases import (
     REPOSITORY,
@@ -18,7 +18,7 @@ from iOpenPod.app.updates.releases import (
     version_tuple,
 )
 
-NOW = datetime.now(UTC)
+NOW = Instant.now().round("microsecond", mode="floor")
 
 
 def signed_release(
@@ -34,8 +34,8 @@ def signed_release(
         "version": "2.0.2",
         "tag": "v2.0.2",
         "sequence": 42,
-        "issued": NOW.isoformat(),
-        "expires": (NOW + timedelta(days=30)).isoformat(),
+        "issued": NOW.format_iso(),
+        "expires": (NOW + hours(30 * 24)).format_iso(),
         "assets": [
             {
                 "target": target,
@@ -133,9 +133,9 @@ def test_unsupported_filename_protocol_requires_a_manual_update(
         {"tag": "BETA"},
         {"version": "BETA"},
         {"repository": "someone/else"},
-        {"expires": NOW.isoformat()},
-        {"issued": (NOW + timedelta(days=1)).isoformat()},
-        {"expires": (NOW + timedelta(days=91)).isoformat()},
+        {"expires": NOW.format_iso()},
+        {"issued": (NOW + hours(24)).format_iso()},
+        {"expires": (NOW + hours(91 * 24)).format_iso()},
         {"sequence": True},
         {"issued": "2026-10-03T00:00:00"},
         {"track": "nightly"},
@@ -162,6 +162,37 @@ def test_retained_evidence_rejects_rollback_and_same_sequence_substitution() -> 
     ):
         with pytest.raises(ValueError):
             verify_release(data, keys, now=NOW, floor=other)
+
+
+def test_release_requires_the_wire_offset_to_be_utc() -> None:
+    # The same instant with another offset is still forbidden metadata. Parsing
+    # straight to an Instant must not bypass the authenticated format contract.
+    data, keys = signed_release(issued=NOW.to_fixed_offset(hours(1)).format_iso())
+    with pytest.raises(ValueError, match="must be UTC"):
+        verify_release(data, keys, now=NOW)
+
+
+@pytest.mark.parametrize("suffix", ["Z", "+00:00"])
+def test_release_accepts_both_existing_explicit_utc_spellings(suffix: str) -> None:
+    data, keys = signed_release(issued=NOW.format_iso().removesuffix("Z") + suffix)
+    assert verify_release(data, keys, now=NOW).issued == NOW
+
+
+def test_authenticated_freshness_boundaries_remain_exact() -> None:
+    data, keys = signed_release(issued=(NOW + minutes(5)).format_iso())
+    assert verify_release(data, keys, now=NOW).issued == NOW + minutes(5)
+    data, keys = signed_release(
+        issued=(NOW + minutes(5) + seconds(0.000001)).format_iso()
+    )
+    with pytest.raises(ValueError, match="not yet valid"):
+        verify_release(data, keys, now=NOW)
+    data, keys = signed_release(expires=(NOW + hours(90 * 24)).format_iso())
+    assert verify_release(data, keys, now=NOW).expires == NOW + hours(90 * 24)
+    data, keys = signed_release(
+        expires=(NOW + hours(90 * 24) + seconds(0.000001)).format_iso()
+    )
+    with pytest.raises(ValueError, match="validity interval"):
+        verify_release(data, keys, now=NOW)
 
 
 @pytest.mark.parametrize(

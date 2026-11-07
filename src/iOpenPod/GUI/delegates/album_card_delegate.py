@@ -97,6 +97,7 @@ class AlbumCardDelegate(QStyledItemDelegate):
                 state,
                 self._theme_manager.tokens,
                 self._theme_manager.typography,
+                on_ipod=index.data(AlbumRole.ON_IPOD),
             )
 
     def editorEvent(

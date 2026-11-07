@@ -6,6 +6,10 @@ Investigated on 2026-09-24. This note separates database-format evidence from
 media-tag behavior and firmware compatibility. It does not establish that lyrics
 are the only embedded metadata consumed by every stock iPod generation.
 
+The later [direct firmware adoption notes](lyrics-firmware-adoption.md) establish
+Classic's low-bit flag, native decoder branches and byte bounds. They supplement
+the historical upstream-source evidence recorded here.
+
 The source revisions examined were:
 
 - libgpod: `gtkpod/libgpod` commit

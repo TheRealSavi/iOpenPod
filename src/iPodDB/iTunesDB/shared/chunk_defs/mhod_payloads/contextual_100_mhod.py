@@ -19,6 +19,8 @@ DEFAULT_PLAYLIST_PREFERENCES = bytes.fromhex(
 
 @dataclass(frozen=True, slots=True)
 class MhodPlaylistPositionPrefix(MhodPayloadPrefix):
+    # Classic 2.0.1's ordinary Playlist importer skips the entire MHOD 100;
+    # it appends MHIP rows in file order. This is retained Host order metadata.
     position: int = cf(0x18, "u32")
     padding_0x1C: bytes = cf(0x1C, "raw", size=16)
 

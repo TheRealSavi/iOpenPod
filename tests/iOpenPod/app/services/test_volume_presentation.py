@@ -8,9 +8,10 @@ from pathlib import Path
 from threading import Event, Thread
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageOps
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 
+from iOpenPod.app.core.device_artwork import device_artwork_path
 from iOpenPod.app.library_write import LibraryPreparationRequest, WriteProgress
 from iOpenPod.app.models.device import DeviceCandidateIssueCode
 from iOpenPod.app.services import volume_presentation
@@ -22,10 +23,12 @@ from iOpenPod.app.services.device_coordinator import (
 from storage import (
     AccessMode,
     FilePreconditionError,
+    FlushResult,
     Storage,
     StorageOperationError,
     StorageTransaction,
 )
+from storage.models import VolumeObservation
 from storage.testing import VirtualStoragePlatform
 
 _COMPANIONS = (
@@ -36,6 +39,90 @@ _COMPANIONS = (
     "iPod_Control/iOpenPod/volume-icon.png",
     "iPod_Control/iOpenPod/volume-icon.ico",
 )
+
+
+@pytest.mark.parametrize("publish_by", ["selection", "rename"])
+def test_style_changes_all_volume_icon_formats_through_storage(
+    tmp_path: Path, publish_by: str
+) -> None:
+    device = bare_device(tmp_path)
+    paths = (_COMPANIONS[3], _COMPANIONS[4], _COMPANIONS[5])
+    try:
+        standard = {path: (device.root / path).read_bytes() for path in paths}
+        device.coordinator.set_itunes_107_artwork(True)
+        assert {path: (device.root / path).read_bytes() for path in paths} == standard
+        if publish_by == "selection":
+            device.coordinator.select_device(device.active.candidate.id)
+        else:
+            saved = device.save(
+                device.prepare(
+                    replace(device.active.library, device_name="Angled iPod")
+                )
+            )
+            assert saved.active is not None, saved.issues
+        for path in paths:
+            data = (device.root / path).read_bytes()
+            assert data != standard[path]
+            with (
+                Image.open(BytesIO(data)) as image,
+                Image.open(BytesIO(standard[path])) as original_image,
+            ):
+                image.load()
+                assert image.size == original_image.size
+        # PNG output preserves the selected artwork (centered on the standard canvas).
+        source_path = device_artwork_path(
+            device.active.profile.product_image, itunes_107=True
+        )
+        with (
+            Image.open(source_path) as source,
+            Image.open(device.root / paths[1]) as published,
+        ):
+            expected = Image.new("RGBA", (512, 512))
+            scaled = ImageOps.contain(source.convert("RGBA"), (512, 512))
+            expected.paste(
+                scaled, ((512 - scaled.width) // 2, (512 - scaled.height) // 2)
+            )
+            assert published.convert("RGBA").tobytes() == expected.tobytes()
+        device.coordinator.set_itunes_107_artwork(False)
+        device.coordinator.select_device(device.active.candidate.id)
+        assert {path: (device.root / path).read_bytes() for path in paths} == standard
+    finally:
+        device.coordinator.close()
+
+
+def test_style_change_retires_review_without_bypassing_drive_management(
+    tmp_path: Path,
+) -> None:
+    device = bare_device(tmp_path)
+    try:
+        desired = replace(device.active.library, device_name="Renamed")
+        review = device.prepare(desired)
+        device.coordinator.set_itunes_107_artwork(True)
+        rejected = device.save(review)
+        assert rejected.active is None
+        assert any(issue.code == "save.stale" for issue in rejected.issues)
+        original = {name: (device.root / name).read_bytes() for name in _COMPANIONS}
+        device.coordinator.set_volume_presentation_enabled(False)
+        device.coordinator.select_device(device.active.candidate.id)
+        saved = device.save(device.prepare(desired))
+        assert saved.active is not None, saved.issues
+        assert {
+            name: (device.root / name).read_bytes() for name in _COMPANIONS
+        } == original
+    finally:
+        device.coordinator.close()
+
+
+def test_volume_icon_generation_uses_same_model_fallback(tmp_path: Path) -> None:
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path)
+    storage = Storage(platform)
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        standard = volume_presentation.capture(session, "iPod", "iPod18A-Blue.png")
+        angled = volume_presentation.capture(
+            session, "iPod", "iPod18A-Blue.png", itunes_107=True
+        )
+    assert angled.writes == standard.writes
 
 
 @pytest.mark.parametrize("host_identity_changed", [False, True])
@@ -314,6 +401,58 @@ def test_native_failure_does_not_undo_saved_name(
         assert any("permission denied" in issue.detail for issue in result.issues)
     finally:
         device.coordinator.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "filesystem", "expected"),
+    [
+        ("My iPod", "fat32", "MY IPOD"),
+        ("John's long iPod name", "fat32", "JOHN'S LONG"),
+        ("Zoë / iPod", "fat32", "ZOE  IPOD"),
+        ("Music / Podcasts", "exfat", "Music  Podcasts"),
+    ],
+)
+def test_native_label_formatting_is_silent_on_repeated_updates(
+    tmp_path: Path, name: str, filesystem: str, expected: str
+) -> None:
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path, filesystem_type=filesystem)
+    storage = Storage(platform)
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        for _ in range(2):
+            assert volume_presentation.apply_native(session, name) == ()
+            assert platform.inspect(tmp_path).volume.label == expected
+
+
+def test_native_failures_retain_all_reasons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path, filesystem_type="fat32")
+    storage = Storage(platform)
+
+    def refused_icon(_observation: VolumeObservation) -> None:
+        raise StorageOperationError("Could not enable the Volume icon: access denied")
+
+    def wrong_label(_observation: VolumeObservation, _label: str) -> str:
+        return "WRONG"
+
+    def refused_flush(_observation: VolumeObservation) -> FlushResult:
+        return FlushResult(False, "Volume flush: access denied")
+
+    monkeypatch.setattr(platform, "enable_volume_icon", refused_icon)
+    monkeypatch.setattr(platform, "set_volume_label", wrong_label)
+    monkeypatch.setattr(platform, "flush", refused_flush)
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        assert volume_presentation.apply_native(session, "My iPod") == (
+            "Could not enable the Volume icon: access denied",
+            "Volume label did not verify: expected 'MY IPOD', observed 'WRONG'",
+            "Volume flush: access denied",
+        )
 
 
 def test_companion_merge_preserves_other_settings_and_removes_stale_localized_names(

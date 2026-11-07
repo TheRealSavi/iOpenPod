@@ -43,8 +43,8 @@ one conform to the other.
 - Use `uv add` and `uv remove` for dependency changes; do not use `pip`, Poetry,
   Pipenv, or Conda for this repository.
 - Ruff is the formatter and linter.
-- Mypy is the authoritative static type checker; Pylance is for editor navigation
-  and completion.
+- Mypy is the command-line static type checker; Pylance also provides strict editor
+  type checking, navigation, and completion. Keep both enabled (ADR-0170).
 - Pytest is the test runner.
 - Rumdl is the Markdown linter and formatter.
 - `pyproject.toml` is the authoritative configuration for all four tools. VS Code
@@ -56,6 +56,7 @@ Set up the environment:
 
 ```shell
 uv sync --locked
+uv run python -m scripts.prepare_typing
 ```
 
 Run the checks:
@@ -70,6 +71,14 @@ uv run pytest
 ```
 
 The VS Code task `Check: All` runs the same validation sequence.
+
+Ordinary full-suite runs (`uv run pytest`, `uv run pytest tests`, or
+`uv run pytest .` from the repository root) default to eight workers with whole-file
+scheduling. Focused paths, `-k`, `-m`, `--lf`, and collection-only runs default to serial.
+Use explicit `-n8` to parallelize a focused run; reserve `-n0` for diagnosis, then
+use the normal default for full-suite validation. CI and VS Code inherit this
+repository policy; keep the worker count out of their command definitions.
+See [ADR-0197](docs/adr/0197-default-full-suite-tests-to-eight-workers.md).
 
 Apply automatic formatting and safe fixes with the VS Code task `Format: All`, or
 run the underlying commands explicitly:

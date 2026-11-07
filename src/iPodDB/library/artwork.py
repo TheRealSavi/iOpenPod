@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from iPodDB.ArtworkDB.ithmb import IthmbLayout, decode_ithmb
 from iPodDB.ArtworkDB.ithmb import IthmbPixelFormat as CoverPixelFormat
 from iPodDB.ArtworkDB.shared.artwork_index import ArtworkItem, IthmbLocation
+from iPodDB.library._artwork_paths import artwork_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,10 +64,11 @@ def select_artwork(
 ) -> ArtworkRead | None:
     by_id = {cover.format_id: cover for cover in formats}
     candidates = tuple(
-        (location, by_id[location.format_id])
+        (location, by_id[location.format_id], path)
         for location in item.locations
         if location.format_id in by_id
         and (display_time_ms is None or location.display_time_ms == display_time_ms)
+        and (path := _artwork_path(location)) is not None
     )
     if not candidates:
         return None
@@ -75,18 +77,20 @@ def select_artwork(
         if zero:
             candidates = zero
 
-    def score(candidate: tuple[IthmbLocation, CoverFormat]) -> tuple[int, int, int]:
-        location, cover = candidate
+    def score(
+        candidate: tuple[IthmbLocation, CoverFormat, str],
+    ) -> tuple[int, int, int]:
+        location, cover, _path = candidate
         width = location.width or cover.width
         height = location.height or cover.height
         edge = max(width, height)
         area = width * height
         return (0, edge, area) if edge >= target_px else (1, -edge, -area)
 
-    location, cover = min(candidates, key=score)
+    location, cover, path = min(candidates, key=score)
     return ArtworkRead(
         format_id=cover.format_id,
-        relative_path=_artwork_path(location),
+        relative_path=path,
         offset=location.offset,
         length=location.byte_length,
         _layout=IthmbLayout(
@@ -100,16 +104,13 @@ def select_artwork(
     )
 
 
-def _artwork_path(location: IthmbLocation) -> str:
-    fallback = f"F{location.format_id}_1.ithmb"
-    raw = location.file_name.strip().replace("\\", "/").replace(":", "/")
-    parts = tuple(part for part in raw.split("/") if part)
-    file_name = fallback
-    if parts and not any(part in {".", ".."} for part in parts):
-        file_name = parts[-1]
-    if not file_name.casefold().endswith(".ithmb"):
-        file_name = fallback
-    return f"iPod_Control/Artwork/{file_name}"
+def _artwork_path(location: IthmbLocation) -> str | None:
+    # MHNI's filename is independent of its format ID and offset. An absent or
+    # unsupported token must never select another file by an inferred name.
+    try:
+        return artwork_path(location.file_name)
+    except ValueError:
+        return None
 
 
 def _visible_dimension(observed: int, defined: int) -> int:

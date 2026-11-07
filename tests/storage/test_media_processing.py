@@ -368,6 +368,45 @@ def test_stream_transform_edits_only_private_copy_and_hashes_final_bytes(
     assert not Path(output.snapshot).exists()
 
 
+def test_discard_output_preserves_sources_and_other_workspaces(tmp_path: Path) -> None:
+    source = tmp_path / "source.mp3"
+    source.write_bytes(b"original")
+    with (
+        media_workspace(checkpoint=lambda: None) as workspace,
+        media_workspace(checkpoint=lambda: None) as other,
+    ):
+        captured = workspace.capture(HostPath(source))
+        output = workspace.output_path(".mp3")
+        foreign = other.output_path(".mp3")
+        Path(output).write_bytes(b"partial")
+        Path(foreign).write_bytes(b"unrelated")
+        for protected in (HostPath(source), captured.snapshot, foreign):
+            with pytest.raises(ValueError, match="workspace's output"):
+                workspace.discard_output(protected)
+        workspace.discard_output(output)
+        workspace.discard_output(output)  # A failed tool may not create output.
+        assert not Path(output).exists()
+        assert Path(captured.snapshot).read_bytes() == b"original"
+        assert Path(foreign).read_bytes() == b"unrelated"
+        assert source.read_bytes() == b"original"
+
+
+def test_discard_output_observes_cancellation() -> None:
+    cancelled = False
+
+    def checkpoint() -> None:
+        if cancelled:
+            raise InterruptedError("cancelled")
+
+    with media_workspace(checkpoint=checkpoint) as workspace:
+        output = workspace.output_path(".mp3")
+        Path(output).write_bytes(b"partial")
+        cancelled = True
+        with pytest.raises(InterruptedError, match="cancelled"):
+            workspace.discard_output(output)
+        assert Path(output).read_bytes() == b"partial"
+
+
 def test_tool_input_remains_seekable_and_preserves_selected_source(
     tmp_path: Path,
 ) -> None:
@@ -386,6 +425,41 @@ def test_tool_input_remains_seekable_and_preserves_selected_source(
     )
     assert result.stdout == b"middle" and result.returncode == 0
     assert source.read_bytes() == b"before-middle-after"
+
+
+def test_tool_accepts_arguments_after_pinned_seekable_input(tmp_path: Path) -> None:
+    source = tmp_path / "source with spaces.bin"
+    source.write_bytes(b"before-middle-after")
+    result = run_media_tool(
+        HostPath(sys.executable),
+        (
+            "-c",
+            "import sys; "
+            "f = open(sys.argv[1], 'rb'); f.seek(int(sys.argv[2])); "
+            "sys.stdout.buffer.write(f.read(int(sys.argv[3]))); f.close()",
+        ),
+        input_file=HostPath(source),
+        arguments_after_input=("7", "6"),
+        checkpoint=lambda: None,
+    )
+    assert result.stdout == b"middle" and result.returncode == 0
+    assert source.read_bytes() == b"before-middle-after"
+
+
+def test_tool_rejects_input_suffix_without_input_before_launch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def launch(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("An input suffix requires an input before process launch")
+
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    with pytest.raises(ValueError, match="require a pinned input"):
+        run_media_tool(
+            HostPath(sys.executable),
+            ("-c", "print('unexpected')"),
+            arguments_after_input=("suffix",),
+            checkpoint=lambda: None,
+        )
 
 
 def test_unchecked_tool_returns_bounded_stderr_and_exit_status() -> None:

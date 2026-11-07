@@ -54,3 +54,35 @@ evidence in reconstructed layouts, not lossless excerpts or publishable device
 databases. Their manifests record source and fixture hashes and the captured order
 using synthetic IDs. See [fixture privacy](../README.md) and the automated checks
 in `tests/test_fixture_privacy.py`.
+
+## Nano 6 HASHAB signature envelopes
+
+`nano6-hashab-envelopes.json` reconstructs the signing convention established by
+two Apple-written Nano 6 CDB captures investigated on 2026-10-22. The original
+files and their device GUID remain private and are not stored in the repository.
+The source SHA-256 values identify the evidence without including its contents.
+
+Each stored database is a fresh 277-byte compressed example containing only an
+empty Track dataset, synthetic database IDs, and the fabricated GUID
+`0123456789abcdef`. Only the 23 random envelope bytes from each Apple signature
+are retained. Names, media, dates, device identities, private Chunks, unknown
+payloads, and copied padding are omitted. An allowlist test reconstructs every
+database byte outside the signature from fresh Chunks.
+
+Expected 57-byte signatures were generated separately from the production signer
+using the pinned upstream `dstaley/hashab` implementation at commit
+`f80d46432204c6238cad7d8ca3b3dd52ea66836b`, whose reconstruction was first checked
+against both complete Apple captures. The fixture includes the correct scheme-3
+envelope, the former deterministic scheme-4 envelope published under scheme 3, both
+normalized digests, and the expected deterministic scheme-3 signing result.
+These are synthetic regressions derived from captured behavior, not untouched
+Apple output or databases intended for a physical device.
+
+`tests/iPodDB/iTunesDB/test_hashab_captures.py` also offers read-only tests against
+the four private captures when `IOPENPOD_NANO6_CAPTURES` names their parent folder.
+That folder must contain `fresh apple`, `apple`, `v1 bad ig`, and `v2 bad`; the
+device GUID is read from the last folder's SysInfo. These opt-in tests verify both
+actual Apple CDBs, reject both original incorrect iOpenPod signatures, match the
+independently prepared signature-only repair hash, and verify all four Locations
+Checksum Books. Without the environment variable only these private-data tests
+skip; the synthetic regressions run everywhere.

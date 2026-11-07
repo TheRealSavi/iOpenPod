@@ -93,7 +93,7 @@ def test_explicit_timeline_adds_deduplicated_chapter_formats() -> None:
         parse_ArtworkDB(result.prepared.artwork or b"").find_chunks(MhiiHeader)[0].chunk
     )
     assert [
-        (c.payload.child.header.unk_mhni_0x24, c.payload.child.header.format_id)
+        (c.payload.child.header.image_time_key, c.payload.child.header.format_id)
         for c in row.children
         if isinstance(c.payload, MhodContainerPayload)
     ] == [(0, 1055), (0, 1029), (15000, 1055), (15000, 1029)]

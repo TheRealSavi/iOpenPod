@@ -20,6 +20,26 @@ def host_tool_environment() -> dict[str, str]:
             environment.pop("LD_LIBRARY_PATH", None)
         else:
             environment["LD_LIBRARY_PATH"] = original
+        bundle_directory = getattr(sys, "_MEIPASS", None)
+        if isinstance(bundle_directory, str):
+            bundle = Path(bundle_directory).resolve()
+            for key in (
+                "QT_PLUGIN_PATH",
+                "QT_QPA_PLATFORM_PLUGIN_PATH",
+                "QML2_IMPORT_PATH",
+                "QML_IMPORT_PATH",
+            ):
+                if key not in environment:
+                    continue
+                paths = [
+                    entry
+                    for entry in environment[key].split(os.pathsep)
+                    if entry and not Path(entry).resolve().is_relative_to(bundle)
+                ]
+                if paths:
+                    environment[key] = os.pathsep.join(paths)
+                else:
+                    environment.pop(key)
     return environment
 
 

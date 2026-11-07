@@ -1,0 +1,8 @@
+# Review automation and everything it executes with release credentials.
+/.github/ @TheRealSavi
+/scripts/ @TheRealSavi
+/packaging/ @TheRealSavi
+/pyproject.toml @TheRealSavi
+/uv.lock @TheRealSavi
+/src/iOpenPod/app/updates/ @TheRealSavi
+/src/iopenpod_update_helper.py @TheRealSavi

@@ -14,12 +14,406 @@ then beyond it.
 
 ## Current stage
 
-The Metadata Editor supports artwork images at explicit Artwork Display Times.
+The Track metadata editor offers 22 translated EQ presets and **Use iPod setting**.
+Unknown assignments remain preserved until explicitly replaced, and mixed
+selections remain unchanged until edited. The Track table uses the same labels.
+Sync preserves per-Track EQ through Host metadata updates and media replacement;
+EQ-only edits do not request embedded media-tag work. Global device EQ settings
+remain separate. See [ADR-0246](docs/adr/0246-edit-track-eq-with-canonical-presets-and-preserve-it-during-sync.md).
+
+Settings > Sync offers **Calculate missing BPM**, off by default. It shares the
+existing Genius audio-analysis pass and cache, covering new and retained music.
+BPM and Genius are independent options; each file is analyzed once when both are
+on. Existing BPM and Host files are preserved. Normal Smart Playlist evaluation,
+optional Rockbox tagging, Library publication, and Sync history use the resulting
+metadata. See ADR-0076 and ADR-0179.
+
+First launch opens a nine-page onboarding dialog before device loading
+and startup prompts. Users choose navigation style, iPod Library View Mode, device
+artwork, then learn about transcoding and the four steps of Sync: opening the
+workflow, choosing folders, selecting media, and reviewing/applying changes.
+A final help page links to the website, Discord, GitHub issues, Ko-fi, and the
+GitHub repository for users who want to star the project.
+Finish saves the three chosen Host preferences
+and then `application/onboarding-complete`; the flag defaults to false. Closing
+or choosing Set up later leaves setup due on the next launch. Existing settings
+are preselected. Settings > About offers Retake onboarding; dismissing a retake
+preserves the existing completion flag and preferences. Screenshots show actual widgets with fictional sample media;
+see [the capture notes](src/iOpenPod/assets/onboarding/README.md).
+Settings > About > Help and support opens only the final help page in a standalone
+dialog, without changing preferences or onboarding completion.
+The language button at the top right of every onboarding page lists the system
+default and packaged languages. Language changes save immediately and translate
+the tour in place, preserving the current page and unfinished preference choices.
+
+When no Active iPod is loaded at startup, a welcome page invites the user to
+connect an iPod and click its prominent **Choose Device** button. It opens the
+existing Device Picker. Loading an iPod from this page opens Albums; clearing the Active iPod
+returns to the welcome page. Both navigation styles retain access to Settings.
+Without an Active iPod, both styles show Welcome as the only Library navigation
+entry. Loading an iPod replaces Welcome with the supported Library entries;
+clearing it restores Welcome. The disconnected compact strip shows Choose Device
+in place of Sync with Host.
+
+The Library setting **Navigation style** chooses Compact top bar (the default) or
+Sidebar immediately. The compact strip centers Audio, Video, Playlists, Photos,
+and Games, with Device and Sync on the left and Maintenance and Settings on the
+right. Device, Audio, Video, Playlists, and Maintenance share one hover dropdown
+implementation. Tab focuses headings; click or Enter/Space/Down opens and highlights
+the first enabled item. Arrows move the highlight, Enter activates, and Escape
+closes. Hover and keyboard highlighting preserve the current page and Playlist
+selection. Device Summary is the first Device menu item. See
+[ADR-0234](docs/adr/0234-unify-desktop-navigation-dropdowns.md).
+Both styles share routes, device capability rules, and Playlist editing.
+Dragging Tracks over Playlists opens its menu; hovering over Playlist
+Folders expands them before a drop onto a regular Playlist. See
+[ADR-0233](docs/adr/0233-share-navigation-behavior-between-shell-styles.md).
+
+Unrelated Library writes bypass Phase evaluation entirely. Only changes to the
+Phase Playlist or its member audio inputs enter companion preparation. CPU/CUDA/MPS
+changes alone reuse existing charts, including older provenance. Skip Phase analysis
+is available during automatic saves, Review Changes and Sync; verified completed
+charts are kept and unfinished Tracks remain unavailable in the game until a later
+Phase edit. See [ADR-0239](docs/adr/0239-gate-and-skip-phase-analysis.md).
+Relevant edits reuse charts through persisted source/chart metadata and content
+provenance, without audio scans or retained-media transaction hashes.
+Phase membership and ordering changes update the companion index incrementally;
+new or changed analysis retains full verification. Legacy caches need one content
+validation pass to establish metadata receipts. See
+[ADR-0232](docs/adr/0232-cache-phase-input-metadata-across-library-saves.md).
+
+The sidebar device information opens a Device Summary with a large device portrait,
+observed firmware and serial details, and color-coded capacity estimates from the
+committed Library. A pencil beside the name opens inline renaming through the
+existing Library save workflow. Storage estimates also include Games files across Games_RO,
+GameData_RW, and GameStats_WO, and Album artwork from the entire Artwork folder.
+Games is pink and Album artwork is cyan. Other retains unclassified used space; inconsistent metadata
+falls back to observed used/free capacity. Restore iPod remains disabled beside
+“Coming soon”. See
+[ADR-0230](docs/adr/0230-project-device-summary-from-committed-library-state.md).
+
+Phase preparation reports its current method, live CPU/CUDA/MPS backend and GPU
+name when available. A stage ETA beside the status-bar progress indicator learns
+from completed audio duration. See
+[ADR-0229](docs/adr/0229-report-phase-activity-and-stage-eta.md).
+
+Phase can measure whole-mix acoustics while confirmed CUDA source analysis runs
+for the same Track, then combine the evidence using unchanged musical rules.
+Resource limits, live runtime capability and caller-owned cancellation retain the
+serial fallback. See [ADR-0228](docs/adr/0228-overlap-phase-mix-and-source-analysis.md).
+
+Phase preparation copies up to five upcoming compressed songs to bounded Host
+staging while the current Track is analyzed. Captures supply the initial content
+hash; full source checks and transaction preconditions remain required. Large
+inputs and Host capacity failures retain direct device reads. See
+[ADR-0227](docs/adr/0227-prefetch-bounded-phase-audio-inputs.md).
+
+Phase analysis reuses feature calculations and retains the downloaded model for
+one preparation. CUDA inference overlaps bounded CPU feature work; CPU and MPS
+keep the serial path. Preparation exit and parent-process loss release the worker,
+and failures retain acoustic analysis. Musical parameters stay at version 7.
+See [ADR-0226](docs/adr/0226-reuse-phase-analysis-work-without-changing-gameplay.md)
+for lifetime, compatibility and evaluation limits.
+
+Phase can explicitly install an isolated optional analysis runtime from Settings
+without changing the bundled application or its FFmpeg selection. Available GPU
+analysis retries on CPU; optional failures retain acoustic analysis, with cache
+provenance identifying the analyzer that actually succeeded. Unsafe or undecodable
+inputs still stop preparation. See
+[ADR-0225](docs/adr/0225-install-optional-phase-analysis-with-safe-fallbacks.md)
+for Windows evidence and remaining Mac/Linux, Store and gameplay acceptance.
+
+Library preparation now makes dataset 2 agree with authoritative dataset 3.
+Missing, extra, conflicting, and reordered Playlists are reconciled for every
+write, including repair-only preparations. Podcast Episodes remain grouped in
+dataset 3 and flat in dataset 2. Pure serialization retains the original bytes.
+Synthetic and virtual-device checks cover the change; the reported database and
+physical firmware acceptance remain unavailable. See
+[ADR-0223](docs/adr/0223-reconcile-playlist-datasets-from-dataset3.md).
+
+F1061 now authors 55-by-55 visible pixels with 112-byte rows on Classic 6/6.5/7
+and nano 3, based on independent firmware checks. Normal saves and Sync repair
+evidenced legacy geometry through fresh thumbnail shards and the existing
+recoverable transaction. Larger valid allocations remain distinct from visible
+geometry; uncertain sources are preserved and reported. Video 5/5.5 use other
+cover formats. See [ADR-0218](docs/adr/0218-author-and-repair-native-f1061-geometry.md).
+
+Device selection commits playback history without regenerating Phase charts.
+Saves and Sync affecting Phase can perform pending Phase upgrades; shutdown signals
+cancellation through selection's history save. The pinned model bypasses Hub
+alias lookup. See [ADR-0216](docs/adr/0216-defer-phase-analysis-during-device-selection.md).
+
+Phase Gameplay Analysis favors audible percussion, preserving measured drum
+timing when nearby vocal or guitar attacks compete. Melodic phrases remain
+available and carry passages without an eligible drum pattern. The optional audio
+stack supplies separated vocal, guitar, bass, drum, piano, and other evidence.
+See [ADR-0222](docs/adr/0222-anchor-phase-attacks-to-percussion.md).
+Full-mix attacks remain available under held leads, while foreground preference
+and whole-mix energy supply evidence for native difficulty selection. Acoustic
+analysis remains available without the model. A local Windows harness matches
+native ARM tap and sweep output on five music fixtures. Spectral magnitudes now
+use the shipped band ranges and preserve relative band balance independently of
+attack detection. Physical gameplay acceptance remains unfinished.
+See [ADR-0217](docs/adr/0217-preserve-phase-evidence-for-native-difficulty.md) and
+[ADR-0221](docs/adr/0221-preserve-phase-spectral-lane-evidence.md).
+
+Automatic Smart Playlist refresh now reconciles differing saved membership in
+otherwise matching native counterparts, including when the canonical copy is
+already current. Occurrences retain each copy's own metadata; conflicting
+dataset-2 definitions now follow dataset 3 under ADR-0223. Selection,
+ordinary saves, and Sync keep automatic refresh. Synthetic and virtual iPod Video
+checks cover preservation and verification; the reported database remains
+unavailable. See
+[ADR-0213](docs/adr/0213-refresh-compatible-smart-playlist-counterparts.md).
+
+Large Syncs now bound Host staging ownership handles independently of Track count
+while retaining crash cleanup and protecting other processes' live preparations.
+Track preparation failures reach the logs, and Library DEBUG diagnostics use
+bounded samples. Windows checks retain 10,000 workspaces; complete NAS-backed
+physical Sync acceptance remains open. See
+[ADR-0212](docs/adr/0212-share-host-staging-ownership-across-workspaces.md).
+
+Playlists can designate one Phase Playlist when the game is installed, with a
+distinct sidebar marker and ordinary editing behavior. Library saves include its
+companion index and gameplay charts generated from the actual audio using
+librosa. Content-checked charts are reused on subsequent saves. Native-parser
+and virtual-device checks pass, while physical gameplay remains untested. See
+[ADR-0210](docs/adr/0210-analyze-phase-playlist-audio-with-librosa.md).
+
+Games displays installed titles, versions, and landscape covers from Games_RO.
+Background Storage reads retain one card per installation, tolerate individual
+metadata failures, and clear on Active iPod changes. See
+[IC-Info and Games](docs/ipod-games.md) for the manifest contract and read-only
+device validation.
+
+Install Games now allows an explicit Continue anyway attempt for unverified family
+or firmware evidence. The dialog shows reported values, uses the identified model
+when a codec fallback is needed, and scopes confirmation to the current connection
+and identity values. Storage and recovery protections remain mandatory. See
+[ADR-0219](docs/adr/0219-confirm-unverified-game-compatibility.md).
+
+Games now prepares the bundled Classic 6.5 Game Authorization Store for an
+identified supported iPod using a standalone iPodDB codec. The explicit sidebar
+action merges account/key records, gives bundled entries precedence on conflicts,
+and preserves destination-only authorizations through a recoverable Storage
+Transaction. Firmware and emulators remain lab-only verification tools. Game
+executables are installed separately by selecting cards and pressing Add in the
+Available games dialog. Install Games first downloads and extracts the complete
+preservation collection onto the Host, showing progress. Later clicks reuse those
+files. The app retains the catalog and artwork while game payloads stay outside
+its assets and source distribution. Selected games publish through Storage
+without replacing existing game folders or modifying iTunesDB. See ADR-0208,
+[ADR-0211](docs/adr/0211-download-the-game-collection-on-demand.md), and
+[IC-Info and Games](docs/ipod-games.md) for supported builds, merge limits, and
+native differential evidence. Physical device publication remains untested.
+
+Storage can resume a create-only transaction interrupted during staging through a
+new identity-bound Filesystem Session. It verifies and reuses completed stages,
+copies missing stages, and replaces only damaged stages while retaining their
+bytes until cleanup. See [ADR-0207](docs/adr/0207-resume-create-only-transaction-staging.md).
+
+Classic lyrics preparation now checks the final embedded representation against
+the native byte bounds, encoding branches and frame/atom layout before issuing
+publication evidence. Incompatible ID3v2.4 tags automatically convert to v2.3 on
+the private iPod copy; metadata loss there is accepted, while Host files and
+encoded audio remain unchanged. Unrepresentable text is reported rather than
+truncated. The Library projects the lyrics flag's low bit, and Review explains
+podcast/audiobook description precedence. See
+[ADR-0206](docs/adr/0206-validate-native-lyrics-publication.md).
+
+Video stream choices can retain primary and alternate audio with their languages,
+default status and saved intent. Native subtitle preparation validates track
+headers and repairs unsafe clocks only through exact rescaling. Caption payloads
+are verified, including rejection of remuxes that would drop field-2 data. The
+qualified Classic Preferences view displays Alternate Audio without adding a
+physical settings writer. Device switching and rendering still require playback
+acceptance. See [ADR-0205](docs/adr/0205-adopt-native-video-playback-contracts.md).
+
+Artwork reads now use stored filenames and primary pixel lengths, preserve
+supported nested paths, and leave ambiguous reverse owners unresolved. Only
+thumbnail containers contribute artwork times; other containers remain retained.
+Preparation independently checks new allocation conflicts and native thumbnail
+count limits, and captures explicitly referenced sources independently of their
+shard naming. See [ADR-0203](docs/adr/0203-validate-artwork-file-references-and-allocations.md).
+
+Artwork projection now follows the firmware's direct-ID lookup rule: a broken
+nonzero link remains unresolved. Chapter header flags have typed interpretations,
+and a separate Native Chapter Index exposes firmware eligibility without changing
+editable metadata. Explicit timed artwork on chapter-capable targets enables the
+known flags when recognized named Chapter data exists; mismatched sequences are
+diagnosed without retiming them. These findings are directly verified in Classic
+120GB RetailOS 2.0.1. Independent nano 5 RetailOS 1.0.2 checks verify its Chapter
+flags and native F1073 format. Video 5/5.5 and nano 3/4 now also declare their
+independently verified Chapter formats. Explicit timeline saves enable both known
+header masks, preserve shared cover pixels, and add nano 3's missing F1029 images.
+Nano 5 carries the flags into CDB and Extras. Ordinary covers preserve Chapter
+flags. Physical display behavior remains unverified. See the
+[firmware matrix](docs/research/chapter-artwork-firmware-matrix.md),
+[nano 5 evidence](docs/research/nano5-chapter-artwork-contract.md), and
+[ADR-0202](docs/adr/0202-adopt-native-artwork-and-chapter-semantics.md).
+
+Podcast group projection now follows the whole native marker byte. Smart Checked
+and Compilation rules retain operand-aware truth, and unsupported numeric/text
+operands preserve saved membership. Four city mappings are corrected; a
+contradictory qualified Classic city remains unresolved with a diagnosed header
+fallback. See [ADR-0198](docs/adr/0198-adopt-native-rule-operands-and-import-markers.md)
+for evidence and cross-model limits.
+
+Binary Play Counts now replaces present playback dates even after clock setbacks,
+while retaining the Finder sentinel and exact native words through approximate
+date interpretation. Calendar metadata never blocks Library workflows; see
+[ADR-0240](docs/adr/0240-treat-calendar-dates-as-best-effort-metadata.md).
+Unsupported Smart date ranges preserve both native endpoints and saved membership.
+A qualified Classic 120GB 2.0.1 Preferences view reads full city IDs and exposes
+saved DST and clock-bias observations without using them as extra timestamp
+adjustments. Historical IANA interpretation remains explicit Host policy; raw
+hardware-clock UTC/local provenance remains unproved. See
+[ADR-0196](docs/adr/0196-adopt-firmware-clock-and-date-evidence.md).
+
+Firmware DST Rules now have a lossless read-only document with separate Classic
+2.0.1/2.0.4/2.0.5 framing and week semantics. Optional saved rules are inspected
+through Storage; incomplete or unknown files never gate Library workflows.
+Latest Classic Calendar Targets now cover updater 24 / 1.1.2, 33 / 2.0.1,
+35 / 2.0.4 and 38 / 2.0.5. All expose full city IDs and saved clock observations;
+the latter three also qualify saved annual DST files. Strongest-authority updater
+and release evidence distinguishes the later 160GB branches without inventing a
+retail model split. Family 24's optional DST file remains opaque.
+Saved DST State and the automatic predicate cache are separate observations, and
+annual rules do not reconstruct historical UTC times. See
+[ADR-0241](docs/adr/0241-inspect-firmware-dst-rules-as-optional-evidence.md).
+See [ADR-0242](docs/adr/0242-qualify-the-latest-classic-calendar-targets.md) and
+[the per-target research questions](docs/classic-calendar-support.md).
+The concrete deferred clock callback now resolves to a protected-media timing
+cache updater on all four targets; its body does not rebase ordinary Track dates.
+Fresh Smart evaluations initialize their own day context. Later DST prefix bytes
+remain opaque after bounded native loader/lookup execution and a reference audit;
+retained prefix bytes do not establish the active rules. These findings reinforce
+native-date preservation and non-blocking optional evidence, rather than adding
+calendar prerequisites to Library workflows.
+Queued Host clock handling is now traced through concrete application handlers
+on all four targets: it mirrors live correction, reconciles the saved city and
+marks Preferences dirty. City selection can be automatic and can fall back to
+unresolved ID zero. Saved files can lag this processing and later persistence;
+iOpenPod explains the uncertainty without rebasing native dates or blocking saves.
+
+iPodDB now uses the firmware-backed total skip counter, preserves the independent
+secondary counter, and retains Playlist repeat data during text edits. Binary
+Play Counts can clear bookmarks and explicitly set or clear played state; an empty
+On-The-Go base file activates numbered Playlists without creating an empty one.
+The shared field interpretation is directly verified in Classic 2.0.1 and inferred
+for other models. Existing Smart Playlist Host policies remain explicit. See
+[ADR-0195](docs/adr/0195-adopt-firmware-database-field-semantics.md) for evidence,
+preservation rules, and validation limits.
+
+Linux Storage access now permits known readable files and readable directory
+listings beneath search-only ancestors. It retains pinned no-follow access,
+ordinary file/listing permissions, final identity checks, and cancellation cleanup.
+Native permission and path-swap tests cover Host and device reads. See ADR-0192.
+
+Linux Host recovery now compares live physical backing independently of persisted
+Device Identity. Supported local filesystems, bind aliases, eCryptfs, device-mapper
+stacks, and complete MD RAID graphs reject any shared backing with the selected
+iPod. Btrfs recovery resolves every member device, including subvolumes and members
+on supported device mappings. Missing, changing, and unsupported backing fails
+closed; loop images remain unsupported recovery locations. Existing recovery
+journal keys are unchanged. See ADR-0191 and ADR-0193 for the supported boundary
+and native acceptance limits.
+Device inspection failures retain their details in the picker and
+log new or changed failures. Native frozen Linux desktop helpers receive a clean
+Host environment, and Settings > About exposes a copyable log path. These changes
+cover a reproduced failure consistent with issue 270; the reporter's cause and
+released Linux desktop behavior still need confirmation. See ADR-0190.
+
+Track deletion now reconciles Genius collections through the same Library save.
+Surviving occurrences retain their order and duplicates; a deleted known Playlist
+seed becomes the first surviving member. Saved sidecars are remapped against final
+persistent identities and Track positions. Collections emptied by deletion and
+matching Mix ownership are removed recoverably. Metadata edits preserve collection
+membership. See ADR-0186; firmware acceptance of replacement seeds remains open.
+
+Genius now offers manual genre Mix additions and per-iPod Count/Expiry settings.
+The Genius sidebar shows Mixes only on iPods with confirmed native Mix support
+(ADR-0201).
+Focus, Love, Energy, and Relax Mixes now use the existing librosa-derived Genius
+Audio Profiles during Library preparation; Love also requires an explicit title or
+album cue. The Add dialog defers their eligibility check until save. These are
+candidate seeds, so native playback may extend beyond the mood selection.
+Supported SQLite iPods can select multiple proposals in a grid; automatic Mixes
+rotate during Sync while manual Mixes remain permanent and outside the automatic
+count. Ownership and ages publish with native Mix changes through the same Storage
+transaction. Existing unowned Mixes remain preserved. See ADR-0184; this workflow
+has virtual-device coverage and still needs physical acceptance.
+The Genius page now stages explicit removal of selected Playlists and Mixes.
+Canonical Playlists, matching saved sidecars, Mix containers, and Mix ownership
+are updated through the reviewed Library save. See ADR-0185.
+
+Sync now prepares native Genius relationships for all music Tracks on
+Genius-capable iPods. Elephant-Ear-style audio profiles rank up to 32 candidates
+using body similarity and outro-to-intro compatibility, with metadata fallback.
+The Analyze for Genius Sync setting is on by default and can be disabled per iPod;
+disabled Syncs preserve existing Genius data without regenerating relationships or
+rotating automatic Mixes (ADR-0199).
+During Genius analysis, Skip for this Sync stops unfinished audio work, retains
+completed profiles, and continues Sync with metadata fallback for remaining Tracks
+(ADR-0200).
+Profiles are cached on the Host; short Tracks use body-only analysis. Stable Genius
+identities, real artist and album keys, and native spacing rules accompany the
+final Library. The new spacing policy still needs hardware listening validation.
+Existing unowned Mixes remain retained; ADR-0184 adds explicit Mix management.
+Sync creates no saved Genius Playlists or Host playback controls.
+Classic `Extras.itdb` participates in the same captured and verified transaction as
+iTunesDB, including pruning during ordinary affected Library saves. See ADR-0178,
+ADR-0179, and the [Genius data contract](docs/ipod-genius.md).
+
+iOpenPod now exposes native Genius Playlists and Mixes in a dedicated Genius
+browser with explicit collection removal. Classic MHOD 54 seed records identify
+Genius Playlists before
+ordinary Smart classification; these records retain their bytes and do not enter
+Smart refresh or ordinary Playlist editing. Saved nano sidecars and SQLite Mixes
+are captured as separate browse state, without changing Library authority or
+consuming the sidecars. See ADR-0177.
+
+iPodDB now models native Genius graphs, saved Genius Playlist sidecars, and
+SQLite-only Genius Mixes. Explicit Library preparation coordinates Genius Track
+identities and companion artifacts; regeneration preserves Mixes and prunes
+understood relationships for removed media. Application editing/import workflows
+remain separate. Basic Sync generation is
+specified in ADR-0178. See ADR-0176 and the
+[Genius data contract](docs/ipod-genius.md).
+
+Device Registry now distinguishes native Genius Playlist and Mix capabilities.
+Classic 7G Mix support is refined from ranked RetailOS release evidence against
+2.0.3; missing or conflicting versions remain unknown. Transport revisions remain
+separate from RetailOS versions. This describes firmware capability, not an
+implemented Genius generation or Sync workflow. Reconciliation caches the release
+in both SysInfo files with recorded hardware provenance. SysInfo Authority version 2
+invalidates older caches once for every iPod model. Successful capture and selection
+repair restore cache reuse across refreshes and connections; failed capture remains
+eligible for retry. See [ADR-0220](docs/adr/0220-version-sysinfo-authority-cache-invalidation.md), ADR-0175, and the
+[capability matrix](docs/genius-capabilities.md).
+
+Affected Playlist writes create a missing flat dataset-2 counterpart for a retained
+special Podcasts Playlist in dataset 3. Existing counterparts keep their own
+metadata, and ordinary counterpart consistency checks remain required. See ADR-0174.
+
+Selecting an exactly identified, writable iPod whose Library database is absent
+now initializes its base directories and a device-compatible empty Library. This
+restores Original iOpenPod behavior for Apple restores that omit iTunesDB, including
+the reported iPod 4 mono case. Discovery stays read-only. Existing databases are
+preserved; required signatures and complete CDB/SQLite artifact sets use normal
+iPodDB preparation and a verified, recoverable Storage Transaction. See ADR-0173
+for qualification, conflicting artifacts, and hardware-validation limits.
+
+The Metadata Editor assigns artwork through named Chapters and shows thumbnails
+alongside their titles and start times. Existing unmatched Artwork Display Times
+remain accessible; changing Chapter metadata never silently moves or deletes images.
+Applied artwork edits preview in the Player before a Library save, including
+untouched retained images within an edited sequence.
 Drafts retain references to untouched images; preparation writes ordered time
 groups and preserves later images during ordinary cover replacement. Explicit
 timelines also supply configured chapter representations and count each saved
 image time once. Playback behavior remains device- and firmware-dependent. See
-ADR-0138, ADR-0139, and the
+ADR-0138, ADR-0139, ADR-0204, and the
 [timing investigation](docs/research/ithmb/artwork-timing-experiments.md).
 
 Sync distinguishes unavailable Host covers from deliberate removal and preserves
@@ -84,13 +478,20 @@ binary iTunesPrefs. They expose documented device and iTunes settings while
 retaining Unknown Data. Model-specific fields require explicit caller assertions;
 layout recognition remains separate from Device Identity. Companion plist modeling
 and physical preferences editing remain separate work.
-Library dates now use a captured Device Time Context: historical city rules or an
+Library dates now use a captured Device Time Context: an IANA key for historical city rules or an
 explicit fixed-offset fallback, UTC-only release/purchase fields, and local Mac
-conversion for Photo dates. Preferences are checked again before publication;
-ambiguous dates remain unavailable and losslessly retained. See ADR-0098 and
-[the time contract](docs/ipod-time.md).
+conversion for Photo dates. Unknown zones fall back to UTC when no valid fixed
+offset exists; ambiguous dates receive deterministic estimates. Preferences are
+read-only evidence, not a save precondition. Native dates remain losslessly
+retained, and new dates are bounded before verification. See ADR-0240 and
+[the time contract](docs/ipod-time.md). Calendar interpretation, Host clocks and
+date display use Whenever; native words and semantic Unix seconds retain their
+integer contracts. [ADR-0243](docs/adr/0243-use-whenever-for-calendar-interpretation.md)
+and the [engineering guide](docs/datetime-engineering.md) document the type,
+precision, packaging and firmware-evidence boundaries. Monotonic elapsed timers
+and required plistlib/WinRT adapters remain distinct.
 Settings includes a read-only iPod Preferences tab under the iPod scope. Device selection captures
-both binary preference files through Storage and publishes display summaries with
+binary preferences and optional saved DST rules through Storage and publishes display summaries with
 the Active iPod; switching or disconnecting clears the previous device's values.
 See [the Preferences contract](docs/ipod-preferences.md) and ADR-0097.
 
@@ -125,7 +526,11 @@ publish writes before removals, and support explicit restoration after reconnect
 Storage now also performs user-directed native safe removal through Windows Plug and
 Play, macOS Disk Arbitration's `diskutil` client, and Linux UDisks2. It never forces
 an unmount, preserves native refusal details, and models an unmounted-but-not-ejected
-partial result by expiring the Connection Generation. Incoming-media planning/import
+partial result by expiring the Connection Generation. Linux sibling checks use
+standard Drive introspection to support UDisks releases before 2.11 while still
+refusing shared power-off hardware and incomplete inventories; see
+[the safe-removal research](docs/research/safe-native-eject.md).
+Incoming-media planning/import
 and event-driven connection monitoring remain prerequisites for general Sync and
 destructive maintenance workflows. See ADR-0029 and ADR-0060.
 
@@ -207,7 +612,10 @@ helper remains matching evidence rather than Library or mutation authority. The
 pre-Review scan does not persist it; successful Sync publishes its new provenance
 after the verified Library commit. A separate, device-bound iPod Analysis Cache on
 the Host retains completed analysis across pre-Review scans and cancellation,
-including for read-only devices; it contains no Sync Details. See ADR-0123.
+including for read-only devices; it contains no Sync Details. Native device
+fingerprinting now uses pinned, seekable Storage inputs without whole-file
+captures. Both Host and iPod analysis caches retain confirmed absence of audio
+while retrying other failures. See ADR-0123 and ADR-0156.
 The Application Layer then
 prepares an immutable Sync Plan for Tracks and full-resolution Photos. Proven Host
 path relationships are considered before unique content identities; current Host
@@ -238,23 +646,47 @@ and can group grid items as Selected, Mixed, or Deselected. Opening an Album or
 collection card in Select Media replaces the browser with a full detail page,
 including artwork, metadata, bulk selection, and the shared Track table with its
 own search. Back returns to the retained browser; these Sync pages have no split
-Track pane. The global **iPod Library View Mode** setting also offers this shared
+Track pane. The **iPod Library View Mode** setting also offers this shared
 presentation in the iPod browser as **Whole Page Table**, without Sync Selection
-controls. **Split Table** remains its default. Changes apply immediately and are
-saved across restarts. See ADR-0072. Review derives an
+controls. Opening these full-page Track tables and going Back uses a brief
+crossfade in both Library and Sync with Host, retaining immediate navigation.
+The mouse Back button invokes the same Back action while a full-page table is open.
+**iTunes 11 style** opens an album-colored Track list with artwork beneath
+the selected row of the Albums grid, pushing later rows down. Artists and Genres
+use a source list beside a collection heading, playback/queue controls, and stacked
+Albums with two columns of Tracks. Covers sit on the left; Genres use smaller
+covers and an Album Artist byline. These rows omit ratings. See ADR-0235.
+Music Videos uses the same single-cover artwork, Album cards, and layout policy
+as Albums, scoped to Music Video Tracks. See ADR-0237. TV Shows uses one cover per
+show. In iTunes 11 style its inline panel has Season tabs, Season-specific artwork
+and colors, and episode rows with number, release date, duration, title, and an
+elided description. Other layouts show all episodes together. See ADR-0238.
+Movies defaults to artwork/title
+cards with a grid/list toggle for its existing table, independently of this setting.
+Single clicks select Movies without opening details or playback. See ADR-0236.
+**iTunes 11 style** is the default. Changes apply immediately,
+persist across restarts, and support individual iPod overrides. See ADR-0072 and
+ADR-0126. Review derives an
 immutable selected Sync Plan in collapsible change groups; iPod-only removal
 candidates start unchecked. Review can exclude individual actions or whole groups
 without changing desired Host membership. Sync Selected validates that plan, checks
 required media tools, prepares compatible media on the Host, and builds an isolated
 Library Draft. Failed independent items are reported and excluded while successful
-items can still commit. The verified Library and media publish through Storage;
+items can still commit. Incoming Track metadata and metadata-only source failures
+are checked per item; skipped Updates preserve the existing iPod copy. The result
+screen offers **Save Sync report** with every reported source and error reason,
+including entries omitted from compact message previews. The verified Library and media publish through Storage;
 successful Sync Details follow the commit. Cancellation and interrupted publication
 have explicit cleanup/recovery results. See ADR-0065 through ADR-0067, ADR-0070,
-and ADR-0076.
+and ADR-0076. Playlist Review has individual choices, visible iPod targets, and
+reasons for skipped updates. Users can choose an existing regular Playlist or
+create a new one. Successful source-to-iPod associations survive title and
+membership changes; skipping a Playlist leaves Track selection unchanged.
+See ADR-0159.
 Interrupted Sync recovery is a choice for the selected iPod: restore the previous
 Library or explicitly keep current contents after a warning about incomplete
-changes. Recovery and cleanup are discovered from device journals, never persisted
-as Host settings. Declining restoration retains recovery copies and leaves media
+changes. Recovery and cleanup are discovered from device journals and identity-bound
+Host recovery journals (ADR-0167). Declining restoration retains recovery copies and leaves media
 and databases untouched; unrelated iPods remain usable. Successful Library saves
 automatically clean their committed recovery files; Sync does so after attempting
 its Library Sync Helper update. Selection also cleans matching completed
@@ -263,7 +695,7 @@ read-only, and foreign or declined journals remain untouched. Only actual cleanu
 failures require a cleanup warning and retry. See ADR-0089 and ADR-0093.
 Host tag interpretation now shares native ID3, MP4, Vorbis/APE, ASF, and FFprobe
 aliases across scanning and import. Media classification, TV and Podcast fields,
-lyrics, sorting, advisory, and normalization metadata survive Scan Cache v14.
+lyrics, sorting, advisory, and normalization metadata survive Scan Cache v16.
 Embedded artwork availability is retained separately from absence; older cached
 no-cover records are reinspected once.
 Migrating cache versions 9 through 13 retains reusable Track and Photo records but
@@ -272,17 +704,31 @@ names become available without editing the files. Host scanning accepts trailing
 periods, trailing spaces, and Windows reserved names on POSIX Hosts; Windows keeps
 its spelling restrictions. See ADR-0083 and ADR-0136.
 Successful metadata and optional Acoustic Fingerprints are reused independently.
+Playlist completion is recorded separately from parser diagnostics so temporary
+read failures retry on later scans. Older warning-bearing Playlist records are
+reparsed once; unreadable Photo records no longer invalidate healthy cached media.
+Images exceeding Pillow's pixel limit remain individual scan issues, with readable
+alternative covers preferred. Existing iPod covers remain protected when no safe
+Host cover is available. See ADR-0168.
+Completed Host inspection is cached periodically and on inspection exit,
+including cancellation, so a later scan can reuse work after checking fresh file
+facts. macOS AppleDouble companion directories are omitted alongside `._` files.
 Compact fingerprints, unchanged-cache reuse, and bounded directory concurrency
 reduce scan overhead; both selected-tree passes retain fresh Storage observations.
 See [Host tag coverage](docs/host-media-tags.md) and ADR-0099 for precedence and limits.
 
 Optional acoustic analysis no longer gates readable Host media or explicit Adds.
 Sync checks media tools only for incoming Tracks and preserves committed Host-path
-provenance independently of Acoustic Fingerprints in Library Sync Helper v5.
+provenance independently of Acoustic Fingerprints in Library Sync Helper v7.
 Embedded artwork uses seekable reads, including for large audiobooks. Successful
 FFprobe output remains usable with incidental metadata diagnostics. Preparation
 reports all concurrent Tracks with separate phase progress measured from FFmpeg's
 output time and speed, and groups repeated informational conversion notices.
+When a source Track stops decoding on a damaged packet, preparation decodes it
+again the way players do, skipping the damage, and reports the skipped packets as a
+Track warning. Converted output must still match the source duration, copied audio
+(including stream-copy remuxes) must still play for its reported length, and
+verification of iOpenPod's own encoder output remains strict.
 Device selection immediately commits captured Play Counts, iTunesStats,
 PlayCounts.plist, and On-The-Go Playlists before exposing the Active iPod. The
 verified Storage Transaction archives consumed files as inactive `.bak` companions
@@ -295,6 +741,10 @@ positional data retains the conservative preservation/remapping policy. See
 Short Track headers expand only when an edit requires it and the selected Device
 Profile supports the larger format. Skip evidence is never discarded to fit a
 retained header; no-op byte preservation remains mandatory. See ADR-0144.
+Mini 2G and full-size iPod 5G/5.5G now use the standard 624-byte layout for new
+Tracks and required expansion, allowing Podcast Sync to preserve retained artist
+relationships. Their database baseline is `0x30`; other capabilities and unchanged
+database bytes retain their existing behavior. See ADR-0171.
 Oversized Photo containers become bounded PNG stills, with separate Host and iPod
 content digests. Photo sources now use Pillow's existing pixel limits; ordinary
 6K and 16K widescreen originals retain their encoded bytes. Preparation and previews
@@ -339,6 +789,21 @@ With Rockbox Metadata Support enabled, Sync and ordinary Library saves embed
 changed metadata and artwork in media files. Metadata-only edits preserve embedded
 covers; artwork removal clears them. Non-cover profiles use a 120x120 grayscale
 JPEG; this file-tag copy is separate from the iOpenPod-only ArtworkDB representation.
+Library transactions retain verified originals on the Host and reuse the allocation
+of reviewed replacements and removals. Nearly full iPods need room for net growth
+and a small journal reserve. Interrupted saves can be restored on the same computer
+after reconnecting, independently of Backup Snapshots. See ADR-0167.
+Terminal cleanup reuses confirmed durability without rereading media. Only
+unconfirmed results need one fresh verification pass after a successful flush;
+recovery inspection remains required for restoration. See ADR-0180.
+Host publication also reuses capture fingerprints for its initial original checks
+and verifies the complete staged inputs once after the final preparation callback.
+Podcast state is included before the single Library review validation; retained
+Podcast covers reuse their capture fingerprint. Timestamp-preserving writes set
+metadata on the private stage before output verification. See ADR-0181 for read
+budgets and the checks retained at publication and commit. ADR-0182 further reduces
+Host transaction output verification to one destination read before commit: the copy
+hashes outgoing bytes and defers its immediate readback to the final batch check.
 When preparing new cover artwork, conflicting retained MHIF image sizes are
 corrected automatically when the Device Profile, retained image metadata, and
 captured thumbnail ranges establish the correct size. Unverifiable conflicts
@@ -420,19 +885,22 @@ See ADR-0020 and ADR-0022 for hierarchy and editor behavior.
 
 Sync's **Refresh Library** action can repair existing Albums browse indexes on
 non-SQLite iPods with Tracks, including Classic models, without reimporting media.
+Retained Album indexes may omit jump tables; refresh preserves that absence while
+still rejecting duplicate or orphan records and ambiguous Master membership.
 SQLite targets refresh their companion Library artifacts while retaining captured
 firmware schemas, version rows, and metadata absent from the CDB. Changed HASH72
 databases receive valid HASH58 and HASH72 signatures. Binary Play Counts ignores
 the evidenced missing-date reference epoch. Both paths use the normal verified
 Storage Transaction. Loading and ordinary no-op serialization remain byte-exact.
-See ADR-0147, ADR-0148, and ADR-0150.
+See ADR-0147, ADR-0148, ADR-0150, and ADR-0194.
 
 The Library Workspace retains Photos and Photo Albums in that same desired snapshot.
 Retained Photo rating/dates and retained user Photo Album names, membership,
 slideshow settings, and music Track references use the existing source-bound Library
-Draft, review, preparation, and safe-save contract. The Photos header can create an
-empty user Photo Album using the selected Device Profile's explicit MHBA type policy;
-the new album uses the same automatic or manual safe-save policy. User Photo Album
+Draft, review, preparation, and safe-save contract. The plus glyph beside the Photo
+Albums sidebar heading creates an empty user Photo Album using the selected Device
+Profile's explicit MHBA type policy; the new album uses the same automatic or manual
+safe-save policy. User Photo Album
 deletion requires explicit omission intent. Selected Photos can also be omitted from
 the Photo Library and every Photo Album as one reversible draft edit. Preparation
 removes their MHII/MHIA references, while Save recoverably removes unshared
@@ -531,15 +999,23 @@ current Active iPod's Podcast Tracks. Existing device Podcasts are recovered int
 subscriptions automatically; enclosure-based reconciliation exposes current
 on-device membership immediately, while listened state survives later Track removal
 or unsubscription. The GUI can search Apple's public directory, add direct RSS
-feeds, immediately refresh a show when it is opened, mark episodes listened or
+feeds, refresh a show on navigation once its last successful refresh is at least
+15 minutes old, mark episodes listened or
 unlistened, and play Tracks already on the iPod. Its All Podcasts view combines
 every subscription's Episodes newest-first while retaining each Episode's source
 identity; it is a runtime projection, not another persisted Podcast Subscription.
+Search results lazily resolve publisher-feed show covers, and Episode tiles prefer
+Episode RSS artwork with device/show fallbacks. Compact metadata and an optional
+direct-RSS form keep browsing focused on shows and Episodes. See ADR-0155.
 Device files use
 fingerprint-checked Storage writes under
 `iPod_Control/iOpenPod/Podcasts`. Podcast Episodes can be added or removed manually,
 and per-show Sync settings select and retain Episodes during ordinary Sync or the
-Sync Podcast and Sync Podcasts actions. These operations refresh feeds, preserve
+Sync Podcast and Sync Podcasts actions. Settings > Sync in the Host scope offers
+**Default Podcast Sync Settings**, opening the same dialog and saving all five
+choices in Host `settings-v2.json`. Newly added subscriptions copy these defaults;
+existing subscriptions retain their own policy when defaults change or feeds refresh.
+These operations refresh feeds, preserve
 Listening History, prepare compatible media on the Host, and publish through the
 shared verified Library and Storage Transaction workflow. Failed feed refreshes
 leave that show's media unchanged. Imported chapters are ordered chronologically;
@@ -547,19 +1023,44 @@ invalid incoming Episode metadata is reported by title and show and skipped befo
 the shared Library build. Independent Episodes can still Sync, and failed
 replacements keep their existing Tracks. Blocking Library errors do not generate
 secondary missing-lyrics errors, and cover retries do not inflate diagnostic counts.
-Incoming Episodes prefer embedded covers from their original downloads, with
-publisher show covers as a fallback. Covers use shared ArtworkDB and thumbnail
-preparation; Podcast Sync also fills missing covers on retained Episodes from
-refreshed feeds without downloading their media again. See the
+Podcast downloads and media preparation now overlap across up to four Episodes,
+within the Sync worker limit. Each active Episode has independent transfer or
+codec progress, while destination allocation and device publication remain
+ordered. Cancellation joins active work before releasing Host captures. See ADR-0087.
+Incoming Episodes prefer embedded covers from their original downloads, then
+publisher Episode covers, with show covers as the final fallback. Covers use shared
+ArtworkDB and thumbnail preparation; Podcast Sync also fills missing covers on
+retained Episodes from refreshed feeds without downloading their media again. See the
 [Finder capture research](docs/research/podcast-finder-captures-2026-10-18.md).
-ID3 chapter pictures now feed the timed-artwork writer from those same captured
-originals, including after transcoding. Podcast GUIDs occupy MHOD 15 separately
-from download URLs. Audio Podcasts use media mask 5 and disc 1, with publication
-year, modification time, subtitle, and publisher advisory supplied. Sync repairs
+ID3 chapter pictures feed the timed-artwork writer from those same captured
+originals, including after transcoding. Publisher JSON and inline Podlove chapter
+images also supply Artwork Display Times without importing external chapter
+navigation.
+Show metadata retains multiple categories, copyright, website, and show type;
+Episodes retain individual authors, episode type, and publisher links. Native
+imports use Episode authors and show copyright, while the Podcast browser exposes
+the additional display metadata and links. See ADR-0154. Podcast GUIDs occupy MHOD 15
+separately from download URLs. Audio Podcasts use media mask 4 and preserve supplied or retained
+disc numbers, with publication year, modification time, subtitle, and publisher
+advisory supplied. Sync repairs
 missing show links, and checked CDB metadata supplies SQLite Podcast identity,
-container classification, and descriptions. See ADR-0149.
+container classification, and descriptions. See ADR-0149 and ADR-0151.
+Sync now normalizes retained and new Podcasts to the 12.6 baseline's album, show,
+Playlist, and database-reference relationships. Classic traversal and SQLite
+Podcast order follow their respective captured structures; SQLite show ownership
+and partial-playback evidence are preserved across refreshes.
+It also recovers missing native covers from retained embedded media. Both supplied
+starting structures use this explicit policy; loading and ordinary no-op writes
+remain lossless. See ADR-0152 and ADR-0153.
+Ordinary metadata saves also retain shared native Podcast albums across optional
+Episode tag differences, preserving unrelated show metadata and validating the
+album once across all its members. Explicit title/feed changes can split shows;
+ordinary saves do not merge separate source albums. See ADR-0165.
 Episode slots are an automatic filling target;
 manual additions may exceed it. Episode count alone never authorizes removal.
+Setting the target to zero disables automatic feed refresh, filling, clearing,
+replacement, and retained-cover repair during Sync for that Podcast Subscription;
+manual Episode additions and removals remain available.
 Both Newest and Next clear by listened state or time on the iPod. Newest replaces
 only clear-eligible Episodes with newer publications. Next starts after the furthest listened
 publication, or with the oldest available Episode when no listened publication is
@@ -569,16 +1070,18 @@ Listening History retains publication chronology and separate automatic-clear
 exclusions. These exclusions prevent automatic re-addition without marking an
 unlistened Episode listened; explicit additions bypass them. Pre-Sync reconciliation
 saves observed history, while new exclusions commit in the same verified Storage
-Transaction as successful media and Library removals. Subscription and Listening
-History documents encode version 2 at their existing paths and still read version 1.
-See ADR-0037 and ADR-0091.
+Transaction as successful media and Library removals. Subscription documents encode
+version 3 and read versions 1 and 2; Listening History encodes version 2 and reads
+version 1. Existing paths remain unchanged. See ADR-0037, ADR-0091, and ADR-0154.
 
 The Library Workspace now holds Track metadata, the device name, Playlists, and
 Photos in one session draft. Sidebar naming, shared Track and collection context
 menus, and
 a manual metadata editor apply explicit changes to this draft. Normalize Tags scans
-the Library in the background using Original iOpenPod's grouping and sorting rules,
-previews the results, and applies them only on request. A shared, debounced background
+the Library in the background using Original iOpenPod's grouping and sorting
+baseline, with conservative corrections that preserve supplied credits and custom
+sorts and require evidence for album and compilation inference (ADR-0163). It
+previews the results and applies them only on request. A shared, debounced background
 scan keeps the Normalize Tags Sidebar badge current with the number of suggested
 tag-field edits. Opening or closing the preview reuses that scan; applying changes,
 editing, locking, or switching the Active iPod invalidates old results. Mixed metadata, stale
@@ -601,7 +1104,7 @@ Podcasts Playlist consequences. The metadata editor's Media type selector also
 reclassifies retained audio or video within its current media family, including
 Movie to TV Show, atomically with explicit metadata and artwork edits. Mixed and
 retained compound classifications stay unchanged until selected for replacement.
-Podcasts and videos always use Remember position and Skip when shuffling in
+Podcasts, Audiobooks, and videos always use Remember position and Skip when shuffling in
 application imports, edits, and prepared Library Drafts. Save and Sync repair
 retained Tracks with those flags off. Audio and video Podcasts also enable the
 native Podcast Now Playing marker. Merely loading an iPod preserves its raw
@@ -614,11 +1117,18 @@ tags independently of Library classification. Inspection has cancellation, proce
 and output limits, and content fingerprints. Music import applies a bounded audio
 compatibility policy and maps observed facts into native codec fields. The same
 reviewed transaction stages the song, thumbnails, ArtworkDB, and iTunesDB before
-publication. Sync preparation accepts Host-native path spelling, chooses marked-
-default or first-probe-order streams from multi-stream video, and scopes encoder
-options to the selected FFmpeg encoder while reporting those choices as warnings.
-Exact gapless analysis, conversion, the Sync engine, video import, and document
-inspection such as PDF/EPUB remain future work. See ADR-0031, ADR-0032, and ADR-0083.
+publication. Sync preparation accepts Host-native path spelling and prepares media
+for the Active iPod. Select Media offers per-Track audio, video, subtitle, and
+caption choices; automatic selection uses marked-default or first-probe-order
+audio/video streams. Choices are remembered for each Host path across scans and
+Syncs. Changed choices request replacement; successfully applied choices remain
+In sync. Changed video sources are prepared again, and audio alone cannot silently
+establish a new video association. See [Choose streams for Sync](docs/media-streams.md),
+ADR-0083, ADR-0157, and ADR-0158.
+Supported embedded text subtitles are retained automatically or by explicit choice.
+Preparation preserves readable words when styling cannot survive and reports
+unrecoverable subtitles instead of creating empty tracks. See ADR-0160.
+Exact gapless analysis and document inspection such as PDF/EPUB remain future work.
 
 Playback is an Application Layer workflow behind a typed, replaceable Playback
 Backend. `PlaybackController` owns runtime Queue, History, current Track, and
@@ -636,6 +1146,25 @@ surfaces and route media commands back through the controller. Artwork remains b
 RGB888 data until each native adapter converts and caches it. Linux publishes the
 same fail-open contract through MPRIS on the desktop session bus.
 
+The Player uses semantic iTunesDB chapter titles and millisecond positions for
+scrubber markers, chapter-title suffixes, and Previous/Next navigation. Marker
+tooltips show the title and exact timestamp, including milliseconds. Previous
+restarts the current chapter after more than ten seconds; within ten seconds it
+selects the previous chapter, or follows Track History at the start of the Track.
+Next moves through chapters before advancing to the next Track. Decoder completion
+always advances Tracks independently of its last reported position. Playback uses
+ordered, unique starts within the Track duration without changing retained metadata.
+Any Track with reachable chapters shows a book action that opens a compact Chapter
+index beneath the Player. Non-Audiobook Tracks retain the visualizer action beside
+it. Audiobooks show only the book action, including when they have no chapters.
+Selecting a chapter seeks to its start without
+changing the playing or paused state. The index highlights the current chapter and
+shows a read-only empty state when the Audiobook has no chapter metadata.
+Visible Chapter rows show their exact artwork image when available. During Host
+playback and seeking, the Player selects the latest reached ordinary Artwork
+Display Time, excluding the special retained sentinel. This preview policy does
+not claim to reproduce firmware refresh timing. See ADR-0204.
+
 The Library setting **Double click shortcut** applies immediately to Track tables,
 Album cards, and collection grids and lists and persists across restarts. **Add to
 queue** remains the default. **Play next** places the selection atop the Playback
@@ -643,6 +1172,33 @@ Queue. **Play now** starts the first selected Track and places the remainder ato
 the Queue. **Edit** opens the metadata editor for the selection. Selections retain
 visible order and Playlist occurrences; explicit queue buttons keep their own
 actions.
+
+Clicking the Player artwork for an audio Track opens Now Playing across the app's content area,
+temporarily hiding navigation, the Player bar, and the status bar. Its two columns
+show larger shadowed artwork with Title, Artist, Album, a scrubber and the existing
+Previous, Play/Pause and Next actions on the left, and the pending Playback Queue
+on the right. Opening and closing crossfade the entire content area over 320 ms.
+The background magnifies and heavily blurs the current artwork, boosts its color
+saturation, and preserves readable theme text. Its color fields flow slowly, with smooth
+crossfades when artwork changes. Motion stops while hidden or minimized and follows
+the Host's widget-animation preference. Timed artwork changes and missing covers follow
+the Player's existing artwork rules. The top-left close button or Escape restores
+the previous layout without interrupting playback or changing the Queue.
+
+For Movies, TV Shows, Music Videos and Video Podcast Episodes, clicking Player
+artwork opens a basic video player instead. Video retains its aspect ratio and
+shares the current Track's play/pause, seeking, volume and Previous/Next controls.
+Space toggles playback; Close or Escape restores the previous layout while playback
+continues. An open viewer follows transitions between audio and video Tracks, and
+clearing playback restores the shell. Errors appear inside the video player and
+Play retries through the existing transport. No additional package is required;
+see [ADR-0245](docs/adr/0245-present-video-through-the-existing-playback-backend.md).
+
+The video's Subtitles selector offers Off and the embedded subtitle streams,
+including `tx3g` timed text, using title/language labels when available. Choices
+last for the current Playback Entry and survive closing the viewer; a new video
+starts with subtitles off. A choice made while paused takes effect on resume.
+Viewing subtitles changes neither Sync choices nor the media on the iPod.
 
 The Player's Queue/History/Lyrics slideout displays read-only lyrics for the
 current Track. Known Library text appears immediately. When the Lyrics tab is
@@ -791,16 +1347,18 @@ them through narrow interfaces.
   directory.
 - Global settings remember the previously selected iPod by stable Volume Identity.
   This behavior has no separate visible preference.
-- Sync recovery records and retained originals stay on the iPod. They are
-  operational data and do not belong in global settings.
+- Library and Sync recovery retain originals and an authoritative Operation Journal
+  on the Host, with a journal mirror on the iPod (ADR-0167). They are operational
+  data and do not belong in global settings or depend on Backup Snapshots.
 - Backup Snapshots use the configured backup location, with a platform-appropriate
   application data location as the default.
 - Device-specific settings intended to travel with an iPod are associated with its
   stable Device Identity and stored in an application-owned Device Path on that iPod.
   iOpenPod coordinates their access through Storage. Podcast Subscriptions and
-  Listening History use separate version-2 JSON documents under
+  Listening History use separate version-3 and version-2 JSON documents under
   `iPod_Control/iOpenPod/Podcasts/`, retaining the existing `-v1.json` filenames and
-  backward reads of version 1; other settings retain their own formats.
+  backward reads of subscription versions 1 and 2 and History version 1; other
+  settings retain their own formats.
 
 ## Core device workflow
 
@@ -815,7 +1373,9 @@ them through narrow interfaces.
    previous selection when exactly one ready candidate has the remembered Volume
    Identity.
 7. On a write-safe Volume, iOpenPod analyzes, atomically repairs, and verifies stale
-   or missing identity metadata; read-only Volumes remain loadable with an issue.
+   or missing identity metadata; read-only Volumes with an existing Library remain
+   loadable with an issue. Before metadata repair, an absent Library can be
+   initialized through the selected-device workflow in ADR-0173.
 8. iOpenPod opens a read-only Filesystem Session through Storage.
 9. iOpenPod reads database bytes through Storage and gives them to iPodDB.
 10. iPodDB parses and retains lossless Database Documents in the iPod Library Source,
@@ -868,6 +1428,8 @@ device workflow; those operations retain their own Storage safety requirements.
 
 - `GLOSSARY.md` defines canonical terms.
 - `docs/source_architecture.md` describes the detailed target architecture.
+- `docs/how-media-scanning-works.md` explains first scans, cache reuse, recovery,
+  and the handoff into Sync Review.
 - `docs/ipoddb-editing.md` defines the sole typed parse/edit/write workflow.
 - `docs/adr/` records durable decisions.
 - `docs/agents/` configures agent-oriented engineering workflows.

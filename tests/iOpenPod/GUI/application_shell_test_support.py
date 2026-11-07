@@ -1,6 +1,6 @@
 """Shared composition helpers for application-shell GUI tests."""
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 from tests.iOpenPod.playback_test_support import FakePlaybackBackend
 
 from iOpenPod.app.artwork_controller import ArtworkController
@@ -37,9 +37,11 @@ from iOpenPod.app.synesthesia import (
     SynesthesiaController,
     WholeTrackMusicAnalyzer,
 )
+from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
-from iPodDB.library import Track
+from iOpenPod.GUI.widgets.sidebar import Sidebar
+from iPodDB.library import MediaKind, Track
 from storage import Storage
 from storage.testing import VirtualStoragePlatform
 
@@ -52,6 +54,13 @@ def _application() -> QApplication:
 
 
 APPLICATION = _application()
+
+
+def show_albums(window: QWidget) -> None:
+    """Select Albums explicitly in tests that construct a Library without a device."""
+    sidebar = window.findChild(Sidebar)
+    assert sidebar is not None
+    sidebar.pageRequested.emit(PageId.ALBUMS.value)
 
 
 def build_context(
@@ -68,9 +77,9 @@ def build_context(
     artist_model = CollectionListModel(track_model, CollectionKind.ARTIST)
     genre_model = CollectionListModel(track_model, CollectionKind.GENRE)
     tv_show_model = CollectionListModel(track_model, CollectionKind.TV_SHOW)
-    music_video_model = CollectionListModel(
+    music_video_model = AlbumListModel(
         track_model,
-        CollectionKind.MUSIC_VIDEO_ALBUM,
+        media_kind=MediaKind.MUSIC_VIDEO,
     )
     theme_manager = ThemeManager(APPLICATION, settings)
     i18n_manager = I18nManager(APPLICATION, settings)

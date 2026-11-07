@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
+from threading import Event
 from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal, Slot
 
 from iOpenPod.app.core.settings.definitions import (
+    ITUNES_107_ARTWORK,
     LAST_SELECTED_IPOD_VOLUME_ID,
     MANAGE_VOLUME_PRESENTATION,
 )
@@ -116,6 +118,7 @@ class DeviceController(QObject):
         coordinator.set_volume_presentation_enabled(
             settings.get(MANAGE_VOLUME_PRESENTATION)
         )
+        coordinator.set_itunes_107_artwork(settings.get(ITUNES_107_ARTWORK))
         settings.settingChanged.connect(self._setting_changed)
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
@@ -126,6 +129,7 @@ class DeviceController(QObject):
         self._read_only_operation_count = 0
         self._recovery_required = False
         self._closed = False
+        self._selection_cancelled = Event()
         self._next_token = 0
         self._active_token: int | None = None
         self._pending_automatic_selection: DeviceCandidateId | None = None
@@ -172,6 +176,8 @@ class DeviceController(QObject):
     def _setting_changed(self, key: str, value: object) -> None:
         if key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
             self._coordinator.set_volume_presentation_enabled(value)
+        elif key == ITUNES_107_ARTWORK.key and isinstance(value, bool):
+            self._coordinator.set_itunes_107_artwork(value)
 
     @property
     def discovery(self) -> DeviceDiscovery:
@@ -327,10 +333,13 @@ class DeviceController(QObject):
         ):
             return False
         identifier = active.candidate.id
+        self._selection_cancelled.clear()
         self._replace_active_ipod(None, force_model_reset=True)
         self._begin(
             DeviceOperation.SELECT,
-            lambda: self._coordinator.select_device(identifier),
+            lambda: self._coordinator.select_device(
+                identifier, cancelled=self._selection_cancelled
+            ),
         )
         return True
 
@@ -347,9 +356,12 @@ class DeviceController(QObject):
         self._pending_automatic_selection = None
         self._replace_active_ipod(None, force_model_reset=True)
         identifier = DeviceCandidateId(candidate_id)
+        self._selection_cancelled.clear()
         self._begin(
             DeviceOperation.SELECT,
-            lambda: self._coordinator.select_device(identifier),
+            lambda: self._coordinator.select_device(
+                identifier, cancelled=self._selection_cancelled
+            ),
         )
 
     @Slot(result=bool)
@@ -376,6 +388,7 @@ class DeviceController(QObject):
             return
         writes_were_allowed = self.device_writes_allowed
         self._closed = True
+        self._selection_cancelled.set()
         self._refresh_timer.stop()
         self._pending_automatic_selection = None
         if writes_were_allowed:

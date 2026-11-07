@@ -1,8 +1,9 @@
 """MHOD 52/36 album traversal, measured against captured iTunesDB indexes.
 
 Indices address Master Playlist occurrences. Albums are contiguous, ordered by
-their representative's album-artist/album sort values; members use disc/track
-numbers. Source order breaks ties. See docs/research/itunesdb-sort-36.md.
+their representative's album-artist/album sort values. Podcast groups use newest
+release first; other members use disc/track numbers. Source order breaks ties.
+See docs/research/itunesdb-sort-36.md.
 """
 
 import unicodedata
@@ -11,9 +12,12 @@ from dataclasses import dataclass, replace
 from itertools import pairwise
 from typing import Literal
 
+from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
     MhodLibraryIndexPayload,
     MhodLibraryIndexPrefix,
@@ -22,7 +26,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhyp import MhypHeader
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._projection import project_tracks
-from iPodDB.library.models import Track
+from iPodDB.library.models import MediaKind, Track
 from iPodDB.library.writing import IssueSeverity, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
@@ -102,6 +106,13 @@ class AlbumGroup:
     artist_override: bool
     album_override: bool
     compilation_without_album_artist: bool
+
+    @property
+    def is_podcast(self) -> bool:
+        return all(
+            t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+            for t in self.members
+        )
 
     @property
     def sort_values(self) -> tuple[str, str, bool, bool, bool]:
@@ -262,6 +273,11 @@ def _dependencies(
                 t.metadata.sort_album,
                 t.metadata.compilation,
                 t.show,
+                t.media_kind,
+                t.metadata.podcast,
+                t.metadata.release_date
+                if t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+                else 0,
                 _numbers(t),
             )
             for t in tracks
@@ -279,17 +295,32 @@ class PreparedAlbumIndex:
     used_default_order: bool = False
 
 
+def _unchanged_music_members(prior: AlbumGroup | None, current: AlbumGroup) -> bool:
+    """Podcast repair alone must not canonicalize unrelated retained music."""
+    return (
+        prior is not None
+        and not prior.is_podcast
+        and not current.is_podcast
+        and {t.track_id: _numbers(t) for t in prior.members}
+        == {t.track_id: _numbers(t) for t in current.members}
+    )
+
+
 def prepare_album_index(
     source: DatabaseDocument[MhbdHeader],
     candidate: DatabaseDocument[MhbdHeader],
     previous: tuple[Track, ...],
     desired: tuple[Track, ...],
     payload: MhodLibraryIndexPayload,
+    *,
+    normalize_podcasts: bool = False,
 ) -> PreparedAlbumIndex:
-    if _dependencies(source, previous) == _dependencies(candidate, desired):
+    unchanged = _dependencies(source, previous) == _dependencies(candidate, desired)
+    if unchanged and not normalize_podcasts:
         return PreparedAlbumIndex(payload)
     ordered_source = _source_order(payload, previous)
     old_groups = groups(source, ordered_source)
+    prior_groups = {g.identity: g for g in old_groups}
     old_order = _group_order(ordered_source)
     old_identities = set(old_order)
     new_groups = groups(candidate, desired)
@@ -306,10 +337,25 @@ def prepare_album_index(
     positions = {t.track_id: i for i, t in enumerate(desired)}
     indices: list[int] = []
     for group in order:
+        podcast = group.is_podcast
+        if normalize_podcasts and _unchanged_music_members(
+            prior_groups.get(group.identity), group
+        ):
+            indices.extend(
+                positions[t.track_id]
+                for t in sorted(group.members, key=lambda t: ranks[t.track_id])
+            )
+            continue
+        # MHYP's Playlist display sort does not select this Master index's rule.
+        # Podcast captures traverse newest first; missing dates follow dated ones.
         members = sorted(
             group.members,
             key=lambda t: (
-                *_numbers(t),
+                *(
+                    (int(t.metadata.release_date == 0), -t.metadata.release_date)
+                    if podcast
+                    else _numbers(t)
+                ),
                 ranks.get(t.track_id, len(ranks) + positions[t.track_id]),
             ),
         )
@@ -323,7 +369,41 @@ def reconcile_album_indexes(
     source: DatabaseDocument[MhbdHeader],
     candidate: DatabaseDocument[MhbdHeader],
     issues: list[WriteIssue],
+    *,
+    normalize_podcasts: bool = False,
 ) -> DatabaseDocument[MhbdHeader]:
+    if normalize_podcasts:
+        # The explicit Sync policy can create an absent traversal index. Ordinary
+        # edits still require retained evidence, as before.
+        tracks = project_tracks(candidate)
+        for kind, selection in playlist_rows(candidate):
+            master = selection.chunk
+            if not is_master(kind, master.header) or any(
+                is_album_index(c) for c in master.children
+            ):
+                continue
+            ordered = master_tracks(master, tracks)
+            if not any(
+                t.media_kind is MediaKind.PODCAST or t.metadata.podcast for t in ordered
+            ):
+                continue
+            empty = MhodLibraryIndexPayload((), b"")
+            prepared = prepare_album_index(source, candidate, (), ordered, empty)
+            index = new_itunes_chunk(
+                MHOD,
+                MhodHeader(mhod_type=52),
+                prefix=MhodLibraryIndexPrefix(sort_type=SORT_TYPE),
+                payload=prepared.payload,
+            )
+            children = list(master.children)
+            position = next(
+                (i for i, c in enumerate(children) if isinstance(c.header, MhipHeader)),
+                len(children),
+            )
+            children.insert(position, index)
+            candidate = candidate.replace_chunk(
+                selection, replace(master, children=tuple(children))
+            )
     rows = [
         (k, s)
         for k, s in playlist_rows(candidate)
@@ -347,6 +427,8 @@ def reconcile_album_indexes(
                 (2, master.header.playlist_id)
             )
         if baseline is None:
+            if normalize_podcasts:
+                continue  # A new Master received its traversal above.
             issues.append(
                 WriteIssue(
                     "library.album_index", "Sort 36 has no retained source index."
@@ -356,6 +438,8 @@ def reconcile_album_indexes(
         sources = [c for c in baseline.children if is_album_index(c)]
         targets = [c for c in master.children if is_album_index(c)]
         try:
+            if not sources and normalize_podcasts and len(targets) == 1:
+                continue  # The missing-index path above has already authored it.
             if len(sources) != 1 or len(targets) != 1:
                 raise ValueError(
                     "Sort 36 requires one unambiguous index per Master Playlist."
@@ -368,6 +452,7 @@ def reconcile_album_indexes(
                 master_tracks(baseline, before),
                 master_tracks(master, desired),
                 payload,
+                normalize_podcasts=normalize_podcasts,
             )
             edits[id(targets[0])] = replace(targets[0], payload=updated.payload)
             if updated.used_default_order:
@@ -402,11 +487,14 @@ def verify_album_index(
     desired: tuple[Track, ...],
     original: MhodLibraryIndexPayload,
     output: MhodLibraryIndexPayload,
+    *,
+    normalize_podcasts: bool = False,
 ) -> str | None:
     """Check permutation, group traversal and member/tie order without the writer."""
     if original.trailing_data != output.trailing_data:
         return "Sort 36's retained trailing data was modified."
-    if _dependencies(source, previous) == _dependencies(candidate, desired):
+    unchanged = _dependencies(source, previous) == _dependencies(candidate, desired)
+    if unchanged and not normalize_podcasts:
         return (
             None if original == output else "An unchanged sort-36 index was modified."
         )
@@ -419,6 +507,7 @@ def verify_album_index(
             groups(source, old_tracks),
             groups(candidate, new_tracks),
         )
+        prior_groups = {g.identity: g for g in old_groups}
         old_order, new_order = _group_order(old_tracks), _group_order(new_tracks)
         new_identities = set(new_order)
         if _group_keys_changed(old_groups, new_groups):
@@ -442,10 +531,28 @@ def verify_album_index(
         old_ranks = {t.track_id: i for i, t in enumerate(old_tracks)}
         new_positions = {t.track_id: i for i, t in enumerate(desired)}
         for group in new_groups:
+            podcast = group.is_podcast
             for a, b in pairwise(group.members):
-                if _numbers(a) > _numbers(b):
-                    return "Sort 36's album members have the wrong disc/track order."
-                if _numbers(a) == _numbers(b) and old_ranks.get(
+                if podcast:
+                    left, right = a.metadata.release_date, b.metadata.release_date
+                    if (left == 0 and right != 0) or (
+                        left != 0 and right != 0 and left < right
+                    ):
+                        return "Sort 36's Podcast members are not newest first."
+                    tied = left == right
+                else:
+                    if normalize_podcasts and _unchanged_music_members(
+                        prior_groups.get(group.identity), group
+                    ):
+                        if old_ranks[a.track_id] > old_ranks[b.track_id]:
+                            return "Podcast normalization changed retained music traversal."
+                        continue
+                    if _numbers(a) > _numbers(b):
+                        return (
+                            "Sort 36's album members have the wrong disc/track order."
+                        )
+                    tied = _numbers(a) == _numbers(b)
+                if tied and old_ranks.get(
                     a.track_id, len(old_ranks) + new_positions[a.track_id]
                 ) > old_ranks.get(
                     b.track_id, len(old_ranks) + new_positions[b.track_id]

@@ -16,13 +16,15 @@ from iOpenPod.app.models.library_filter_models import (
 from iOpenPod.app.models.selection_grouping import SelectionGroupingProxyModel
 from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
 from iOpenPod.GUI.delegates.selection_group_delegate import SelectionGroupDelegate
+from iOpenPod.GUI.navigation import PageId, page_label
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
+from iOpenPod.GUI.widgets.inline_album_expansion import InlineAlbumExpansion
+from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 from iOpenPod.GUI.widgets.library_content import LibraryContent
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar, SortOption
 from iOpenPod.GUI.widgets.track_table import TrackTable
-from iPodDB.library import MediaKind
 
 
 class LibraryPage(QWidget):
@@ -30,6 +32,9 @@ class LibraryPage(QWidget):
 
     currentTrackChanged = Signal(object)
     trackActivated = Signal(object)
+    playRequested = Signal(object)
+    playNextRequested = Signal(object)
+    queueRequested = Signal(object)
 
     def __init__(
         self,
@@ -42,8 +47,12 @@ class LibraryPage(QWidget):
         *,
         selection_mode: bool = False,
         follow_ipod_view_mode: bool = True,
+        page_id: PageId = PageId.ALBUMS,
+        table_id: str = "albums-tracks",
     ) -> None:
         super().__init__(parent)
+        self._page_id = page_id
+        self.setObjectName(f"{page_id.value}Page")
         self._selected_album: AlbumSummary | None = None
         self._album_query = ""
         self._selection_mode = selection_mode
@@ -55,16 +64,21 @@ class LibraryPage(QWidget):
             else None
         )
         self._track_proxy = TrackFilterProxyModel(tracks, self)
-        self._track_proxy.set_media_kinds((MediaKind.MUSIC,))
+        self._track_proxy.set_media_kinds((albums.media_kind,))
 
         self._toolbar = LibraryToolbar(self)
+        if page_id is not PageId.ALBUMS:
+            self._toolbar.set_namespace(page_id.value)
         self._configure_toolbar()
         self._grid = AlbumGridView(
             self._album_proxy,
             theme_manager,
             artwork_provider,
             self,
+            page_id=page_id,
         )
+        if page_id is not PageId.ALBUMS:
+            self._grid.setObjectName(f"{page_id.value}AlbumGrid")
         if self._album_grouping is not None:
             album_delegate = self._grid.itemDelegate()
             self._grid.setModel(self._album_grouping)
@@ -76,10 +90,26 @@ class LibraryPage(QWidget):
             settings,
             theme_manager,
             artwork_provider,
-            "albums-tracks",
+            table_id,
             self,
             default_sort_column=TrackColumn.ALBUM,
         )
+        self._inline_panel: InlineAlbumPanel | None = None
+        self._inline_expansion: InlineAlbumExpansion | None = None
+        if not selection_mode and follow_ipod_view_mode:
+            self._inline_panel = InlineAlbumPanel(
+                self._track_proxy, theme_manager, artwork_provider, self
+            )
+            self._inline_expansion = InlineAlbumExpansion(
+                self._grid, self._inline_panel
+            )
+            self._inline_panel.currentTrackChanged.connect(
+                self.currentTrackChanged.emit
+            )
+            self._inline_panel.trackActivated.connect(self.trackActivated.emit)
+            self._inline_panel.playRequested.connect(self.playRequested.emit)
+            self._inline_panel.playNextRequested.connect(self.playNextRequested.emit)
+            self._inline_panel.queueRequested.connect(self.queueRequested.emit)
 
         grid_panel = QFrame(self)
         grid_panel.setObjectName("albumGridPanel")
@@ -103,12 +133,21 @@ class LibraryPage(QWidget):
             self,
             selection_mode=selection_mode,
             follow_ipod_view_mode=follow_ipod_view_mode,
-            splitter_setting=LIBRARY_SPLITTER_STATE,
+            supports_inline_albums=True,
+            splitter_name=(
+                "librarySplitter"
+                if page_id is PageId.ALBUMS
+                else f"{page_id.value}LibrarySplitter"
+            ),
+            splitter_setting=LIBRARY_SPLITTER_STATE
+            if page_id is PageId.ALBUMS
+            else None,
         )
         layout.addWidget(self._content, 1)
         self._content.backRequested.connect(self._show_browser)
+        self._content.viewModeChanged.connect(self._view_mode_changed)
         self._grid.clicked.connect(self._open_album)
-        self._grid.activated.connect(self._open_album)
+        self._grid.activated.connect(self._activate_album)
         self._grid.selectionModel().currentChanged.connect(self._browser_album_selected)
 
         self._toolbar.queryChanged.connect(self._set_browser_query)
@@ -121,6 +160,7 @@ class LibraryPage(QWidget):
 
         self._refresh_track_context()
         self._toolbar.set_selection_grouping(selection_mode)
+        self._view_mode_changed()
 
     def show_all_tracks(self) -> None:
         self._show_browser()
@@ -136,6 +176,8 @@ class LibraryPage(QWidget):
         self._toolbar.retranslate_ui()
         self._configure_toolbar()
         self._content.retranslate_ui()
+        if self._inline_panel is not None:
+            self._inline_panel.retranslate_ui()
         self._refresh_track_context()
 
     def changeEvent(self, event: QEvent) -> None:
@@ -146,7 +188,7 @@ class LibraryPage(QWidget):
     def _browser_album_selected(
         self, current: QModelIndex, previous: QModelIndex
     ) -> None:
-        if not self._content.whole_page_table:
+        if not self._content.whole_page_table and not self._content.inline_albums:
             self._album_selected(current, previous)
 
     def _album_selected(
@@ -167,7 +209,10 @@ class LibraryPage(QWidget):
         self._refresh_track_context()
 
     def _open_album(self, index: QModelIndex) -> None:
-        if not self._content.whole_page_table:
+        self._activate_album(index, toggle=True)
+
+    def _activate_album(self, index: QModelIndex, *, toggle: bool = False) -> None:
+        if not self._content.whole_page_table and not self._content.inline_albums:
             return
         if QApplication.keyboardModifiers() & (
             Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
@@ -176,13 +221,29 @@ class LibraryPage(QWidget):
         summary = index.data(AlbumRole.SUMMARY)
         if not isinstance(summary, AlbumSummary):
             return
+        if self._content.inline_albums:
+            assert self._inline_expansion is not None
+            assert self._inline_panel is not None
+            if toggle and self._inline_expansion.expanded_index == index:
+                self._inline_expansion.close()
+                return
+            self._album_selected(index, QModelIndex())
+            self._inline_panel.set_context(summary)
+            self._inline_expansion.open(index)
+            return
         self._album_selected(index, QModelIndex())
         self._content.open_detail(summary)
 
     def _show_browser(self) -> None:
+        if self._inline_expansion is not None:
+            self._inline_expansion.reset()
         self._content.show_browser()
         if self._content.whole_page_table:
             self._grid.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _view_mode_changed(self) -> None:
+        if self._inline_expansion is not None:
+            self._inline_expansion.set_enabled(self._content.inline_albums)
 
     def _set_browser_query(self, query: str) -> None:
         self._album_query = query
@@ -214,8 +275,14 @@ class LibraryPage(QWidget):
 
     def _configure_toolbar(self) -> None:
         self._toolbar.configure(
-            grid_title=self.tr("Albums"),
-            grid_search_label=self.tr("Search Albums"),
+            grid_title=self.tr("Albums")
+            if self._page_id is PageId.ALBUMS
+            else page_label(self._page_id),
+            grid_search_label=(
+                self.tr("Search Albums")
+                if self._page_id is PageId.ALBUMS
+                else self.tr("Search %1").replace("%1", page_label(self._page_id))
+            ),
             supports_list=False,
             supports_selection_grouping=self._selection_mode,
             sort_accessible_name=self.tr("Sort albums"),

@@ -28,9 +28,21 @@ _U32 = 0xFFFFFFFF
 
 def is_playback_sidecar(name: str) -> bool:
     name = name.casefold()
-    return not name.endswith((".bak", ".backup")) and name.startswith(
-        ("play counts", "playcounts", "otgplaylist", "on-the-go", "itunesstats")
+    # Saved Genius Playlists are captured for conservative preservation, without
+    # importing or consuming them. Current application publication retains their
+    # bytes for unchanged/append-only Track order and rejects other order changes.
+    return not name.endswith((".bak", ".backup")) and (
+        name.startswith(
+            ("play counts", "playcounts", "otgplaylist", "on-the-go", "itunesstats")
+        )
+        or genius_playlist_number(name) is not None
     )
+
+
+def genius_playlist_number(name: str) -> int | None:
+    """Recognize an active, numbered saved Playlist, excluding inactive backups."""
+    match = re.fullmatch(r"geniusplaylist_([1-9][0-9]*)\.plist", name.casefold())
+    return int(match[1]) if match is not None else None
 
 
 def otg_number(name: str) -> int | None:
@@ -83,6 +95,12 @@ def _rating(value: int) -> int | None:
 
 @log_unknown_data("Play Counts")
 def parse_play_counts(data: bytes) -> PlaybackDocument:
+    """Decode positional rows without interpreting or repairing date words.
+
+    All four latest Classics have qualified playback-date read/write paths.
+    A present zero and an absent older-layout skip word remain distinguishable;
+    the Library layer owns the exact Finder sentinel and timezone interpretation.
+    """
     table = parse_positional_sidecar(data)
     if data[:4] not in (b"mhdp", b"pdhm"):
         raise ValueError("Play Counts requires an mhdp header.")
@@ -99,9 +117,11 @@ def parse_play_counts(data: bytes) -> PlaybackDocument:
                 bookmark_time_ms=value(8),
                 rating=_rating(value(12)) if len(row) >= 16 else None,
                 skip_count=value(20) if len(row) >= 28 else 0,
-                last_skipped=value(24) if len(row) >= 28 else 0,
+                last_skipped=value(24) if len(row) >= 28 else None,
+                played_marker=row[17] if len(row) >= 18 else None,
                 unknown=(row[12:16] if len(row) < 16 else b"")
-                + row[16:20]
+                + row[16:17]
+                + row[18:20]
                 + (row[28:] if len(row) >= 28 else row[20:]),
             )
         )
@@ -148,7 +168,7 @@ def _stats(data: bytes, word: int) -> PlaybackDocument:
                 play_count=value(4 if word == 3 else 2),
                 bookmark_time_ms=value(1),
                 last_played=value(3) if word == 4 else 0,
-                last_skipped=value(5) if word == 4 else 0,
+                last_skipped=value(5) if word == 4 else None,
                 skipped=value(5 if word == 3 else 4),
                 date_kind=PlaybackDateKind.UNIX,
                 unknown=(row[6:12] + row[18:]) if word == 3 else row[24:],
@@ -186,6 +206,12 @@ def parse_itunes_stats(data: bytes) -> PlaybackDocument:
 
 
 def parse_play_counts_plist(data: bytes) -> PlaybackDocument:
+    """Read integer Mac-date keys, not plist UTC date objects.
+
+    Supporting this variant is not proof that all four latest Classics emit it.
+    Bad optional dates become bounded/missing values; identities, counters and
+    framing still validate independently, and the original document is retained.
+    """
     _bounded(data)
     if b"<!ENTITY" in data:
         raise ValueError("Entity declarations are not supported in PlayCounts.plist.")
@@ -222,15 +248,22 @@ def parse_play_counts_plist(data: bytes) -> PlaybackDocument:
             raise ValueError("Missing or duplicate PlayCounts.plist persistentID.")
         seen.add(identity)
         rating = integer("userRating")
+
+        def date(key: str, item: dict[object, object] = item) -> int:
+            value = item.get(key, 0)
+            # Date quality never invalidates otherwise usable playback evidence.
+            # The lossless document and archived plist retain the original value.
+            return min(_U32, max(0, value)) if type(value) is int else 0
+
         entries.append(
             PlaybackEntry(
                 persistent_id=identity,
                 play_count=integer("playCount"),
-                last_played=integer("playMacOSDate"),
+                last_played=date("playMacOSDate"),
                 bookmark_time_ms=integer("bookmarkTimeInMS"),
                 rating=_rating(rating) if rating else None,
                 skip_count=integer("skipCount"),
-                last_skipped=integer("skipMacOSDate"),
+                last_skipped=date("skipMacOSDate") if "skipMacOSDate" in item else None,
             )
         )
     return PlaybackDocument(bytes(data), tuple(entries), "PlayCounts.plist")

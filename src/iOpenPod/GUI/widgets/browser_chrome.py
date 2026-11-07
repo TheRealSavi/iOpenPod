@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QListView,
     QVBoxLayout,
     QWidget,
 )
@@ -71,7 +70,7 @@ class SourceListPanel(QFrame):
         self.setProperty("sourceListPanel", True)
         self.setMinimumWidth(minimum_width)
         self.resize(width, self.height())
-        self._view: QListView | None = None
+        self._view: QAbstractItemView | None = None
 
         self._title = QLabel(self)
         self._title.setObjectName("sourceListTitle")
@@ -80,12 +79,12 @@ class SourceListPanel(QFrame):
         self._count.setObjectName("sourceListCount")
         self._count.setProperty("sourceListCount", True)
 
-        heading = QHBoxLayout()
-        heading.setContentsMargins(0, 0, 0, 0)
-        heading.setSpacing(LAYOUT.space_xs)
-        heading.addWidget(self._title)
-        heading.addWidget(self._count)
-        heading.addStretch(1)
+        self._heading = QHBoxLayout()
+        self._heading.setContentsMargins(0, 0, 0, 0)
+        self._heading.setSpacing(LAYOUT.space_xs)
+        self._heading.addWidget(self._title)
+        self._heading.addWidget(self._count)
+        self._heading.addStretch(1)
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(
@@ -95,7 +94,7 @@ class SourceListPanel(QFrame):
             LAYOUT.space_md,
         )
         self._layout.setSpacing(LAYOUT.space_xs)
-        self._layout.addLayout(heading)
+        self._layout.addLayout(self._heading)
 
     @property
     def title_label(self) -> QLabel:
@@ -121,13 +120,18 @@ class SourceListPanel(QFrame):
 
         self._count.setText(str(max(0, count)))
 
+    def add_action(self, action: QWidget) -> None:
+        """Append a source-list action at the right edge of the heading."""
+
+        self._heading.addWidget(action)
+
     def set_view(
         self,
-        view: QListView,
+        view: QAbstractItemView,
         *,
         standard_items: bool = True,
     ) -> None:
-        """Install one list and apply the common source-navigation behavior."""
+        """Install one source view and apply common navigation behavior."""
 
         if self._view is not None:
             raise RuntimeError("A SourceListPanel can own only one list view.")

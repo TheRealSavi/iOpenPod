@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-17
 - Extends: ADR-0021 and ADR-0147
+- Amended by: [ADR-0194](0194-allow-retained-album-indexes-without-jump-tables.md)
+  for retained indexes without jump tables
 
 Issue [#255](https://github.com/TheRealSavi/iOpenPod/issues/255#issuecomment-6243799747)
 reports repeated Albums on a Classic. Sort-4 indexes compared normalized Album
@@ -28,11 +30,12 @@ permutation, Album contiguity, ordering, and jump ranges. Other sort types,
 including the separate sort-36 collation policy, retain their existing behavior.
 
 An explicit `rebuild_album_indexes` Library Draft intent repairs existing sort-4
-index/jump-table pairs without metadata edits. It requires unambiguous retained
-pairs and, when membership is unchanged, complete Master occurrences. It preserves
-unrelated native records and Unknown Data. Ordinary loading, serialization, and
-default no-op drafts remain byte-exact. Repair alone does not invent absent index
-pairs; structural edits retain their existing index-creation policy.
+indexes and their jump tables without metadata edits. As amended by ADR-0194, it
+requires one retained index with at most one jump table and, when membership is
+unchanged, complete Master occurrences. It preserves unrelated native records and
+Unknown Data. Ordinary loading, serialization, and
+default no-op drafts remain byte-exact. Repair alone does not invent absent indexes
+or jump tables; structural edits retain their existing index-creation policy.
 
 A user-directed Sync on a non-SQLite iPod with Tracks requests this repair. The
 review screen offers **Refresh Library** with no selected changes, using the same

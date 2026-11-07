@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from whenever import Instant
 
 from iOpenPod.app.display_text import source_text
 from iOpenPod.app.podcasts.catalog import (
@@ -31,16 +32,20 @@ from iOpenPod.app.podcasts.models import (
     PodcastSyncSettings,
     SubscriptionSource,
 )
+from iOpenPod.app.podcasts.settings import read_default_podcast_sync_settings
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastStateRevision
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from iOpenPod.app.core.settings.service import SettingsService
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iPodDB.library import Track
+
+_NAVIGATION_REFRESH_INTERVAL_SECONDS = 15 * 60
 
 
 class PodcastOperation(StrEnum):
@@ -118,12 +123,14 @@ class PodcastController(QObject):
         *,
         feeds: PodcastFeedClient | None = None,
         directory: PodcastDirectoryClient | None = None,
+        settings: SettingsService | None = None,
     ) -> None:
         super().__init__(parent)
         self._coordinator = coordinator
         self._devices = devices
         self._feeds = feeds or FeedparserPodcastClient()
         self._directory = directory or ApplePodcastDirectoryClient()
+        self._settings = settings
         self._pool = QThreadPool(self)
         self._pool.setMaxThreadCount(2)
         self._source: ActiveIPod | None = None
@@ -294,12 +301,17 @@ class PodcastController(QObject):
             )
             return
         loaded = self._loaded
+        defaults = (
+            read_default_podcast_sync_settings(self._settings)
+            if self._settings is not None
+            else PodcastSyncSettings()
+        )
 
         def action() -> _StateResult:
             fetched = self._feeds.fetch(normalized)
             snapshot = merge_fetched_subscription(
                 loaded.snapshot,
-                fetched,
+                replace(fetched, sync_settings=defaults),
                 source=SubscriptionSource.USER,
             )
             return _StateResult(
@@ -311,7 +323,10 @@ class PodcastController(QObject):
 
         self._begin_device_write(PodcastOperation.SUBSCRIBE, action)
 
-    def refresh(self, subscription_id: str | None = None) -> None:
+    def refresh(
+        self, subscription_id: str | None = None, *, only_if_stale: bool = False
+    ) -> None:
+        """Refresh feeds, optionally reusing each show's last 15 minutes of metadata."""
         source = self._require_editable_source()
         if source is None:
             return
@@ -325,6 +340,14 @@ class PodcastController(QObject):
             if subscription_id is not None
             else loaded.snapshot.subscriptions
         )
+        if only_if_stale:
+            cutoff = Instant.now().timestamp() - _NAVIGATION_REFRESH_INTERVAL_SECONDS
+            selected = tuple(
+                item
+                for item in selected
+                if item.feed_url
+                and (item.last_refreshed == 0 or item.last_refreshed <= cutoff)
+            )
         if not selected:
             return
 

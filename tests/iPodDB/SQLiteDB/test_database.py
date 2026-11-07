@@ -633,7 +633,7 @@ def test_album_grouping_computes_each_track_key_once(
     original = database_module._album_key  # pyright: ignore[reportPrivateUsage]
     calls = 0
 
-    def counted(track: Track) -> tuple[str, str, str]:
+    def counted(track: Track) -> tuple[str, ...]:
         nonlocal calls
         calls += 1
         return original(track)

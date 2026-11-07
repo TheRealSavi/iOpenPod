@@ -5,6 +5,7 @@ import os
 import sys
 from functools import cache
 from pathlib import Path
+from typing import cast
 
 
 def configure_frozen_runtime() -> None:
@@ -38,7 +39,9 @@ def _load_windows_playback_libraries(bundle_root: Path) -> tuple[ctypes.CDLL, ..
     # unloadable in the Store app. Preload only our bundled DLLs, by absolute path,
     # before the first QMediaPlayer chooses a backend. ctypes' default Windows
     # loading flags also search the DLL's own directory for its dependencies.
-    return tuple(ctypes.WinDLL(str(library)) for library in libraries)
+    # WinDLL is only exported on Windows; its CDLL interface is portable typing.
+    win_dll = cast("type[ctypes.CDLL]", vars(ctypes)["WinDLL"])
+    return tuple(win_dll(str(library)) for library in libraries)
 
 
 def configure_bundled_tools() -> None:

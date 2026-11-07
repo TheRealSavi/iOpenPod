@@ -187,3 +187,23 @@ playback. The historical-local/UTC distinction is strong for the compared Track
 fields and remains an explicit interpretation for other generations. These limits
 should remain visible in diagnostics and tests rather than being hidden behind
 Host-local fallback or automatic timezone migration.
+
+## Classic firmware follow-up, 2026-10-26
+
+The [Classic 2.0.1 investigation](classic201-clock-semantics-2026-10-26.md)
+adds instruction evidence without changing the capture findings above. Playback
+events encode the firmware's adjusted calendar, which already includes a software
+bias. That bias can hold manual corrections and does not establish raw hardware
+UTC/local provenance. It must not be added to database dates a second time.
+
+Classic firmware uses its own DST table and saved metadata. Mapping a captured
+city to historical IANA rules remains Host policy, not demonstrated firmware
+parity. Nor can that city identify the zone used before travel. Smart relative
+durations also retain their Host evaluation policy; the native endpoint arithmetic
+uses calendar-day bounds. Unsupported upper displacements are now preserved.
+
+Binary Play Counts now replaces present dates after clock setbacks, subject to
+the retained Finder sentinel and representability checks. See
+[ADR-0196](../adr/0196-adopt-firmware-clock-and-date-evidence.md) for the policy
+change and whole-sidecar failure behavior. Physical clock-transition measurements
+and complete callback effects remain open.

@@ -1,6 +1,6 @@
 """Application dependency composition."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PySide6.QtWidgets import QApplication
 
@@ -15,6 +15,8 @@ from iOpenPod.app.core.settings.stores import (
 )
 from iOpenPod.app.core.status import ApplicationStatus
 from iOpenPod.app.device_controller import DeviceController
+from iOpenPod.app.games_controller import GamesController
+from iOpenPod.app.genius_analysis import FFmpegGeniusPCMDecoder, GeniusAnalysisService
 from iOpenPod.app.host_media_controller import HostMediaScanController
 from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaScanner
@@ -23,25 +25,34 @@ from iOpenPod.app.library_sync_helper import IPodMediaScanner
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.library_write_controller import LibraryWriteController
 from iOpenPod.app.lyrics_controller import LyricsController
+from iOpenPod.app.media_stream_preferences import MediaStreamPreferences
 from iOpenPod.app.models.album_list_model import AlbumListModel
 from iOpenPod.app.models.collection_list_model import (
     CollectionKind,
     CollectionListModel,
 )
 from iOpenPod.app.models.track_table_model import TrackTableModel
+from iOpenPod.app.phase_analysis import PhaseAnalysisService
 from iOpenPod.app.photo_controller import PhotoController
 from iOpenPod.app.playback.qt_backend import QtPlaybackBackend
+from iOpenPod.app.playback.video_output import PlaybackVideoOutput
 from iOpenPod.app.playback_controller import PlaybackController
 from iOpenPod.app.podcasts.artwork_controller import PodcastArtworkController
 from iOpenPod.app.podcasts.controller import PodcastController
-from iOpenPod.app.podcasts.feed_client import HttpPodcastArtworkLoader
+from iOpenPod.app.podcasts.feed_client import (
+    FeedparserPodcastClient,
+    HttpPodcastArtworkLoader,
+)
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnalyzer
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
+from iPodDB.library import MediaKind
 from storage import Storage
+from storage.host_files import application_config_file
 from storage.media_processing import MediaToolFinder
+from storage.platform.native import native_platform_adapter
 
 
 @dataclass(frozen=True, slots=True, weakref_slot=True)
@@ -68,21 +79,48 @@ class AppContext:
     artist_model: CollectionListModel
     genre_model: CollectionListModel
     tv_show_model: CollectionListModel
-    music_video_model: CollectionListModel
+    music_video_model: AlbumListModel
     settings: SettingsService
     theme_manager: ThemeManager
     i18n_manager: I18nManager
     find_media_tool: MediaToolFinder
+    stream_preferences: MediaStreamPreferences = field(
+        default_factory=MediaStreamPreferences
+    )
+    playback_video_output: PlaybackVideoOutput | None = None
+    games_controller: GamesController = field(init=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "games_controller",
+            GamesController(
+                self.device_coordinator,
+                self.device_controller,
+                self.device_controller,
+                status=self.status,
+            ),
+        )
+        self.library_workspace.changed.connect(self._workspace_artwork_changed)
         self.library_workspace.tracksChanged.connect(self._workspace_tracks_changed)
+        self._workspace_artwork_changed()
+
+    def _workspace_artwork_changed(self) -> None:
+        self.artwork_controller.set_draft_assets(self.library_workspace.artwork_assets)
 
     def _workspace_tracks_changed(self, _tracks: object) -> None:
+        self._workspace_artwork_changed()
         self.track_model.replace_tracks(self.library_workspace.tracks)
 
     @classmethod
     def create(cls, application: QApplication) -> "AppContext":
-        storage = Storage()
+        platform = native_platform_adapter()
+        storage = Storage(
+            platform,
+            transaction_recovery_directory=application_config_file(
+                "iOpenPod", "TransactionRecovery", platform_name=platform.name
+            ),
+        )
         settings = SettingsService(
             create_global_settings_store(storage),
             DeviceSettingsStore(),
@@ -108,13 +146,20 @@ class AppContext:
             CollectionKind.TV_SHOW,
             application,
         )
-        music_video_model = CollectionListModel(
+        music_video_model = AlbumListModel(
             track_model,
-            CollectionKind.MUSIC_VIDEO_ALBUM,
             application,
+            media_kind=MediaKind.MUSIC_VIDEO,
         )
         device_coordinator = DeviceCoordinator(
             storage,
+            phase_analysis=PhaseAnalysisService(find_tool=media_tools.find),
+            genius_analysis=GeniusAnalysisService(
+                cache_file=storage.host_cache_file(
+                    "iOpenPod", "genius-acoustic-v1.json"
+                ),
+                decoder=FFmpegGeniusPCMDecoder(find_tool=media_tools.find),
+            ),
             ipod_media_scanner=IPodMediaScanner(
                 fingerprinter=FpcalcFingerprinter(find_tool=media_tools.find),
                 analysis_cache_file=lambda identity: storage.host_cache_file(
@@ -173,10 +218,12 @@ class AppContext:
             device_coordinator,
             device_controller,
             application,
+            settings=settings,
         )
         podcast_artwork_controller = PodcastArtworkController(
             HttpPodcastArtworkLoader(),
             application,
+            feed_client=FeedparserPodcastClient(),
         )
         status = ApplicationStatus(application)
         library_write_controller = LibraryWriteController(
@@ -209,6 +256,9 @@ class AppContext:
         )
 
         return cls(
+            stream_preferences=MediaStreamPreferences(
+                storage.host_config_file("iOpenPod", "media-stream-selections.json")
+            ),
             device_coordinator=device_coordinator,
             device_controller=device_controller,
             artwork_controller=artwork_controller,
@@ -217,6 +267,7 @@ class AppContext:
             host_media_controller=host_media_controller,
             ipod_media_controller=ipod_media_controller,
             playback_controller=playback_controller,
+            playback_video_output=playback_backend,
             lyrics_controller=lyrics_controller,
             synesthesia_controller=synesthesia_controller,
             podcast_controller=podcast_controller,
@@ -243,6 +294,7 @@ class AppContext:
         self.lyrics_controller.shutdown()
         self.playback_controller.shutdown()
         self.backup_controller.shutdown()
+        self.games_controller.shutdown()
         self.host_media_controller.shutdown()
         self.ipod_media_controller.shutdown()
         self.podcast_controller.shutdown()

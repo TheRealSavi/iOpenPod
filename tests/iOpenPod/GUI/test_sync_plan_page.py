@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTableView,
     QToolButton,
     QTreeView,
+    QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
@@ -27,11 +28,13 @@ from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
     HostMediaFileKind,
     HostMediaLibrary,
+    HostMediaScanIssue,
     HostMediaSource,
 )
 from iOpenPod.app.library_sync_helper import (
     IPodMediaCacheStats,
     IPodMediaLibrary,
+    IPodMediaScanIssue,
     IPodTrackFingerprint,
     SyncDetails,
 )
@@ -448,7 +451,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
                 acoustic_fingerprint="4,5,6",
             ),
         ),
-        (),
+        (HostMediaScanIssue(host_path, "Optional Host artwork unavailable"),),
         HostMediaCacheStats(inspected=2),
     )
     ipod_snapshot = LibrarySnapshot(
@@ -490,6 +493,10 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
     )
     context = build_context()
     window = MainWindow(context, auto_discover=False)
+    ipod = replace(
+        ipod,
+        issues=(IPodMediaScanIssue("Sync helper", "Helper unavailable; rescanned"),),
+    )
     profile = next(
         p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == "MB565"
     )
@@ -549,7 +556,16 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert sync is not None
         sync.setEnabled(True)
         sync.click()
+        workspace = window.findChild(SyncWorkspace, "syncWorkspace")
+        assert workspace is not None
+        notice = workspace.findChild(QWidget, "syncScanImportNotice")
+        notice_timer = workspace.findChild(QTimer, "syncScanImportNoticeTimer")
+        assert notice is not None and notice_timer is not None
+        assert notice_timer.isActive() and notice.isHidden()
+        notice_timer.timeout.emit()
+        assert not notice.isHidden()
         context.host_media_controller.finished.emit(host)
+        assert not notice_timer.isActive() and notice.isHidden()
         context.ipod_media_controller.finished.emit(ipod)
         APPLICATION.processEvents()
 
@@ -557,8 +573,36 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert workspace is not None
         assert workspace.stage is SyncStage.SELECT
         assert window.windowTitle() == "Sync with Host — iOpenPod"
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
         assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
         assert workspace.selection.track_check_state(2) is Qt.CheckState.Unchecked
+        toggle = workspace.findChild(QPushButton, "toggleAllSyncMedia")
+        assert toggle is not None
+        revert = workspace.findChild(QPushButton, "revertSyncSelections")
+        assert revert is not None and not revert.isEnabled()
+        toggle.click()
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 2"
+        assert revert.isEnabled()
+        revert.click()
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
+        assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
+        assert workspace.selection.track_check_state(2) is Qt.CheckState.Unchecked
+        assert not revert.isEnabled()
+        toggle.click()
+        toggle.click()
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 0"
+
+        context.status.show("test", "Another operation is running")
+        workspace.selection.set_tracks_checked((1,), True)
+        assert window.statusBar().currentMessage() == "Another operation is running"
+        context.status.clear("test")
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
+        scan_details = workspace.findChild(QPlainTextEdit, "hostScanIssueDetails")
+        assert scan_details is not None
+        assert "Optional Host artwork unavailable" in scan_details.toPlainText()
+        assert (
+            "Sync helper\nHelper unavailable; rescanned" in scan_details.toPlainText()
+        )
 
         playlists = workspace.findChild(PlaylistTree, "syncPlaylistSidebar")
         assert playlists is not None
@@ -624,14 +668,17 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert bar.estimate.projected_used_bytes == 600
         workspace.selection.set_tracks_checked((2,), True)
         assert bar.estimate.projected_used_bytes == 701
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 2"
         context.settings.set_global(RETRANSCODE_LOSSY, True)
         assert bar.estimate.projected_used_bytes > 701
         context.settings.reset_global(RETRANSCODE_LOSSY)
         assert bar.estimate.projected_used_bytes == 701
         workspace.selection.set_tracks_checked((1,), False)
         assert bar.estimate.projected_used_bytes == 611
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
 
         workspace.show_review()
+        assert window.statusBar().currentMessage() == "2 planned changes"
         assert not bar.isHidden()
         assert bar.estimate.projected_used_bytes == 611
         review = workspace.findChild(SyncPlanPage)
@@ -650,24 +697,36 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
             Qt.ItemDataRole.CheckStateRole,
         )
         assert bar.estimate.projected_used_bytes == 561
+        assert window.statusBar().currentMessage() == "3 planned changes"
         add_group = _group(review, SyncPlanAction.ADD)
         add_group.checkbox.click()
         assert bar.estimate.projected_used_bytes == 460
+        assert window.statusBar().currentMessage() == "2 planned changes"
         assert workspace.selection.track_check_state(2) is Qt.CheckState.Checked
         add_group.checkbox.click()
         assert bar.estimate.projected_used_bytes == 561
+        assert window.statusBar().currentMessage() == "3 planned changes"
         summary = workspace.findChild(QLabel, "syncReviewSummary")
         assert summary is not None
         assert summary.text() == "3 of 3 selected · 1 Playlist change"
-        playlist_preview = workspace.findChild(
-            QPlainTextEdit, "syncPlaylistReviewChanges"
-        )
+        playlist_preview = workspace.findChild(QTableView, "syncPlaylistReviewChanges")
         assert playlist_preview is not None
-        assert playlist_preview.toPlainText() == "Create Playlist: 0 added, 0 removed"
+        playlist_model = playlist_preview.model()
+        assert playlist_model.rowCount() == 1
+        assert [playlist_model.index(0, column).data() for column in range(3)] == [
+            "Playlist",
+            "Create new Playlist",
+            "Create",
+        ]
+        assert (
+            playlist_model.index(0, 0).data(Qt.ItemDataRole.CheckStateRole)
+            is Qt.CheckState.Checked
+        )
         back = workspace.findChild(QPushButton, "backToSyncSelection")
         assert back is not None and back.text() == "Edit Selection"
         back.click()
         assert workspace.stage is SyncStage.SELECT
+        assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
         assert bar.estimate.projected_used_bytes == 561
         assert not bar.isHidden()
         execute = workspace.findChild(QPushButton, "executeSync")
@@ -685,8 +744,11 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
 
 
+@pytest.mark.parametrize("disconnect_before_refresh", [False, True])
 def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    disconnect_before_refresh: bool,
 ) -> None:
     host_path = HostPath(tmp_path / "song.mp3")
     host = HostMediaLibrary(
@@ -777,10 +839,11 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         "iTunesDB",
         FileFingerprint(size=100, modified_ns=0, device=0, inode=0, sha256="0" * 64),
     )
+    current_active: list[ActiveIPod | None] = [active]
     monkeypatch.setattr(
         type(context.device_controller),
         "active_ipod",
-        property(lambda _controller: active),
+        property(lambda _controller: current_active[0]),
     )
     refresh_calls: list[tuple[HostMediaLibrary, frozenset[HostPath]]] = []
     presented: list[tuple[HostMediaLibrary, IPodMediaLibrary | None]] = []
@@ -794,8 +857,13 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
     def finish_media_scan(library: HostMediaLibrary, media: IPodMediaLibrary) -> None:
         presented.append((library, media))
 
+    def start_host_scan(_folders: object) -> bool:
+        return True
+
     monkeypatch.setattr(window, "_finish_media_scan", finish_media_scan)
     try:
+        monkeypatch.setattr(context.host_media_controller, "start", start_host_scan)
+        window._start_host_sync(())  # pyright: ignore[reportPrivateUsage]
         window._pending_host_media_library = host  # pyright: ignore[reportPrivateUsage]
         ipod_media_scan_finished = cast(
             "Callable[[object], None]",
@@ -805,8 +873,12 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         assert refresh_calls == [(host, frozenset({host_path}))]
         assert not presented
 
+        if disconnect_before_refresh:
+            current_active[0] = None
+            context.device_controller.activeIPodChanged.emit(None)
+
         context.host_media_controller.refreshFinished.emit(host)
-        assert presented == [(host, ipod)]
+        assert presented == ([] if disconnect_before_refresh else [(host, ipod)])
     finally:
         window.close()
         context.shutdown()

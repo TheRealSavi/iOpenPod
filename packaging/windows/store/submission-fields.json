@@ -9,7 +9,7 @@
     "publisher": "CN=FB5CD908-9397-4B6A-B014-49E83AB6CE1A",
     "publisherDisplayName": "TheRealSavi",
     "packageFamilyName": "TheRealSavi.iOpenPod_gncxjke9mmtsj",
-    "packageVersion": "2.0.13.0",
+    "packageVersion": "2.1.3.0",
     "architecture": "x64",
     "targetDeviceFamily": "Windows.Desktop",
     "minimumWindowsVersion": "10.0.19041.0",
@@ -98,6 +98,16 @@
       {
         "file": "screenshots/06-about-and-credits.png",
         "caption": "Free and open source, with optional donations and acknowledgements for the projects that make iOpenPod possible.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/07-sync-selection.png",
+        "caption": "Select media from a fictional Host library before reviewing the Sync Plan.",
+        "deviceFamily": "Desktop"
+      },
+      {
+        "file": "screenshots/08-transcoding-settings.png",
+        "caption": "Choose audio and video conversion settings in the real iOpenPod Settings page.",
         "deviceFamily": "Desktop"
       }
     ],

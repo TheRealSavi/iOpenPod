@@ -5,7 +5,7 @@ from threading import Event
 
 import pytest
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLabel, QListWidget, QPushButton
+from PySide6.QtWidgets import QLabel, QListWidget, QPushButton, QStackedWidget
 from tests.iOpenPod.app.test_device_controller import (
     _device_root,  # pyright: ignore[reportPrivateUsage]
     _ObservedPlatform,  # pyright: ignore[reportPrivateUsage]
@@ -17,6 +17,7 @@ from iOpenPod.app.core.settings.definitions import LAST_SELECTED_IPOD_VOLUME_ID
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.GUI.dialogs.device_picker import DevicePickerDialog
 from iOpenPod.GUI.main_window import MainWindow
+from iOpenPod.GUI.pages.library_page import LibraryPage
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from storage import Storage
 
@@ -39,6 +40,8 @@ def test_window_restores_remembered_ipod_without_opening_picker(
         _wait_until(lambda: context.device_controller.active_ipod is not None)
         assert context.device_controller.active_ipod is not None
         assert context.device_controller.active_ipod.display_name == "Remembered iPod"
+        pages = window.findChild(QStackedWidget, "pageStack")
+        assert pages is not None and isinstance(pages.currentWidget(), LibraryPage)
         picker = window.findChild(DevicePickerDialog)
         assert picker is not None and not picker.isVisible()
         QTest.qWait(120)
@@ -48,21 +51,19 @@ def test_window_restores_remembered_ipod_without_opening_picker(
         context.shutdown()
 
 
-def test_picker_search_status_is_delayed_and_does_not_replace_instructions() -> None:
+def test_picker_search_status_is_delayed_without_description() -> None:
     picker = DevicePickerDialog()
     try:
         status = picker.findChild(QLabel, "deviceSearchStatus")
         description = picker.findChild(QLabel, "pageDescription")
         candidates = picker.findChild(QListWidget, "deviceCandidateList")
-        assert status is not None and description is not None and candidates is not None
-        instructions = description.text()
+        assert status is not None and description is None and candidates is not None
         picker.set_searching(True)
         picker.set_busy(True)
         assert status.text() == "Connected iPods appear automatically"
         QTest.qWait(250)
         assert status.text() == "Searching for iPods…"
         assert candidates.isEnabled()
-        assert description.text() == instructions
         picker.retranslate_ui()
         assert status.text() == "Searching for iPods…"
         picker.set_busy(False)

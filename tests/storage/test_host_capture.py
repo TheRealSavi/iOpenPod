@@ -80,10 +80,10 @@ def test_capture_rejects_changes_during_streaming(
                     source, ns=(before.st_atime_ns, before.st_mtime_ns + 1000000000)
                 )
 
-    # Windows can prohibit replacing the open source before our recheck is needed.
+    # Windows pins prevent the source mutation before a final recheck is needed.
     expected = (
         (ConcurrentModificationError, PermissionError)
-        if change == "replace"
+        if os.name == "nt"
         else (ConcurrentModificationError,)
     )
     with (

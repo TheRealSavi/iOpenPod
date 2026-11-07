@@ -9,9 +9,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
     QStackedWidget,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 
@@ -35,6 +32,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanItem,
     SyncPlanMediaKind,
 )
+from iOpenPod.GUI.delegates.sync_track_delegate import SyncTrackDelegate
 from iOpenPod.GUI.host_library_browser import HostLibraryBrowser
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -262,6 +260,35 @@ def _highlight(view: QAbstractItemView, item_ids: tuple[int, ...]) -> QPoint:
     return view.visualRect(first).center()
 
 
+def test_choose_streams_targets_one_track_in_the_host_context_menu(
+    sync_browser: tuple[HostLibraryBrowser, SyncSelection, QStackedWidget],
+) -> None:
+    browser, selection, parent = sync_browser
+    page = browser.page_widgets[PageId.TRACKS]
+    parent.setCurrentWidget(page)
+    APPLICATION.processEvents()
+    table = page.findChild(TrackTable)
+    assert table is not None
+    chosen: list[int] = []
+    actions = SyncSelectionActions(selection, parent, choose_streams=chosen.append)
+    menu = actions.build_menu(table, _highlight(table, (3,)))
+    assert menu is not None
+    action = next(
+        action
+        for action in menu.actions()
+        if action.objectName() == "chooseMediaStreams"
+    )
+    action.trigger()
+    assert chosen == [3]
+    menu.deleteLater()
+    multiple = actions.build_menu(table, _highlight(table, (1, 3)))
+    assert multiple is not None
+    assert not any(
+        action.objectName() == "chooseMediaStreams" for action in multiple.actions()
+    )
+    multiple.deleteLater()
+
+
 @pytest.mark.parametrize(("page_id", "view_type"), _SURFACES)
 def test_sync_context_menu_batches_highlighted_items_across_regrouping(
     sync_browser: tuple[HostLibraryBrowser, SyncSelection, QStackedWidget],
@@ -415,15 +442,7 @@ def test_sync_track_checkbox_toggles_the_sorted_filtered_track(
     assert index.data(TrackRole.TRACK_ID) == 3
     table.scrollTo(index)
     APPLICATION.processEvents()
-    option = QStyleOptionViewItem()
-    option.initFrom(table)
-    delegate = table.itemDelegateForIndex(index)
-    assert isinstance(delegate, QStyledItemDelegate)
-    delegate.initStyleOption(option, index)
-    option.rect = table.visualRect(index)
-    indicator = table.style().subElementRect(
-        QStyle.SubElement.SE_ItemViewItemCheckIndicator, option, table
-    )
+    indicator = SyncTrackDelegate.checkbox_rect(table.visualRect(index))
     assert not indicator.isEmpty()
     changes = QSignalSpy(selection.hostSelectionChanged)
     for state in (Qt.CheckState.Checked, Qt.CheckState.Unchecked):

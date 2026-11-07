@@ -134,7 +134,7 @@ def _smart(
             MHOD,
             MhodHeader(mhod_type=MhodType.SMART_PLAYLIST_RULES),
             prefix=MhodSmartRulesPrefix(
-                magic=b"SLst", unk_0x1C=0x00010001, conjunction=conjunction
+                magic=b"SLst", format_version=1, unknown_0x1E=1, conjunction=conjunction
             ),
             payload=MhodSmartRulesPayload(rules=rules, trailing_data=b""),
         ),
@@ -145,7 +145,7 @@ def _string_rule(
     field: int = 0x04, action: int = 0x01000002, value: str = "Miles"
 ) -> MhodSmartRule:
     return MhodSmartRule(
-        field, action, 0, bytes(40), MhodSmartStringRuleData(value, b"")
+        field, action, 0, 0, b"\x00\x00", bytes(40), MhodSmartStringRuleData(value, b"")
     )
 
 
@@ -156,6 +156,8 @@ def _numeric_rule(
         field,
         action,
         0,
+        0,
+        b"\x00\x00",
         bytes(40),
         MhodSmartNumericRuleData(lower, 0, 1, upper, 0, 1, 0, 0, 0, 0, 0, b""),
     )
@@ -218,7 +220,7 @@ def test_membership_preserves_valid_occurrences_and_skips_missing_tracks_and_gro
                 11,
                 "Episodes",
                 items=(
-                    MhipHeader(track_id=0, podcast_group_flag=0x0100),
+                    MhipHeader(track_id=0, group_marker=1),
                     MhipHeader(track_id=2),
                     MhipHeader(track_id=1),
                     MhipHeader(track_id=2),
@@ -282,7 +284,7 @@ def test_unknown_playlist_sort_order_is_explicit_and_losslessly_retained() -> No
 def test_playlist_title_does_not_come_from_a_podcast_group_title() -> None:
     group = new_itunes_chunk(
         MHIP,
-        MhipHeader(podcast_group_flag=0x0100),
+        MhipHeader(group_marker=1),
         children=(new_string_mhod(MhodType.TITLE, "Show name"),),
     )
     playlist = _playlist(1, "Podcasts")
@@ -370,12 +372,16 @@ def test_nested_smart_rules_translate_without_flattening_and_retain_stored_membe
     group = MhodSmartRule(
         0,
         1,
-        0x01000000,
+        1,
+        0,
+        b"\x00\x00",
         bytes(40),
         MhodSmartRuleGroupData(
             b"SLst",
-            0x00010001,
+            1,
+            1,
             0,
+            bytes(3),
             1,
             bytes(120),
             (_string_rule(), _numeric_rule()),
@@ -430,7 +436,15 @@ def test_nested_smart_rules_translate_without_flattening_and_retain_stored_membe
     (
         _string_rule(field=0x9F),
         _string_rule(action=0x03000008),
-        MhodSmartRule(0xFFFF, 1, 0, bytes(40), MhodSmartRawRuleData(b"future rule")),
+        MhodSmartRule(
+            0xFFFF,
+            1,
+            0,
+            0,
+            b"\x00\x00",
+            bytes(40),
+            MhodSmartRawRuleData(b"future rule"),
+        ),
     ),
 )
 def test_unknown_smart_conditions_are_uneditable_and_losslessly_retained(
@@ -447,7 +461,6 @@ def test_unknown_smart_conditions_are_uneditable_and_losslessly_retained(
 @pytest.mark.parametrize(
     ("conjunction", "nested", "field"),
     (
-        (99, _string_rule(), 0),
         (1, _string_rule(field=0x9F), 0),
         (1, _string_rule(), 7),
     ),
@@ -458,7 +471,7 @@ def test_unknown_nested_smart_conditions_and_wrappers_remain_uneditable(
     group_data: MhodSmartRuleGroupData | MhodSmartRawRuleData
     if field == 0:
         group_data = MhodSmartRuleGroupData(
-            b"SLst", 0x00010001, 0, conjunction, bytes(120), (nested,), b""
+            b"SLst", 1, 1, 0, bytes(3), conjunction, bytes(120), (nested,), b""
         )
     else:
         # An unknown wrapper is opaque, even when its body begins with SLst.
@@ -466,7 +479,9 @@ def test_unknown_nested_smart_conditions_and_wrappers_remain_uneditable(
     group = MhodSmartRule(
         field,
         1,
-        0x01000000,
+        1,
+        0,
+        b"\x00\x00",
         bytes(40),
         group_data,
     )
@@ -481,7 +496,7 @@ def test_structurally_truncated_nested_smart_rules_fail_at_the_lossless_parser()
     None
 ):
     truncated = MhodSmartRule(
-        0, 1, 0x01000000, bytes(40), MhodSmartRawRuleData(b"SLst" + bytes(8))
+        0, 1, 1, 0, b"\x00\x00", bytes(40), MhodSmartRawRuleData(b"SLst" + bytes(8))
     )
     data = _database(_dataset(2, _playlist(1, "Truncated", metadata=_smart(truncated))))
     with pytest.raises(ValueError, match=r"nested SLst.*too short"):

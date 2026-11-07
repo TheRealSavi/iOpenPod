@@ -6,6 +6,15 @@ claim Microsoft certification or unperformed device testing.
 
 ## Notes for certification
 
+The new optional Phase setup needs installed-MSIX and Store review acceptance.
+In Settings > Media Tools > Set Up Phase Analysis, opening the dialog downloads
+nothing. Download and Install explicitly installs private Python, numerical/model
+libraries and the model in user data, using a verified UV bootstrap and hashed
+package resolution. It does not modify the MSIX, system Python or FFmpeg settings.
+Inference stays local and runs in a child process. Cancelling or failed setup
+retains acoustic analysis. Downloads can use several gigabytes. Include this flow
+in the final listing/privacy disclosures and certification evidence before release.
+
 ```text
 iOpenPod is a free, GPLv3-or-later Windows desktop application for managing a user's filesystem-accessible iPod and local media. It is built with Python and Qt and packaged as an x64 MSIX. No iOpenPod account, subscription, payment, or administrator access is required to launch or use the application.
 

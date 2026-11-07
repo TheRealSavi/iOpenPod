@@ -14,9 +14,10 @@ import time
 import uuid
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, cast
+
+from whenever import Instant
 
 from storage.host_installation import (
     HostFileIdentity,
@@ -264,7 +265,7 @@ def read_operation(
         # remain usable offline; this never authorizes a new installation.
         envelope = read_json(metadata)
         payload = read_json(base64.b64decode(str(envelope["payload"]), validate=True))
-        timestamp = datetime.fromisoformat(text_field(payload, "issued"))
+        timestamp = Instant.parse_iso(text_field(payload, "issued"))
     release = verify_release(metadata, public_keys, now=timestamp)
     asset = release.asset(text_field(value, "target"))
     if asset.target.startswith("windows") != (sys.platform == "win32"):

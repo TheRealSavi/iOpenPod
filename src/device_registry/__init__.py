@@ -2,11 +2,13 @@
 
 from device_registry.authority import (
     SYSINFO_AUTHORITY_FILENAME,
+    SYSINFO_AUTHORITY_VERSION,
     DeviceMetadataPlan,
     authority_covers_metadata,
     reconcile_device_metadata,
 )
 from device_registry.data.catalog import DEFAULT_CATALOG
+from device_registry.identifiers import normalize_product_serial
 from device_registry.metadata import parse_sysinfo, parse_sysinfo_extended
 from device_registry.models import (
     ArtworkCapabilities,
@@ -23,6 +25,8 @@ from device_registry.models import (
     DeviceProfile,
     DisplayCapabilities,
     EvidenceAuthority,
+    FeatureSupport,
+    GeniusCapabilities,
     IdentificationIssue,
     IdentificationIssueCode,
     IdentificationResult,
@@ -38,6 +42,7 @@ DEFAULT_DEVICE_REGISTRY = DeviceRegistry(DEFAULT_CATALOG)
 __all__ = [
     "DEFAULT_DEVICE_REGISTRY",
     "SYSINFO_AUTHORITY_FILENAME",
+    "SYSINFO_AUTHORITY_VERSION",
     "ArtworkCapabilities",
     "ArtworkFormat",
     "ArtworkPixelFormat",
@@ -54,6 +59,8 @@ __all__ = [
     "DeviceRegistry",
     "DisplayCapabilities",
     "EvidenceAuthority",
+    "FeatureSupport",
+    "GeniusCapabilities",
     "IdentificationIssue",
     "IdentificationIssueCode",
     "IdentificationResult",
@@ -62,6 +69,7 @@ __all__ = [
     "UsbIdentifier",
     "VideoCapabilities",
     "authority_covers_metadata",
+    "normalize_product_serial",
     "parse_sysinfo",
     "parse_sysinfo_extended",
     "reconcile_device_metadata",

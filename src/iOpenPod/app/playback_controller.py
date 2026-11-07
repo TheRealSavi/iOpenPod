@@ -13,9 +13,11 @@ from iOpenPod.app.playback.backend import (
     PlaybackBackend,
     PlaybackFailure,
 )
+from iOpenPod.app.playback.chapters import chapter_at, playback_chapters
 from iPodDB.library import Track
 
 _DEFAULT_VOLUME_PERCENT = 64
+_PREVIOUS_RESTART_MS = 10_000
 
 
 class PlaybackController(QObject):
@@ -70,7 +72,7 @@ class PlaybackController(QObject):
 
     @property
     def next_entry(self) -> PlaybackEntry | None:
-        """Inspect the next occurrence using the same policy as Next."""
+        """Inspect the next Track occurrence after the current Track finishes."""
 
         return self._next_history_entry() or self.queue_model.entry_at(0)
 
@@ -204,7 +206,20 @@ class PlaybackController(QObject):
         entry = self._current_entry
         if entry is None:
             return
-        if self._position_ms > 10_000:
+        chapters = playback_chapters(entry.track)
+        chapter = chapter_at(chapters, self._position_ms)
+        if chapter is not None:
+            if self._position_ms - chapter.start_ms > _PREVIOUS_RESTART_MS:
+                self.seek(chapter.start_ms)
+                return
+            earlier = chapter_at(chapters, chapter.start_ms - 1)
+            if earlier is not None:
+                self.seek(earlier.start_ms)
+                return
+            if chapter.start_ms > 0:
+                self.seek(0)
+                return
+        if self._position_ms > _PREVIOUS_RESTART_MS:
             self.seek(0)
             return
         row = self.history_model.row_for_entry_id(entry.entry_id)
@@ -226,6 +241,13 @@ class PlaybackController(QObject):
         return None
 
     def next(self) -> None:
+        for chapter in playback_chapters(self.current_track):
+            if chapter.start_ms > self._position_ms:
+                self.seek(chapter.start_ms)
+                return
+        self._advance_entry()
+
+    def _advance_entry(self) -> None:
         newer = self._next_history_entry()
         if newer is not None:
             self._set_current_entry(newer)
@@ -234,7 +256,8 @@ class PlaybackController(QObject):
             self._clear_current()
 
     def finish_current(self) -> None:
-        self.next()
+        # Completion can arrive before the decoder's final position report.
+        self._advance_entry()
 
     def shutdown(self) -> None:
         if self._closed:

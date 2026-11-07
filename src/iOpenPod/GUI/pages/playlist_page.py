@@ -1,11 +1,15 @@
 """Playlist browsing and session editing without database details or device I/O."""
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QCoreApplication, QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QSplitter,
+    QTreeWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -24,17 +28,24 @@ from iOpenPod.GUI.presentation.i18n.text import track_count_text
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.library_toolbar import LibraryToolbar
-from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
+from iOpenPod.GUI.widgets.playlist_artwork_banner import (
+    GeniusHeroIcon,
+    PhaseHeroWordmark,
+    PlaylistArtworkBanner,
+)
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import PlaylistKind, Track, validate_smart_playlist
+from iPodDB.library.genius import GeniusCollection, GeniusCollectionKind
 
 
 class PlaylistPage(QWidget):
     """Show Playlist occurrences or recursive folder Tracks in the shared table."""
 
     trackActivated = Signal(object)
+    playRequested = Signal(object)
     queueRequested = Signal(object)
     playNextRequested = Signal(object)
     playlistSelected = Signal(object)
@@ -49,12 +60,19 @@ class PlaylistPage(QWidget):
         parent: QWidget | None = None,
         *,
         source_actions: bool = True,
+        genius_browse: bool = False,
+        phase_available: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("playlistsPage")
         self._workspace = workspace
+        self._phase_available = phase_available or (lambda: False)
         self._source_actions = source_actions
+        self._genius_browse = genius_browse
         self._selected_id: int | None = None
+        self._genius_collection: GeniusCollection | None = None
+        self._genius_tracks: tuple[Track, ...] = ()
+        self._genius_empty_message = ""
         self._generation = workspace.generation
         self._query = ""
         # An occurrence projection holds references to the shared immutable Tracks;
@@ -74,6 +92,9 @@ class PlaylistPage(QWidget):
         self._toolbar.set_namespace("playlists")
         self._toolbar.queryChanged.connect(self._set_query)
         self._table.trackActivated.connect(self.trackActivated.emit)
+        self._table.selectionModel().selectionChanged.connect(
+            self._refresh_genius_selection_actions
+        )
 
         self._heading = QLabel(self)
         self._heading.setObjectName("pageTitle")
@@ -101,6 +122,9 @@ class PlaylistPage(QWidget):
         self._export = ActionButton(parent=self)
         self._export.setObjectName("exportPlaylist")
         self._export.clicked.connect(self._export_playlist)
+        self._play_selected = ActionButton(parent=self, glyph="play")
+        self._play_selected.setObjectName("playSelectedGeniusTracks")
+        self._play_selected.clicked.connect(self._play_selected_tracks)
         self._play_next = ActionButton(parent=self, glyph="play-next")
         self._play_next.setObjectName("playNextPlaylist")
         self._play_next.clicked.connect(self._play_next_tracks)
@@ -113,6 +137,7 @@ class PlaylistPage(QWidget):
         actions.addWidget(self._remove)
         actions.addStretch(1)
         actions.addWidget(self._export)
+        actions.addWidget(self._play_selected)
         actions.addWidget(self._play_next)
         actions.addWidget(self._queue)
 
@@ -126,9 +151,22 @@ class PlaylistPage(QWidget):
             LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_md
         )
         header_layout.setSpacing(LAYOUT.space_xs)
-        header_layout.addWidget(self._heading)
-        header_layout.addWidget(self._summary)
-        header_layout.addWidget(self._description)
+        title_layout = QVBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(LAYOUT.space_xs)
+        title_layout.addWidget(self._heading)
+        title_layout.addWidget(self._summary)
+        title_layout.addWidget(self._description)
+        hero_context = QHBoxLayout()
+        hero_context.setSpacing(LAYOUT.space_lg)
+        hero_context.addLayout(title_layout, 1)
+        self._phase_wordmark = PhaseHeroWordmark(theme_manager, self._banner)
+        self._phase_wordmark.hide()
+        hero_context.addWidget(self._phase_wordmark, 0, Qt.AlignmentFlag.AlignTop)
+        self._genius_icon = GeniusHeroIcon(theme_manager, self._banner)
+        self._genius_icon.hide()
+        hero_context.addWidget(self._genius_icon, 0, Qt.AlignmentFlag.AlignTop)
+        header_layout.addLayout(hero_context)
         header_layout.addLayout(actions)
 
         self._empty = QLabel(self)
@@ -139,15 +177,54 @@ class PlaylistPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self._toolbar)
-        layout.addWidget(self._banner)
-        layout.addWidget(self._table, 1)
-        layout.addWidget(self._empty, 1)
+        self._genius_collections: QTreeWidget | None = None
+        self._genius_issues: QLabel | None = None
+        self._genius_panel: SourceListPanel | None = None
+        if genius_browse:
+            detail = QWidget(self)
+            detail_layout = QVBoxLayout(detail)
+            detail_layout.setContentsMargins(0, 0, 0, 0)
+            detail_layout.setSpacing(0)
+            self._genius_issues = QLabel(detail)
+            self._genius_issues.setObjectName("geniusIssues")
+            self._genius_issues.setTextFormat(Qt.TextFormat.PlainText)
+            self._genius_issues.setWordWrap(True)
+            detail_layout.addWidget(self._genius_issues)
+            detail_layout.addWidget(self._banner)
+            detail_layout.addWidget(self._table, 1)
+            detail_layout.addWidget(self._empty, 1)
+            panel = SourceListPanel(LAYOUT.source_list_width, self)
+            panel.setObjectName("geniusCollectionPanel")
+            panel.setMaximumWidth(LAYOUT.source_list_maximum_width)
+            self._genius_panel = panel
+            self._genius_collections = QTreeWidget(panel)
+            self._genius_collections.setObjectName("geniusCollections")
+            panel.set_view(self._genius_collections, standard_items=False)
+            split = QSplitter(self)
+            split.setObjectName("geniusSplit")
+            split.setProperty("sourceListBrowser", True)
+            split.setHandleWidth(LAYOUT.source_list_splitter_handle_width)
+            split.setChildrenCollapsible(False)
+            split.addWidget(panel)
+            split.addWidget(detail)
+            split.setStretchFactor(0, 0)
+            split.setStretchFactor(1, 1)
+            split.setSizes([LAYOUT.source_list_width, 700])
+            layout.addWidget(split, 1)
+        else:
+            layout.addWidget(self._banner)
+            layout.addWidget(self._table, 1)
+            layout.addWidget(self._empty, 1)
         workspace.changed.connect(self._refresh)
-        self.retranslate_ui()
+        PlaylistPage.retranslate_ui(self)
 
     @property
     def selected_playlist_id(self) -> int | None:
         return self._selected_id
+
+    @property
+    def track_table(self) -> TrackTable:
+        return self._table
 
     def set_sync_selection(self, selection: SyncSelection) -> None:
         """Share Sync membership across every occurrence of a Host Track."""
@@ -155,6 +232,10 @@ class PlaylistPage(QWidget):
         self._tracks.set_sync_selection(selection)
 
     def select_playlist(self, playlist_id: object) -> None:
+        if self._genius_browse:
+            return
+        self._genius_collection = None
+        self._genius_tracks = ()
         if (
             not isinstance(playlist_id, int)
             or self._workspace.playlist(playlist_id) is None
@@ -169,10 +250,46 @@ class PlaylistPage(QWidget):
         self._refresh()
         self.playlistSelected.emit(self._selected_id)
 
+    def show_genius_collection(
+        self,
+        collection: GeniusCollection | None,
+        tracks: tuple[Track, ...] = (),
+        *,
+        empty_message: str = "",
+    ) -> None:
+        """Present captured Genius collections without creating an editable draft."""
+        if not self._genius_browse:
+            raise ValueError("This Playlist view does not browse Genius collections.")
+        self._selected_id = None
+        self._genius_collection = collection
+        self._genius_tracks = tracks
+        self._genius_empty_message = empty_message
+        self._query = ""
+        self._toolbar.set_query("")
+        self._proxy.set_query("")
+        self._table.sortByColumn(-1, Qt.SortOrder.AscendingOrder)
+        self._refresh()
+
+    def update_genius_tracks(self, tracks: tuple[Track, ...]) -> None:
+        """Refresh Track facts while preserving the selected collection and search."""
+        if not self._genius_browse:
+            raise ValueError("This Playlist view does not browse Genius collections.")
+        self._genius_tracks = tracks
+        self._refresh_genius_collection()
+
+    def refresh_phase_availability(self) -> None:
+        for dialog in self.findChildren(PlaylistEditorDialog):
+            dialog.set_phase_available(self._phase_available())
+
     def create_playlist(self, kind: object) -> None:
         if self._workspace.locked:
             return
-        if not isinstance(kind, PlaylistKind) or self._workspace.snapshot is None:
+        if (
+            not isinstance(kind, PlaylistKind)
+            or kind
+            not in (PlaylistKind.PLAYLIST, PlaylistKind.SMART, PlaylistKind.FOLDER)
+            or self._workspace.snapshot is None
+        ):
             return
         generation = self._workspace.generation
         revision = self._workspace.revision
@@ -192,6 +309,7 @@ class PlaylistPage(QWidget):
             kind,
             parent=self,
             playlists=self._workspace.playlists,
+            phase_available=self._phase_available(),
         )
         try:
             if (
@@ -208,6 +326,7 @@ class PlaylistPage(QWidget):
                 smart=dialog.smart,
                 description=dialog.description.text(),
                 sort_order=dialog.sort_order,
+                is_phase=dialog.phase.isChecked(),
             )
             self.select_playlist(playlist.playlist_id)
         except ValueError as error:
@@ -223,7 +342,7 @@ class PlaylistPage(QWidget):
             if isinstance(playlist_id, int)
             else None
         )
-        if playlist is None:
+        if playlist is None or playlist.kind is PlaylistKind.GENIUS:
             return
         generation = self._workspace.generation
         revision = self._workspace.revision
@@ -232,6 +351,7 @@ class PlaylistPage(QWidget):
             playlist,
             self,
             playlists=self._workspace.playlists,
+            phase_available=self._phase_available(),
         )
         try:
             if (
@@ -247,6 +367,7 @@ class PlaylistPage(QWidget):
                 description=dialog.description.text(),
                 smart=dialog.smart if dialog.smart != playlist.smart else None,
                 sort_order=dialog.sort_order,
+                is_phase=dialog.phase.isChecked(),
             )
         except ValueError as error:
             self._show_error(error)
@@ -261,7 +382,7 @@ class PlaylistPage(QWidget):
             if isinstance(playlist_id, int)
             else None
         )
-        if playlist is None:
+        if playlist is None or playlist.kind is PlaylistKind.GENIUS:
             return
         revision = self._workspace.edit_revision
         folder = playlist.kind is PlaylistKind.FOLDER
@@ -308,6 +429,9 @@ class PlaylistPage(QWidget):
         self._refresh_contents()
 
     def _refresh(self) -> None:
+        if self._genius_browse:
+            self._refresh_genius_collection()
+            return
         previous_id = self._selected_id
         if self._generation != self._workspace.generation:
             self._generation = self._workspace.generation
@@ -328,6 +452,10 @@ class PlaylistPage(QWidget):
         if playlist is None:
             self._selected_id = None
         self._heading.setText(playlist.name if playlist else "")
+        self._phase_wordmark.setVisible(playlist is not None and playlist.is_phase)
+        self._genius_icon.setVisible(
+            playlist is not None and playlist.kind is PlaylistKind.GENIUS
+        )
         self._description.setText(playlist.description if playlist else "")
         self._description.setVisible(bool(self._description.text()))
         tracks = (
@@ -357,7 +485,8 @@ class PlaylistPage(QWidget):
             )
         else:
             self._summary.clear()
-        self._edit.setVisible(playlist is not None and self._source_actions)
+        editable = playlist is not None and playlist.kind is not PlaylistKind.GENIUS
+        self._edit.setVisible(editable and self._source_actions)
         self._edit.setEnabled(not self._workspace.locked)
         evaluable = False
         if playlist is not None and playlist.kind is PlaylistKind.SMART:
@@ -378,7 +507,7 @@ class PlaylistPage(QWidget):
             if evaluable
             else self.tr("These Smart Playlist rules cannot be evaluated by iOpenPod.")
         )
-        self._remove.setVisible(playlist is not None and self._source_actions)
+        self._remove.setVisible(editable and self._source_actions)
         self._remove.setEnabled(not self._workspace.locked)
         self._remove.setText(
             self.tr("Remove Folder…")
@@ -391,11 +520,83 @@ class PlaylistPage(QWidget):
         )
         self._queue.setVisible(playlist is not None and self._source_actions)
         self._play_next.setVisible(playlist is not None and self._source_actions)
+        self._play_selected.hide()
         self._refresh_contents()
         if previous_id != self._selected_id:
             self.playlistSelected.emit(self._selected_id)
 
+    def _refresh_genius_collection(self) -> None:
+        self._phase_wordmark.hide()
+        collection = self._genius_collection
+        tracks_by_id = {track.track_id: track for track in self._genius_tracks}
+        occurrences = tuple(
+            (position, tracks_by_id[track_id])
+            for position, track_id in enumerate(
+                collection.track_ids if collection else ()
+            )
+            if track_id in tracks_by_id
+        )
+        tracks = tuple(track for _position, track in occurrences)
+        self._tracks.replace_tracks(
+            tracks,
+            playlist_positions=tuple(position for position, _track in occurrences),
+        )
+        self._heading.setText(collection.name if collection else self.tr("Genius"))
+        self._genius_icon.setVisible(collection is not None)
+        self._description.setText(
+            self.tr(
+                "Mix tracks are possible starting songs; the iPod generates the mix when you play it."
+            )
+            if collection is not None and collection.kind is GeniusCollectionKind.MIX
+            else self.tr("Tracks saved in this Genius Playlist.")
+            if collection is not None
+            else ""
+        )
+        self._description.setVisible(collection is not None)
+        if collection is None:
+            self._summary.clear()
+        else:
+            minutes = sum(track.length_ms for track in tracks) / 60_000
+            kind = (
+                self.tr("Genius Mix")
+                if collection.kind is GeniusCollectionKind.MIX
+                else kind_label(PlaylistKind.GENIUS)
+            )
+            self._summary.setText(
+                self.tr("%1 · %2 · %3 min")
+                .replace("%1", kind)
+                .replace("%2", track_count_text(len(tracks)))
+                .replace("%3", f"{minutes:,.0f}")
+            )
+        self._banner.set_tracks(tracks, playlist_id=None)
+        self._edit.hide()
+        self._evaluate.hide()
+        self._remove.setVisible(collection is not None and self._source_actions)
+        is_mix = collection is not None and collection.kind is GeniusCollectionKind.MIX
+        self._export.setVisible(collection is not None and not is_mix)
+        self._export.setEnabled(collection is not None and not is_mix)
+        self._play_selected.setVisible(is_mix)
+        self._queue.setVisible(collection is not None)
+        self._play_next.setVisible(collection is not None)
+        self._refresh_contents()
+
     def _refresh_contents(self) -> None:
+        if self._genius_browse:
+            self._table.playlist_id = None
+            empty = self._proxy.rowCount() == 0
+            self._table.setVisible(not empty)
+            self._empty.setVisible(empty)
+            if self._query:
+                message = self.tr("No matches. Try another search.")
+            elif self._genius_collection is None:
+                message = self._genius_empty_message
+            elif self._genius_collection.kind is GeniusCollectionKind.MIX:
+                message = self.tr("No available Tracks in this Genius Mix.")
+            else:
+                message = self.tr("No available Tracks in this Genius Playlist.")
+            self._empty.setText(message)
+            self._refresh_genius_selection_actions()
+            return
         self._table.playlist_id = self._selected_id
         playlist = (
             self._workspace.playlist(self._selected_id)
@@ -420,6 +621,8 @@ class PlaylistPage(QWidget):
             message = self.tr(
                 "No tracks in this Smart Playlist.\nUse Edit to review its rules."
             )
+        elif playlist and playlist.kind is PlaylistKind.GENIUS:
+            message = self.tr("No available Tracks in this Genius Playlist.")
         else:
             message = self.tr(
                 "No tracks in this playlist. Drag tracks from a library table onto this playlist in the sidebar."
@@ -427,6 +630,14 @@ class PlaylistPage(QWidget):
         self._empty.setText(message)
 
     def _queue_tracks(self) -> None:
+        if (
+            self._genius_collection is not None
+            and self._genius_collection.kind is GeniusCollectionKind.MIX
+        ):
+            selected = self._selected_genius_tracks()
+            if selected:
+                self.queueRequested.emit(selected)
+            return
         tracks: list[Track] = []
         for row in range(self._proxy.rowCount()):
             track = self._proxy.track_at(self._proxy.index(row, 0))
@@ -436,6 +647,14 @@ class PlaylistPage(QWidget):
         self.queueRequested.emit(tuple(tracks))
 
     def _play_next_tracks(self) -> None:
+        if (
+            self._genius_collection is not None
+            and self._genius_collection.kind is GeniusCollectionKind.MIX
+        ):
+            tracks = self._selected_genius_tracks()
+            if tracks:
+                self.playNextRequested.emit(tracks)
+            return
         tracks = tuple(
             track
             for row in range(self._proxy.rowCount())
@@ -443,7 +662,51 @@ class PlaylistPage(QWidget):
         )
         self.playNextRequested.emit(tracks)
 
+    def _selected_genius_tracks(self) -> tuple[Track, ...]:
+        return tuple(
+            track
+            for index in sorted(
+                self._table.selectionModel().selectedRows(),
+                key=lambda index: index.row(),
+            )
+            if (track := self._proxy.track_at(index)) is not None
+        )
+
+    def _refresh_genius_selection_actions(self, *_args: object) -> None:
+        if not self._genius_browse:
+            return
+        is_mix = (
+            self._genius_collection is not None
+            and self._genius_collection.kind is GeniusCollectionKind.MIX
+        )
+        enabled = (
+            bool(self._selected_genius_tracks())
+            if is_mix
+            else self._proxy.rowCount() > 0
+        )
+        self._play_selected.setEnabled(is_mix and enabled)
+        self._queue.setEnabled(enabled)
+        self._play_next.setEnabled(enabled)
+
+    def _play_selected_tracks(self) -> None:
+        tracks = self._selected_genius_tracks()
+        if tracks:
+            self.playRequested.emit(tracks)
+
     def _export_playlist(self) -> None:
+        if self._genius_collection is not None:
+            if self._genius_collection.kind is GeniusCollectionKind.MIX:
+                return
+            tracks_by_id = {track.track_id: track for track in self._genius_tracks}
+            self.playlistExportRequested.emit(
+                self._genius_collection.name,
+                tuple(
+                    tracks_by_id[track_id]
+                    for track_id in self._genius_collection.track_ids
+                    if track_id in tracks_by_id
+                ),
+            )
+            return
         playlist = (
             self._workspace.playlist(self._selected_id)
             if self._selected_id is not None
@@ -464,16 +727,19 @@ class PlaylistPage(QWidget):
     def retranslate_ui(self) -> None:
         self._toolbar.retranslate_ui()
         self._toolbar.configure(
-            grid_title=self.tr("Playlists"),
-            grid_search_label=QCoreApplication.translate(
-                "LibraryLabels", "Search Tracks"
-            ),
+            grid_title=self.tr("Genius")
+            if self._genius_browse
+            else self.tr("Playlists"),
+            grid_search_label=self.tr("Search Genius Tracks")
+            if self._genius_browse
+            else QCoreApplication.translate("LibraryLabels", "Search Tracks"),
             supports_list=False,
         )
         self._edit.setText(self.tr("Edit…"))
         self._evaluate.setText(self.tr("Evaluate now"))
         self._remove.setText(self.tr("Remove Playlist…"))
         self._export.setText(self.tr("Export…"))
+        self._play_selected.setText(self.tr("Play selected"))
         self._queue.setText(QCoreApplication.translate("CommonActions", "Add to Queue"))
         self._queue.setToolTip(self.tr("Add tracks to the end of the Queue"))
         self._play_next.setText(self.tr("Play Next"))

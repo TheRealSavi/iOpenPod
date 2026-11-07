@@ -18,10 +18,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from iOpenPod.app.library_write import LibraryFileChange
+from iOpenPod.app.library_write import LibraryFileChange, WriteProgress
 from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.library_write_inspection import inspect_change
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
+from iOpenPod.GUI.presentation.library_write import library_write_status
+from iOpenPod.GUI.widgets.status_controls import set_status_progress
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -47,7 +49,12 @@ class LibraryReviewDialog(QDialog):
         self._status = QLabel(self)
         self._status.setObjectName("libraryReviewStatus")
         self._status.setWordWrap(True)
+        self._warning = QLabel(self)
+        self._warning.setObjectName("libraryReviewSafetyWarning")
+        self._warning.setWordWrap(True)
+        self._warning.setTextFormat(Qt.TextFormat.PlainText)
         self._progress = QProgressBar(self)
+        self._progress.setObjectName("libraryReviewProgress")
         self._progress.setRange(0, 0)
         self._items = QTreeWidget(self)
         self._items.setObjectName("libraryReviewItems")
@@ -65,6 +72,14 @@ class LibraryReviewDialog(QDialog):
         )
         self._retry = ActionButton(self.tr("Prepare again"), self)
         self._cancel = ActionButton(self.tr("Cancel preparation"), self)
+        self._skip_phase = ActionButton(self.tr("Skip Phase analysis"), self)
+        self._skip_phase.setObjectName("skipPhaseAnalysis")
+        self._skip_phase.setToolTip(
+            self.tr(
+                "Continue saving with completed charts. Tracks still needing analysis "
+                "stay in the Playlist but are unavailable in Phase until a later Phase edit."
+            )
+        )
         self._discard = ActionButton(
             self.tr("Discard Changes"),
             self,
@@ -87,10 +102,12 @@ class LibraryReviewDialog(QDialog):
         buttons.addButton(self._save, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.addButton(self._retry, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.addButton(self._cancel, QDialogButtonBox.ButtonRole.ActionRole)
+        buttons.addButton(self._skip_phase, QDialogButtonBox.ButtonRole.ActionRole)
         buttons.addButton(self._discard, QDialogButtonBox.ButtonRole.DestructiveRole)
         buttons.rejected.connect(self.reject)
         self._retry.clicked.connect(controller.prepare)
         self._cancel.clicked.connect(controller.cancel)
+        self._skip_phase.clicked.connect(controller.skip_phase_analysis)
         self._discard.clicked.connect(controller.discard_changes)
         self._save.clicked.connect(controller.save)
         self._inspect.clicked.connect(self._inspect_write)
@@ -98,6 +115,7 @@ class LibraryReviewDialog(QDialog):
         self._items.itemDoubleClicked.connect(self._navigate)
         layout = QVBoxLayout(self)
         layout.addWidget(self._status)
+        layout.addWidget(self._warning)
         layout.addWidget(self._progress)
         layout.addWidget(self._items, 1)
         layout.addWidget(self._details)
@@ -107,15 +125,32 @@ class LibraryReviewDialog(QDialog):
         self.refresh()
 
     @Slot(object)
-    def _progress_changed(self, message: object) -> None:
-        if isinstance(message, str):
-            self._status.setText(workflow_text(message))
+    def _progress_changed(self, progress: object) -> None:
+        if isinstance(progress, WriteProgress):
+            self._refresh_progress()
+
+    def _refresh_progress(self) -> None:
+        progress = self._controller.progress
+        self._skip_phase.setVisible(
+            self._controller.state is PreparationState.PREPARING
+            and progress is not None
+            and progress.phase == "resources.phase"
+        )
+        self._skip_phase.setEnabled(self._controller.can_skip_phase_analysis)
+        status = library_write_status(self._controller.state, self._controller.progress)
+        self._warning.setVisible(status is not None and bool(status.safety_warning))
+        self._progress.setVisible(status is not None)
+        if status is not None:
+            self._status.setText(status.message)
+            self._warning.setText(status.safety_warning)
+            if status.progress is not None:
+                set_status_progress(self._progress, status.progress)
+                self._progress.setAccessibleName(status.message)
 
     def refresh(self) -> None:
         state = self._controller.state
         messages = {
             PreparationState.IDLE: self.tr("Prepare changes for review."),
-            PreparationState.PREPARING: self.tr("Preparing changes…"),
             PreparationState.READY: self.tr("Prepared for review."),
             PreparationState.BLOCKED: self.tr(
                 "Output could not be prepared. Resolve the errors below and try again."
@@ -125,9 +160,6 @@ class LibraryReviewDialog(QDialog):
             ),
             PreparationState.CANCELLED: self.tr("Preparation cancelled."),
             PreparationState.FAILED: self.tr("Preparation failed."),
-            PreparationState.SAVING: self.tr(
-                "Saving Library changes… Keep the iPod connected until verification finishes."
-            ),
             PreparationState.SAVED: self.tr(
                 "Library changes saved and verified on your iPod."
             ),
@@ -135,10 +167,8 @@ class LibraryReviewDialog(QDialog):
                 "Saving did not complete successfully. See the details below."
             ),
         }
-        self._status.setText(messages[state])
-        self._progress.setVisible(
-            state in (PreparationState.PREPARING, PreparationState.SAVING)
-        )
+        self._status.setText(messages.get(state, ""))
+        self._refresh_progress()
         self._cancel.setVisible(state is PreparationState.PREPARING)
         self._retry.setEnabled(self._controller.can_prepare)
         self._discard.setVisible(self._controller.has_draft_changes)
@@ -229,6 +259,7 @@ class LibraryReviewDialog(QDialog):
         actions = {
             "add": self.tr("Add"),
             "edit": self.tr("Edit"),
+            "update": self.tr("Update"),
             "delete": self.tr("Delete"),
             "retag": self.tr("Update tags"),
             "replace": self.tr("Replace"),
@@ -242,6 +273,7 @@ class LibraryReviewDialog(QDialog):
     def _subject_label(self, subject: str) -> str:
         return {
             "library": self.tr("Library"),
+            "genius": self.tr("Genius"),
             "media": self.tr("Media"),
             "track": self.tr("Track"),
             "playlist": self.tr("Playlist"),

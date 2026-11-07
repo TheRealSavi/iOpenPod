@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 
 from storage import DevicePath, HostPath, Storage
-from storage.device_capture import capture_device_file
+from storage.device_capture import (
+    capture_device_file,
+    capture_device_file_with_fingerprint,
+)
 from storage.testing import VirtualStoragePlatform
 
 
@@ -51,3 +54,27 @@ def test_device_capture_cleans_up_and_preserves_source(
         consume()
     assert not tuple(staging.iterdir())
     assert original.read_bytes() == b"audio source"
+
+
+def test_capture_returns_source_fingerprint_without_separate_device_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "device"
+    root.mkdir()
+    (root / "song.mp3").write_bytes(b"audio source")
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = Storage(platform)
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        expected = session.fingerprint(DevicePath("song.mp3"))
+
+        def reject_fingerprint(_path: DevicePath) -> None:
+            pytest.fail("The copy already captured the source fingerprint")
+
+        monkeypatch.setattr(session, "fingerprint", reject_fingerprint)
+        with capture_device_file_with_fingerprint(
+            session, DevicePath("song.mp3"), checkpoint=lambda: None
+        ) as captured:
+            assert captured.source_fingerprint == expected
+            assert Path(captured.host_path).read_bytes() == b"audio source"
+        assert not Path(captured.host_path).exists()

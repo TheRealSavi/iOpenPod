@@ -7,6 +7,8 @@ from dataclasses import replace
 from datetime import datetime
 from types import MappingProxyType
 
+from whenever import Instant
+
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import DEFINITION as MHOD_DEFINITION
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
@@ -21,6 +23,9 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.chapter_data_mhod import (
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.contextual_100_mhod import (
     MhodPlaylistPositionPayload,
     MhodPlaylistPositionPrefix,
+)
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.genius_seed_mhod import (
+    MhodGeniusSeedPayload,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
     MhodLibraryIndexPayload,
@@ -45,7 +50,6 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_prefs_mhod import (
     MhodSmartPrefsPrefix,
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.smart_rules_mhod import (
-    SMART_RULE_GROUP_MARKER,
     MhodSmartNumericRuleData,
     MhodSmartNumericRuleFields,
     MhodSmartRawRuleData,
@@ -119,6 +123,7 @@ _PAYLOAD_SHAPES: Mapping[MhodPayloadKind, MhodPayloadShape] = MappingProxyType(
             MhodPlaylistPositionPayload,
         ),
         MhodPayloadKind.SETTINGS: (None, MhodSettingsPayload),
+        MhodPayloadKind.GENIUS_SEED: (None, MhodGeniusSeedPayload),
     }
 )
 
@@ -438,8 +443,10 @@ def _encode_smart_group(data: MhodSmartRuleGroupData) -> bytes:
     rules = b"".join(_encode_smart_rule(rule) for rule in data.rules)
     header = MhodSmartRulesContainerHeader(
         magic=data.magic,
-        unk_0x04=data.unk_0x04,
+        format_version=data.format_version,
+        unknown_0x06=data.unknown_0x06,
         rule_count=len(data.rules),
+        unknown_0x0C=data.unknown_0x0C,
         conjunction=data.conjunction,
         header_data=data.header_data,
     )
@@ -460,19 +467,12 @@ def _encode_smart_rule(rule: MhodSmartRule) -> bytes:
     else:
         encoded_data = _encode_smart_group(data)
 
-    if isinstance(data, MhodSmartRuleGroupData):
-        field_id = 0
-        action_id = 1
-        group_marker = SMART_RULE_GROUP_MARKER
-    else:
-        field_id = rule.field_id
-        action_id = rule.action_id
-        group_marker = rule.group_marker
-
     header = MhodSmartRuleHeader(
-        field_id=field_id,
-        action_id=action_id,
-        group_marker=group_marker,
+        field_id=rule.field_id,
+        action_id=rule.action_id,
+        is_nested=rule.is_nested,
+        disabled=rule.disabled,
+        unknown_0x0A=rule.unknown_0x0A,
         header_data=rule.header_data,
         data_length=len(encoded_data),
     )
@@ -515,6 +515,11 @@ def _thaw_plist_value(value: PlistValue) -> WritablePlistValue:
         return [_thaw_plist_value(item) for item in value]
     if isinstance(value, Mapping):
         return {key: _thaw_plist_value(item) for key, item in value.items()}
+    if isinstance(value, Instant):
+        # Python 3.12 plistlib expects naive UTC datetime. Keep that convention
+        # exclusively at this serialization boundary, never in the typed model.
+        # freeze_plist_value already resolved authored sub-microsecond precision.
+        return value.to_stdlib().replace(tzinfo=None)
     return value
 
 
@@ -600,6 +605,13 @@ def encode_mhod_body(
         body = _encode_playlist_position(chunk)
     elif payload_kind == MhodPayloadKind.SETTINGS:
         body = _encode_settings(chunk)
+    elif payload_kind == MhodPayloadKind.GENIUS_SEED:
+        payload = chunk.payload_as(MhodGeniusSeedPayload)
+        body = (
+            _binary_struct_bytes(payload.seed)
+            if payload.seed is not None
+            else payload.unknown_data
+        )
     else:
         raise ValueError(
             f"MHOD payload kind {payload_kind.value} has no concrete encoder"

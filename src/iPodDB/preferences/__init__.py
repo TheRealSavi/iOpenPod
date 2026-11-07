@@ -3,6 +3,9 @@
 from iPodDB.preferences.codec import parse_preferences, write_preferences
 from iPodDB.preferences.definitions import (
     CityPreferences,
+    Classic201Preferences,
+    ClassicClockPreferences,
+    ClassicPreferences,
     FourthGenerationPreferences,
     Nano3Preferences,
     PreferencesLayout,
@@ -10,6 +13,16 @@ from iPodDB.preferences.definitions import (
     PreferencesSettings,
     VideoPreferences,
     VolumeLimitPreferences,
+)
+from iPodDB.preferences.dst import (
+    DSTRule,
+    DSTTableDocument,
+    DSTTableIssue,
+    DSTTableIssueCode,
+    DSTTableProfile,
+    DSTTransition,
+    DSTWeek,
+    parse_dst_table,
 )
 from iPodDB.preferences.itunes import (
     ITunesPreferencesDocument,
@@ -34,6 +47,16 @@ from iPodDB.preferences.models import (
 __all__ = [
     "CityPreferences",
     "CityTimezone",
+    "Classic201Preferences",
+    "ClassicClockPreferences",
+    "ClassicPreferences",
+    "DSTRule",
+    "DSTTableDocument",
+    "DSTTableIssue",
+    "DSTTableIssueCode",
+    "DSTTableProfile",
+    "DSTTransition",
+    "DSTWeek",
     "FixedOffsetTimezone",
     "FourthGenerationPreferences",
     "ITunesPreferences",
@@ -51,6 +74,7 @@ __all__ = [
     "SyncSelection",
     "VideoPreferences",
     "VolumeLimitPreferences",
+    "parse_dst_table",
     "parse_itunes_preferences",
     "parse_preferences",
     "write_itunes_preferences",

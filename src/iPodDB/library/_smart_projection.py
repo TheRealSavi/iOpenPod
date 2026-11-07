@@ -35,6 +35,7 @@ from iPodDB.library.smart_rules import (
     BOOLEAN_FIELDS,
     CHOICE_FIELDS,
     DATE_FIELDS,
+    MAX_SMART_NUMERIC_VALUE,
     PLAYLIST_FIELDS,
     TEXT_FIELDS,
     validate_smart_playlist,
@@ -145,14 +146,24 @@ MEDIA_KIND_VALUES = {
 }
 LOCATION_VALUES = {1: SmartLocation.LOCAL, 2: SmartLocation.CLOUD}
 DATE_IDENTIFIER = 0x2DAE2DAE2DAE2DAE
+BOOLEAN_TRUE_OPERANDS = {
+    SmartField.CHECKED: 0,  # Native field 0x1d contains the unchecked flag.
+    SmartField.COMPILATION: 1,
+}
 
 
 def project_rule(
     rule: MhodSmartRule,
     timezone_offset: TimeConversion = 0,
 ) -> SmartRule | SmartRuleGroup | UnsupportedSmartRule:
+    # The product model has no disabled-node state. Preserve saved membership
+    # and raw bytes instead of silently activating a natively disabled rule.
+    if rule.disabled:
+        return UnsupportedSmartRule()
     data = rule.data
     if isinstance(data, MhodSmartRuleGroupData):
+        if data.format_version > 1:
+            return UnsupportedSmartRule()
         return _project_group(data.conjunction, data.rules, timezone_offset)
     field = FIELDS.get(rule.field_id)
     if field is None:
@@ -164,11 +175,16 @@ def project_rule(
     if isinstance(data, MhodSmartNumericRuleData) and field not in TEXT_FIELDS:
         if field in BOOLEAN_FIELDS:
             if rule.action_id in (1, 0x02000001):
+                matches_true = rule.action_id == 1
+                if field in BOOLEAN_TRUE_OPERANDS:
+                    matches_true = bool(data.from_value) == bool(
+                        BOOLEAN_TRUE_OPERANDS[field]
+                    )
+                    if rule.action_id == 0x02000001:
+                        matches_true = not matches_true
                 return SmartRule(
                     field,
-                    SmartOperator.IS_TRUE
-                    if rule.action_id == 1
-                    else SmartOperator.IS_FALSE,
+                    SmartOperator.IS_TRUE if matches_true else SmartOperator.IS_FALSE,
                     0,
                 )
             return UnsupportedSmartRule()
@@ -204,6 +220,9 @@ def project_rule(
                 data.from_value == data.to_value == DATE_IDENTIFIER
                 and data.from_date < 0
                 and data.from_units > 0
+                # A duration cannot retain an independently displaced upper bound.
+                # Zero displacement ignores its units in the firmware calculation.
+                and data.to_date == 0
             ):
                 return SmartRule(
                     field,
@@ -213,6 +232,14 @@ def project_rule(
             return UnsupportedSmartRule()
         action = NUMERIC_ACTIONS.get(rule.action_id)
         if action is not None and data.from_date == data.to_date == 0:
+            if field not in DATE_FIELDS and (
+                data.from_value > MAX_SMART_NUMERIC_VALUE
+                or (
+                    action is SmartOperator.BETWEEN
+                    and data.to_value > MAX_SMART_NUMERIC_VALUE
+                )
+            ):
+                return UnsupportedSmartRule()
             if field in DATE_FIELDS and data.from_value == 0:
                 # Native zero means a missing date, not an absolute instant.
                 return UnsupportedSmartRule()
@@ -247,10 +274,8 @@ def _project_group(
     rules: tuple[MhodSmartRule, ...],
     timezone_offset: TimeConversion = 0,
 ) -> SmartRuleGroup:
-    if conjunction not in (0, 1):
-        return SmartRuleGroup(rules=(UnsupportedSmartRule(),))
     return SmartRuleGroup(
-        SmartMatch.ALL if conjunction == 0 else SmartMatch.ANY,
+        SmartMatch.ANY if conjunction else SmartMatch.ALL,
         tuple(project_rule(rule, timezone_offset) for rule in rules),
     )
 
@@ -285,14 +310,18 @@ def project_smart(
         prefs = prefs_rows[0].prefix
     if len(rules_rows) == 1:
         prefix, payload = rules_rows[0].prefix, rules_rows[0].payload
-        if isinstance(prefix, MhodSmartRulesPrefix) and isinstance(
-            payload, MhodSmartRulesPayload
+        if (
+            isinstance(prefix, MhodSmartRulesPrefix)
+            and isinstance(payload, MhodSmartRulesPayload)
+            and prefix.format_version <= 1
         ):
             rules = _project_group(prefix.conjunction, payload.rules, timezone_offset)
     if prefs is None:
         return SmartPlaylist(rules=rules, editable=False)
 
-    supported_prefs = all(
+    # A nonzero attachment control has order-sensitive native effects not
+    # represented by SmartPlaylist. Keep the entire configuration uneditable.
+    supported_prefs = not prefs.attachment_inhibit and all(
         flag in (0, 1)
         for flag in (
             prefs.live_update,

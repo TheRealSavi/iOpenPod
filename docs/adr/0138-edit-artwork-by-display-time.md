@@ -4,6 +4,8 @@
 - Date: 2026-10-11
 - Extends: ADR-0012, ADR-0019, ADR-0021, and ADR-0033
 - Extended by: ADR-0139 for chapter formats and authored artwork counts
+- Extended by: ADR-0202 for raw key naming, native Chapter diagnostics and explicit flags
+- UI superseded by: ADR-0204 for Chapter-based selection and Host playback preview
 
 ## Context
 

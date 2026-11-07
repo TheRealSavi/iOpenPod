@@ -6,7 +6,6 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
 from typing import Any, Protocol, cast
@@ -22,6 +21,7 @@ from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_sync_execution import (
     _request,  # pyright: ignore[reportPrivateUsage]
 )
+from whenever import Instant
 
 from iOpenPod.app.host_media_folders import create_host_media_folder
 from iOpenPod.app.host_media_library import HostMediaScanner
@@ -175,9 +175,7 @@ def test_native_id3_descriptive_fields(tmp_path: Path, fixture: str) -> None:
         "Subtitle",
     )
     assert meta.compilation and meta.bpm == 123
-    assert meta.release_date == int(
-        datetime(2024, 6, 1, 12, 30, tzinfo=UTC).timestamp()
-    )
+    assert meta.release_date == Instant.from_utc(2024, 6, 1, 12, 30).timestamp()
     assert meta.normalization_gain_db == -6.25
     assert meta.content_advisory is ContentAdvisory.CLEAN
     assert meta.lyrics == "  Verse one\nVerse two\n" and meta.has_lyrics
@@ -426,14 +424,16 @@ def test_freeform_text_encoding_and_binary_rejection() -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("2024", datetime(2024, 1, 1, tzinfo=UTC)),
-        ("2024-05", datetime(2024, 5, 1, tzinfo=UTC)),
-        ("1960-01-01", datetime(1960, 1, 1, tzinfo=UTC)),
-        ("2024-05-17T01:00:00+02:00", datetime(2024, 5, 16, 23, tzinfo=UTC)),
+        ("2024", Instant.from_utc(2024, 1, 1)),
+        ("2024-05", Instant.from_utc(2024, 5, 1)),
+        ("1960-01-01", Instant.from_utc(1960, 1, 1)),
+        ("2024-05-17T01:00:00+02:00", Instant.from_utc(2024, 5, 16, 23)),
+        ("1969-12-31T23:59:59.5Z", Instant.from_timestamp(-1)),
+        ("2024-05-17 00:00:00.999", Instant.from_utc(2024, 5, 17)),
     ],
 )
 def test_release_dates_do_not_depend_on_host_timezone(
-    value: str, expected: datetime
+    value: str, expected: Instant
 ) -> None:
     track = apply_tag_values(
         Track(1, "", "", "", 1),
@@ -441,9 +441,16 @@ def test_release_dates_do_not_depend_on_host_timezone(
         suffix=".flac",
         video=False,
     )
-    assert track.metadata.release_date == int(
-        (expected - datetime(1970, 1, 1, tzinfo=UTC)).total_seconds()
+    assert track.metadata.release_date == expected.timestamp()
+
+
+@pytest.mark.parametrize("value", ["unknown", "2024-02-31", "99999-01-01"])
+def test_invalid_release_date_tag_keeps_existing_metadata(value: str) -> None:
+    original = Track(1, "", "", "", 1, metadata=TrackMetadata(release_date=-1))
+    updated = apply_tag_values(
+        original, read_tag_values({"releasedate": value}), suffix=".flac", video=False
     )
+    assert updated.metadata.release_date == -1
 
 
 def test_enrichment_keeps_reviewed_values_and_specialized_classification() -> None:

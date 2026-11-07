@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from iPodDB.library.native_chapters import NativeChapterIndex
 from iPodDB.library.photos import PhotoLibrary
 from iPodDB.library.playlists import Playlist
 
@@ -54,7 +55,11 @@ class TrackChapter:
 
 @dataclass(frozen=True, slots=True)
 class IPodTrackDetails:
-    """Optional iPod diagnostics; never required to construct a source-neutral Track."""
+    """Optional iPod diagnostics; never required for a source-neutral Track.
+
+    Date fields here are semantic signed Unix seconds, not retained native words.
+    See docs/research/classic-datetime-file-map-2026-11-06.md for field evidence.
+    """
 
     db_track_id: int = 0
     media_type_code: int = 0
@@ -68,11 +73,15 @@ class IPodTrackDetails:
     sample_rate_2: float = 0.0
     mpeg_audio_type: int = 0
     purchased_aac_flag: int = 0
-    genius_category_id: int = 0
+    secondary_skip_count: int = 0
     has_artwork: int = 0
     secondary_db_track_id: int = 0
     movie_flag: int = 0
     encoder: int = 0
+    # Historical name: paired captures associate this with Store purchase time,
+    # not TrackMetadata.date_added. UTC-Mac native projection is Host/reference
+    # policy, less qualified on all four Classics than ordinary playback dates.
+    # Zero is unset; negative Unix dates are valid. The source retains raw bytes.
     date_added_to_itunes: int = 0
     store_track_id: int = 0
     store_encoder_version: int = 0
@@ -91,15 +100,29 @@ class IPodTrackDetails:
     composer_id: int = 0
     tv_show_media_type_flag: int = 0
     itunes_store_asset_info: str = ""
+    genius_id: int = 0
+    native_chapters: NativeChapterIndex | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class TrackMetadata:
-    """Optional semantic metadata, with Unix-second dates and explicit units."""
+    """Optional metadata with best-effort signed Unix-second date interpretations.
+
+    Zero is the Library's unset marker; pre-1970 values are valid. A nonzero native
+    word can project to Unix zero, so these fields cannot replace retained source
+    evidence. Native modified/added/played/skipped words use captured device-local
+    interpretation; release uses the separate UTC-Mac policy. Unknown zones and
+    DST ambiguity produce estimates, never date-only Library blockers.
+
+    Date order is not event order: firmware clock corrections can move backwards.
+    Playback positions/durations ending in _ms are not calendar timestamps. See
+    docs/ipod-time.md and docs/research/classic-datetime-file-map-2026-11-06.md.
+    """
 
     file_format: str = ""
     variable_bitrate: bool = False
     compilation: bool = False
+    # Projected Track modification metadata, not a fresh Host stat observation.
     last_modified: int = 0
     total_tracks: int = 0
     sample_rate_hz: int = 0
@@ -108,22 +131,27 @@ class TrackMetadata:
     stop_time_ms: int = 0
     normalization_gain_db: float | None = None
     unscrobbled_play_count: int = 0
+    # Last recorded play; independently updateable from the play-count delta.
     last_played: int = 0
     disc_number: int = 0
     total_discs: int = 0
+    # Date added to the Library; distinct from release and Store purchase time.
     date_added: int = 0
     bookmark_time_ms: int = 0
     checked: bool = True
     bpm: int = 0
     artwork_count: int = 0
+    # Publisher/release metadata; native UTC-Mac policy does not use device DST.
     release_date: int = 0
     content_advisory: ContentAdvisory = ContentAdvisory.UNSPECIFIED
     skip_count: int = 0
+    # Last recorded skip; an earlier date after clock correction remains usable.
     last_skipped: int = 0
     skip_shuffle: bool = False
     remember_position: bool = False
     podcast: bool = False
     has_lyrics: bool = False
+    # Playback status is independent of the cumulative Track.play_count.
     played: bool = False
     pregap: int = 0
     sample_count: int = 0
@@ -194,13 +222,13 @@ class Track:
     def album_key(self) -> str:
         """Return the stable presentation key used to group this Track."""
 
-        return "\x1f".join(
-            (self.effective_album_artist.casefold(), self.album.casefold())
-        )
+        return "\x1f".join((self.effective_album_artist, self.album.casefold()))
 
     @property
     def artist_key(self) -> str:
-        return self.artist.casefold()
+        """Keep differently capitalized artists distinct, as on the iPod."""
+
+        return self.artist
 
     @property
     def genre_key(self) -> str:

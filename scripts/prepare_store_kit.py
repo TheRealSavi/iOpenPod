@@ -118,6 +118,10 @@ def safe_relative_path(value: str) -> PurePosixPath:
 
 def source_path_allowed(value: str) -> bool:
     path = safe_relative_path(value)
+    if value.startswith("src/iOpenPod/assets/games/") and (
+        "archives" in path.parts or path.suffix.lower() in {".zip", ".7z"}
+    ):
+        return False
     if value in PRIVATE_FIXTURES:
         return False
     if value in REVIEWED_SOURCE_FILES:

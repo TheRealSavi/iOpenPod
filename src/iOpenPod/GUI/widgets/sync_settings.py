@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
+    ANALYZE_FOR_GENIUS,
+    COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     LOSSY_ENCODER,
@@ -38,11 +40,17 @@ from iOpenPod.app.media.transcoding import (
     BitrateMode,
     LossyEncoder,
 )
+from iOpenPod.app.podcasts.settings import (
+    read_default_podcast_sync_settings,
+    save_default_podcast_sync_settings,
+)
 from iOpenPod.app.scrobbling.settings import SCROBBLE_DURING_SYNC
+from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.settings_editor import ScopedSettingBinding, SettingsEditor
+from iOpenPod.GUI.widgets.themed_buttons import ActionButton
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -85,11 +93,21 @@ class SyncSettings(QWidget):
     ) -> None:
         super().__init__(parent)
         scope = editor or SettingsEditor(settings, self)
+        self._scope = scope
+        self._podcast_dialog: PodcastSyncSettingsDialog | None = None
+        self._podcast_defaults = ActionButton(parent=self)
+        self._podcast_defaults.setObjectName("defaultPodcastSyncSettings")
+        self._podcast_defaults.clicked.connect(self._open_podcast_defaults)
+        self._podcast_row = SettingRow("", "", self._podcast_defaults, self)
+        scope.changed.connect(self._refresh_podcast_scope)
+        self._refresh_podcast_scope()
         self._title = QLabel(self)
         self._title.setObjectName("sectionTitle")
         self._sound_check = _Choice(
             scope, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
         )
+        self._genius = _Choice(scope, ANALYZE_FOR_GENIUS, "analyzeForGenius", self)
+        self._bpm = _Choice(scope, COMPUTE_MISSING_BPM, "computeMissingBpm", self)
         self._normalize = _Choice(
             scope, NORMALIZE_TAGS_AFTER_SYNC, "normalizeTagsAfterSync", self
         )
@@ -103,6 +121,8 @@ class SyncSettings(QWidget):
         )
         self._rows = (
             self._scrobble,
+            self._genius,
+            self._bpm,
             self._sound_check,
             self._normalize,
             self._rotate,
@@ -113,6 +133,7 @@ class SyncSettings(QWidget):
         group.setMaximumWidth(960)
         for row in self._rows:
             group.add_row(row)
+        group.add_row(self._podcast_row)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(LAYOUT.space_xs)
@@ -122,12 +143,39 @@ class SyncSettings(QWidget):
 
     def retranslate_ui(self) -> None:
         self._title.setText(self.tr("Sync behavior"))
+        self._podcast_defaults.setText(self.tr("Edit defaults…"))
+        self._podcast_defaults.setAccessibleName(
+            self.tr("Default Podcast Sync Settings")
+        )
+        self._podcast_row.set_copy(
+            self.tr("Default Podcast Sync Settings"),
+            self.tr(
+                "Choose the Sync settings for newly added podcasts. "
+                "Existing podcasts keep their own settings."
+            ),
+        )
         for row in self._rows:
             row.configure(((self.tr("Off"), False), (self.tr("On"), True)))
         self._scrobble.set_copy(
             self.tr("Scrobble during Sync"),
             self.tr(
                 "Submit pending iPod plays to connected services before syncing media. Failed submissions are saved for retry."
+            ),
+        )
+        self._genius.set_copy(
+            self.tr("Analyze for Genius"),
+            self.tr(
+                "Analyze music and refresh native Genius recommendations during Sync "
+                "on supported iPods. Off skips Genius generation and keeps existing "
+                "Genius data where possible."
+            ),
+        )
+        self._bpm.set_copy(
+            self.tr("Calculate missing BPM"),
+            self.tr(
+                "Fill missing BPM for new music and music already on the iPod during Sync. "
+                "Existing BPM values and Host files stay unchanged. "
+                "Works with Analyze for Genius off."
             ),
         )
         self._sound_check.set_copy(
@@ -168,6 +216,35 @@ class SyncSettings(QWidget):
                 "iPod firmware reads the Library database instead."
             ),
         )
+
+    def _refresh_podcast_scope(self) -> None:
+        self._podcast_row.setVisible(not self._scope.device)
+
+    def _open_podcast_defaults(self) -> None:
+        if self._podcast_dialog is not None:
+            self._podcast_dialog.close()
+            self._podcast_dialog.deleteLater()
+        self._podcast_dialog = PodcastSyncSettingsDialog(
+            self.tr("Default Podcast Sync Settings"),
+            read_default_podcast_sync_settings(self._scope.settings),
+            self,
+        )
+        self._podcast_dialog.accepted.connect(self._save_podcast_defaults)
+        self._podcast_dialog.open()
+
+    def _save_podcast_defaults(self) -> None:
+        if self._podcast_dialog is None:
+            return
+        try:
+            save_default_podcast_sync_settings(
+                self._scope.settings, self._podcast_dialog.selected_settings
+            )
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                self.tr("Could not save podcast defaults"),
+                str(error),
+            )
 
 
 class TranscodingSettings(QWidget):

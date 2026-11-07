@@ -10,6 +10,7 @@ from iOpenPod.app.podcasts.models import (
     PodcastClearAge,
     PodcastClearMethod,
     PodcastFillMode,
+    PodcastShowType,
     PodcastSubscription,
     PodcastSyncSettings,
     SubscriptionSource,
@@ -37,9 +38,9 @@ _HISTORY_FIELDS = frozenset(
         "automatically_cleared",
     )
 )
-# Keep the established path, but older apps must reject documents whose retention
-# choices they cannot preserve. Version 1 loads with Original iOpenPod defaults.
-_SUBSCRIPTIONS_VERSION = 2
+# Keep the established path, but reject versions with metadata or retention choices
+# the reader cannot preserve. Version 1 loads with Original iOpenPod defaults.
+_SUBSCRIPTIONS_VERSION = 3
 _MAX_SUBSCRIPTIONS = 500
 _MAX_HISTORY_RECORDS = 250_000
 
@@ -62,15 +63,13 @@ def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
                 "description": item.description,
                 "artwork_url": item.artwork_url,
                 "category": item.category,
+                "categories": list(item.categories),
+                "copyright": item.copyright,
+                "website_url": item.website_url,
+                "show_type": item.show_type.value,
                 "language": item.language,
                 "last_refreshed": item.last_refreshed,
-                "sync_settings": {
-                    "episode_slots": item.sync_settings.episode_slots,
-                    "fill_mode": item.sync_settings.fill_mode.value,
-                    "clear_when_listened": item.sync_settings.clear_when_listened,
-                    "clear_older_than": item.sync_settings.clear_older_than.value,
-                    "clear_method": item.sync_settings.clear_method.value,
-                },
+                "sync_settings": encode_sync_settings(item.sync_settings),
             }
             for item in subscriptions
         ],
@@ -79,7 +78,9 @@ def encode_subscriptions(subscriptions: Sequence[PodcastSubscription]) -> bytes:
 
 
 def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
-    root = _root(payload, _SUBSCRIPTIONS_SCHEMA, versions=(1, _SUBSCRIPTIONS_VERSION))
+    root = _root(
+        payload, _SUBSCRIPTIONS_SCHEMA, versions=(1, 2, _SUBSCRIPTIONS_VERSION)
+    )
     rows = _sequence(root.get("subscriptions", ()), "subscriptions")
     if len(rows) > _MAX_SUBSCRIPTIONS:
         raise PodcastDocumentError("The subscriptions file contains too many shows")
@@ -98,11 +99,15 @@ def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
                     description=_text(row, "description"),
                     artwork_url=_text(row, "artwork_url"),
                     category=_text(row, "category"),
+                    categories=_categories(row.get("categories", [])),
+                    copyright=_text(row, "copyright"),
+                    website_url=_text(row, "website_url"),
+                    show_type=PodcastShowType(_text(row, "show_type")),
                     language=_text(row, "language"),
-                    last_refreshed=_integer(row, "last_refreshed"),
+                    last_refreshed=_date(row, "last_refreshed"),
                     sync_settings=(
-                        _decode_settings(row.get("sync_settings"))
-                        if root.get("version") == _SUBSCRIPTIONS_VERSION
+                        decode_sync_settings(row.get("sync_settings"))
+                        if root.get("version") in (2, _SUBSCRIPTIONS_VERSION)
                         else PodcastSyncSettings()
                     ),
                 )
@@ -119,6 +124,15 @@ def decode_subscriptions(payload: bytes) -> tuple[PodcastSubscription, ...]:
     except ValueError as error:
         raise PodcastDocumentError(str(error)) from error
     return tuple(subscriptions)
+
+
+def _categories(value: object) -> tuple[str, ...]:
+    items = _sequence(value, "categories")
+    if len(items) > 100 or any(
+        not isinstance(item, str) or not item.strip() for item in items
+    ):
+        raise PodcastDocumentError("categories must contain at most 100 nonempty names")
+    return tuple(dict.fromkeys(cast("str", item).strip() for item in items))
 
 
 def encode_history(records: Sequence[ListeningRecord]) -> bytes:
@@ -154,9 +168,12 @@ def decode_history(payload: bytes) -> tuple[ListeningRecord, ...]:
     for index, value in enumerate(rows):
         row = _mapping(value, f"records[{index}]")
         version_two = root.get("version") == _HISTORY_VERSION
-        if version_two and frozenset(row) != _HISTORY_FIELDS:
+        if version_two and frozenset(row) - {
+            "last_played",
+            "published_at",
+        } != _HISTORY_FIELDS - {"last_played", "published_at"}:
             raise PodcastDocumentError(
-                f"records[{index}] must contain exactly the version 2 history fields"
+                f"records[{index}] must contain the version 2 history fields (dates are optional)"
             )
         override = row.get("listened_override")
         if override is not None and not isinstance(override, bool):
@@ -173,8 +190,8 @@ def decode_history(payload: bytes) -> tuple[ListeningRecord, ...]:
                     title=_text(row, "title"),
                     listened_override=override,
                     observed_play_count=_integer(row, "observed_play_count"),
-                    last_played=_integer(row, "last_played"),
-                    published_at=_integer(row, "published_at") if version_two else 0,
+                    last_played=_date(row, "last_played"),
+                    published_at=_date(row, "published_at") if version_two else 0,
                     episode_number=(
                         _optional_integer(row, "episode_number")
                         if version_two
@@ -195,7 +212,19 @@ def decode_history(payload: bytes) -> tuple[ListeningRecord, ...]:
     return tuple(records)
 
 
-def _decode_settings(value: object) -> PodcastSyncSettings:
+def encode_sync_settings(settings: PodcastSyncSettings) -> dict[str, object]:
+    """Represent a retention policy in subscription or Host settings JSON."""
+    return {
+        "episode_slots": settings.episode_slots,
+        "fill_mode": settings.fill_mode.value,
+        "clear_when_listened": settings.clear_when_listened,
+        "clear_older_than": settings.clear_older_than.value,
+        "clear_method": settings.clear_method.value,
+    }
+
+
+def decode_sync_settings(value: object) -> PodcastSyncSettings:
+    """Validate the shared retention policy representation."""
     row = _mapping(value, "sync_settings")
     listened = row.get("clear_when_listened")
     if not isinstance(listened, bool):
@@ -259,6 +288,12 @@ def _text(row: Mapping[str, object], name: str, *, required: bool = False) -> st
     return result
 
 
+def _date(row: Mapping[str, object], name: str) -> int:
+    """Signed Unix dates are valid; unusable calendar metadata is simply absent."""
+    value = row.get(name, 0)
+    return value if type(value) is int else 0
+
+
 def _integer(row: Mapping[str, object], name: str) -> int:
     value = row.get(name, 0)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -287,6 +322,8 @@ __all__ = [
     "PodcastDocumentError",
     "decode_history",
     "decode_subscriptions",
+    "decode_sync_settings",
     "encode_history",
     "encode_subscriptions",
+    "encode_sync_settings",
 ]

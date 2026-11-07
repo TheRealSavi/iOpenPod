@@ -10,7 +10,6 @@ import tarfile
 import urllib.error
 import zipfile
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
 from email.message import Message
 from pathlib import Path
 from threading import Event
@@ -20,6 +19,7 @@ from xml.etree import ElementTree as ET
 import pytest
 from Crypto.Signature import eddsa
 from scripts import package_updates, publish_update_feed, update_feed
+from whenever import Instant, hours
 
 from iOpenPod.app.updates import portable
 from iOpenPod.app.updates.installation import Installation
@@ -132,6 +132,24 @@ def test_feed_authenticates_every_archive_and_mac_appcast(release_files: Path) -
             assert enclosure.get("length") == str(asset.size)
 
 
+def test_feed_preserves_numeric_utc_microsecond_wire_timestamps(
+    release_files: Path,
+) -> None:
+    output = release_files / "feed"
+    clock = Instant.from_utc(2026, 11, 6, 1, 2, 3, nanosecond=123456789)
+    update_feed.create_feed(
+        release_files, output, VERSION, SEED, root=release_files, now=clock
+    )
+    metadata = (output / "stable.json").read_bytes()
+    envelope = read_json(metadata)
+    payload = read_json(base64.b64decode(str(envelope["payload"])))
+    assert payload["issued"] == "2026-11-06T01:02:03.123456+00:00"
+    assert payload["expires"] == "2026-12-21T01:02:03.123456+00:00"
+    assert verify_release(metadata, (PUBLIC,), now=clock).issued == clock.round(
+        "microsecond", mode="floor"
+    )
+
+
 @pytest.mark.parametrize("previous_protocol", [1, 2])
 def test_expired_feed_can_be_renewed_without_rolling_back_history(
     release_files: Path,
@@ -144,7 +162,7 @@ def test_expired_feed_can_be_renewed_without_rolling_back_history(
         VERSION,
         SEED,
         root=release_files,
-        now=datetime.now(UTC) - timedelta(days=60),
+        now=Instant.now() - hours(60 * 24),
     )
     previous = (old_output / "stable.json").read_bytes()
     # Older releases bind the legacy names; their signed history must remain

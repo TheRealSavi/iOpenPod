@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-10-15
 - Extends: [ADR-0144](0144-expand-track-headers-with-device-capabilities.md)
+- Amended by: [ADR-0171](0171-use-standard-track-headers-on-mini-2-and-ipod-video.md),
+  selecting 624-byte headers for Mini 2G and full-size iPod 5G/5.5G.
 
 ## Context
 

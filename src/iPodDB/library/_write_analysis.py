@@ -1,15 +1,18 @@
 """Aggregate semantic validation without modifying the retained source."""
 
+from dataclasses import replace
+
 from iPodDB.device_time import TimeConversion
 from iPodDB.library._field_policy import (
     changed_fields,
     needs_media,
     unclassified_fields,
 )
+from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library._photo_analysis import analyze_photos
 from iPodDB.library._smart_writing import smart_chunks
 from iPodDB.library._track_writing import validate_track
-from iPodDB.library.models import LibrarySnapshot
+from iPodDB.library.models import LibrarySnapshot, MediaKind
 from iPodDB.library.playlists import PlaylistKind
 from iPodDB.library.smart_rules import smart_playlist_references
 from iPodDB.library.writing import (
@@ -33,6 +36,13 @@ def analyze(
 ) -> LibraryWritePlan:
     issues: list[WriteIssue] = []
     changes: list[LibraryChange] = []
+    if draft.normalize_podcasts and any(
+        t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+        for t in draft.snapshot.tracks
+    ):
+        changes.append(
+            LibraryChange("library", None, "repair", "Podcasts", ("podcast_structure",))
+        )
     if draft.rebuild_album_indexes and has_album_indexes:
         changes.append(
             LibraryChange(
@@ -55,16 +65,18 @@ def analyze(
     for track_id in draft.retag_tracks:
         if (
             track_id in retagged
-            or track_id not in old_tracks
             or track_id not in tracks
-            or track_id in draft.replace_media
-            or old_tracks[track_id].metadata.location
-            != tracks[track_id].metadata.location
+            or (
+                track_id in old_tracks
+                and track_id not in draft.replace_media
+                and old_tracks[track_id].metadata.location
+                != tracks[track_id].metadata.location
+            )
         ):
             issues.append(
                 WriteIssue(
                     "draft.invalid_retag",
-                    "Tag rewrites require one retained Track at its existing location.",
+                    "Tag rewrites require one incoming Track or a retained Track at its existing location.",
                     subject="track",
                     record_id=track_id,
                     field="retag_tracks",
@@ -255,6 +267,12 @@ def analyze(
             artwork.append(track.artwork_id)
     playlists = {p.playlist_id: p for p in draft.snapshot.playlists}
     old_playlists = {p.playlist_id: p for p in original.playlists}
+    reconciled_genius = {
+        p.playlist_id: p
+        for p in reconcile_genius_playlists(
+            original, replace(draft.snapshot, playlists=original.playlists)
+        ).playlists
+    }
     for playlist in draft.snapshot.playlists:
         old_playlist = old_playlists.get(playlist.playlist_id)
 
@@ -271,6 +289,49 @@ def analyze(
                 )
             )
 
+        if old_playlist is None and playlist.kind is PlaylistKind.GENIUS:
+            error(
+                "playlist.genius_creation",
+                "Native Genius Playlists cannot be created through ordinary Playlist editing.",
+                "kind",
+            )
+        elif old_playlist is not None:
+            if old_playlist.kind != playlist.kind and PlaylistKind.GENIUS in (
+                old_playlist.kind,
+                playlist.kind,
+            ):
+                error(
+                    "playlist.genius_kind",
+                    "A native Genius Playlist cannot be converted to or from another Playlist kind.",
+                    "kind",
+                )
+            if old_playlist.kind is PlaylistKind.GENIUS:
+                expected_genius = reconciled_genius.get(playlist.playlist_id)
+                if expected_genius is None:
+                    error(
+                        "playlist.genius_empty",
+                        "Remove the Genius Playlist emptied by Track deletion.",
+                        "entries",
+                    )
+                retained_entries = tuple(
+                    entry for entry in old_playlist.entries if entry.track_id in tracks
+                )
+                if playlist.entries != retained_entries:
+                    error(
+                        "playlist.genius_membership",
+                        "Native Genius membership can only change when removing deleted Tracks.",
+                        "entries",
+                    )
+                if playlist.genius_seed_persistent_id != (
+                    expected_genius.genius_seed_persistent_id
+                    if expected_genius is not None
+                    else old_playlist.genius_seed_persistent_id
+                ):
+                    error(
+                        "playlist.genius_seed",
+                        "A deleted Genius seed must be replaced by the first surviving member; other seed edits are unsupported.",
+                        "genius_seed_persistent_id",
+                    )
         if playlist.parent_id is not None:
             parent = playlists.get(playlist.parent_id)
             if parent is None or parent.kind is not PlaylistKind.FOLDER:
@@ -456,7 +517,16 @@ def analyze(
                     if track.track_id in old_tracks
                     else ""
                 )
-                or (track.track_id in media_ids and bool(track.metadata.lyrics))
+                or (
+                    track.track_id in media_ids
+                    and (
+                        bool(track.metadata.lyrics)
+                        or (
+                            track.track_id in old_tracks
+                            and old_tracks[track.track_id].metadata.has_lyrics
+                        )
+                    )
+                )
                 or track.track_id in retagged
             )
         ),

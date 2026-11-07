@@ -85,6 +85,11 @@ The builder still takes the root value and next image ID explicitly. Library
 preparation starts fresh identities at 100 and preserves existing root variants.
 See [ADR-0033](../adr/0033-create-artworkdb-from-catalog-capabilities.md).
 
+The focused [MHFD +0x10 investigation](artwork-mhfd-0x10.md) traces the native
+importer and its callers in both Classic 7G updater families. These import paths
+do not use the word as flags, a format selector or an acceptance gate. A producer
+format revision is a hypothesis, rather than an established semantic name.
+
 ### `mhsd`
 
 Dataset kinds are:

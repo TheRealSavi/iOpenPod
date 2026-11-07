@@ -131,6 +131,11 @@ QWidget {{
 QMainWindow,
 QWidget#appShell,
 QWidget#syncWorkspace,
+QWidget#geniusPage,
+QWidget#gamesPage,
+QWidget#gamesEmptyPage,
+QStackedWidget#gamesContent,
+QDialog#gameCatalogDialog,
 QFrame#appBody,
 QStackedWidget#pageStack,
 QStackedWidget#syncWorkspaceContent,
@@ -139,7 +144,10 @@ QStackedWidget#syncLibraryStack {{
     background-color: {tokens.window};
 }}
 
-QLabel#pageTitle {{
+QLabel#pageTitle,
+QLabel#startTitle,
+QLabel#collectionAlbumTitle,
+QLabel#gamesEmptyTitle {{
     color: {tokens.text};
     font-family: "{typography.display}";
     font-size: {typography.title_pt:g}pt;
@@ -155,6 +163,7 @@ QLabel[browserTitle="true"] {{
 }}
 
 QLabel#pageDescription,
+QLabel#gamesEmptyDetail,
 QLabel#pageMeta,
 QLabel#deviceSearchStatus,
 QLabel#settingDescription,
@@ -169,6 +178,11 @@ QLabel#placeholderNote {{
     color: {tokens.text_secondary};
 }}
 
+QLabel#settingDescription[warning="true"] {{
+    color: {tokens.warning};
+    font-weight: 700;
+}}
+
 QLabel#pageMeta,
 QLabel#deviceSearchStatus,
 QLabel#playbackEmptyDetail,
@@ -177,6 +191,7 @@ QLabel#deviceModel,
 QLabel#deviceSummary,
 QLabel#deviceMetricLabel,
 QLabel#deviceMetricValue,
+QLabel#deviceDatabaseValue,
 QLabel#sidebarSectionLabel {{
     font-size: {typography.small_pt:g}pt;
 }}
@@ -187,6 +202,11 @@ QTreeView#playlistTree {{
     border: none;
     selection-background-color: {tokens.surface_selected};
     selection-color: {tokens.accent};
+}}
+
+QTreeView#playlistTree[dropdownView="true"] {{
+    selection-background-color: {tokens.accent};
+    selection-color: {tokens.accent_ink};
 }}
 
 QPushButton#playlistSectionToggle {{
@@ -236,6 +256,8 @@ QLabel#photoAlbumManagerError {{
     color: {tokens.danger};
 }}
 
+QDialog#onboardingDialog,
+QDialog#helpSupportDialog,
 QDialog#playlistEditor,
 QDialog#metadataEditor,
 QDialog#artworkCropDialog,
@@ -246,13 +268,18 @@ QDialog#libraryReviewDialog,
 QDialog#scrobbleReport,
 QDialog#playlistExportDialog,
 QDialog#podcastSyncSettingsDialog,
+QDialog#addGeniusMixesDialog,
+QDialog#geniusMixSettingsDialog,
 QDialog#photoAlbumManager,
 QDialog#photoAlbumEditor,
 QDialog#mediaFoldersDialog,
 QDialog#mediaFolderSettingsDialog,
 QDialog#mediaToolsSetup,
+QDialog#phaseRuntimeSetup,
 QDialog#externalPlaylistFilesDialog,
 QDialog#syncDuplicatesDialog,
+QDialog#playlistMatchDialog,
+QDialog#mediaStreamsDialog,
 QDialog#linuxIdentitySetup,
 QDialog#linuxIdentityUninstall,
     QFileDialog,
@@ -268,6 +295,87 @@ QLabel#dialogTitle {{
     font-family: "{typography.display}";
     font-size: {typography.title_pt:g}pt;
     font-weight: 700;
+}}
+
+/* Hallmark · component: onboarding · existing desktop palette and typography */
+QLabel#onboardingProgress {{
+    color: {tokens.accent};
+    font-size: {typography.small_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#onboardingDescription, QLabel#onboardingCaption {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#onboardingError {{
+    color: {tokens.danger};
+}}
+
+QFrame#onboardingHelpDivider {{
+    background-color: {tokens.border};
+    border: none;
+}}
+
+QLabel#geniusMixSectionTitle {{
+    color: {tokens.accent};
+    font-size: {typography.small_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#geniusMixDialogHeading {{
+    color: {tokens.text};
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+/* Hallmark · component: Genius Mix chooser · genre: atmospheric · theme: iOpenPod
+ * pre-emit critique: P4 H4 E4 S4 R5 V4 · contrast: pass (40-41)
+ * states: default · hover · focus · active · disabled (native selection)
+ * loading · error · success (shared ActionButton feedback contract)
+ * typography: native · motion: cut · artwork: symbolic record grooves
+ */
+QListWidget#geniusMixProposals {{
+    background-color: {tokens.window};
+    border: none;
+    outline: none;
+}}
+
+QListWidget#geniusMixProposals QScrollBar:horizontal {{
+    height: {LAYOUT.space_sm}px;
+    background: {tokens.window};
+    border: none;
+}}
+
+QListWidget#geniusMixProposals QScrollBar::handle:horizontal {{
+    min-width: {LAYOUT.scrollbar_handle_minimum}px;
+    margin: {LAYOUT.space_3xs}px 0;
+    background: {tokens.scrollbar};
+    border-radius: {LAYOUT.space_2xs}px;
+}}
+
+QListWidget#geniusMixProposals QScrollBar::handle:horizontal:hover {{
+    background: {tokens.scrollbar_hover};
+}}
+
+QFrame#geniusMixDialogFooter {{
+    background: {tokens.surface};
+    border: none;
+    border-top: 1px solid {tokens.border};
+}}
+
+QFrame#geniusMixDialogFooter QPushButton {{
+    min-height: {LAYOUT.control_height_large}px;
+}}
+
+QLabel#geniusMixSelectionSummary {{
+    color: {tokens.text_secondary};
+    background: transparent;
+}}
+
+QLabel#geniusMixEmpty {{
+    color: {tokens.text_secondary};
 }}
 
 QLabel#mediaFolderSummary,
@@ -380,8 +488,22 @@ QLabel#syncScanTitle {{
     font-weight: 700;
 }}
 
-QLabel#syncScanDetail,
-QLabel#syncSelectionSummary {{
+QLabel#syncScanDetail {{
+    color: {tokens.text_secondary};
+}}
+
+QFrame#syncScanImportNotice {{
+    background-color: {tokens.surface_alt};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QLabel#syncScanImportNoticeTitle {{
+    color: {tokens.text};
+    font-weight: 700;
+}}
+
+QLabel#syncScanImportNoticeDetail {{
     color: {tokens.text_secondary};
 }}
 
@@ -569,6 +691,7 @@ QScrollArea#syncDuplicateDetailScroll > QWidget > QWidget {{
     border: none;
 }}
 
+QListWidget#playlistSyncTargets,
 QListWidget#syncDuplicateGroups {{
     color: {tokens.text};
     background-color: {tokens.window};
@@ -576,23 +699,45 @@ QListWidget#syncDuplicateGroups {{
     outline: none;
 }}
 
+QListWidget#playlistSyncTargets::item,
 QListWidget#syncDuplicateGroups::item {{
     padding: {LAYOUT.space_sm}px {LAYOUT.space_xs}px;
     border: 2px solid transparent;
     border-radius: {LAYOUT.radius_control}px;
 }}
 
+QListWidget#playlistSyncTargets::item:hover,
 QListWidget#syncDuplicateGroups::item:hover {{
     background-color: {tokens.surface_hover};
 }}
 
+QListWidget#playlistSyncTargets::item:selected,
 QListWidget#syncDuplicateGroups::item:selected {{
     color: {tokens.text};
     background-color: {tokens.surface_selected};
 }}
 
+QListWidget#playlistSyncTargets::item:focus,
 QListWidget#syncDuplicateGroups::item:focus {{
     border-color: {tokens.focus};
+}}
+
+QListWidget#subtitleStreams,
+QListWidget#captionStreams {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QListWidget#subtitleStreams::item,
+QListWidget#captionStreams::item {{
+    padding: {LAYOUT.space_sm}px;
+}}
+
+QListWidget#subtitleStreams::item:disabled,
+QListWidget#captionStreams::item:disabled {{
+    color: {tokens.text_secondary};
 }}
 
 QTreeWidget#syncDuplicateHosts,
@@ -692,6 +837,55 @@ QRadioButton::indicator:disabled {{
 
 QRadioButton:disabled {{
     color: {tokens.text_disabled};
+}}
+
+QRadioButton[onboardingChoice="true"] {{
+    font-size: {typography.body_pt:g}pt;
+    font-weight: 700;
+    background-color: {tokens.surface};
+    border: none;
+    border-radius: {LAYOUT.radius_control}px;
+    padding: {LAYOUT.space_xs}px {LAYOUT.space_sm}px;
+    spacing: {LAYOUT.space_sm}px;
+}}
+
+QRadioButton[onboardingChoice="true"]:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QRadioButton[onboardingChoice="true"]:checked {{
+    background-color: {tokens.surface_selected};
+}}
+
+QRadioButton[onboardingChoice="true"]:pressed {{
+    background-color: {tokens.surface_pressed};
+}}
+
+QRadioButton[onboardingChoice="true"]:disabled {{
+    background-color: {tokens.surface_alt};
+    color: {tokens.text_disabled};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator {{
+    width: 14px;
+    height: 14px;
+    border-radius: 8px;
+    border: 1px solid {tokens.border_strong};
+    background-color: {tokens.surface};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator:checked {{
+    border-color: {tokens.accent};
+    background-color: {tokens.accent};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator:focus {{
+    border: 2px solid {tokens.focus};
+}}
+
+QRadioButton[onboardingChoice="true"]::indicator:disabled {{
+    border-color: {tokens.border};
+    background-color: {tokens.surface_alt};
 }}
 
 QProgressDialog#libraryExportProgress QProgressBar,
@@ -838,7 +1032,12 @@ QLabel#syncResultSummary {{
 }}
 
 QLabel#syncResultMessageHeading {{ font-weight: 700; }}
+QLabel#syncResultMessage {{
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 700;
+}}
 QLabel#syncResultDescription,
+QLabel#syncResultMessageOverflow,
 QLabel#syncResultNoIssues {{ color: {tokens.text_secondary}; }}
 
 QPlainTextEdit#syncExecutionIssues {{
@@ -1069,13 +1268,32 @@ QLabel#playerTrackTitle {{
     font-size: {typography.heading_pt:g}pt;
 }}
 
-QLabel#playerRating {{
+QLabel#playerRating,
+QLabel#starRating {{
     color: {tokens.warning};
     font-size: {typography.heading_pt:g}pt;
 }}
 
-QLabel#playerRating[ratingHover="true"] {{
+QLabel#playerRating[ratingHover="true"],
+QLabel#starRating[ratingHover="true"],
+QLabel#starRating:focus {{
     color: {tokens.accent_hover};
+}}
+
+QLabel#starRating {{
+    min-height: {LAYOUT.control_height}px;
+    padding: 0 {LAYOUT.space_sm}px;
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border_strong};
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QLabel#starRating:hover {{
+    border-color: {tokens.text_secondary};
+}}
+
+QLabel#starRating:focus {{
+    border-color: {tokens.focus};
 }}
 
 QFrame#playerBar {{
@@ -1117,6 +1335,99 @@ QFrame#nowPlayingSurface[playbackState="idle"] {{
     border-color: transparent;
 }}
 
+/* Hallmark · Now Playing · atmospheric · two-column listening view
+ * theme: iOpenPod · enlarged, blurred actual artwork · native window chrome
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ */
+QToolButton#playerArtworkButton {{
+    background: transparent;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: {LAYOUT.radius_control + 2}px;
+}}
+
+QToolButton#playerArtworkButton:hover {{
+    border-color: {tokens.border_strong};
+}}
+
+QToolButton#playerArtworkButton:pressed,
+QToolButton#playerArtworkButton:focus {{
+    border-color: {tokens.focus};
+}}
+
+QListView#nowPlayingQueueView {{
+    background: transparent;
+}}
+
+QListView#nowPlayingQueueView {{
+    color: {tokens.text};
+    border: none;
+    outline: none;
+}}
+
+QListView#nowPlayingQueueView::item {{
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+}}
+
+QListView#nowPlayingQueueView::item:hover {{
+    background: {tokens.surface_hover};
+}}
+
+QListView#nowPlayingQueueView::item:selected {{
+    background: {tokens.surface_selected};
+}}
+
+QListView#nowPlayingQueueView::item:focus {{
+    border: 1px solid {tokens.focus};
+}}
+
+QLabel#nowPlayingTitle {{
+    color: {tokens.text};
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#nowPlayingQueueTitle {{
+    color: {tokens.text};
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 600;
+}}
+
+QLabel#nowPlayingArtist,
+QLabel#nowPlayingAlbum,
+QLabel#nowPlayingElapsed,
+QLabel#nowPlayingDuration,
+QLabel#nowPlayingQueueEmpty {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#nowPlayingElapsed,
+QLabel#nowPlayingDuration {{
+    font-size: {typography.small_pt:g}pt;
+}}
+
+QSlider#nowPlayingProgress {{
+    min-height: {LAYOUT.control_height_compact}px;
+}}
+
+QSlider#nowPlayingProgress::sub-page:horizontal,
+QSlider#nowPlayingProgress::handle:horizontal {{
+    background: {tokens.text};
+    border-color: {tokens.text};
+}}
+
+QSlider#nowPlayingProgress::groove:horizontal,
+QSlider#nowPlayingProgress::add-page:horizontal {{
+    background: {tokens.border_strong};
+}}
+
+QSlider#nowPlayingProgress::handle:horizontal:focus,
+QSlider#nowPlayingProgress::handle:horizontal:hover {{
+    border-color: {tokens.focus};
+}}
+
 QFrame#playbackPaneHost {{
     color: {tokens.text};
     background-color: {tokens.surface};
@@ -1151,6 +1462,10 @@ QTabWidget#playbackTabs::pane {{
 QTabWidget#settingsTabs::pane {{
     border: none;
     border-top: 1px solid {tokens.border};
+}}
+
+QTabWidget#settingsTabs::tab-bar {{
+    left: {LAYOUT.space_lg}px;
 }}
 
 QTabBar::tab {{
@@ -1238,6 +1553,67 @@ QFrame#appSidebar {{
     border-right: 1px solid {tokens.border};
 }}
 
+QWidget#collectionAlbumList,
+QWidget#collectionAlbumBody {{
+    background-color: {tokens.surface};
+}}
+
+QFrame#compactTopBar {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: none;
+    border-bottom: 1px solid {tokens.border};
+}}
+
+QFrame[hoverDropdown="true"] {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border_strong};
+    border-radius: {LAYOUT.radius_control}px;
+}}
+
+QToolButton[dropdownItem="true"],
+QToolButton[dropdownItem="true"]:checked {{
+    color: {tokens.text};
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: {LAYOUT.radius_control}px;
+    min-height: {LAYOUT.control_height_compact}px;
+    padding: 0 {LAYOUT.control_height_compact}px 0 {LAYOUT.space_xs}px;
+    text-align: left;
+}}
+
+QToolButton[dropdownItem="true"][dropdownActive="true"] {{
+    color: {tokens.accent_ink};
+    background-color: {tokens.accent};
+}}
+
+QToolButton[dropdownItem="true"]:focus {{
+    border-color: {tokens.focus};
+}}
+
+QToolButton[dropdownItem="true"]:pressed {{
+    color: {tokens.accent_ink};
+    background-color: {tokens.accent_pressed};
+}}
+
+QToolButton[dropdownItem="true"]:disabled {{
+    color: {tokens.text_disabled};
+    background-color: transparent;
+}}
+
+QToolButton[dropdownItem="true"]::menu-indicator {{
+    image: none;
+    width: 0px;
+    height: 0px;
+}}
+
+QScrollArea#compactPlaylistScroll,
+QScrollArea#compactPlaylistScroll > QWidget > QWidget {{
+    background-color: {tokens.surface};
+    border: none;
+}}
+
 QWidget#sidebarNavigation,
 QScrollArea#sidebarScroll,
 QScrollArea#sidebarScroll > QWidget > QWidget {{
@@ -1257,6 +1633,75 @@ QFrame#deviceCard {{
     background-color: {tokens.window};
     border: 1px solid {tokens.border};
     border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QFrame#deviceCard[summaryAvailable="true"][summaryHovered="true"] {{
+    background-color: {tokens.surface_hover};
+    border-color: {tokens.border_strong};
+}}
+
+QFrame#deviceCard[summarySelected="true"] {{
+    background-color: {tokens.surface_selected};
+    border-color: {tokens.accent};
+}}
+
+QFrame#deviceCard[summaryAvailable="true"]:focus {{
+    border-color: {tokens.focus};
+}}
+
+QWidget#deviceSummaryPage,
+QWidget#deviceSummaryCanvas,
+QScrollArea#deviceSummaryScroll {{
+    background-color: {tokens.surface};
+    color: {tokens.text};
+}}
+
+QLabel#deviceSummaryEmptyTitle {{
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QPushButton#startChooseDevice {{
+    min-height: {LAYOUT.control_height_large}px;
+    max-height: {LAYOUT.control_height_large}px;
+    min-width: {LAYOUT.start_action_width}px;
+}}
+
+QLabel#deviceSummaryModel,
+QLabel#startDescription,
+QLabel#deviceRestoreComingSoon,
+QLabel#deviceStorageCapacity,
+QLabel#deviceStorageNote {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel#deviceStorageNote,
+QLabel#deviceStorageLegend {{
+    font-size: {typography.small_pt:g}pt;
+}}
+
+QLabel[deviceSummaryValue="true"] {{
+    font-weight: 400;
+}}
+
+QLabel#deviceSummaryFieldLabel {{
+    color: {tokens.text};
+    font-size: {typography.body_pt:g}pt;
+    font-weight: 600;
+}}
+
+QFrame#deviceRestoreRow,
+QFrame#deviceSummarySurface {{
+    background-color: {tokens.window};
+    border: {LAYOUT.device_summary_border_width}px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QFrame#deviceStorageBreakdown {{
+    background-color: {tokens.window};
+    border: none;
+    border-top: 1px solid {tokens.border};
 }}
 
 QPushButton#deviceName {{
@@ -1344,7 +1789,8 @@ QLabel#deviceCandidateDetail {{
     color: {tokens.text_secondary};
 }}
 
-QLabel#deviceMetricValue {{
+QLabel#deviceMetricValue,
+QLabel#deviceDatabaseValue {{
     color: {tokens.text};
     font-weight: 600;
 }}
@@ -1520,6 +1966,59 @@ QPushButton[kind="quiet"]:focus {{
 }}
 
 QPushButton[kind="quiet"]:disabled {{
+    color: {tokens.text_disabled};
+    background-color: transparent;
+    border-color: transparent;
+}}
+
+QPushButton[compactNavigation="true"],
+QPushButton[compactNavigation="true"]:hover,
+QPushButton[compactNavigation="true"]:checked,
+QPushButton[compactNavigation="true"]:focus,
+QPushButton[compactNavigation="true"]:pressed {{
+    min-height: {LAYOUT.control_height_compact - 4}px;
+    padding: 0 {LAYOUT.space_xs}px;
+    text-align: center;
+    color: {tokens.text};
+    font-weight: 700;
+    border: 1px solid transparent;
+    border-radius: {(LAYOUT.control_height_compact - 4) // 2}px;
+}}
+
+QPushButton[compactNavigation="true"]:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QPushButton[dropdownTrigger="true"],
+QPushButton[dropdownTrigger="true"]:hover {{
+    background-color: transparent;
+}}
+
+QPushButton[dropdownTrigger="true"][dropdownHovered="true"] {{
+    background-color: {tokens.surface_hover};
+}}
+
+/* An inset well: shadow above, soft fill below, and a light lower lip. */
+QPushButton[compactNavigation="true"]:checked,
+QPushButton[compactNavigation="true"]:focus,
+QPushButton[compactNavigation="true"]:pressed,
+QPushButton[dropdownTrigger="true"][dropdownOpen="true"] {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {_darker(tokens.surface_alt, 118)},
+        stop:0.35 {_darker(tokens.surface_alt, 104)},
+        stop:1 {tokens.surface_alt});
+    border-color: {_darker(tokens.surface_alt, 112)};
+    border-top-color: {_darker(tokens.surface_alt, 135)};
+    border-bottom-color: {_lighter(tokens.surface, 120)};
+}}
+
+QPushButton[compactNavigation="true"]:pressed {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {_darker(tokens.surface_alt, 130)},
+        stop:1 {_darker(tokens.surface_alt, 108)});
+}}
+
+QPushButton[compactNavigation="true"]:disabled {{
     color: {tokens.text_disabled};
     background-color: transparent;
     border-color: transparent;
@@ -2045,7 +2544,8 @@ QLabel[sourceListCount="true"] {{
     font-size: {typography.small_pt:g}pt;
 }}
 
-QListView[sourceList="true"] {{
+QListView[sourceList="true"],
+QTreeWidget#geniusCollections {{
     color: {tokens.text};
     background-color: transparent;
     border: none;
@@ -2086,6 +2586,8 @@ QFrame#albumGridPanel,
 QFrame#photoGridPanel,
 QFrame#photoInspector,
 QListView#albumGrid,
+QListView#gamesGrid,
+QListView#availableGamesGrid,
 QListView#photoGrid,
 QListView[collectionGrid="true"],
 QListView[collectionList="true"] {{
@@ -2165,6 +2667,7 @@ QTableView[trackTable="true"] {{
     outline: none;
 }}
 
+QTableView#syncPlaylistReviewChanges,
 QTableView#externalPlaylistFilesTable,
 QTableView#syncPlanTable {{
     color: {tokens.text};
@@ -2177,6 +2680,7 @@ QTableView#syncPlanTable {{
     outline: none;
 }}
 
+QTableView#syncPlaylistReviewChanges::item,
 QTableView#externalPlaylistFilesTable::item,
 QTableView#syncPlanTable::item {{
     padding: 0 {LAYOUT.space_sm}px;
@@ -2184,22 +2688,26 @@ QTableView#syncPlanTable::item {{
     border-bottom: 1px solid {tokens.border};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:hover,
 QTableView#externalPlaylistFilesTable::item:hover,
 QTableView#syncPlanTable::item:hover {{
     background-color: {tokens.surface_hover};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:selected,
 QTableView#externalPlaylistFilesTable::item:selected,
 QTableView#syncPlanTable::item:selected {{
     color: {tokens.text};
     background-color: {tokens.surface_selected};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:focus,
 QTableView#externalPlaylistFilesTable::item:focus,
 QTableView#syncPlanTable::item:focus {{
     border: 2px solid {tokens.focus};
 }}
 
+QTableView#syncPlaylistReviewChanges::item:disabled,
 QTableView#externalPlaylistFilesTable::item:disabled,
 QTableView#syncPlanTable::item:disabled {{
     color: {tokens.text_disabled};
@@ -2330,40 +2838,56 @@ QStatusBar::item {{
     border: none;
 }}
 
-QLabel#activeStatusesHeading {{
+QLabel#activeStatusesHeading,
+QLabel#playerChaptersHeading {{
     color: {tokens.text_secondary};
     font-weight: 600;
 }}
 
-QLabel#activeStatusesEmpty {{
+QLabel#activeStatusesEmpty,
+QLabel#playerChaptersEmpty {{
     color: {tokens.text_secondary};
 }}
 
-QListWidget#activeStatusesList {{
+QListWidget#activeStatusesList,
+QListWidget#playerChapterList {{
     color: {tokens.text};
     background-color: transparent;
     border: none;
     outline: none;
 }}
 
-QListWidget#activeStatusesList::item {{
+QListWidget#activeStatusesList::item,
+QListWidget#playerChapterList::item {{
     padding: {LAYOUT.space_sm}px {LAYOUT.space_xs}px;
     margin: {LAYOUT.space_3xs}px 0;
     border: 1px solid transparent;
     border-radius: {LAYOUT.radius_control}px;
 }}
 
-QListWidget#activeStatusesList::item:hover {{
+QListWidget#activeStatusesList::item:hover,
+QListWidget#playerChapterList::item:hover {{
     background-color: {tokens.surface_hover};
 }}
 
-QListWidget#activeStatusesList::item:selected {{
+QListWidget#playerChapterList::item {{
+    padding: {LAYOUT.space_2xs}px {LAYOUT.space_xs}px;
+}}
+
+QListWidget#activeStatusesList::item:selected,
+QListWidget#playerChapterList::item:selected {{
     color: {tokens.text};
     background-color: {tokens.surface_selected};
 }}
 
-QListWidget#activeStatusesList::item:focus {{
+QListWidget#activeStatusesList::item:focus,
+QListWidget#playerChapterList::item:focus {{
     border: 1px solid {tokens.focus};
+}}
+
+QLabel#sharedStatusSafetyWarning, QLabel#libraryReviewSafetyWarning {{
+    color: {tokens.warning};
+    font-weight: 600;
 }}
 
 QProgressBar#sharedStatusProgress {{
@@ -2498,7 +3022,6 @@ QLabel#normalizationBadge {{
     font-weight: 600;
 }}
 
-QFrame#normalizationOverview,
 QFrame#normalizationEmpty {{
     background-color: {tokens.surface};
     border: 1px solid {tokens.border};
@@ -2507,10 +3030,6 @@ QFrame#normalizationEmpty {{
 
 QLabel#normalizationStatus {{
     color: {tokens.text_secondary};
-}}
-
-QLabel#normalizationWarnings {{
-    color: {tokens.warning};
 }}
 
 QTableView#normalizationChanges {{

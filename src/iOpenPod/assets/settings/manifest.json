@@ -1,0 +1,492 @@
+{
+  "source": "Actual iOpenPod Qt widgets, with the established GenericArt filename-to-Album mapping from scripts/screenshot_catalog.py.",
+  "artwork": [
+    {
+      "file": "25 blimps back.png",
+      "sha256": "fb258a27f93942b2de619798f2499fc0f5bd6669af8fa1865730ef26d8b2af79",
+      "album": "25 Blimps",
+      "artist": "Airship Club",
+      "genre": "Ambient"
+    },
+    {
+      "file": "ADMIT IT space.png",
+      "sha256": "667cb5186325b73ed38c2530bba6897cd296c42a644ee92295ab08a839460f66",
+      "album": "Admit It",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
+    },
+    {
+      "file": "all i need.png",
+      "sha256": "762d9f5151405e029334bf9a679948ac22081c5859da745fd9096ee9c73b5ee9",
+      "album": "All I Need",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
+    },
+    {
+      "file": "baby blue.png",
+      "sha256": "86b15f5233381583b6c96bd98ee6a960b2f74d401eac03bcc9d97e6653147d0f",
+      "album": "Baby Blue",
+      "artist": "June Aviary",
+      "genre": "Indie Pop"
+    },
+    {
+      "file": "CD.png",
+      "sha256": "b7b03505c4adfc4f9be989475c5aafcc037ac5d16d86e39d4d938ae2dfdd11a5",
+      "album": "Compact Disc",
+      "artist": "Prism Relay",
+      "genre": "Electronic"
+    },
+    {
+      "file": "coachella wave.png",
+      "sha256": "e5c671cd56b73d911bd9b20e89bfc8d5e4876f03ce7f4b0de1c647cd9493ab6f",
+      "album": "Desert Wave",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "color way.png",
+      "sha256": "8ff4f0c83a79bccd8c477735a8730edc4c59cf7addb143b436a93d996355746f",
+      "album": "Colorway",
+      "artist": "Chromatic Bloom",
+      "genre": "Psychedelic Pop"
+    },
+    {
+      "file": "daylight.png",
+      "sha256": "0b725e34fc8668140799e8c7549cd63f5af94cc5a0fd6e9b23c43e50c1afaa5b",
+      "album": "Daylight",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "ECLIPSE.png",
+      "sha256": "afe44aefde254ec3a88179823029d1b4c649dbaa7c7d31be92e73b8b5dc1327a",
+      "album": "Eclipse",
+      "artist": "Violet Orbit",
+      "genre": "Electronic"
+    },
+    {
+      "file": "GHOSTS VHS glow.png",
+      "sha256": "b02b304497eeb2e160eca4944bef148b2e6b921354136f3532494687a8e337c5",
+      "album": "Ghosts on VHS",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
+    },
+    {
+      "file": "highs and lows.png",
+      "sha256": "58c9d9b99453c9b63147c78baf82f6e9b4f95c72325f28b42a792e89ced91225",
+      "album": "Highs and Lows",
+      "artist": "Ember Theory",
+      "genre": "Alternative"
+    },
+    {
+      "file": "KIDS SEE GHOSTS.png",
+      "sha256": "5e483ca87d6ecab13cb8cbb5ec8d5cc971033600b8298fbf58e4da47e9bec20d",
+      "album": "Kids See Ghosts",
+      "artist": "Cloud Parade",
+      "genre": "Psychedelic Pop"
+    },
+    {
+      "file": "love story.png",
+      "sha256": "6af1b4439f8f548f8966bf8b68c58592cbdad08c14116bc61c2418aa1eb0f84d",
+      "album": "Love Story",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "OCEAN WAVES.png",
+      "sha256": "5d0c6c3996823eca4d2b8df6390e0c88b1a736412c311189fca319b7c3c21441",
+      "album": "Ocean Waves",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
+    },
+    {
+      "file": "peaceful.png",
+      "sha256": "7ff2bf5eeb562d3216667a10faa8ed1522126be24310ba1a9012f914d85ad19f",
+      "album": "Peaceful",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
+    },
+    {
+      "file": "REFLECT.png",
+      "sha256": "cd2e5537311d4d4a1229d14087e080a3c743f9b46a248cc3260f13b3916717d6",
+      "album": "Reflect",
+      "artist": "Glass District",
+      "genre": "Electronic"
+    },
+    {
+      "file": "risky.png",
+      "sha256": "ae602a2779362798978d15dcb5c22353751f97e114c5437d3ef12648f5e040d8",
+      "album": "Risky",
+      "artist": "Velvet Signal",
+      "genre": "Alternative"
+    },
+    {
+      "file": "RUNAWAY ORCHESTRATED ALBM ART.png",
+      "sha256": "53c4599eacec53e95f67a35c125de9a8bde7cab2797ce894ff0e6a1b37890b8b",
+      "album": "Runaway Orchestrated",
+      "artist": "The Northlight Orchestra",
+      "genre": "Orchestral"
+    },
+    {
+      "file": "SO GOOD TO ME.png",
+      "sha256": "92ba79a05d44b78022aa73c8837d572d6b1de205edf46dab75303c7f8ffefd8b",
+      "album": "So Good to Me",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "STARS.png",
+      "sha256": "b945a629507ca94df89a40ca4400597150cf55441169746dfb59766d6f1c9247",
+      "album": "Stars",
+      "artist": "Solar Arcade",
+      "genre": "Synthpop"
+    },
+    {
+      "file": "stay in touch.png",
+      "sha256": "000592218e6a281cb0db52cacf1afb3e3ad40516e33d735d49cf9c06814c3878",
+      "album": "Stay in Touch",
+      "artist": "Meadow Thread",
+      "genre": "Folk"
+    },
+    {
+      "file": "sunday mail.png",
+      "sha256": "e6a7384d82d67a297b2358f5aa0bdf7b48218ff5e1f19b3f826aeedf02fc87d0",
+      "album": "Sunday Mail",
+      "artist": "The Sunday Letters",
+      "genre": "Soul"
+    },
+    {
+      "file": "sunset DE.png",
+      "sha256": "5d18630fef762ea365e7cfebd15e5f0891d4f59f12af0ec8e454caeb5053ffed",
+      "album": "Sunset: Deluxe Edition",
+      "artist": "Tide Atlas",
+      "genre": "Ambient"
+    },
+    {
+      "file": "TDK.png",
+      "sha256": "6c9755da4cb8e511cb8dc29eadda8f44b85c7c522ad3874104867d24931df6fe",
+      "album": "Type II",
+      "artist": "Midnight Rental",
+      "genre": "Synthwave"
+    },
+    {
+      "file": "thank god for drugs.png",
+      "sha256": "07dd29a2760a66bd2f75ac05718cddfd1fab4ddc99f612888f2f6d4736bba5e1"
+    },
+    {
+      "file": "Tropical satellite.png",
+      "sha256": "6ffac1657c152ac01ff070aff6100a2ed43f393f1cbc336fc7a158b79705f29e"
+    },
+    {
+      "file": "Untitled-1.png",
+      "sha256": "437b186e4aeef0afb177a621a64ffbdc9ae77a3dc1dded3f3a93a7167012b489"
+    },
+    {
+      "file": "WALK ON WATER.png",
+      "sha256": "2e48f12a18f944ab40cd677747f855a0900eb695808eef3d5b469a0a5ed96a38"
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "theme-porcelain.png",
+      "sha256": "000d3e7704d0bd8a25927082492b5ac4c2fa117164803dca1d23e6bc7eb6e7d9",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-catppuccin-latte.png",
+      "sha256": "ffb709352dac80b9d527e0ae2c7e1443354e4eb40eccab50ad77d262ea3c2801",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-dune-plover.png",
+      "sha256": "5f1b035af506845bd3abbd1aed08502624aadee1b42505c7a7d9555a3c5698c1",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-sea-glass.png",
+      "sha256": "c2ba55e1081f5a6e5ab89ca7bc47975ffdc2cc1f7b9f6a89702987ae78961f4e",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-slate.png",
+      "sha256": "febb3c309bee85a530a683616632d0235aa18c939515fb3c7883e90c6d1df1a7",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-original.png",
+      "sha256": "5c490556463e391d016cdeb68f361996fc1e9ddd673cf00a81e4dcf7a76661c1",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-catppuccin-frappe.png",
+      "sha256": "f3bdb578137214b9cd2f8a1b04bdd2204a9fe2af907f1a157ad3a50bd6602ae3",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-catppuccin-macchiato.png",
+      "sha256": "e711cd05884206b5fba6bd96bded3bb3e7612b30bd782a0afc1f28da33d543f9",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-catppuccin-mocha.png",
+      "sha256": "bb8701e936c6c590c8de5a598034d8b42ed1eeda00f615c7aa39c9d0729e1416",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-gravity.png",
+      "sha256": "02c5208193dd4fcd7acb70f981cfad3e1ea3c17f642f6b1a74af199c0e80fd6a",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-northern-lights.png",
+      "sha256": "251c21028d726bf7f153b3754347ff5826b7e9743730dec9723bce5888500111",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-orchid.png",
+      "sha256": "5398d042e1d4de8517f49b5265aedda151348b7007af76392f15c43981a2ce06",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "theme-tech.png",
+      "sha256": "fb76812bcdd5be610e449265b8cee1eaf1fb306d8c9586a4f8498878c06000b7",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "colorful-off.png",
+      "sha256": "000d3e7704d0bd8a25927082492b5ac4c2fa117164803dca1d23e6bc7eb6e7d9",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "colorful-on.png",
+      "sha256": "f445c419ed0a4fb4fabaa052ec7bbb3fe314990bdd0b010e3a555cb955efeee9",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "titlebar-flat.png",
+      "sha256": "000d3e7704d0bd8a25927082492b5ac4c2fa117164803dca1d23e6bc7eb6e7d9",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "titlebar-round.png",
+      "sha256": "767f4b32949c9c098a718c4068eb62f7bb4b93e552b4a458acb724d0539bd240",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "library-split.png",
+      "sha256": "000d3e7704d0bd8a25927082492b5ac4c2fa117164803dca1d23e6bc7eb6e7d9",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "library-whole.png",
+      "sha256": "9ff3ca28564da80638a222d73850b9b98d00339216dbaa607e8aa050621c93e3",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "library-inline.png",
+      "sha256": "56e27b11ae56b4dfb9d25866872ffd8142477cdc4a40d6ca417ea730305be14d",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "navigation-sidebar.png",
+      "sha256": "f6095ceaba9b65d23f8d72ccb4095f55afe660c5b2734154007cd5edea7d23a8",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "navigation-compact.png",
+      "sha256": "0b93ebeab23f3e22732aa4a6f6a79ed0e803be5b380c07c195c68e8a3a44d14e",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "player-top.png",
+      "sha256": "80899c495db8487a6217b119ac6c1874a8ea7bc284b266a3d6d2b49f2fa87780",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "player-bottom.png",
+      "sha256": "26083a1bb4343152d9fea418644a3f092d318a2757e6c2dd6c55265cd87ae549",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "idle-visible.png",
+      "sha256": "c022ac85d9d741912d82a423944424f8173f702437029ea9aadbe4b6691eceb3",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "idle-hidden.png",
+      "sha256": "0b93ebeab23f3e22732aa4a6f6a79ed0e803be5b380c07c195c68e8a3a44d14e",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "device-standard.png",
+      "sha256": "b2df16a9b963e45e160e83e255db98bee1cc62f32a021beb8c0c658367850daf",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "device-classic.png",
+      "sha256": "bbf95d926a5215137f813671975188084a38ce61131511e5fe02c6b609850357",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/colorful-off.png",
+      "sha256": "febb3c309bee85a530a683616632d0235aa18c939515fb3c7883e90c6d1df1a7",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/colorful-on.png",
+      "sha256": "e786bcfa8f0b4861e5b9c47b445ad99f34f8eddbec8df9097abc1d5c8409a5b5",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/titlebar-flat.png",
+      "sha256": "febb3c309bee85a530a683616632d0235aa18c939515fb3c7883e90c6d1df1a7",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/titlebar-round.png",
+      "sha256": "c48a1039ebf4d92426bdd225ffa553852e00d04a04436020e6b6a88fa6eecb8e",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/library-split.png",
+      "sha256": "febb3c309bee85a530a683616632d0235aa18c939515fb3c7883e90c6d1df1a7",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/library-whole.png",
+      "sha256": "fd54dd80d7110977777e8633788e6dc174a922f25b86168fe4ddcb34f7aeaeb4",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/library-inline.png",
+      "sha256": "b4703e2f1a3a830822514c1f42cd536eb3aa3780f942dd19ef5657ab69c7ac79",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/navigation-sidebar.png",
+      "sha256": "a76e8becdf01b868f4ecc56e1f26dc280c5f7613ef24e46e51a1e79d498b6034",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/navigation-compact.png",
+      "sha256": "d04834aa5c5ebd9d11a90db98b54407af906c743efec6a95ceb9604c7eb32fba",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/player-top.png",
+      "sha256": "a5d065bfaa6043d9383c44dce3e3a623d02b6f75c58913659f916942d7d1f5ce",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/player-bottom.png",
+      "sha256": "d2e48414930ea9f87dfc3c3ee112ac967d0c86be4e203e65dd14c827aa966c4b",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/idle-visible.png",
+      "sha256": "352d0095d8dedb8d2b9b204bb52f8be5ef6852f9c2255de9eb9c03f2b370693a",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/idle-hidden.png",
+      "sha256": "d04834aa5c5ebd9d11a90db98b54407af906c743efec6a95ceb9604c7eb32fba",
+      "width": 2000,
+      "height": 1360,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/device-standard.png",
+      "sha256": "8cfc43ef0bf946dfb275afb8bb6038b075aacc46c28e9b7bfb91f2cfd4e62ff6",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    },
+    {
+      "file": "slate/device-classic.png",
+      "sha256": "236edc89a0e4fa6e39f1d6fe2582b8d1b1e17bfe09d16ba7ecb06d92c5eed4f3",
+      "width": 2000,
+      "height": 1224,
+      "device_pixel_ratio": 2
+    }
+  ]
+}

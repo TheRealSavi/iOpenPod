@@ -85,6 +85,11 @@ labels every forecast **left in this stage**. Reaching a work total says
 - The Sync Workspace estimates the existing Host Media Scan and iPod Media Scan
   stages independently. Waiting at the external-Playlist review clears the estimate.
 - Finalization and unknown-size work have no invented completion time.
+- Phase preparation times completed audio duration across eligible unique Tracks.
+  Its caller publishes immutable estimates with live method/backend activity.
+  The status bar places the compact ETA before the progress bar; the tooltip
+  retains stage scope and uncertainty. This estimate excludes subsequent saving
+  and verification. See [ADR-0229](adr/0229-report-phase-activity-and-stage-eta.md).
 
 General Sync execution is still future work. Its eventual worker can use the same
 math module and display, with a separate phase key for copying, transcoding,

@@ -15,6 +15,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhii import DEFINITION as MHII
 from iPodDB.iTunesDB.shared.chunk_defs.mhii import MhiiHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import DEFINITION as MHIP
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import DEFINITION as MHIT
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhla import DEFINITION as MHLA
 from iPodDB.iTunesDB.shared.chunk_defs.mhli import DEFINITION as MHLI
@@ -135,6 +136,88 @@ def browse_source() -> IPodLibrary:
             )
         )
     return IPodLibrary(write_iTunesDB(document))
+
+
+def test_composer_edit_uses_retained_identity_when_name_has_multiple_ids() -> None:
+    document = parse_iTunesDB(library().serialize().itunes)
+    for selection in document.find_chunks(MhitHeader):
+        document = document.replace_chunk(
+            selection,
+            replace(
+                selection.chunk,
+                header=replace(
+                    selection.chunk.header,
+                    composer_id=6 + selection.chunk.header.track_id,
+                ),
+                children=(
+                    *selection.chunk.children,
+                    new_string_mhod(MhodType.COMPOSER, "Shapeshifter"),
+                ),
+            ),
+        )
+    tracks = next(
+        selection
+        for selection in document.find_chunks(MhsdHeader)
+        if selection.chunk.header.dataset_type == 1
+    )
+    container = tracks.chunk.children[0]
+    document = document.replace_chunk(
+        tracks,
+        replace(
+            tracks.chunk,
+            children=(
+                container.append_child(
+                    new_itunes_chunk(
+                        MHIT,
+                        MhitHeader(
+                            track_id=3, db_track_id=103, length=1000, media_type=1
+                        ),
+                        children=(new_string_mhod(MhodType.TITLE, "Changed Track"),),
+                    )
+                ),
+            ),
+        ),
+    )
+    master = next(
+        selection
+        for selection in document.find_chunks(MhypHeader)
+        if selection.chunk.header.master_flag
+    )
+    document = document.replace_chunk(
+        master,
+        replace(
+            master.chunk,
+            children=(
+                *master.chunk.children,
+                *(new_itunes_chunk(MHIP, MhipHeader(track_id=i)) for i in (1, 2, 3)),
+            ),
+        ),
+    )
+    source = IPodLibrary(write_iTunesDB(document))
+    desired = replace(
+        source.snapshot,
+        tracks=tuple(
+            replace(
+                track,
+                metadata=replace(
+                    track.metadata,
+                    composer="shapeshifter" if track.track_id == 2 else "Shapeshifter",
+                ),
+            )
+            if track.track_id in (2, 3)
+            else track
+            for track in source.snapshot.tracks
+        ),
+    )
+
+    result = source.prepare(source.analyze(source.begin_draft(desired)))
+
+    assert result.prepared is not None, result.issues
+    saved = parse_iTunesDB(result.prepared.itunes)
+    assert {
+        selection.chunk.header.track_id: selection.chunk.header.composer_id
+        for selection in saved.find_chunks(MhitHeader)
+    } == {1: 7, 2: 8, 3: 7}
 
 
 @pytest.mark.parametrize("rename", [False, True])

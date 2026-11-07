@@ -7,9 +7,10 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from math import ceil
 from typing import TYPE_CHECKING
+from weakref import ref
 
 from PIL import Image
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 from PySide6.QtGui import QImage, QPixmap
 
 from iOpenPod.app.models.artwork import ArtworkImage
@@ -39,19 +40,17 @@ class _ArtworkColorSignals(QObject):
     finished = Signal(int, object)
 
 
-class _ArtworkColorWork(QRunnable):
+class _ArtworkColorWork:
     def __init__(
         self,
         token: int,
         generation: int,
         image: ArtworkImage,
     ) -> None:
-        super().__init__()
         self.token = token
         self.generation = generation
         self.image = image
         self.signals = _ArtworkColorSignals()
-        self.setAutoDelete(True)
 
     def run(self) -> None:
         try:
@@ -123,7 +122,7 @@ class ArtworkPixmapProvider(QObject):
     ) -> QPixmap | None:
         """Return a display pixmap now, queuing a decode on a cache miss."""
 
-        if self._closed or artwork_id <= 0 or logical_size <= 0:
+        if self._closed or artwork_id == 0 or logical_size <= 0:
             return None
         target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
         image = self._controller.request(
@@ -143,7 +142,7 @@ class ArtworkPixmapProvider(QObject):
     ) -> ArtworkPixels | None:
         """Return exact decoded pixels now, queuing a decode on a cache miss."""
 
-        if self._closed or artwork_id <= 0 or logical_size <= 0:
+        if self._closed or artwork_id == 0 or logical_size <= 0:
             return None
         target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
         image = self._controller.request(
@@ -170,7 +169,7 @@ class ArtworkPixmapProvider(QObject):
         if retained is not None:
             self._dominant_colors[artwork_id] = retained
             return retained
-        if self._closed or artwork_id <= 0 or logical_size <= 0:
+        if self._closed or artwork_id == 0 or logical_size <= 0:
             return None
         self._requested_color_ids[artwork_id] = None
         self._requested_color_ids.move_to_end(artwork_id)
@@ -252,7 +251,14 @@ class ArtworkPixmapProvider(QObject):
         )
         self._color_pending[image.artwork_id] = token
         self._color_work_items[token] = item
-        self._color_pool.start(item)
+        # Qt may retain cancelled callables; the provider owns queued payloads.
+        work_ref = ref(item)
+
+        def run() -> None:
+            if (work := work_ref()) is not None:
+                work.run()
+
+        self._color_pool.start(run)
 
     @Slot(int, int, object)
     def _color_work_succeeded(
