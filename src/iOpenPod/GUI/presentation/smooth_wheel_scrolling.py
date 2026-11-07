@@ -28,7 +28,6 @@ class SmoothWheelScrolling(QObject):
 
     def __init__(self, view: QAbstractScrollArea) -> None:
         super().__init__(view)
-        self._view = view
         if isinstance(view, QAbstractItemView):
             view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self._viewport = view.viewport()
@@ -41,9 +40,7 @@ class SmoothWheelScrolling(QObject):
         self._animation.setDuration(LAYOUT.scroll_animation_ms)
         self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._animation.valueChanged.connect(self._advance)
-        self._scrollbar.valueChanged.connect(self._value_changed)
-        self._scrollbar.rangeChanged.connect(self.cancel)
-        self._scrollbar.sliderPressed.connect(self.cancel)
+        self._watch_scrollbar()
         application = QApplication.instance()
         if isinstance(application, QApplication):
             application.applicationStateChanged.connect(self.cancel)
@@ -51,6 +48,11 @@ class SmoothWheelScrolling(QObject):
             view.verticalHeader().geometriesChanged.connect(self.cancel)
         view.installEventFilter(self)
         self._viewport.installEventFilter(self)
+
+    def _watch_scrollbar(self) -> None:
+        self._scrollbar.valueChanged.connect(self._value_changed)
+        self._scrollbar.rangeChanged.connect(self.cancel)
+        self._scrollbar.sliderPressed.connect(self.cancel)
         self._scrollbar.installEventFilter(self)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
@@ -63,8 +65,23 @@ class SmoothWheelScrolling(QObject):
             self.cancel()
         return False
 
-    def wheel(self, event: QWheelEvent) -> bool:
-        """Handle wheel input routed from the viewport or vertical scrollbar."""
+    def wheel(self, view: QAbstractScrollArea, event: QWheelEvent) -> bool:
+        """Handle input from the viewport or scrollbar without retaining their area."""
+
+        viewport = view.viewport()
+        if viewport is not self._viewport:
+            self.cancel()
+            if isValid(self._viewport):
+                self._viewport.removeEventFilter(self)
+            self._viewport = viewport
+            self._viewport.installEventFilter(self)
+
+        scrollbar = view.verticalScrollBar()
+        if scrollbar is not self._scrollbar:
+            # Qt can replace and delete the scrollbar while the area stays alive.
+            self._scrollbar = scrollbar
+            self.cancel()
+            self._watch_scrollbar()
 
         if not self._scrollbar.isEnabled() or event.modifiers() & (
             Qt.KeyboardModifier.ControlModifier
@@ -80,7 +97,7 @@ class SmoothWheelScrolling(QObject):
             # Trackpads already supply smooth, possibly momentum-driven motion.
             # Qt's deltas already include the Host's natural-scroll direction.
             self.cancel()
-            if isinstance(self._view, QPlainTextEdit):
+            if isinstance(view, QPlainTextEdit):
                 # This native control scrolls in text lines, not pixels. Let Qt
                 # translate precise trackpad input into its document coordinates.
                 return False
@@ -101,7 +118,7 @@ class SmoothWheelScrolling(QObject):
             self.cancel()
             return False
         line_step = self._scrollbar.singleStep()
-        if isinstance(self._view, QAbstractItemView):
+        if isinstance(view, QAbstractItemView):
             # Qt derives pixel-view steps from item height. Tall Podcast and
             # Queue rows must not turn each Host wheel line into a whole item.
             line_step = min(line_step, LAYOUT.scroll_line_height)
@@ -121,7 +138,7 @@ class SmoothWheelScrolling(QObject):
             current - limit,
             min(self._scrollbar.maximum(), current + limit, self._target + delta),
         )
-        if isinstance(self._view, QTableView):
+        if isinstance(view, QTableView):
             if self._pending_angle * angle.y() > 0:
                 self._pending_angle = 0
             self._pending_angle -= angle.y()
@@ -138,7 +155,7 @@ class SmoothWheelScrolling(QObject):
                 else:
                     self.cancel()
                 return can_move
-            target = self._table_target(self._view, steps)
+            target = self._table_target(view, steps)
         self._animation.stop()
         self._target = target
         if target == current:
@@ -162,6 +179,9 @@ class SmoothWheelScrolling(QObject):
 
     def _advance(self, value: object) -> None:
         if not isinstance(value, (int, float)):
+            return
+        if not isValid(self._scrollbar) or not isValid(self._viewport):
+            self.cancel()
             return
         self._advancing = True
         try:
@@ -195,7 +215,7 @@ class SmoothWheelScrolling(QObject):
         row = header.logicalIndexAt(target - current)
         if row < 0:
             return float(current)
-        limit = max(self._viewport.height(), header.sectionSize(row))
+        limit = max(table.viewport().height(), header.sectionSize(row))
         for _ in range(min(abs(steps), header.count())):
             top = header.sectionPosition(row)
             if direction < 0 and target > top:

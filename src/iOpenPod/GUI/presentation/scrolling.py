@@ -33,7 +33,7 @@ class ApplicationScrollFilter(MiddleMouseScrollFilter):
                 wheel = _wheel_scrolling(area)
                 if isinstance(event, QWheelEvent):
                     self._finish_drag()
-                    return wheel.wheel(event)
+                    return wheel.wheel(area, event)
                 if event.type() is QEvent.Type.MouseButtonPress:
                     # The global middle-button handler consumes this press before
                     # the area's local cancellation filter can see it.

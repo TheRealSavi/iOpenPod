@@ -1,7 +1,9 @@
 """Shared wheel input animates ordinary areas and stops tables on row boundaries."""
 
+import gc
 from collections.abc import Iterator
 from typing import Literal
+from weakref import ReferenceType, ref
 
 import pytest
 from PySide6.QtCore import (
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
     QListView,
     QPlainTextEdit,
     QScrollArea,
+    QScrollBar,
     QSpinBox,
     QTableView,
     QTextEdit,
@@ -100,6 +103,62 @@ def test_table_wheel_animates_one_row_per_notch(
     _finish(table)
     assert bar.value() == 40
     assert table.rowViewportPosition(1) == 0
+
+
+@pytest.mark.parametrize("over_scrollbar", (False, True))
+def test_wheel_recovers_when_qt_replaces_the_vertical_scrollbar(
+    table: QTableView, over_scrollbar: bool, capfd: pytest.CaptureFixture[str]
+) -> None:
+    _wheel(table, -360)
+    animation = _animation(table)
+    animation.setCurrentTime(animation.duration() // 2)
+    replacement = QScrollBar(Qt.Orientation.Vertical)
+    table.setVerticalScrollBar(replacement)
+    position = replacement.value()
+    _finish(table)
+    assert replacement.value() == position
+
+    replacement.setValue(0)
+    assert _wheel(table, over_scrollbar=over_scrollbar).isAccepted()
+    assert animation.state() is QAbstractAnimation.State.Running
+    _finish(table)
+    assert replacement.value() == table.rowHeight(0)
+
+    _wheel(table, over_scrollbar=over_scrollbar)
+    replacement.setValue(3 * table.rowHeight(0))
+    assert animation.state() is QAbstractAnimation.State.Stopped
+    assert "already deleted" not in capfd.readouterr().err
+
+
+@pytest.mark.parametrize("over_scrollbar", (False, True))
+@pytest.mark.parametrize("replace_scrollbar", (False, True))
+def test_wheel_recovers_when_qt_replaces_the_viewport(
+    table: QTableView,
+    over_scrollbar: bool,
+    replace_scrollbar: bool,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    for _ in range(2):
+        _wheel(table, -360)
+        table.setViewport(QWidget())
+        if replace_scrollbar:
+            table.setVerticalScrollBar(QScrollBar(Qt.Orientation.Vertical))
+        bar = table.verticalScrollBar()
+        position = bar.value()
+        _finish(table)
+        assert bar.value() == position
+        APPLICATION.processEvents()
+        bar.setValue(0)
+
+        assert _wheel(table, over_scrollbar=over_scrollbar).isAccepted()
+        _finish(table)
+        assert bar.value() == table.rowHeight(0)
+
+        _wheel(table, over_scrollbar=over_scrollbar)
+        table.viewport().hide()
+        assert _animation(table).state() is QAbstractAnimation.State.Stopped
+        table.viewport().show()
+    assert "already deleted" not in capfd.readouterr().err
 
 
 def test_table_uses_visible_row_geometry_including_reordered_rows(
@@ -307,6 +366,26 @@ def test_deleting_a_dialog_disposes_its_pending_scroll_animation() -> None:
     dialog.deleteLater()
     QCoreApplication.sendPostedEvents(dialog, QEvent.Type.DeferredDelete)
     assert destroyed.count() == 1
+
+
+def test_collecting_a_visible_scroll_area_does_not_call_cleared_controller(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    def show_text_editor() -> ReferenceType[QPlainTextEdit]:
+        area = QPlainTextEdit()
+        area.show()
+        APPLICATION.processEvents()
+        _animation(area)
+        return ref(area)
+
+    editor = show_text_editor()
+    gc.collect()
+    APPLICATION.processEvents()
+
+    assert editor() is None
+    errors = capfd.readouterr().err
+    assert "Error calling Python override" not in errors
+    assert "Slot 'SmoothWheelScrolling::' not found" not in errors
 
 
 def test_table_can_reach_bottom_of_a_final_row_taller_than_the_viewport(
