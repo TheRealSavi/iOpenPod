@@ -12,6 +12,23 @@ uv run python -m scripts.prepare_typing
 VS Code's **Environment: Sync** and **Typecheck: Mypy** tasks also run this command.
 If the editor retains old diagnostics, run **Developer: Reload Window**.
 
+## Pylance analysis scope
+
+`pyproject.toml` limits file discovery to the project's Python source, tests,
+scripts, root entry points, and packaging hooks. Strict workspace diagnostics
+remain enabled, along with the existing exclusions for generated files and stubs.
+
+The VS Code workspace uses Pylance's `default` language server mode and disables
+its optional background symbol index. Project analysis, navigation, and completion
+for imported code remain enabled; auto-import suggestions for unimported symbols
+are reduced. Imported libraries still supply type information, so their files may
+appear in analysis logs. A catch-all `packageIndexDepths` entry at depth 0 does not
+fully prevent library indexing: Pylance 2026.4.1 automatically indexes direct
+dependencies at depth 2. Avoid `full` mode here: it defaults to indexing every
+package four levels deep with all symbols and removes the project-file indexing
+limit. See [Pylance's indexing documentation](https://github.com/microsoft/pylance-release/blob/main/docs/settings/python_analysis_indexing.md)
+and [mode documentation](https://github.com/microsoft/pylance-release/blob/main/docs/settings/python_analysis_languageServerMode.md).
+
 ## Whenever timezone annotations
 
 `scripts/prepare_whenever_typing.py` corrects the installed **0.11.0** stub in the

@@ -182,6 +182,8 @@ module = ["PySide6", "PySide6.*"]
 ignore_errors = true
 
 [tool.pyright]
+# Discover project code only; imported library types still resolve normally.
+include = ["conftest.py", "main.py", "src", "scripts", "tests", "packaging/hooks"]
 exclude = [
     ".scratch",
     ".venv",

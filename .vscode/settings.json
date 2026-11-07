@@ -12,8 +12,8 @@
   "python.testing.promptToConfigure": false,
 
   "python.analysis.diagnosticMode": "workspace",
-  "python.analysis.languageServerMode": "full",
-  "python.analysis.indexing": true,
+  "python.analysis.languageServerMode": "default",
+  "python.analysis.indexing": false,
   "python.analysis.autoImportCompletions": true,
   "python.analysis.inlayHints.variableTypes": true,
   "python.analysis.inlayHints.functionReturnTypes": true,
