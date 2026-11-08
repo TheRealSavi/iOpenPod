@@ -15,6 +15,7 @@ from iOpenPod.app.core.settings.stores import (
 )
 from iOpenPod.app.core.status import ApplicationStatus
 from iOpenPod.app.device_controller import DeviceController
+from iOpenPod.app.extras_controller import ExtrasController
 from iOpenPod.app.games_controller import GamesController
 from iOpenPod.app.genius_analysis import FFmpegGeniusPCMDecoder, GeniusAnalysisService
 from iOpenPod.app.host_media_controller import HostMediaScanController
@@ -43,6 +44,7 @@ from iOpenPod.app.podcasts.feed_client import (
     FeedparserPodcastClient,
     HttpPodcastArtworkLoader,
 )
+from iOpenPod.app.preferences_controller import PreferencesController
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnalyzer
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
@@ -89,8 +91,30 @@ class AppContext:
     )
     playback_video_output: PlaybackVideoOutput | None = None
     games_controller: GamesController = field(init=False)
+    extras_controller: ExtrasController = field(init=False)
+    preferences_controller: PreferencesController = field(init=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "preferences_controller",
+            PreferencesController(
+                self.device_coordinator,
+                self.device_controller,
+                self.device_controller,
+                status=self.status,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "extras_controller",
+            ExtrasController(
+                self.device_coordinator,
+                self.device_controller,
+                self.device_controller,
+                status=self.status,
+            ),
+        )
         object.__setattr__(
             self,
             "games_controller",
@@ -295,6 +319,8 @@ class AppContext:
         self.playback_controller.shutdown()
         self.backup_controller.shutdown()
         self.games_controller.shutdown()
+        self.extras_controller.shutdown()
+        self.preferences_controller.shutdown()
         self.host_media_controller.shutdown()
         self.ipod_media_controller.shutdown()
         self.podcast_controller.shutdown()

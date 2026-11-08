@@ -46,6 +46,8 @@ from iOpenPod.GUI.widgets.hover_dropdown import HoverDropdown
 from iPodDB.library import LibrarySnapshot, Playlist, PlaylistKind, Track
 from storage import FileFingerprint
 
+pytestmark = pytest.mark.usefixtures("enable_extras_pages")
+
 
 def _active_ipod() -> ActiveIPod:
     profile = next(
@@ -112,6 +114,7 @@ _DROPDOWNS = (
     "compactAudio",
     "compactVideo",
     "compactPlaylists",
+    "compactExtras",
     "compactMaintenance",
 )
 
@@ -347,7 +350,7 @@ def test_pointer_click_commits_playlist_and_dismisses() -> None:
         bar.close()
 
 
-def test_pointer_and_keyboard_switch_across_all_five_dropdowns() -> None:
+def test_pointer_and_keyboard_switch_across_all_navigation_dropdowns() -> None:
     bar = CompactTopBar(playlists=_workspace())
     bar.set_active_ipod(_active_ipod())
     try:

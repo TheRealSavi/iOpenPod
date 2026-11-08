@@ -157,10 +157,34 @@ def test_model_specific_dst_and_unknown_city_are_not_guessed(tmp_path: Path) -> 
     assert itunes.status is PreferenceFileStatus.MISSING
 
 
+@pytest.mark.parametrize("model", ("MB598", "MC027", "MC525", "MD480"))
+def test_unqualified_nano_frame_never_inherits_a_classic_city(
+    tmp_path: Path, model: str
+) -> None:
+    root = _ipod_volume(tmp_path / "ipod", model_number=model)
+    raw = bytearray(2960)
+    struct.pack_into("<I", raw, 0, 0x3E)
+    struct.pack_into("<I", raw, 0xB70, 0x21)
+    path = root / "iPod_Control/Device/Preferences"
+    path.write_bytes(raw)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = Storage(platform)
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model)
+    assert profile is not None
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        captured = capture_ipod_preferences(session, profile)
+    assert captured.device_bytes == bytes(raw)
+    assert captured.device_time.source is DeviceTimeSource.UNRESOLVED
+    assert captured.device_time.timezone_name is None
+    assert captured.sections[0].status is PreferenceFileStatus.UNKNOWN
+    assert path.read_bytes() == raw
+
+
 @pytest.mark.parametrize("model", ("MB565", "MB562"))
 @pytest.mark.parametrize("city", (0x29, 0x10029))
 @pytest.mark.parametrize(
-    "alternate_audio,display", ((0, "Off"), (1, "On"), (255, "Unknown (code 255)"))
+    "alternate_audio,display", ((0, "Off"), (1, "On"), (255, "Unknown (255)"))
 )
 def test_classic201_capture_uses_full_city_and_displays_saved_clock_state(
     tmp_path: Path, model: str, city: int, alternate_audio: int, display: str
@@ -189,8 +213,12 @@ def test_classic201_capture_uses_full_city_and_displays_saved_clock_state(
     assert rows["daylight_saving"].value == "On (raw 60)"
     assert rows["clock_bias_days"].value == "-1"
     assert rows["clock_bias_seconds"].value == "4294967295"
-    assert rows["alternate_audio"].title == "Alternate Audio"
+    assert rows["alternate_audio"].title == "Alternate audio"
     assert rows["alternate_audio"].value == display
+    assert rows["alternate_audio"].raw_value == (
+        f"{alternate_audio} (0x{alternate_audio:02X})"
+    )
+    assert rows["alternate_audio"].edit is None
     assert captured.time_precondition is not None
     if city == 0x29:
         assert captured.device_time.source is DeviceTimeSource.PREFERENCES_CITY
@@ -239,10 +267,64 @@ def test_classic_clock_profile_requires_model_release_extent_and_format(
     rows = {row.key: row for row in captured.sections[0].rows}
     assert "clock_bias_days" not in rows
     assert "alternate_audio" not in rows
-    if model == "MB565" and versions == ("2.0.1",):
-        assert captured.sections[0].status is PreferenceFileStatus.UNKNOWN
-        assert not rows
-        assert captured.device_time.source is DeviceTimeSource.UNRESOLVED
-    else:
-        assert rows["timezone"].title == "Timezone"
-        assert rows["timezone"].value == "America/New_York"
+    # Failed qualification cannot grant the older u16 city decoder to a
+    # recognized current frame and alias the retained 0x10029 word to city 41.
+    assert captured.sections[0].status is PreferenceFileStatus.UNKNOWN
+    assert not rows
+    assert captured.device_time.source is DeviceTimeSource.UNRESOLVED
+
+
+@pytest.mark.parametrize(
+    "model,family,release,size,format_version",
+    [
+        ("M9160", 3, "1.4.1", 2876, 0x16),
+        ("MA004", 14, "1.3.1", 2916, 0x37),
+        ("MA002", 13, "1.3", 2924, 0x39),
+    ],
+)
+def test_readonly_inspection_retains_unknown_scalars_reset_and_literal_preset_name(
+    tmp_path: Path,
+    model: str,
+    family: int,
+    release: str,
+    size: int,
+    format_version: int,
+) -> None:
+    root = _ipod_volume(tmp_path / "ipod", model_number=model)
+    raw = bytearray(size)
+    struct.pack_into("<II", raw, 0, format_version, 0x80000000)
+    struct.pack_into("<I", raw, 0xAF8, 0x12340000)
+    raw[0xB16] = 255
+    raw[0x8E0] = 1
+    name = "Unknown {preset}"
+    encoded = name.encode("utf-16-le")
+    struct.pack_into("<H", raw, 0x8EA, len(encoded) // 2)
+    raw[0x8EC : 0x8EC + len(encoded)] = encoded
+    path = root / "iPod_Control/Device/Preferences"
+    path.write_bytes(raw)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(root)
+    storage = _RecordingStorage(platform)
+    profile = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model)
+    assert profile is not None
+    with storage.open_session(storage.discover().volumes[0]) as session:
+        captured = capture_ipod_preferences(
+            session, profile, firmware_versions=(release,), updater_family_ids=(family,)
+        )
+    section = captured.sections[0]
+    assert section.status is PreferenceFileStatus.AVAILABLE
+    rows = {row.key: row for row in section.rows}
+    assert rows["sound_check"].value == "Unknown (255)"
+    assert rows["sound_check"].raw_value == "255 (0xFF)"
+    assert rows["language"].raw_value == "305397760 (0x12340000)"
+    assert rows["reset_request"].value == "Defaults requested"
+    assert rows["reset_request"].raw_value == "2147483648 (0x80000000)"
+    assert name in rows["eq_preset"].value
+    assert "unverified" in rows["eq_preset"].value
+    assert rows["eq_preset"].detail and rows["eq_preset"].category
+    assert rows["unknown_data"].value == "Retained without interpretation"
+    assert all(row.edit is None for row in section.rows)
+    assert captured.device_bytes == bytes(raw)
+    assert captured.time_precondition is not None
+    assert path.read_bytes() == raw
+    assert set(storage.access_modes) == {AccessMode.READ_ONLY}

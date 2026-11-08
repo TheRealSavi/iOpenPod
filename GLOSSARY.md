@@ -65,7 +65,8 @@ normal lowercase conventions while retaining the same domain term.
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **iPod Preferences** | The firmware-owned binary `iPod_Control/Device/Preferences` artifact, represented losslessly by iPodDB with known fields scoped to an evidenced layout. | iTunesPrefs, application settings, Device Profile |
+| **iPod Preferences** | The firmware-owned binary `iPod_Control/Device/Preferences` artifact, represented losslessly by iPodDB with known fields scoped to an evidenced layout. Its saved bytes can differ from the firmware's retained live settings; verified file publication does not itself establish live adoption. | iTunesPrefs, application settings, Device Profile |
+| **iPodSettings.xml** | The separate firmware-owned named settings store at `iPod_Control/Device/iPodSettings.xml`, used by the studied Nano 5/6/7 UI. Its registered section/key values and XML framing require their own firmware qualification; the neighboring binary Preferences blob does not establish their meaning or live adoption. | iTunesPrefs, binary Preferences, application settings |
 | **iTunesPrefs** | The binary `iPod_Control/iTunes/iTunesPrefs` artifact containing iTunes attachment, library-link, Sync, and media settings. Its companion `iTunesPrefs.plist` is a separate artifact. | iPod Preferences, application settings |
 | **Game Authorization Store** | The device-bound `iPod_Control/iTunes/IC-Info.sidb` artifact containing account sessions and addressable key records. Updating it is separate from installing game executables. | game library, iTunesDB, game files |
 | **Host Media Library** | The media collection on the Host that may be compared with an iPod Library. | PC library, source folder, local library |
@@ -149,6 +150,14 @@ normal lowercase conventions while retaining the same domain term.
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
+| **Extras** | Device applications presented through Calendar and Alarms pages, with native support distinguished from qualified iOpenPod file editing. | SQLite Extras database |
+| **Calendar** | A named collection of Calendar Entries, or an explicitly unnamed collection. Its saved `X-WR-CALNAME` is distinct from entry titles and file paths; multiple source files can contribute to the same exact-name collection. | Calendar Entry, filename |
+| **Calendar Entry** | One imported or authored VEVENT or VTODO component with retained source date forms; it is not an expanded recurrence occurrence. | Track date, UTC timestamp |
+| **Calendar Occurrence** | One firmware-qualified projected start/end pair belonging to a source Calendar Entry. It is a display result, not a separately writable event; series edits retain the source entry's identity. | Calendar Entry, detached event |
+| **Calendar Reminder** | A VALARM attached to a Calendar Entry, with its own relative or absolute trigger and document-local timezone context. | Clock Alarm, Sleep Timer |
+| **Clock Alarm** | An on-device Alarm application entry or saved Clock alarm setting, distinct from Calendar reminders and the hardware wake scheduler. | Calendar Reminder, Sleep Timer |
+| **Clock Alarm Projection** | Firmware-derived state for the next alarm, distinct from its persistent Clock Alarm entries. Latest Video firmware saves this projection in iPod Preferences while loading per-city alarms from `iPod_Control/Device/clock`; changing the projection does not edit a selected saved alarm. | Clock Alarm, timezone |
+| **Sleep Timer** | The device's playback shutdown timer, distinct from a saved Clock Alarm or a Host playback countdown. Native support does not imply mounted-file control. | Clock Alarm, Host timer |
 | **Sync** | The user-directed, primarily Host-to-iPod workflow that reconciles a Host Media Library with an iPod Library and may include supported iPod-to-Host updates. | copy, import, transaction |
 | **Sync Plan** | An immutable proposal of additions, removals, updates, and conversions for one Sync. | diff, changes, queue |
 | **Sync Review** | The user-facing examination and selection of operations in a Sync Plan before execution. | confirmation, preview, plan |

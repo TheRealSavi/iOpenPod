@@ -5,6 +5,12 @@ firmware. Checked November 5, 2026, America/Detroit. The names 7 and 7.5 are thi
 task's labels for updater families 35 and 38; they are not separate Apple retail
 model categories established by the current evidence.
 
+The November 6 [Calendar and Alarm follow-up](research/calendar-alarm-firmware-2026-11-06.md)
+independently exercises Calendar parser and Alarm record/repeat paths on all four
+latest inputs. It adds the `Device/alarms` token format and a per-target research
+matrix; whole-file Calendar acceptance, complete notification delivery and
+physical wake remain distinct open questions.
+
 ## Supported targets
 
 | Target | Updater family | Latest firmware | Preferences bytes / version | Saved clock inspection | Saved annual DST file |

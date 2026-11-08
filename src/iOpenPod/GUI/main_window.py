@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app import developer_flags
 from iOpenPod.app.artwork_controller import ArtworkLoadFailure
 from iOpenPod.app.artwork_policy import rockbox_tag_policy
 from iOpenPod.app.backups import BackupProgress
@@ -102,7 +103,9 @@ from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
 from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.navigation import PageId
+from iOpenPod.GUI.pages.alarms_page import AlarmsPage
 from iOpenPod.GUI.pages.backup_page import BackupPage
+from iOpenPod.GUI.pages.calendar_page import CalendarPage
 from iOpenPod.GUI.pages.collection_page import CollectionPage
 from iOpenPod.GUI.pages.device_summary import DeviceSummaryPage
 from iOpenPod.GUI.pages.games_page import GamesPage
@@ -441,6 +444,7 @@ class MainWindow(QMainWindow):
             context.i18n_manager,
             self._pages,
             scrobbling=self._scrobbling,
+            preferences=context.preferences_controller,
         )
         self._media_tools = MediaToolsController(
             self, find_tool=context.find_media_tool
@@ -595,6 +599,13 @@ class MainWindow(QMainWindow):
             self._pages.addWidget(page)
         self._pages.addWidget(self._photo_page)
         self._pages.addWidget(self._games_page)
+        if developer_flags.ENABLE_EXTRAS_PAGES:
+            calendar_page = CalendarPage(context.extras_controller, self._pages)
+            alarms_page = AlarmsPage(context.extras_controller, self._pages)
+            self._page_widgets[PageId.CALENDAR] = calendar_page
+            self._page_widgets[PageId.ALARMS] = alarms_page
+            self._pages.addWidget(calendar_page)
+            self._pages.addWidget(alarms_page)
         self._pages.addWidget(self._backup_page)
         self._pages.addWidget(self._synesthesia_page)
         self._pages.addWidget(self._settings_page)
@@ -1741,6 +1752,10 @@ class MainWindow(QMainWindow):
 
     def _show_page(self, page_value: str) -> None:
         page_id = PageId(page_value)
+        if page_id in (PageId.CALENDAR, PageId.ALARMS):
+            if not developer_flags.ENABLE_EXTRAS_PAGES:
+                return
+            self._context.extras_controller.refresh()
         if (
             page_id is not PageId.SYNESTHESIA
             and self._pages.currentWidget() is self._synesthesia_page

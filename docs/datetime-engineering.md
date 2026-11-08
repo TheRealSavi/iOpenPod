@@ -7,6 +7,19 @@ the [Classic file map](research/classic-datetime-file-map-2026-11-06.md) and
 [auxiliary inventory](research/auxiliary-datetime-file-inventory-2026-11-06.md)
 identify bytes, tables, evidence and remaining unknowns. Those inventories are
 not a claim that every firmware file or date consumer has been decoded.
+The [Mini 2 and Video investigation](research/mini-video-datetime-firmware-2026-11-06.md)
+qualifies different hardware-clock behavior and rejects an alarm setting that
+the inherited Video decoder treated as a timezone. Classic field offsets and
+clock-correction semantics must not be transferred to those devices.
+The [Calendar and Alarm app investigation](research/calendar-alarm-firmware-2026-11-06.md)
+adds property parsing, recurrence/trigger distinctions, alarm persistence and
+bounded scheduling evidence across all seven model labels. These are separate
+contracts from media dates. [ADR-0247](adr/0247-manage-extras-through-qualified-lossless-file-edits.md)
+adds Calendar/To Do and existing Alarm editing with qualified, lossless file writes.
+`iPodDB.calendar` retains Date/PlainDateTime/Instant forms and unresolved TZIDs;
+`iPodDB.alarms` retains native 1970 civil coordinates or minute-of-day settings.
+Neither reader uses the Host timezone. Sleep Timer controls remain on the iPod
+until a remote protocol is established.
 
 ## Separate the quantities before using a date
 
@@ -39,8 +52,11 @@ the source of truth for offsets; do not repeat them in parsers or writers.
 | Area | Code entry points | Policy and limits |
 | --- | --- | --- |
 | Native epochs and local conversion | `src/iPodDB/device_time.py` | Mac epoch offset 2,082,844,800; Core Data offset 978,307,200. Invalid values receive bounded interpretations; authoring resolves bounded native words. Neither operation changes retained originals merely because their interpretation is uncertain. |
-| Capturing device interpretation | `src/iOpenPod/app/services/device_time.py`, `src/iOpenPod/app/services/classic_calendar.py`, `src/iOpenPod/app/services/ipod_preferences.py` | Qualify firmware identity and capture city/offset/provenance. No Host clock or Host timezone fallback for native dates. |
-| Preferences and annual rules | `src/iPodDB/preferences/`, `src/iOpenPod/app/services/ipod_preferences.py` | Optional read-only observations, opaque unknown bytes, no write precondition. See exact entry points in the linked Preferences contract. |
+| Capturing device interpretation | `src/iOpenPod/app/services/device_time.py`, `src/iOpenPod/app/services/classic_calendar.py`, `src/iOpenPod/app/services/ipod_preferences.py` | Qualify firmware identity and capture binary or named Nano city/offset/provenance before Library projection. Reject reset-request binary clock evidence. No Host clock or Host timezone fallback for native dates. |
+| Preferences and annual rules | `src/iPodDB/preferences/`, `src/iOpenPod/app/services/ipod_preferences.py` | Optional clock observations, opaque unknown bytes, no Library write precondition. See exact entry points in the linked Preferences contract. |
+| Explicit firmware preference edits | `src/iOpenPod/app/services/firmware_preferences.py`, `src/iOpenPod/app/preferences_controller.py` | Qualified non-clock edits preserve native datetime bytes. Only this explicit Preferences publication checks its own source fingerprint; it does not reinterpret or update the Library's Device Time Context. Saved file state does not prove live firmware adoption (ADR-0248). |
+| Calendar events and To Dos | `src/iPodDB/calendar/`, `src/iOpenPod/app/services/extras.py` | Lossless document-local date kinds and TZIDs; explicit supported edits only. Invalid imported timing never blocks text edits or unrelated files. |
+| Saved Clock alarms | `src/iPodDB/alarms/`, `src/device_registry/extras.py` | Qualified existing-record edits: Classic 1970 civil coordinates/repeat and Mini 2 minute-of-day. Video's Preferences minute is a read-only Clock Alarm Projection; its per-city `Device/clock` records are separate. No inferred UTC basis or remote Sleep Timer command. |
 | Library projection and editing | `src/iPodDB/library/_projection.py`, `src/iPodDB/library/_date_resolution.py`, `src/iPodDB/library/_track_writing.py`, `src/iPodDB/library/_photo_projection.py`, `src/iPodDB/library/_photo_writing.py` | Keep raw/semantic distinctions and bound new unrepresentable dates before validation. Missing layout fields retain previous values. |
 | Playback sidecars | `src/iPodDB/sidecars/`, `src/iPodDB/library/_sidecar_projection.py` | Apply counter deltas independently of dates. Present binary zero clears; missing date fields do not clear. Preserve raw dates through merge and verification. |
 | Smart Playlist dates | `src/iPodDB/library/smart_rules.py`, `src/iOpenPod/app/smart_playlist_preview.py`, `src/iOpenPod/GUI/dialogs/playlist_editor.py` | Absolute native bounds use local calendar conversion. Host relative preview retains rolling durations; firmware uses inclusive calendar-day bounds. |
@@ -141,6 +157,56 @@ and [per-target support matrix](classic-calendar-support.md). The evidence inclu
 static traces, reconstructed arithmetic and bounded native ARM emulation with
 mocked services. It does not establish execution on all four physical devices.
 
+## Latest Nano timezone evidence and Library integration
+
+The [Nano 5/6/7 consumer investigation](research/preferences-nano567-consumers-2026-11-07.md)
+binds `DateTime.TimeZone` to a city ID, independently of its table position.
+All four exact images, including the Nano 7 refresh, contain IDs 1..205; Nano 5's
+registered maximum is nevertheless 204. Unknown IDs must remain observable.
+
+Nano 5 resolves a city through a signed-minute offset table. Nano 6/7 instead
+select a record in `Resources/DST/iPodTZData.dat`, with a Device override path.
+Their packaged tables differ; even a shared city ID is not a universal offset.
+The native offset setter applies base and DST differences in minutes, but full
+DST evaluation, file-selection lifecycle and Raw Hardware Clock origin remain
+unresolved. An apparent Cape Town mapping discrepancy is retained as bounded
+native evidence, not silently corrected from modern geographical expectations.
+
+The Application Layer now captures this saved city before Library projection for
+the exact qualified Nano 5 / 1.0.2, Nano 6 / 1.2, Nano 7 / 1.0.4 and updater-39
+refresh / 1.1.2 targets. `iPodDB.preferences.read_named_clock_evidence` returns
+typed `NamedClockEvidence`; it performs no filesystem access or date conversion.
+`capture_ipod_preferences` obtains a bounded, fingerprint-checked Storage snapshot
+of `iPod_Control/Device/iPodSettings.xml`. `resolve_named_device_time` validates
+the audited key with Whenever and captures a `PREFERENCES_CITY` Device Time
+Context. This uses the existing Library conversion contract in both directions.
+
+For Nano 5, the IANA mapping is an explicit geographical Host policy, separate
+from the native signed-minute base-offset table. Manchester (38) remains
+unresolved, and native-table city 205 is outside the registered maximum of 204.
+Nano 6/7 use their per-target packaged record names through the audit; contradictory
+Manchester (38), Cape Town (118) and Chennai (185) mappings are withheld. Modern
+Host rules estimate historical dates; the application does not execute the
+firmware's DST records or load a device override. Never turn the table's base
+offset into an effective fixed offset or add saved DST/clock bias to dates.
+
+Malformed framing, duplicate clock sections/keys, invalid values, missing files,
+unsupported mappings and unavailable Host rules produce a diagnostic and retain
+the header-offset/UTC fallback. The optional late-Nano binary blob is not a clock
+fallback. Neither World Clock entries nor a 12/24-hour display setting establishes
+the selected system timezone. Nano 7 language changes can change that display
+setting unless `DateTime.UserSet24HourSetting` is set, without changing this
+conversion policy.
+
+Capture verification does not make XML a Library write precondition. Keep the
+context with the loaded Library, preserve unchanged native words and use the same
+context for explicit new dates. A later settings change cannot silently rebase
+that Library. Saved-file state can lag or differ from live firmware settings.
+The [per-device clock-source matrix](ipod-time.md#captured-clock-sources) also
+records Mini's effective fixed offset, retained Classic city policy and the
+header/UTC fallback for Video and Nano 1/3/4. A binary reset request withholds its
+saved clock evidence because the firmware will discard that state.
+
 ## Hints and open questions to preserve
 
 | Target/area | Known hint | Still unresolved; do not infer |
@@ -151,6 +217,7 @@ mocked services. It does not establish execution on all four physical devices.
 | Classic 6.5 / 2.0.1 | Prefix-free annual rows, selector four means last; specific earlier weekday/February arithmetic behavior is traced. | Actual past city/manual-clock changes; geographical identity of the disputed city. Annual rows cannot reconstruct history. |
 | Classic 7 / 2.0.4 | Two-byte prefix, selector four means fourth and five means last, later arithmetic corrections. | Meaning of the prefix, why it exists, and whether its semantics differ from 2.0.5. |
 | Classic 7.5 / 2.0.5 | Same qualified row shape as 2.0.4, independently checked consumer and saved fields. | Prefix semantics and raw-clock initialization; matching structure is not evidence for all untraced behavior. |
+| Nano 5/6/7 and refresh | Complete city-ID catalogs, per-image offset linkage, packaged later-Nano timezone records and native signed-minute setter arithmetic. Qualified saved cities now select audited Host IANA estimates for Library conversion. | Remaining rule-selector algorithms, override/manager lifecycle, kind-1 extra halfword, contradictory city mappings and physical adoption. Host rules do not establish firmware rule parity. |
 | Photo/Artwork MHII dates | Fields `+0x28`/`+0x2C` retained; a Classic 2.0.1 importer copies one field. | Full epoch/use proof on every target and complete EXIF relationship. Current local-Mac projection is Host policy. Older Original iOpenPod unsigned-Unix output notes are historical producer evidence, not this contract. |
 | Release/purchase dates | Existing UTC-Mac policy and paired capture/reference evidence. | The same all-four firmware proof level as ordinary added/modified/played/skipped fields. |
 | Playlist/MHIP timestamp names | Retained fields and a 2.0.1 route that fills an empty Track added date. | Every creation/modification meaning and consumer on all four targets. Names alone do not establish semantics. |
@@ -211,6 +278,7 @@ a Storage concern, independent of Mac-epoch database words and DST disambiguatio
 | --- | --- |
 | Native conversion and retained words | `tests/iPodDB/iTunesDB/test_device_time.py`, `tests/iPodDB/library/test_device_time_context.py` |
 | Selection, sidecars and DST | `tests/iOpenPod/app/services/test_device_time_integration.py`, `tests/iOpenPod/app/services/test_playback_dst.py` |
+| Qualified Nano clock evidence, capture and Library publication | `tests/iPodDB/test_preference_clock_evidence.py`, `tests/iOpenPod/app/services/test_nano_device_time_integration.py` |
 | Plist precision and source preservation | `tests/iPodDB/iTunesDB/test_remaining_mhod_parsers.py` |
 | Host editor, table and media input | `tests/iOpenPod/app/test_datetime_presentation.py`, `tests/iOpenPod/app/test_host_metadata_tags.py` |
 | Podcast and Photo dates | `tests/iOpenPod/app/podcasts/test_feed_client.py`, `tests/iOpenPod/GUI/test_photo_page.py` |
@@ -221,6 +289,9 @@ a Storage concern, independent of Mac-epoch database words and DST disambiguatio
   skipped days, invalid zones/offsets and native integer boundaries.
 - Preservation: exact unchanged bytes, zero/absence collisions, backward dates,
   sidecar counters independent of dates, edited bounded values and plist precision.
+- Nano clock evidence: per-target city mapping, historical winter/summer offsets,
+  reverse conversion for edited dates, header/UTC fallback and optional XML
+  changes after capture without rebasing or blocking Library publication.
 - Host input/display: signed pre-1970 dates on Windows, explicit offsets,
   fractional seconds, missing dates and unsupported display ranges.
 - Host persistence/security: UTC spelling, microsecond precision, snapshot naming,

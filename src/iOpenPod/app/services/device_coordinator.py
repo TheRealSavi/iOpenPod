@@ -26,7 +26,11 @@ from device_registry import (
     parse_sysinfo,
     parse_sysinfo_extended,
     reconcile_device_metadata,
+    resolve_extras_support,
+    resolve_preferences_support,
+    strongest_values,
 )
+from iOpenPod.app import developer_flags
 from iOpenPod.app.artwork_policy import (
     application_artwork_read_formats,
     application_artwork_root_value,
@@ -81,6 +85,8 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
 from iOpenPod.app.services import (
+    extras,
+    firmware_preferences,
     game_download,
     game_installation,
     game_library,
@@ -91,7 +97,6 @@ from iOpenPod.app.services import (
     photo_shard_resources,
     volume_presentation,
 )
-from iOpenPod.app.services.classic_calendar import strongest_values
 from iOpenPod.app.services.device_storage import (
     ALBUM_ARTWORK_STORAGE_ROOTS,
     GAME_STORAGE_ROOTS,
@@ -171,6 +176,11 @@ if TYPE_CHECKING:
         LibraryPreparationRequest,
         LibraryReview,
         LibrarySaveResult,
+    )
+    from iOpenPod.app.models.extras import ExtrasCatalog, ExtrasChange
+    from iOpenPod.app.models.ipod_preferences import (
+        IPodPreferenceEdit,
+        IPodPreferencesCatalog,
     )
     from iOpenPod.app.playback.backend import PlaybackSource
     from iOpenPod.app.playlist_sync import PlaylistAssociation
@@ -393,6 +403,10 @@ class DeviceCoordinator:
         self._discovery = DeviceDiscovery(candidates=())
         self._discovery_volumes: dict[DeviceCandidateId, MountedVolume] = {}
         self._active: _ActiveConnection | None = None
+        self._extras_catalog: tuple[ActiveIPod, ExtrasCatalog] | None = None
+        self._preferences_catalog: tuple[ActiveIPod, IPodPreferencesCatalog] | None = (
+            None
+        )
         self._prepared_for_save: _PreparedLibraryWrite | None = None
         self._preparation_generation = 0
         self._lock = threading.RLock()
@@ -1141,6 +1155,271 @@ class DeviceCoordinator:
                     ),
                     requires_persistence=False,
                 )
+
+    def load_preferences(
+        self, expected: ActiveIPod, cancelled: threading.Event
+    ) -> IPodPreferencesCatalog:
+        """Capture optional settings without changing Library state or device time."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before loading preferences."
+                )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Loading preferences was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while loading preferences."
+                    )
+
+        checkpoint()
+        metadata, _issues = _read_device_metadata(active.session)
+        evidence = active.record.hardware_evidence.merged_with(metadata)
+        support = resolve_preferences_support(expected.profile, evidence)
+        identification = self._registry.identify(evidence)
+        if identification.profile != expected.profile:
+            raise DeviceChangedError(
+                "The iPod identity changed. Select it again before editing preferences."
+            )
+        catalog = firmware_preferences.read_preferences_catalog(
+            active.session,
+            expected.profile,
+            support,
+            firmware_versions=strongest_values(evidence.firmware_versions),
+            updater_family_ids=strongest_values(evidence.updater_family_ids),
+            checkpoint=checkpoint,
+        )
+        with self._lock:
+            checkpoint()
+            self._preferences_catalog = (expected, catalog)
+        return catalog
+
+    def save_preferences(
+        self,
+        expected: ActiveIPod,
+        catalog: IPodPreferencesCatalog,
+        changes: tuple[IPodPreferenceEdit, ...],
+        cancelled: threading.Event,
+    ) -> IPodPreferencesCatalog:
+        """Publish qualified edits against an issued source and current identity.
+
+        Preferences are optional evidence for Library interpretation, but their
+        source and qualification metadata are mandatory preconditions when this
+        operation explicitly changes the Preferences file itself.
+        """
+        if not developer_flags.ENABLE_IPOD_PREFERENCES_WRITES:
+            raise DeviceAccessError("Writing iPod preferences is disabled.")
+
+        with self._lock:
+            active = self._active
+            issued = self._preferences_catalog
+            if (
+                active is None
+                or active.active_ipod is not expected
+                or issued is None
+                or issued[0] is not expected
+                or issued[1] is not catalog
+            ):
+                raise DeviceChangedError("Preferences changed. Reload before saving.")
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Saving preferences was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while saving preferences."
+                    )
+
+        try:
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                    )
+                )
+                metadata, _issues = _read_device_metadata(session)
+                evidence = active.record.hardware_evidence.merged_with(metadata)
+                support = resolve_preferences_support(expected.profile, evidence)
+                identification = self._registry.identify(evidence)
+                if (
+                    support != catalog.support
+                    or identification.profile != expected.profile
+                ):
+                    raise DeviceChangedError(
+                        "The iPod firmware evidence changed. Reload preferences."
+                    )
+                transaction = firmware_preferences.prepare_preferences_change(
+                    catalog, changes, dependencies=dependencies, checkpoint=checkpoint
+                )
+                checkpoint()
+                library_resources.recheck(session, dependencies)
+                library_resources.recheck(
+                    session,
+                    (firmware_preferences.preferences_source(catalog),),
+                )
+                if transaction is not None:
+                    committed = session.execute_transaction(
+                        transaction, checkpoint=checkpoint
+                    )
+                    if not committed.flush.complete:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        )
+                    try:
+                        _finalize_committed_transaction(
+                            session, committed.recovery.journal_path
+                        )
+                    except Exception as error:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        ) from error
+                updated = firmware_preferences.read_preferences_catalog(
+                    session,
+                    expected.profile,
+                    support,
+                    firmware_versions=strongest_values(evidence.firmware_versions),
+                    updater_family_ids=strongest_values(evidence.updater_family_ids),
+                    checkpoint=checkpoint,
+                )
+                with self._lock:
+                    checkpoint()
+                    self._preferences_catalog = (expected, updated)
+                    # Mini/Video alarms share this artifact. Existing Extras
+                    # captures must be refreshed before any subsequent edit.
+                    self._extras_catalog = None
+                return updated
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
+
+    def load_extras(
+        self, expected: ActiveIPod, cancelled: threading.Event
+    ) -> ExtrasCatalog:
+        """Read optional Extras independently of Library loading and playback."""
+        with self._lock:
+            active = self._active
+            if active is None or active.active_ipod is not expected:
+                raise DeviceChangedError(
+                    "The Active iPod changed before loading Extras."
+                )
+            support = resolve_extras_support(
+                expected.profile, active.record.device_evidence
+            )
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Loading Extras was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while loading Extras."
+                    )
+
+        catalog = extras.read_extras(active.session, support, checkpoint)
+        with self._lock:
+            checkpoint()
+            self._extras_catalog = (expected, catalog)
+        return catalog
+
+    def save_extras(
+        self,
+        expected: ActiveIPod,
+        catalog: ExtrasCatalog,
+        change: ExtrasChange,
+        cancelled: threading.Event,
+    ) -> ExtrasCatalog:
+        """Publish an explicit edit against the issued connection and file revision."""
+        with self._lock:
+            active = self._active
+            issued = self._extras_catalog
+            if (
+                active is None
+                or active.active_ipod is not expected
+                or issued is None
+                or issued[0] is not expected
+                or issued[1] is not catalog
+            ):
+                raise DeviceChangedError("Extras changed. Reload before saving.")
+
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise DeviceAccessError("Saving Extras was cancelled.")
+            with self._lock:
+                if self._active is not active or not active.session.is_active:
+                    raise DeviceChangedError(
+                        "The iPod disconnected while saving Extras."
+                    )
+
+        try:
+            with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
+                checkpoint()
+                dependencies = tuple(
+                    FilePrecondition(
+                        path,
+                        session.fingerprint(path) if session.exists(path) else None,
+                    )
+                    for path in (
+                        _SYSINFO_PATH,
+                        _SYSINFO_EXTENDED_PATH,
+                        _SYSINFO_AUTHORITY_PATH,
+                    )
+                )
+                metadata, _issues = _read_device_metadata(session)
+                evidence = active.record.hardware_evidence.merged_with(metadata)
+                support = resolve_extras_support(expected.profile, evidence)
+                if support != catalog.support:
+                    raise DeviceChangedError(
+                        "The iPod firmware evidence changed. Reload Extras."
+                    )
+                transaction = extras.prepare_change(
+                    catalog, change, dependencies=dependencies, checkpoint=checkpoint
+                )
+                checkpoint()
+                library_resources.recheck(session, dependencies)
+                if transaction is not None:
+                    committed = session.execute_transaction(
+                        transaction, checkpoint=checkpoint
+                    )
+                    if not committed.flush.complete:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        )
+                    try:
+                        _finalize_committed_transaction(
+                            session, committed.recovery.journal_path
+                        )
+                    except Exception as error:
+                        raise SyncRecoveryRequiredError(
+                            str(committed.recovery.journal_path)
+                        ) from error
+                updated = extras.read_extras(session, support, checkpoint)
+                with self._lock:
+                    checkpoint()
+                    self._extras_catalog = (expected, updated)
+                return updated
+        except RecoverableWriteError as error:
+            raise SyncRecoveryRequiredError(error.recovery_path) from error
+        except (MountInspectionError, SessionClosedError, SessionInvalidatedError):
+            with self._lock:
+                if self._active is active:
+                    self._deactivate_locked()
+            raise
 
     def load_installed_games(
         self, expected: ActiveIPod, cancelled: threading.Event
@@ -4610,6 +4889,8 @@ class DeviceCoordinator:
                 )
 
     def _deactivate_locked(self) -> None:
+        self._extras_catalog = None
+        self._preferences_catalog = None
         active = self._active
         self._active = None
         self._sync_cleanup_path = ""

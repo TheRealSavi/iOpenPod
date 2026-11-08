@@ -49,6 +49,242 @@
     </message>
 </context>
 <context>
+    <name>AlarmEditor</name>
+    <message>
+        <source>Choose a time no later than February 7, 2106 at 06:28:14.</source>
+        <translation>Wählen Sie eine Uhrzeit spätestens am 7. Februar 2106 um 06:28:14.</translation>
+    </message>
+    <message>
+        <source>Edit alarm</source>
+        <translation>Wecker bearbeiten</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Datum</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Uhrzeit</translation>
+    </message>
+    <message>
+        <source>Repeat</source>
+        <translation>Wiederholung</translation>
+    </message>
+    <message>
+        <source>Once</source>
+        <translation>Einmal</translation>
+    </message>
+    <message>
+        <source>Daily</source>
+        <translation>Täglich</translation>
+    </message>
+    <message>
+        <source>Weekdays</source>
+        <translation>Montag bis Freitag</translation>
+    </message>
+    <message>
+        <source>Weekends</source>
+        <translation>Am Wochenende</translation>
+    </message>
+    <message>
+        <source>Weekly</source>
+        <translation>Wöchentlich</translation>
+    </message>
+    <message>
+        <source>Monthly</source>
+        <translation>Monatlich</translation>
+    </message>
+    <message>
+        <source>Yearly</source>
+        <translation>Jährlich</translation>
+    </message>
+    <message>
+        <source>Keep current setting ({value})</source>
+        <translation>Aktuelle Einstellung beibehalten ({value})</translation>
+    </message>
+    <message>
+        <source>Times follow the iPod&apos;s clock. Check that the alarm is enabled and its sound is set on the iPod.</source>
+        <translation>Die Uhrzeiten richten sich nach der Uhr des iPod. Prüfen Sie auf dem iPod, ob der Wecker aktiviert und sein Ton eingestellt ist.</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Speichern</translation>
+    </message>
+</context>
+<context>
+    <name>AlarmsPage</name>
+    <message>
+        <source>Once</source>
+        <translation>Einmal</translation>
+    </message>
+    <message>
+        <source>Daily</source>
+        <translation>Täglich</translation>
+    </message>
+    <message>
+        <source>Weekdays</source>
+        <translation>Montag bis Freitag</translation>
+    </message>
+    <message>
+        <source>Weekends</source>
+        <translation>Am Wochenende</translation>
+    </message>
+    <message>
+        <source>Weekly</source>
+        <translation>Wöchentlich</translation>
+    </message>
+    <message>
+        <source>Monthly</source>
+        <translation>Monatlich</translation>
+    </message>
+    <message>
+        <source>Yearly</source>
+        <translation>Jährlich</translation>
+    </message>
+    <message>
+        <source>Unknown ({value})</source>
+        <translation type="vanished">Unbekannt ({value})</translation>
+    </message>
+    <message>
+        <source>Alarms</source>
+        <translation>Wecker</translation>
+    </message>
+    <message>
+        <source>Sleep Timer</source>
+        <translation>Ruhezustand-Timer</translation>
+    </message>
+    <message>
+        <source>Alarm</source>
+        <translation>Wecker</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Uhrzeit</translation>
+    </message>
+    <message>
+        <source>Repeat</source>
+        <translation>Wiederholung</translation>
+    </message>
+    <message>
+        <source>Edit time…</source>
+        <translation type="vanished">Uhrzeit bearbeiten…</translation>
+    </message>
+    <message>
+        <source>Custom repeat</source>
+        <translation>Benutzerdefinierte Wiederholung</translation>
+    </message>
+    <message>
+        <source>Time unavailable</source>
+        <translation>Uhrzeit nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>Read only</source>
+        <translation>Schreibgeschützt</translation>
+    </message>
+    <message>
+        <source>This alarm can be viewed here. Change its other settings on your iPod.</source>
+        <translation>Dieser Wecker kann hier angezeigt werden. Ändern Sie seine weiteren Einstellungen auf Ihrem iPod.</translation>
+    </message>
+    <message>
+        <source>Saved alarms</source>
+        <translation>Gespeicherte Wecker</translation>
+    </message>
+    <message>
+        <source>Times follow your iPod&apos;s clock. Turn alarms on or off and choose their sound on the iPod.</source>
+        <translation>Die Uhrzeiten richten sich nach der Uhr Ihres iPod. Aktivieren oder deaktivieren Sie Wecker und wählen Sie ihren Ton auf dem iPod.</translation>
+    </message>
+    <message>
+        <source>Fall asleep to your music</source>
+        <translation>Mit Ihrer Musik einschlafen</translation>
+    </message>
+    <message>
+        <source>Let your iPod stop playback after a little while. Set a Sleep Timer directly on the device.</source>
+        <translation>Lassen Sie Ihren iPod die Wiedergabe nach einer Weile beenden. Stellen Sie den Ruhezustand-Timer direkt auf dem Gerät ein.</translation>
+    </message>
+    <message>
+        <source>Edit alarm…</source>
+        <translation>Wecker bearbeiten…</translation>
+    </message>
+    <message>
+        <source>{model} · Firmware {firmware}
+Alarm editing is unavailable because editing support could not be confirmed for this model and firmware.</source>
+        <translation>{model} · Firmware {firmware}
+Wecker können nicht bearbeitet werden, da die Unterstützung für dieses Modell und diese Firmware nicht bestätigt werden konnte.</translation>
+    </message>
+    <message>
+        <source>{model}: Alarm editing is unavailable because the iPod&apos;s firmware version could not be confirmed.</source>
+        <translation>{model}: Wecker können nicht bearbeitet werden, da die Firmware-Version des iPod nicht bestätigt werden konnte.</translation>
+    </message>
+    <message>
+        <source>Choose an iPod to view its alarms.</source>
+        <translation>Wählen Sie einen iPod, um seine Wecker anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>This read-only snapshot is the iPod&apos;s saved alarm time. It may be disabled or out of date. Manage saved alarms on the iPod.</source>
+        <translation>Diese schreibgeschützte Momentaufnahme zeigt die gespeicherte Weckzeit des iPod. Der Wecker kann ausgeschaltet oder die Uhrzeit veraltet sein. Verwalten Sie gespeicherte Wecker auf dem iPod.</translation>
+    </message>
+    <message>
+        <source>Clock alarm snapshot</source>
+        <translation>Momentaufnahme des Weckers</translation>
+    </message>
+    <message>
+        <source>Some alarm details could not be read. Available alarms are shown below.</source>
+        <translation>Einige Weckerdetails konnten nicht gelesen werden. Die verfügbaren Wecker werden unten angezeigt.</translation>
+    </message>
+    <message>
+        <source>Loading alarms…</source>
+        <translation>Wecker werden geladen…</translation>
+    </message>
+    <message>
+        <source>Saved alarms have not been loaded.</source>
+        <translation>Gespeicherte Wecker wurden noch nicht geladen.</translation>
+    </message>
+    <message>
+        <source>Saved alarms cannot be read for this firmware.</source>
+        <translation>Gespeicherte Wecker können mit dieser Firmware nicht gelesen werden.</translation>
+    </message>
+    <message>
+        <source>The clock alarm snapshot could not be read. Check saved alarms on your iPod.</source>
+        <translation>Die Momentaufnahme des Weckers konnte nicht gelesen werden. Prüfen Sie gespeicherte Wecker auf Ihrem iPod.</translation>
+    </message>
+    <message>
+        <source>No saved alarms were found. Create an alarm on the iPod, then refresh this page.</source>
+        <translation>Es wurden keine gespeicherten Wecker gefunden. Erstellen Sie einen Wecker auf dem iPod und aktualisieren Sie anschließend diese Seite.</translation>
+    </message>
+    <message>
+        <source>Choose an iPod to see its sleep-timer instructions.</source>
+        <translation>Wählen Sie einen iPod, um die Anleitung für seinen Ruhezustand-Timer anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>Open Extras, then Alarms, then Sleep Timer.</source>
+        <translation>Öffnen Sie „Extras“, dann „Wecker“ und anschließend „Ruhezustand“.</translation>
+    </message>
+    <message>
+        <source>Open Extras, then Clock, then Sleep Timer.</source>
+        <translation>Öffnen Sie „Extras“, dann „Uhr“ und anschließend „Ruhezustand“.</translation>
+    </message>
+    <message>
+        <source>Open Extras, then Clock. Select a clock if prompted, then choose Sleep Timer.</source>
+        <translation>Öffnen Sie „Extras“ und dann „Uhr“. Wählen Sie gegebenenfalls eine Uhr und anschließend „Ruhezustand“.</translation>
+    </message>
+    <message>
+        <source>Start the timer on your iPod.</source>
+        <translation>Starten Sie den Timer auf Ihrem iPod.</translation>
+    </message>
+    <message>
+        <source>Select how long the iPod should play before sleeping.
+
+iOpenPod cannot read or change it over this connection.</source>
+        <translation>Wählen Sie, wie lange der iPod vor dem Ruhezustand weiter abspielen soll.
+
+iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</translation>
+    </message>
+    <message>
+        <source>Sleep-timer support has not been confirmed for this iPod.</source>
+        <translation>Die Unterstützung für einen Ruhezustand-Timer wurde für diesen iPod nicht bestätigt.</translation>
+    </message>
+</context>
+<context>
     <name>AlbumGridView</name>
     <message>
         <source>Albums</source>
@@ -855,6 +1091,472 @@
     </message>
 </context>
 <context>
+    <name>CalendarEditor</name>
+    <message>
+        <source>Starts</source>
+        <translation>Beginn</translation>
+    </message>
+    <message>
+        <source>Ends</source>
+        <translation>Ende</translation>
+    </message>
+    <message>
+        <source>Due</source>
+        <translation>Fällig am</translation>
+    </message>
+    <message>
+        <source>The imported dates and recurrence are preserved. You can edit the text here.</source>
+        <translation type="vanished">Die importierten Datumsangaben und Wiederholungen bleiben erhalten. Sie können hier den Text bearbeiten.</translation>
+    </message>
+    <message>
+        <source>Imported dates are preserved. The available controls show which settings can be edited.</source>
+        <translation>Importierte Datumswerte bleiben erhalten. Die verfügbaren Steuerelemente zeigen die bearbeitbaren Einstellungen.</translation>
+    </message>
+    <message>
+        <source>The end date is the first day after this all-day event.</source>
+        <translation>Das Enddatum ist der erste Tag nach diesem ganztägigen Ereignis.</translation>
+    </message>
+    <message>
+        <source>Times use the iPod&apos;s local clock unless marked UTC.</source>
+        <translation>Uhrzeiten richten sich nach der lokalen Uhr des iPod, sofern sie nicht als UTC gekennzeichnet sind.</translation>
+    </message>
+    <message>
+        <source>Enter a title.</source>
+        <translation>Geben Sie einen Titel ein.</translation>
+    </message>
+    <message>
+        <source>Choose a start date for the event.</source>
+        <translation>Wählen Sie ein Startdatum für das Ereignis.</translation>
+    </message>
+    <message>
+        <source>Start and end must use the same date form.</source>
+        <translation>Beginn und Ende müssen dasselbe Datumsformat verwenden.</translation>
+    </message>
+    <message>
+        <source>The end date must be the first day after this all-day event, or later.</source>
+        <translation>Das Enddatum muss der erste Tag nach diesem ganztägigen Ereignis oder ein späterer Tag sein.</translation>
+    </message>
+    <message>
+        <source>The end must be later than the start.</source>
+        <translation>Das Ende muss nach dem Beginn liegen.</translation>
+    </message>
+    <message>
+        <source>Edit event</source>
+        <translation>Ereignis bearbeiten</translation>
+    </message>
+    <message>
+        <source>New event</source>
+        <translation>Neues Ereignis</translation>
+    </message>
+    <message>
+        <source>Edit To Do</source>
+        <translation>Aufgabe bearbeiten</translation>
+    </message>
+    <message>
+        <source>New To Do</source>
+        <translation>Neue Aufgabe</translation>
+    </message>
+    <message>
+        <source>Title</source>
+        <translation>Titel</translation>
+    </message>
+    <message>
+        <source>Location</source>
+        <translation>Ort</translation>
+    </message>
+    <message>
+        <source>Notes</source>
+        <translation>Notizen</translation>
+    </message>
+    <message>
+        <source>All day</source>
+        <translation>Ganztägig</translation>
+    </message>
+    <message>
+        <source>Completed</source>
+        <translation>Erledigt</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Speichern</translation>
+    </message>
+    <message>
+        <source>Set</source>
+        <translation>Festlegen</translation>
+    </message>
+</context>
+<context>
+    <name>CalendarMonth</name>
+    <message>
+        <source>Today</source>
+        <translation>Heute</translation>
+    </message>
+    <message>
+        <source>Previous month</source>
+        <translation>Vorheriger Monat</translation>
+    </message>
+    <message>
+        <source>Next month</source>
+        <translation>Nächster Monat</translation>
+    </message>
+    <message>
+        <source>Calendar month</source>
+        <translation>Kalendermonat</translation>
+    </message>
+</context>
+<context>
+    <name>CalendarOptions</name>
+    <message>
+        <source>Does not repeat</source>
+        <translation>Keine Wiederholung</translation>
+    </message>
+    <message>
+        <source>Daily</source>
+        <translation>Täglich</translation>
+    </message>
+    <message>
+        <source>Weekly</source>
+        <translation>Wöchentlich</translation>
+    </message>
+    <message>
+        <source>Firmware default end</source>
+        <translation>Standardende der Firmware</translation>
+    </message>
+    <message>
+        <source>After a number of occurrences</source>
+        <translation>Nach einer Anzahl von Terminen</translation>
+    </message>
+    <message>
+        <source>Through a date</source>
+        <translation>Bis zu einem Datum</translation>
+    </message>
+    <message>
+        <source>Imported repeat (preserved)</source>
+        <translation>Importierte Wiederholung (beibehalten)</translation>
+    </message>
+    <message>
+        <source>Repeat</source>
+        <translation>Wiederholen</translation>
+    </message>
+    <message>
+        <source>Every</source>
+        <translation>Alle</translation>
+    </message>
+    <message>
+        <source>Repeat ends</source>
+        <translation>Wiederholung endet</translation>
+    </message>
+    <message>
+        <source>Occurrences</source>
+        <translation>Termine</translation>
+    </message>
+    <message>
+        <source>Through</source>
+        <translation>Bis</translation>
+    </message>
+    <message>
+        <source>Saved reminder before event start</source>
+        <translation>Gespeicherte Erinnerung vor Terminbeginn</translation>
+    </message>
+    <message>
+        <source>Minutes before start</source>
+        <translation>Minuten vor Beginn</translation>
+    </message>
+    <message>
+        <source>Mini 2 / 1.4.1: daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved.</source>
+        <translation>Mini 2 / 1.4.1: Tägliche/wöchentliche Wiederholungen benötigen Beginn und Ende ohne Zeitzone am selben Tag vor dem Jahr 3000. Ganztägige, zeitzonenbezogene und komplexe Wiederholungen bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Qualified Classic firmware: one saved reminder before a floating event&apos;s start. This does not confirm live adoption, sound or physical delivery.</source>
+        <translation>Verifizierte Classic-Firmware: eine gespeicherte Erinnerung vor Beginn eines Termins ohne Zeitzone. Dies bestätigt weder die Übernahme im laufenden Betrieb noch einen Ton oder die tatsächliche Benachrichtigung.</translation>
+    </message>
+    <message>
+        <source>Repeat and reminder editing are not qualified for this firmware. Imported settings are preserved.</source>
+        <translation>Die Bearbeitung von Wiederholungen und Erinnerungen ist für diese Firmware nicht verifiziert. Importierte Einstellungen bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Saved reminders require a floating event start.</source>
+        <translation>Gespeicherte Erinnerungen benötigen einen Terminbeginn ohne Zeitzone.</translation>
+    </message>
+</context>
+<context>
+    <name>CalendarPage</name>
+    <message>
+        <source>Untitled</source>
+        <translation>Unbenannt</translation>
+    </message>
+    <message>
+        <source>Other (unnamed)</source>
+        <translation>Andere (unbenannt)</translation>
+    </message>
+    <message>
+        <source>New calendar</source>
+        <translation>Neuer Kalender</translation>
+    </message>
+    <message>
+        <source>Calendar name:</source>
+        <translation>Kalendername:</translation>
+    </message>
+    <message>
+        <source>Rename calendar</source>
+        <translation>Kalender umbenennen</translation>
+    </message>
+    <message>
+        <source>All calendars</source>
+        <translation>Alle Kalender</translation>
+    </message>
+    <message>
+        <source>Completed</source>
+        <translation>Erledigt</translation>
+    </message>
+    <message>
+        <source>Repeating</source>
+        <translation>Wiederkehrend</translation>
+    </message>
+    <message>
+        <source>Edit series</source>
+        <translation>Serie bearbeiten</translation>
+    </message>
+    <message>
+        <source>Remove series</source>
+        <translation>Serie entfernen</translation>
+    </message>
+    <message>
+        <source>Mark incomplete</source>
+        <translation>Als nicht erledigt markieren</translation>
+    </message>
+    <message>
+        <source>Mark complete</source>
+        <translation>Als erledigt markieren</translation>
+    </message>
+    <message>
+        <source>New event</source>
+        <translation>Neues Ereignis</translation>
+    </message>
+    <message>
+        <source>New To Do</source>
+        <translation>Neue Aufgabe</translation>
+    </message>
+    <message>
+        <source>Loading Calendar…</source>
+        <translation>Kalender wird geladen…</translation>
+    </message>
+    <message>
+        <source>No matching entries. Try another search.</source>
+        <translation>Keine passenden Einträge. Versuchen Sie eine andere Suche.</translation>
+    </message>
+    <message>
+        <source>No saved dates or qualified occurrences for this day. Some repeats cannot be expanded for this firmware.</source>
+        <translation>Keine gespeicherten Datumswerte oder verifizierten Termine für diesen Tag. Manche Wiederholungen können für diese Firmware nicht berechnet werden.</translation>
+    </message>
+    <message>
+        <source>Nothing planned for this day. Add an event or choose another date.</source>
+        <translation>Für diesen Tag ist nichts geplant. Fügen Sie ein Ereignis hinzu oder wählen Sie ein anderes Datum.</translation>
+    </message>
+    <message>
+        <source>No events for this day. Choose another date or view all events.</source>
+        <translation>Keine Ereignisse für diesen Tag. Wählen Sie ein anderes Datum oder zeigen Sie alle Ereignisse an.</translation>
+    </message>
+    <message>
+        <source>No events on this iPod.</source>
+        <translation>Keine Ereignisse auf diesem iPod.</translation>
+    </message>
+    <message>
+        <source>No To Dos on this iPod.</source>
+        <translation>Keine Aufgaben auf diesem iPod.</translation>
+    </message>
+    <message>
+        <source>Saved absolute reminder (read-only): {value}</source>
+        <translation>Gespeicherte absolute Erinnerung (schreibgeschützt): {value}</translation>
+    </message>
+    <message>
+        <source>All saved entries</source>
+        <translation>Alle gespeicherten Einträge</translation>
+    </message>
+    <message>
+        <source>Repeating event · The calendar shows its saved dates.</source>
+        <translation type="vanished">Wiederkehrendes Ereignis · Der Kalender zeigt seine gespeicherten Datumsangaben.</translation>
+    </message>
+    <message>
+        <source>Some details could not be read. Your original entry is preserved.</source>
+        <translation>Einige Details konnten nicht gelesen werden. Ihr ursprünglicher Eintrag bleibt erhalten.</translation>
+    </message>
+    <message>
+        <source>This imported entry can be viewed but cannot be edited.</source>
+        <translation>Dieser importierte Eintrag kann angezeigt, aber nicht bearbeitet werden.</translation>
+    </message>
+    <message>
+        <source>New entry</source>
+        <translation>Neuer Eintrag</translation>
+    </message>
+    <message>
+        <source>Calendar:</source>
+        <translation>Kalender:</translation>
+    </message>
+    <message>
+        <source>Remove entire repeating series?</source>
+        <translation>Gesamte Terminserie entfernen?</translation>
+    </message>
+    <message>
+        <source>Remove Calendar entry?</source>
+        <translation>Kalendereintrag entfernen?</translation>
+    </message>
+    <message>
+        <source>Remove &quot;{title}&quot; from this iPod?</source>
+        <translation>„{title}“ von diesem iPod entfernen?</translation>
+    </message>
+    <message>
+        <source>Import Calendar</source>
+        <translation>Kalender importieren</translation>
+    </message>
+    <message>
+        <source>Calendar files (*.ics *.vcs);;All files (*)</source>
+        <translation>Kalenderdateien (*.ics *.vcs);;Alle Dateien (*)</translation>
+    </message>
+    <message>
+        <source>Calendar name (leave blank to keep names in the file):</source>
+        <translation>Kalendername (leer lassen, um die Namen in der Datei beizubehalten):</translation>
+    </message>
+    <message>
+        <source>Calendar</source>
+        <translation>Kalender</translation>
+    </message>
+    <message>
+        <source>New calendar…</source>
+        <translation>Neuer Kalender…</translation>
+    </message>
+    <message>
+        <source>Rename calendar…</source>
+        <translation>Kalender umbenennen…</translation>
+    </message>
+    <message>
+        <source>Calendar to show</source>
+        <translation>Anzuzeigender Kalender</translation>
+    </message>
+    <message>
+        <source>Search entries</source>
+        <translation>Einträge suchen</translation>
+    </message>
+    <message>
+        <source>Search Calendar and To Dos</source>
+        <translation>Kalender und Aufgaben durchsuchen</translation>
+    </message>
+    <message>
+        <source>Selected day</source>
+        <translation>Ausgewählter Tag</translation>
+    </message>
+    <message>
+        <source>All events</source>
+        <translation type="vanished">Alle Ereignisse</translation>
+    </message>
+    <message>
+        <source>Events to show</source>
+        <translation>Anzuzeigende Ereignisse</translation>
+    </message>
+    <message>
+        <source>Search results</source>
+        <translation>Suchergebnisse</translation>
+    </message>
+    <message>
+        <source>Events</source>
+        <translation>Ereignisse</translation>
+    </message>
+    <message>
+        <source>Mini 2 / 1.4.1: qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once.</source>
+        <translation>Mini 2 / 1.4.1: Verifizierte tägliche und wöchentliche Termine ohne Zeitzone werden angezeigt. Andere Wiederholungen behalten ihre gespeicherten Datumswerte. Alle gespeicherten Einträge zeigt jede Serie einmal.</translation>
+    </message>
+    <message>
+        <source>Recurrence expansion is not qualified for this firmware. Repeating events show their saved dates.</source>
+        <translation>Die Berechnung wiederkehrender Termine ist für diese Firmware nicht verifiziert. Wiederholungen zeigen ihre gespeicherten Datumswerte.</translation>
+    </message>
+    <message>
+        <source>Some Calendar files could not be opened. Other entries are still available.</source>
+        <translation>Einige Kalenderdateien konnten nicht geöffnet werden. Andere Einträge sind weiterhin verfügbar.</translation>
+    </message>
+    <message>
+        <source>To Dos</source>
+        <translation>Aufgaben</translation>
+    </message>
+    <message>
+        <source>Saved repeat rule: {rule}</source>
+        <translation>Gespeicherte Wiederholungsregel: {rule}</translation>
+    </message>
+    <message>
+        <source>Saved reminder: {seconds} seconds relative to {anchor}</source>
+        <translation>Gespeicherte Erinnerung: {seconds} Sekunden relativ zu {anchor}</translation>
+    </message>
+    <message>
+        <source>end</source>
+        <translation>Ende</translation>
+    </message>
+    <message>
+        <source>start</source>
+        <translation>Beginn</translation>
+    </message>
+    <message>
+        <source>Saved reminder: {time}</source>
+        <translation type="vanished">Gespeicherte Erinnerung: {time}</translation>
+    </message>
+    <message>
+        <source>Uninterpreted reminder preserved.</source>
+        <translation>Nicht interpretierte Erinnerung beibehalten.</translation>
+    </message>
+    <message>
+        <source>Repeating series · Editing or removing this entry affects the whole series.</source>
+        <translation>Terminserie · Bearbeiten oder Entfernen dieses Eintrags betrifft die gesamte Serie.</translation>
+    </message>
+    <message>
+        <source>Title</source>
+        <translation>Titel</translation>
+    </message>
+    <message>
+        <source>Starts</source>
+        <translation>Beginn</translation>
+    </message>
+    <message>
+        <source>Location</source>
+        <translation>Ort</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <source>Due</source>
+        <translation>Fällig am</translation>
+    </message>
+    <message>
+        <source>Import Calendar…</source>
+        <translation>Kalender importieren…</translation>
+    </message>
+    <message>
+        <source>Edit</source>
+        <translation>Bearbeiten</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Entfernen</translation>
+    </message>
+    <message>
+        <source>Repeating events show their saved dates.</source>
+        <translation type="vanished">Wiederkehrende Ereignisse zeigen ihre gespeicherten Datumsangaben.</translation>
+    </message>
+    <message>
+        <source>{model} · Firmware {firmware}
+Calendar is read-only because editing support could not be confirmed for this model and firmware.</source>
+        <translation>{model} · Firmware {firmware}
+Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung mit diesem Modell und dieser Firmware nicht bestätigt werden konnte.</translation>
+    </message>
+    <message>
+        <source>{model}: Calendar is read-only because the iPod&apos;s firmware version could not be confirmed.</source>
+        <translation>{model}: Der Kalender ist schreibgeschützt, da die Firmware-Version des iPod nicht bestätigt werden konnte.</translation>
+    </message>
+    <message>
+        <source>Choose an iPod to view its Calendar.</source>
+        <translation>Wählen Sie einen iPod, um seinen Kalender anzuzeigen.</translation>
+    </message>
+</context>
+<context>
     <name>ChapterEditor</name>
     <message>
         <source>Start (ms)</source>
@@ -1102,6 +1804,10 @@
     <message>
         <source>Playlists</source>
         <translation>Wiedergabelisten</translation>
+    </message>
+    <message>
+        <source>Extras</source>
+        <translation>Extras</translation>
     </message>
     <message>
         <source>Maintenance</source>
@@ -1613,6 +2319,105 @@
     </message>
 </context>
 <context>
+    <name>Equalizer</name>
+    <message>
+        <source>Use iPod setting</source>
+        <translation>iPod-Einstellung verwenden</translation>
+    </message>
+    <message>
+        <source>Acoustic</source>
+        <translation>Akustik</translation>
+    </message>
+    <message>
+        <source>Bass Booster</source>
+        <translation>Bässe verstärken</translation>
+    </message>
+    <message>
+        <source>Bass Reducer</source>
+        <translation>Bässe absenken</translation>
+    </message>
+    <message>
+        <source>Classical</source>
+        <translation>Klassik</translation>
+    </message>
+    <message>
+        <source>Dance</source>
+        <translation>Dance</translation>
+    </message>
+    <message>
+        <source>Deep</source>
+        <translation>Tief</translation>
+    </message>
+    <message>
+        <source>Electronic</source>
+        <translation>Elektronisch</translation>
+    </message>
+    <message>
+        <source>Flat</source>
+        <translation>Neutral</translation>
+    </message>
+    <message>
+        <source>Hip Hop</source>
+        <translation>Hip Hop</translation>
+    </message>
+    <message>
+        <source>Jazz</source>
+        <translation>Jazz</translation>
+    </message>
+    <message>
+        <source>Latin</source>
+        <translation>Lateinamerikanisch</translation>
+    </message>
+    <message>
+        <source>Loudness</source>
+        <translation>Loudness</translation>
+    </message>
+    <message>
+        <source>Lounge</source>
+        <translation>Lounge</translation>
+    </message>
+    <message>
+        <source>Piano</source>
+        <translation>Klavier</translation>
+    </message>
+    <message>
+        <source>Pop</source>
+        <translation>Pop</translation>
+    </message>
+    <message>
+        <source>R &amp; B</source>
+        <translation>R &amp; B</translation>
+    </message>
+    <message>
+        <source>Rock</source>
+        <translation>Rock</translation>
+    </message>
+    <message>
+        <source>Small Speakers</source>
+        <translation>Kleine Lautsprecher</translation>
+    </message>
+    <message>
+        <source>Spoken Word</source>
+        <translation>Sprache</translation>
+    </message>
+    <message>
+        <source>Treble Booster</source>
+        <translation>Höhen verstärken</translation>
+    </message>
+    <message>
+        <source>Treble Reducer</source>
+        <translation>Höhen absenken</translation>
+    </message>
+    <message>
+        <source>Vocal Booster</source>
+        <translation>Gesang verstärken</translation>
+    </message>
+    <message>
+        <source>Unknown preset (preserved)</source>
+        <translation>Unbekannte Voreinstellung (beibehalten)</translation>
+    </message>
+</context>
+<context>
     <name>Eta</name>
     <message>
         <source>Estimating time for this stage…</source>
@@ -1696,6 +2501,13 @@
     <message>
         <source>Finish Scan</source>
         <translation>Suche abschließen</translation>
+    </message>
+</context>
+<context>
+    <name>ExtrasController</name>
+    <message>
+        <source>Saving iPod Extras…</source>
+        <translation>iPod-Extras werden gespeichert…</translation>
     </message>
 </context>
 <context>
@@ -2346,7 +3158,67 @@
     </message>
     <message>
         <source>Read-only settings stored on your iPod, captured when it was loaded. Some settings may not be available for every model.</source>
-        <translation>Schreibgeschützte Einstellungen auf Ihrem iPod, die beim Laden erfasst wurden. Einige Einstellungen sind möglicherweise nicht für jedes Modell verfügbar.</translation>
+        <translation type="vanished">Schreibgeschützte Einstellungen auf Ihrem iPod, die beim Laden erfasst wurden. Einige Einstellungen sind möglicherweise nicht für jedes Modell verfügbar.</translation>
+    </message>
+    <message>
+        <source>The changes could not be submitted. Refresh the preferences and try again.</source>
+        <translation>Die Änderungen konnten nicht übermittelt werden. Aktualisieren Sie die Einstellungen und versuchen Sie es erneut.</translation>
+    </message>
+    <message>
+        <source>iPod preferences are read-only.</source>
+        <translation>Die iPod-Einstellungen sind schreibgeschützt.</translation>
+    </message>
+    <message>
+        <source>Choose an iPod to view its preferences.</source>
+        <translation>Wählen Sie einen iPod, um seine Einstellungen anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>Reading or saving iPod preferences…</source>
+        <translation>iPod-Einstellungen werden gelesen oder gespeichert…</translation>
+    </message>
+    <message>
+        <source>Preferences file saved. Check the settings on your iPod after ejecting.</source>
+        <translation>Einstellungsdatei gespeichert. Prüfen Sie die Einstellungen auf Ihrem iPod nach dem Auswerfen.</translation>
+    </message>
+    <message>
+        <source>Changes are not saved yet. Choose Apply to save them to this iPod.</source>
+        <translation>Die Änderungen sind noch nicht gespeichert. Wählen Sie „Anwenden“, um sie auf diesem iPod zu speichern.</translation>
+    </message>
+    <message>
+        <source>iPod preferences are read-only for this model and firmware.</source>
+        <translation>Die iPod-Einstellungen sind für dieses Modell und diese Firmware schreibgeschützt.</translation>
+    </message>
+    <message>
+        <source>Preferences cannot be saved while another device operation is in progress or the iPod is read-only.</source>
+        <translation>Die Einstellungen können nicht gespeichert werden, solange ein anderer Gerätevorgang läuft oder der iPod schreibgeschützt ist.</translation>
+    </message>
+    <message>
+        <source>Change the preferences below, then choose Apply.</source>
+        <translation>Ändern Sie die Einstellungen unten und wählen Sie dann „Anwenden“.</translation>
+    </message>
+    <message>
+        <source>Keep current setting</source>
+        <translation>Aktuelle Einstellung beibehalten</translation>
+    </message>
+    <message>
+        <source>Search preferences</source>
+        <translation>Einstellungen durchsuchen</translation>
+    </message>
+    <message>
+        <source>No preferences match your search.</source>
+        <translation>Keine Einstellungen entsprechen Ihrer Suche.</translation>
+    </message>
+    <message>
+        <source>Changes are saved to the iPod&apos;s preferences file. The iPod may keep its current settings until it reloads them; check the settings on the iPod after ejecting.</source>
+        <translation>Änderungen werden in der Einstellungsdatei des iPod gespeichert. Der iPod behält möglicherweise seine aktuellen Einstellungen bei, bis er sie neu lädt. Prüfen Sie die Einstellungen auf dem iPod nach dem Auswerfen.</translation>
+    </message>
+    <message>
+        <source>Settings stored on your iPod. Only verified settings can be changed here; other values are preserved.</source>
+        <translation>Auf Ihrem iPod gespeicherte Einstellungen. Hier können nur bestätigte Einstellungen geändert werden; andere Werte bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Revert</source>
+        <translation>Verwerfen</translation>
     </message>
     <message>
         <source>Connect and select an iPod to view its preferences.</source>
@@ -2355,6 +3227,10 @@
     <message>
         <source>Preferences have not been loaded for this iPod.</source>
         <translation>Die Einstellungen für diesen iPod wurden noch nicht geladen.</translation>
+    </message>
+    <message>
+        <source>Stored value: {value}</source>
+        <translation>Gespeicherter Wert: {value}</translation>
     </message>
 </context>
 <context>
@@ -3957,6 +4833,13 @@
     </message>
 </context>
 <context>
+    <name>MonthGrid</name>
+    <message>
+        <source>+{count} more</source>
+        <translation>+{count} weitere</translation>
+    </message>
+</context>
+<context>
     <name>Navigation</name>
     <message>
         <source>Welcome</source>
@@ -3993,6 +4876,14 @@
     <message>
         <source>Photos</source>
         <translation>Fotos</translation>
+    </message>
+    <message>
+        <source>Calendar</source>
+        <translation>Kalender</translation>
+    </message>
+    <message>
+        <source>Alarms</source>
+        <translation>Wecker</translation>
     </message>
     <message>
         <source>Podcasts</source>
@@ -6484,6 +7375,13 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
 </context>
 <context>
+    <name>PreferencesController</name>
+    <message>
+        <source>Saving iPod preferences…</source>
+        <translation>iPod-Einstellungen werden gespeichert…</translation>
+    </message>
+</context>
+<context>
     <name>QCoreApplication.self</name>
     <message>
         <source>%1 — %2 — %3</source>
@@ -6932,7 +7830,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>iPod preferences are read-only.</source>
-        <translation>Die iPod-Einstellungen sind schreibgeschützt.</translation>
+        <translation type="vanished">Die iPod-Einstellungen sind schreibgeschützt.</translation>
     </message>
     <message>
         <source>Changes are saved automatically to this iPod.</source>
@@ -7193,6 +8091,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Active iPod</source>
         <translation>Aktiver iPod</translation>
+    </message>
+    <message>
+        <source>%1 · Settings used by the iPod&apos;s firmware.</source>
+        <translation>%1 · Von der Firmware des iPod verwendete Einstellungen.</translation>
     </message>
     <message>
         <source>%1 · Settings saved on this iPod. Choose Use Host to follow global defaults.</source>
@@ -10317,6 +11219,10 @@ Playlists: %3</translation>
         <translation>Eine Podcast-Folge gehört nicht zu ihrer vorangehenden Sendungsgruppe.</translation>
     </message>
     <message>
+        <source>A preference cannot be changed twice in one save.</source>
+        <translation>Eine Einstellung kann nicht zweimal im selben Speichervorgang geändert werden.</translation>
+    </message>
+    <message>
         <source>A previous restore still requires recovery.</source>
         <translation>Eine vorherige Wiederherstellung muss noch repariert werden.</translation>
     </message>
@@ -10373,6 +11279,10 @@ Playlists: %3</translation>
         <translation>Ein Werkzeug konnte nicht ausgeführt werden. Reparieren Sie die Installation oder ändern Sie den benutzerdefinierten Pfad unter Einstellungen &gt; Medienwerkzeuge und prüfen Sie erneut.</translation>
     </message>
     <message>
+        <source>Acoustic</source>
+        <translation>Akustik</translation>
+    </message>
+    <message>
         <source>Acoustic matching is unavailable; existing Sync Details and independent items remain usable. {error}</source>
         <translation>Akustischer Abgleich nicht verfügbar. Vorhandene Synchronisierungsdetails und unabhängige Elemente bleiben nutzbar. {error}</translation>
     </message>
@@ -10381,12 +11291,28 @@ Playlists: %3</translation>
         <translation>Das Hinzufügen oder Entfernen von Fotos erfordert einen gesonderten Vorgang für Bilddateien.</translation>
     </message>
     <message>
+        <source>Additional device settings</source>
+        <translation>Weitere Geräteeinstellungen</translation>
+    </message>
+    <message>
+        <source>Alarm {number}</source>
+        <translation>Wecker {number}</translation>
+    </message>
+    <message>
         <source>Album Artist is preserved, but this profile treats Artist as the safer iPod grouping field.</source>
         <translation>Der Albumkünstler bleibt erhalten. Dieses Profil verwendet jedoch den Künstler als zuverlässigeres Feld für die Gruppierung auf dem iPod.</translation>
     </message>
     <message>
         <source>Album or artist group has conflicting source identities.</source>
         <translation>Eine Album- oder Künstlergruppe enthält widersprüchliche Quellkennungen.</translation>
+    </message>
+    <message>
+        <source>Albums</source>
+        <translation>Alben</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Alle</translation>
     </message>
     <message>
         <source>All podcasts</source>
@@ -10399,6 +11325,10 @@ Playlists: %3</translation>
     <message>
         <source>Allocate native identities and metadata for the generated record.</source>
         <translation>Originalkennungen und Metadaten für den erzeugten Datensatz zuweisen.</translation>
+    </message>
+    <message>
+        <source>Always on</source>
+        <translation>Immer an</translation>
     </message>
     <message>
         <source>An Episode cannot be added and removed in the same Sync.</source>
@@ -10489,20 +11419,48 @@ Playlists: %3</translation>
         <translation>ArtworkDB ist leer oder keine reguläre Datei.</translation>
     </message>
     <message>
+        <source>Ask</source>
+        <translation>Nachfragen</translation>
+    </message>
+    <message>
         <source>Attaching or removing the Photo Database is not supported.</source>
         <translation>Das Hinzufügen oder Entfernen der Fotodatenbank wird nicht unterstützt.</translation>
+    </message>
+    <message>
+        <source>Audiobook speed</source>
+        <translation>Hörbuchgeschwindigkeit</translation>
     </message>
     <message>
         <source>Automatic</source>
         <translation>Automatisch</translation>
     </message>
     <message>
+        <source>Backlight timer</source>
+        <translation>Beleuchtungsdauer</translation>
+    </message>
+    <message>
         <source>Backup complete — {total} files protected.</source>
         <translation>Backup abgeschlossen · {total} Dateien gesichert.</translation>
     </message>
     <message>
+        <source>Bass Booster</source>
+        <translation>Bässe verstärken</translation>
+    </message>
+    <message>
+        <source>Bass Reducer</source>
+        <translation>Bässe absenken</translation>
+    </message>
+    <message>
         <source>Boolean conditions do not accept a value.</source>
         <translation>Ja/Nein-Bedingungen akzeptieren keinen zusätzlichen Wert.</translation>
+    </message>
+    <message>
+        <source>Both</source>
+        <translation>Beide</translation>
+    </message>
+    <message>
+        <source>Brightness</source>
+        <translation>Helligkeit</translation>
     </message>
     <message>
         <source>Building gameplay analysis · CPU</source>
@@ -10681,12 +11639,32 @@ Playlists: %3</translation>
         <translation>In der Prüfung ausgewählt</translation>
     </message>
     <message>
+        <source>Classical</source>
+        <translation>Klassik</translation>
+    </message>
+    <message>
         <source>Cleaning verified Library recovery files…</source>
         <translation>Geprüfte Wiederherstellungsdateien der Mediathek werden entfernt…</translation>
     </message>
     <message>
         <source>Cleaning verified Sync recovery files…</source>
         <translation>Geprüfte Wiederherstellungsdateien der Synchronisierung werden entfernt…</translation>
+    </message>
+    <message>
+        <source>Clicker</source>
+        <translation>Klickton</translation>
+    </message>
+    <message>
+        <source>Clock alarm</source>
+        <translation>Wecker</translation>
+    </message>
+    <message>
+        <source>Clock alarm snapshot</source>
+        <translation>Momentaufnahme des Weckers</translation>
+    </message>
+    <message>
+        <source>Clock city</source>
+        <translation>Uhrenstadt</translation>
     </message>
     <message>
         <source>Combining musical evidence · CPU</source>
@@ -10723,6 +11701,10 @@ Playlists: %3</translation>
     <message>
         <source>Connect the interrupted iPod, refresh Devices, and recover it before any other write.</source>
         <translation>Schließen Sie den betroffenen iPod an, aktualisieren Sie die Geräte und stellen Sie ihn vor jedem weiteren Schreibvorgang wieder her.</translation>
+    </message>
+    <message>
+        <source>Contact name order</source>
+        <translation>Namensreihenfolge der Kontakte</translation>
     </message>
     <message>
         <source>Continuing without acoustic matching…</source>
@@ -10809,12 +11791,28 @@ Playlists: %3</translation>
         <translation>Das Erstellen der besonderen Podcasts-Wiedergabeliste erfordert für dieses Ziel einen vorhandenen Datenbestand mit Podcast-Unterstützung.</translation>
     </message>
     <message>
+        <source>Cross Fade</source>
+        <translation>Überblenden</translation>
+    </message>
+    <message>
+        <source>Cube across</source>
+        <translation>Würfel horizontal</translation>
+    </message>
+    <message>
+        <source>Cube down</source>
+        <translation>Würfel vertikal</translation>
+    </message>
+    <message>
         <source>Current contents were kept and recovery was declined. Safely eject before unplugging; device flushing could not be confirmed. {detail}</source>
         <translation>Die aktuellen Inhalte wurden behalten und die Wiederherstellung abgelehnt. Werfen Sie den iPod vor dem Trennen sicher aus. Der Abschluss aller Schreibvorgänge konnte nicht bestätigt werden. {detail}</translation>
     </message>
     <message>
         <source>Current contents were kept and recovery was declined. The current Library could not be loaded; the interrupted Sync may be incomplete. Recovery copies remain beside declined-transaction.json. Refresh the Device Picker after repairing the Library. {detail}</source>
         <translation>Die aktuellen Inhalte wurden behalten und die Wiederherstellung abgelehnt. Die aktuelle Mediathek konnte nicht geladen werden. Die unterbrochene Synchronisierung kann unvollständig sein. Wiederherstellungskopien bleiben neben declined-transaction.json erhalten. Aktualisieren Sie die iPod-Auswahl nach der Reparatur der Mediathek. {detail}</translation>
+    </message>
+    <message>
+        <source>Dance</source>
+        <translation>Dance</translation>
     </message>
     <message>
         <source>Database version must be a positive unsigned 32-bit value.</source>
@@ -10833,6 +11831,10 @@ Playlists: %3</translation>
         <translation>Audio wird mit FFmpeg dekodiert · CPU</translation>
     </message>
     <message>
+        <source>Deep</source>
+        <translation>Tief</translation>
+    </message>
+    <message>
         <source>Deleting obsolete Track files.</source>
         <translation>Nicht mehr benötigte Titeldateien werden gelöscht.</translation>
     </message>
@@ -10849,6 +11851,10 @@ Playlists: %3</translation>
         <translation>Die Darstellung im Betriebssystem wurde nicht aktualisiert, da der Datenträger schreibgeschützt oder nicht sicher beschreibbar ist.</translation>
     </message>
     <message>
+        <source>Device clock settings</source>
+        <translation>Uhreinstellungen des Geräts</translation>
+    </message>
+    <message>
         <source>Device identity metadata needs repair, but this Volume is not safe for writes.</source>
         <translation>Die Angaben zur Geräteidentität müssen repariert werden. Dieser Datenträger kann jedoch nicht sicher beschrieben werden.</translation>
     </message>
@@ -10859,6 +11865,10 @@ Playlists: %3</translation>
     <message>
         <source>Disk use</source>
         <translation>Als Festplatte verwenden</translation>
+    </message>
+    <message>
+        <source>Dissolve</source>
+        <translation>Überblenden</translation>
     </message>
     <message>
         <source>Downloading Podcast Episode…</source>
@@ -10879,6 +11889,10 @@ Playlists: %3</translation>
     <message>
         <source>Downloading {title}…</source>
         <translation>{title} wird heruntergeladen…</translation>
+    </message>
+    <message>
+        <source>Electronic</source>
+        <translation>Elektronisch</translation>
     </message>
     <message>
         <source>Embedded artwork could not be verified; existing iPod covers will be kept.</source>
@@ -10921,6 +11935,10 @@ Playlists: %3</translation>
         <translation>Gesamte Mediathek</translation>
     </message>
     <message>
+        <source>Equalizer</source>
+        <translation>Equalizer</translation>
+    </message>
+    <message>
         <source>Evaluating Smart Playlists</source>
         <translation>Intelligente Wiedergabelisten werden ausgewertet</translation>
     </message>
@@ -10943,6 +11961,22 @@ Playlists: %3</translation>
     <message>
         <source>Exporting {name}</source>
         <translation>{name} wird exportiert</translation>
+    </message>
+    <message>
+        <source>Fade Through Black</source>
+        <translation>Über Schwarz blenden</translation>
+    </message>
+    <message>
+        <source>Fade To Black</source>
+        <translation>Zu Schwarz blenden</translation>
+    </message>
+    <message>
+        <source>Faster</source>
+        <translation>Schneller</translation>
+    </message>
+    <message>
+        <source>Female</source>
+        <translation>Weiblich</translation>
     </message>
     <message>
         <source>Finalize the required iTunesDB signature after serialization.</source>
@@ -10979,6 +12013,22 @@ Playlists: %3</translation>
     <message>
         <source>Finishing analysis</source>
         <translation>Analyse wird abgeschlossen</translation>
+    </message>
+    <message>
+        <source>First</source>
+        <translation>Vorname</translation>
+    </message>
+    <message>
+        <source>First Last</source>
+        <translation>Vorname Nachname</translation>
+    </message>
+    <message>
+        <source>Fit to screen</source>
+        <translation>An Bildschirm anpassen</translation>
+    </message>
+    <message>
+        <source>Flat</source>
+        <translation>Neutral</translation>
     </message>
     <message>
         <source>Flatpak</source>
@@ -11025,6 +12075,18 @@ Playlists: %3</translation>
         <translation>Die HASH72-Ausgabe erfordert den gespeicherten IV und die Zufallsbytes des ausgewählten Geräts.</translation>
     </message>
     <message>
+        <source>Headphones</source>
+        <translation>Kopfhörer</translation>
+    </message>
+    <message>
+        <source>High</source>
+        <translation>Hoch</translation>
+    </message>
+    <message>
+        <source>Hip Hop</source>
+        <translation>Hip Hop</translation>
+    </message>
+    <message>
         <source>Host Media Library scan complete.</source>
         <translation>Suche in der Mediathek auf dem Computer abgeschlossen.</translation>
     </message>
@@ -11069,6 +12131,14 @@ Playlists: %3</translation>
         <translation>Die Instrumentenanalyse kann auf diesem System nicht eingerichtet werden. Die akustische Analyse bleibt verfügbar.</translation>
     </message>
     <message>
+        <source>Interpretation notes</source>
+        <translation>Hinweise zur Interpretation</translation>
+    </message>
+    <message>
+        <source>Jazz</source>
+        <translation>Jazz</translation>
+    </message>
+    <message>
         <source>Keep in iTunes source list</source>
         <translation>In der iTunes-Quellenliste behalten</translation>
     </message>
@@ -11099,6 +12169,22 @@ Playlists: %3</translation>
     <message>
         <source>Keep the iPod connected, refresh Devices, and retry. If restore had begun, recover it first.</source>
         <translation>Lassen Sie den iPod angeschlossen, aktualisieren Sie die Geräte und versuchen Sie es erneut. Falls die Wiederherstellung bereits begonnen hatte, reparieren Sie diese zuerst.</translation>
+    </message>
+    <message>
+        <source>Last</source>
+        <translation>Nachname</translation>
+    </message>
+    <message>
+        <source>Last, First</source>
+        <translation>Nachname, Vorname</translation>
+    </message>
+    <message>
+        <source>Latin</source>
+        <translation>Lateinamerikanisch</translation>
+    </message>
+    <message>
+        <source>Legacy device settings</source>
+        <translation>Ältere Geräteeinstellungen</translation>
     </message>
     <message>
         <source>Let that operation finish, then retry.</source>
@@ -11141,6 +12227,18 @@ Playlists: %3</translation>
         <translation>Demucs htdemucs_6s wird geladen</translation>
     </message>
     <message>
+        <source>Loudness</source>
+        <translation>Loudness</translation>
+    </message>
+    <message>
+        <source>Lounge</source>
+        <translation>Lounge</translation>
+    </message>
+    <message>
+        <source>Low</source>
+        <translation>Niedrig</translation>
+    </message>
+    <message>
         <source>Lyrics cannot be verified for this iPod&apos;s native player: {reason} The full lyrics and source file were not truncated.</source>
         <translation>Der Liedtext kann für den integrierten Player dieses iPod nicht überprüft werden: {reason} Der vollständige Liedtext und die Quelldatei wurden nicht gekürzt.</translation>
     </message>
@@ -11179,6 +12277,10 @@ Playlists: %3</translation>
     <message>
         <source>Make dataset 2 match the Playlists in dataset 3, retaining flat Podcast entries.</source>
         <translation>Datenbestand 2 an die Wiedergabelisten in Datenbestand 3 angleichen und flache Podcast-Einträge beibehalten.</translation>
+    </message>
+    <message>
+        <source>Male</source>
+        <translation>Männlich</translation>
     </message>
     <message>
         <source>Manual</source>
@@ -11237,6 +12339,10 @@ Playlists: %3</translation>
         <translation>Musiksynchronisierung</translation>
     </message>
     <message>
+        <source>NTSC</source>
+        <translation>NTSC</translation>
+    </message>
+    <message>
         <source>Named Chapter positions and artwork image times differ. Classic image refresh compares their indices; playback needs device validation. No positions were changed.</source>
         <translation>Die Positionen benannter Kapitel und die Zeitpunkte der Coverbilder unterscheiden sich. Der Classic vergleicht beim Aktualisieren des Bildes ihre Indizes; die Wiedergabe muss am Gerät geprüft werden. Es wurden keine Positionen geändert.</translation>
     </message>
@@ -11253,6 +12359,14 @@ Playlists: %3</translation>
         <translation>Neue Wiedergabelisten erfordern einen bekannten zugehörigen Datenbestand. Die vorhandenen Wiedergabelisten-Datenbestände stimmen nicht überein.</translation>
     </message>
     <message>
+        <source>Nike remote commands</source>
+        <translation>Nike-Fernbedienungsbefehle</translation>
+    </message>
+    <message>
+        <source>Nike spoken feedback</source>
+        <translation>Nike-Sprachfeedback</translation>
+    </message>
+    <message>
         <source>No changes since the latest Backup Snapshot.</source>
         <translation>Keine Änderungen seit dem letzten Backup.</translation>
     </message>
@@ -11267,6 +12381,14 @@ Playlists: %3</translation>
     <message>
         <source>No trusted Original Backup Snapshots could be imported.</source>
         <translation>Es konnten keine vertrauenswürdigen Backups aus Original iOpenPod importiert werden.</translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation>Keine</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
     </message>
     <message>
         <source>Normalization applied.</source>
@@ -11625,12 +12747,36 @@ Playlists: %3</translation>
         <translation>Mediathek-Dateien werden übertragen: {completed} von {total}</translation>
     </message>
     <message>
+        <source>Push</source>
+        <translation>Schieben</translation>
+    </message>
+    <message>
+        <source>Push across</source>
+        <translation>Horizontal schieben</translation>
+    </message>
+    <message>
+        <source>Push down</source>
+        <translation>Nach unten schieben</translation>
+    </message>
+    <message>
         <source>Python / source</source>
         <translation>Python / Quellcode</translation>
     </message>
     <message>
         <source>Python package (PyPI updates)</source>
         <translation>Python-Paket (Updates über PyPI)</translation>
+    </message>
+    <message>
+        <source>R &amp; B</source>
+        <translation>R &amp; B</translation>
+    </message>
+    <message>
+        <source>Radial</source>
+        <translation>Radial</translation>
+    </message>
+    <message>
+        <source>Random</source>
+        <translation>Zufällig</translation>
     </message>
     <message>
         <source>Rating must be between 0 and 100.</source>
@@ -11757,6 +12903,10 @@ Playlists: %3</translation>
         <translation>Podcasts werden aktualisiert und ihre Synchronisierungseinstellungen vorbereitet…</translation>
     </message>
     <message>
+        <source>Reload verified iPod preferences before editing.</source>
+        <translation>Laden Sie die bestätigten iPod-Einstellungen vor der Bearbeitung erneut.</translation>
+    </message>
+    <message>
         <source>Remove deleted Track references from hidden playlists while preserving their metadata.</source>
         <translation>Verweise auf gelöschte Titel aus ausgeblendeten Wiedergabelisten entfernen und ihre Metadaten beibehalten.</translation>
     </message>
@@ -11767,6 +12917,14 @@ Playlists: %3</translation>
     <message>
         <source>Reparsing and verifying candidate output</source>
         <translation>Vorbereitete Ausgabe wird erneut eingelesen und geprüft</translation>
+    </message>
+    <message>
+        <source>Repeat</source>
+        <translation>Wiederholung</translation>
+    </message>
+    <message>
+        <source>Repeat slideshow</source>
+        <translation>Diashow wiederholen</translation>
     </message>
     <message>
         <source>Replacement pixels require a new artwork identity referenced by a changed Track.</source>
@@ -11859,6 +13017,10 @@ Playlists: %3</translation>
     <message>
         <source>Rewrite embedded tags on the retained media; verify lyrics and derive the final file size.</source>
         <translation>Eingebettete Tags der beibehaltenen Mediendatei neu schreiben; Liedtext prüfen und endgültige Dateigröße ermitteln.</translation>
+    </message>
+    <message>
+        <source>Rock</source>
+        <translation>Rock</translation>
     </message>
     <message>
         <source>Rockbox artwork for {name} was not embedded. The media and iOpenPod artwork can still Sync; retry after correcting the file.</source>
@@ -12021,6 +13183,10 @@ Playlists: %3</translation>
         <translation>Cover anzeigen</translation>
     </message>
     <message>
+        <source>Shuffle</source>
+        <translation>Zufallswiedergabe</translation>
+    </message>
+    <message>
         <source>Shuffle file capacity</source>
         <translation>Dateikapazität des shuffle</translation>
     </message>
@@ -12029,8 +13195,28 @@ Playlists: %3</translation>
         <translation>Musikkapazität des shuffle</translation>
     </message>
     <message>
+        <source>Shuffle photos</source>
+        <translation>Fotos zufällig wiedergeben</translation>
+    </message>
+    <message>
         <source>Signed output requires the device&apos;s eight-byte FireWire GUID.</source>
         <translation>Signierte Ausgaben erfordern die acht Byte lange FireWire-GUID des Geräts.</translation>
+    </message>
+    <message>
+        <source>Slide</source>
+        <translation>Gleiten</translation>
+    </message>
+    <message>
+        <source>Slideshow transition</source>
+        <translation>Diashow-Übergang</translation>
+    </message>
+    <message>
+        <source>Slower</source>
+        <translation>Langsamer</translation>
+    </message>
+    <message>
+        <source>Small Speakers</source>
+        <translation>Kleine Lautsprecher</translation>
     </message>
     <message>
         <source>Smart Playlist preferences must be booleans.</source>
@@ -12077,12 +13263,28 @@ Playlists: %3</translation>
         <translation>Einige Quelleinträge konnten nicht gelesen werden oder wurden abgelehnt. Diese Einträge prüfen und erneut scannen.</translation>
     </message>
     <message>
+        <source>Songs</source>
+        <translation>Titel</translation>
+    </message>
+    <message>
         <source>Sort 36 has no retained source index.</source>
         <translation>Für Sortierung 36 ist kein ursprünglicher Index vorhanden.</translation>
     </message>
     <message>
+        <source>Sort contacts by</source>
+        <translation>Kontakte sortieren nach</translation>
+    </message>
+    <message>
         <source>Sound Check</source>
         <translation>Lautstärke anpassen</translation>
+    </message>
+    <message>
+        <source>Speaker</source>
+        <translation>Lautsprecher</translation>
+    </message>
+    <message>
+        <source>Spoken Word</source>
+        <translation>Sprache</translation>
     </message>
     <message>
         <source>Staging Library files: {completed} of {total}</source>
@@ -12095,6 +13297,10 @@ Playlists: %3</translation>
     <message>
         <source>Standalone executable</source>
         <translation>Eigenständige Anwendung</translation>
+    </message>
+    <message>
+        <source>Standard</source>
+        <translation>Standard</translation>
     </message>
     <message>
         <source>Starting Host media preparation</source>
@@ -12119,6 +13325,10 @@ Playlists: %3</translation>
     <message>
         <source>Supply verified embedded lyrics and the resulting media file identity.</source>
         <translation>Stellen Sie geprüfte eingebettete Liedtexte und die daraus resultierende Mediendateikennung bereit.</translation>
+    </message>
+    <message>
+        <source>Swirl</source>
+        <translation>Wirbel</translation>
     </message>
     <message>
         <source>Symbolic link skipped because Follow symbolic links is disabled.</source>
@@ -12171,6 +13381,18 @@ Playlists: %3</translation>
     <message>
         <source>Sync was interrupted and its previous Library could not be restored. Reconnect the same iPod and recover this transaction before further writes.</source>
         <translation>Die Synchronisierung wurde unterbrochen und die vorherige Mediathek konnte nicht wiederhergestellt werden. Schließen Sie denselben iPod erneut an und stellen Sie diesen Vorgang vor weiteren Schreibvorgängen wieder her.</translation>
+    </message>
+    <message>
+        <source>TV Out</source>
+        <translation>TV-Ausgang</translation>
+    </message>
+    <message>
+        <source>TV screen</source>
+        <translation>TV-Bildschirm</translation>
+    </message>
+    <message>
+        <source>TV signal</source>
+        <translation>TV-Signal</translation>
     </message>
     <message>
         <source>Tag rewrites require one incoming Track or a retained Track at its existing location.</source>
@@ -12873,6 +14095,34 @@ Playlists: %3</translation>
         <translation>Dieser Schreibvorgang für die Mediathek erfordert einen erfassten Dateibestand ohne ausstehende positionsbezogene Wiedergabe-Begleitdateien. Behalten Sie diese bei oder gleichen Sie sie ab, bevor Sie die Ausgabe vorbereiten.</translation>
     </message>
     <message>
+        <source>10 seconds</source>
+        <translation>10 Sekunden</translation>
+    </message>
+    <message>
+        <source>15 seconds</source>
+        <translation>15 Sekunden</translation>
+    </message>
+    <message>
+        <source>2 seconds</source>
+        <translation>2 Sekunden</translation>
+    </message>
+    <message>
+        <source>20 seconds</source>
+        <translation>20 Sekunden</translation>
+    </message>
+    <message>
+        <source>3 seconds</source>
+        <translation>3 Sekunden</translation>
+    </message>
+    <message>
+        <source>30 seconds</source>
+        <translation>30 Sekunden</translation>
+    </message>
+    <message>
+        <source>5 seconds</source>
+        <translation>5 Sekunden</translation>
+    </message>
+    <message>
         <source>A Host Playlist or one of its retained sources changed or became unavailable after Review. Affected Playlists were skipped; rescan before retrying.</source>
         <translation>Eine Host-Playlist oder eine ihrer beibehaltenen Quellen wurde nach der Prüfung geändert oder ist nicht mehr verfügbar. Betroffene Playlists wurden übersprungen; vor einem erneuten Versuch erneut scannen.</translation>
     </message>
@@ -12969,6 +14219,22 @@ Playlists: %3</translation>
         <translation>Ein (Rohwert {value})</translation>
     </message>
     <message>
+        <source>One</source>
+        <translation>Ein Titel</translation>
+    </message>
+    <message>
+        <source>PAL</source>
+        <translation>PAL</translation>
+    </message>
+    <message>
+        <source>Page flip</source>
+        <translation>Umblättern</translation>
+    </message>
+    <message>
+        <source>Piano</source>
+        <translation>Klavier</translation>
+    </message>
+    <message>
         <source>Playlist datasets do not match the authoritative dataset 3.</source>
         <translation>Die Wiedergabelisten-Datenbestände stimmen nicht mit dem maßgeblichen Datenbestand 3 überein.</translation>
     </message>
@@ -13007,6 +14273,10 @@ Playlists: %3</translation>
     <message>
         <source>Podcast settings were not preserved or initialized from the captured defaults.</source>
         <translation>Die Podcast-Einstellungen wurden weder beibehalten noch anhand der erfassten Standardwerte initialisiert.</translation>
+    </message>
+    <message>
+        <source>Pop</source>
+        <translation>Pop</translation>
     </message>
     <message>
         <source>Preparing optional analysis setup…</source>
@@ -13087,8 +14357,16 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Die Updater-Familie oder Firmwareversion wurde nicht gemeldet.</translation>
     </message>
     <message>
+        <source>These preference bytes do not match the verified firmware format. They remain read-only. {detail}</source>
+        <translation>Diese Einstellungsdaten entsprechen nicht dem bestätigten Firmware-Format. Sie bleiben schreibgeschützt. {detail}</translation>
+    </message>
+    <message>
         <source>These saved annual rules do not establish historical timezones. Library dates use the available city rules or a fixed-offset estimate.</source>
         <translation>Diese gespeicherten jährlichen Regeln belegen keine historischen Zeitzonen. Datumsangaben der Mediathek verwenden die verfügbaren Regeln der Stadt oder eine Schätzung mit festem Zeitversatz.</translation>
+    </message>
+    <message>
+        <source>These saved preferences request a reset on the iPod. Editing is disabled until the iPod has handled it.</source>
+        <translation>Diese gespeicherten Einstellungen fordern ein Zurücksetzen auf dem iPod an. Die Bearbeitung ist deaktiviert, bis der iPod dies verarbeitet hat.</translation>
     </message>
     <message>
         <source>This iPod layout cannot store the date; its previous value is retained.</source>
@@ -13099,12 +14377,32 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Dieses iPod-Format kann den Wiedergabezeitpunkt nicht speichern; die ursprüngliche Begleitdatei wird archiviert.</translation>
     </message>
     <message>
+        <source>This model or firmware has not been verified for preference editing.</source>
+        <translation>Dieses Modell oder diese Firmware wurde nicht für die Bearbeitung von Einstellungen bestätigt.</translation>
+    </message>
+    <message>
+        <source>This preference is not available for editing.</source>
+        <translation>Diese Einstellung kann nicht bearbeitet werden.</translation>
+    </message>
+    <message>
         <source>This updater family is not supported for game authorization. Supported families: {families}.</source>
         <translation>Diese Updater-Familie wird für die Spielautorisierung nicht unterstützt. Unterstützte Familien: {families}.</translation>
     </message>
     <message>
+        <source>Time per slide</source>
+        <translation>Anzeigedauer pro Foto</translation>
+    </message>
+    <message>
         <source>Timed artwork has no complete, recognized named Chapter header. The retained Chapter data is unchanged; Classic chapter artwork may be unavailable.</source>
         <translation>Für die zeitgesteuerten Coverbilder fehlt ein vollständiger, erkannter Header für benannte Kapitel. Die vorhandenen Kapiteldaten bleiben unverändert; Kapitelbilder sind auf dem Classic möglicherweise nicht verfügbar.</translation>
+    </message>
+    <message>
+        <source>Timer settings</source>
+        <translation>Timer-Einstellungen</translation>
+    </message>
+    <message>
+        <source>Timezone used for library dates</source>
+        <translation>Zeitzone für Mediatheksdaten</translation>
     </message>
     <message>
         <source>Tracks</source>
@@ -13113,6 +14411,14 @@ Die akustische Analyse bleibt verfügbar.</translation>
     <message>
         <source>Tracks can be arranged directly only in a Playlist.</source>
         <translation>Titel können nur in einer Wiedergabeliste direkt angeordnet werden.</translation>
+    </message>
+    <message>
+        <source>Treble Booster</source>
+        <translation>Höhen verstärken</translation>
+    </message>
+    <message>
+        <source>Treble Reducer</source>
+        <translation>Höhen absenken</translation>
     </message>
     <message>
         <source>UTC{offset}</source>
@@ -13223,6 +14529,14 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Sichtbare Wiedergabelisten entsprechen nicht der gewünschten Reihenfolge der Ordnerhierarchie.</translation>
     </message>
     <message>
+        <source>Vocal Booster</source>
+        <translation>Gesang verstärken</translation>
+    </message>
+    <message>
+        <source>Voice memo quality</source>
+        <translation>Sprachmemoqualität</translation>
+    </message>
+    <message>
         <source>VoiceOver</source>
         <translation>VoiceOver</translation>
     </message>
@@ -13247,8 +14561,40 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Warten auf das Ende der Schreibvorgänge auf dem iPod…</translation>
     </message>
     <message>
+        <source>Widescreen</source>
+        <translation>Breitbild</translation>
+    </message>
+    <message>
+        <source>Wipe Across</source>
+        <translation>Horizontal wischen</translation>
+    </message>
+    <message>
+        <source>Wipe Center</source>
+        <translation>Von der Mitte wischen</translation>
+    </message>
+    <message>
+        <source>Wipe across</source>
+        <translation>Horizontal wischen</translation>
+    </message>
+    <message>
+        <source>Wipe down</source>
+        <translation>Nach unten wischen</translation>
+    </message>
+    <message>
+        <source>Wipe from center</source>
+        <translation>Von der Mitte wischen</translation>
+    </message>
+    <message>
         <source>Writing metadata to the prepared copy</source>
         <translation>Metadaten werden in die vorbereitete Kopie geschrieben</translation>
+    </message>
+    <message>
+        <source>Zoom</source>
+        <translation>Zoom</translation>
+    </message>
+    <message>
+        <source>Zoom Out</source>
+        <translation>Herauszoomen</translation>
     </message>
     <message>
         <source>a metadata field extends beyond its container.</source>
@@ -14043,105 +15389,6 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>Select all media</source>
         <translation>Alle Medien auswählen</translation>
-    </message>
-</context>
-<context>
-    <name>Equalizer</name>
-    <message>
-        <source>Use iPod setting</source>
-        <translation>iPod-Einstellung verwenden</translation>
-    </message>
-    <message>
-        <source>Acoustic</source>
-        <translation>Akustik</translation>
-    </message>
-    <message>
-        <source>Bass Booster</source>
-        <translation>Bässe verstärken</translation>
-    </message>
-    <message>
-        <source>Bass Reducer</source>
-        <translation>Bässe absenken</translation>
-    </message>
-    <message>
-        <source>Classical</source>
-        <translation>Klassik</translation>
-    </message>
-    <message>
-        <source>Dance</source>
-        <translation>Dance</translation>
-    </message>
-    <message>
-        <source>Deep</source>
-        <translation>Tief</translation>
-    </message>
-    <message>
-        <source>Electronic</source>
-        <translation>Elektronisch</translation>
-    </message>
-    <message>
-        <source>Flat</source>
-        <translation>Neutral</translation>
-    </message>
-    <message>
-        <source>Hip Hop</source>
-        <translation>Hip Hop</translation>
-    </message>
-    <message>
-        <source>Jazz</source>
-        <translation>Jazz</translation>
-    </message>
-    <message>
-        <source>Latin</source>
-        <translation>Lateinamerikanisch</translation>
-    </message>
-    <message>
-        <source>Loudness</source>
-        <translation>Loudness</translation>
-    </message>
-    <message>
-        <source>Lounge</source>
-        <translation>Lounge</translation>
-    </message>
-    <message>
-        <source>Piano</source>
-        <translation>Klavier</translation>
-    </message>
-    <message>
-        <source>Pop</source>
-        <translation>Pop</translation>
-    </message>
-    <message>
-        <source>R &amp; B</source>
-        <translation>R &amp; B</translation>
-    </message>
-    <message>
-        <source>Rock</source>
-        <translation>Rock</translation>
-    </message>
-    <message>
-        <source>Small Speakers</source>
-        <translation>Kleine Lautsprecher</translation>
-    </message>
-    <message>
-        <source>Spoken Word</source>
-        <translation>Sprache</translation>
-    </message>
-    <message>
-        <source>Treble Booster</source>
-        <translation>Höhen verstärken</translation>
-    </message>
-    <message>
-        <source>Treble Reducer</source>
-        <translation>Höhen absenken</translation>
-    </message>
-    <message>
-        <source>Vocal Booster</source>
-        <translation>Gesang verstärken</translation>
-    </message>
-    <message>
-        <source>Unknown preset (preserved)</source>
-        <translation>Unbekannte Voreinstellung (beibehalten)</translation>
     </message>
 </context>
 </TS>

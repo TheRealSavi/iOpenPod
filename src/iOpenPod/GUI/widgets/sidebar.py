@@ -63,6 +63,8 @@ _LIBRARY = (
     _NavigationDefinition(PageId.GENIUS, "atom"),
     _NavigationDefinition(PageId.GAMES, "games"),
     _NavigationDefinition(PageId.PHOTOS, "photo"),
+    _NavigationDefinition(PageId.CALENDAR, "grid"),
+    _NavigationDefinition(PageId.ALARMS, "bell"),
     _NavigationDefinition(PageId.PODCASTS, "broadcast"),
     _NavigationDefinition(PageId.AUDIOBOOKS, "book"),
     _NavigationDefinition(PageId.MOVIES, "film"),

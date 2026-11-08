@@ -38,6 +38,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
     tracks as _tracks,
 )
 
+from iOpenPod.app import developer_flags
 from iOpenPod.app.backups import BackupProgress, BackupStage
 from iOpenPod.app.chaptered_conversion_controller import ChapteredConversionController
 from iOpenPod.app.context import AppContext
@@ -487,7 +488,11 @@ def test_chaptered_conversion_uses_the_status_bar_for_progress_and_results(
         context.shutdown()
 
 
-def test_shell_contains_persistent_player_sidebar_and_all_routes() -> None:
+@pytest.mark.parametrize("extras_enabled", (False, True))
+def test_shell_contains_persistent_player_sidebar_and_all_routes(
+    extras_enabled: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(developer_flags, "ENABLE_EXTRAS_PAGES", extras_enabled)
     context = _context()
     context.settings.set_global(
         IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.SPLIT_TABLE.value
@@ -508,8 +513,10 @@ def test_shell_contains_persistent_player_sidebar_and_all_routes() -> None:
         assert player is not None
         assert player.height() == LAYOUT.player_idle_height
         assert pages is not None
-        # Normalize Tags is a maintenance dialog, not an empty navigation page.
-        assert pages.count() == len(PageId) - 1
+        # Normalize Tags is a dialog; disabled Extras do not construct pages.
+        assert pages.count() == len(PageId) - 1 - (0 if extras_enabled else 2)
+        for name in ("calendarPage", "alarmsPage"):
+            assert (window.findChild(QWidget, name) is not None) is extras_enabled
         assert splitter is not None
         assert splitter.count() == 2
         assert splitter.handleWidth() == LAYOUT.track_list_handle_height

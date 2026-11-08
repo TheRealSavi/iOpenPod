@@ -1,5 +1,22 @@
 [
   {
+    "date": "2026-11-07",
+    "scope": "app",
+    "macrostructure": "Month and agenda / time-led list",
+    "theme": "preserved iOpenPod semantic theme",
+    "enrichment": "none",
+    "brief": "Calendar month browsing, day agenda, To Do completion and readable saved alarms",
+    "validation": "Native QWidget screenshots at 100% and 200%, light/dark, wide/narrow; keyboard and device lifecycle tests",
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 4,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
     "date": "2026-10-25",
     "scope": "website",
     "macrostructure": "Long Document",

@@ -6,6 +6,7 @@ from typing import cast
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication
 
 from device_registry import DeviceProfile, FeatureSupport
+from iOpenPod.app import developer_flags
 
 
 class PageId(StrEnum):
@@ -21,6 +22,8 @@ class PageId(StrEnum):
     GENIUS = "genius"
     GAMES = "games"
     PHOTOS = "photos"
+    CALENDAR = "calendar"
+    ALARMS = "alarms"
     PODCASTS = "podcasts"
     AUDIOBOOKS = "audiobooks"
     MOVIES = "movies"
@@ -46,6 +49,8 @@ _LIBRARY_PAGES = _VIDEO_PAGES | frozenset(
         PageId.GENIUS,
         PageId.GAMES,
         PageId.PHOTOS,
+        PageId.CALENDAR,
+        PageId.ALARMS,
         PageId.PODCASTS,
         PageId.AUDIOBOOKS,
     }
@@ -53,10 +58,15 @@ _LIBRARY_PAGES = _VIDEO_PAGES | frozenset(
 
 
 def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
-    """Share device capability visibility across Library navigation styles."""
+    """Share page availability across Library navigation styles."""
 
     if page_id is PageId.START:
         return profile is None
+    if (
+        page_id in (PageId.CALENDAR, PageId.ALARMS)
+        and not developer_flags.ENABLE_EXTRAS_PAGES
+    ):
+        return False
     if page_id in _LIBRARY_PAGES and profile is None:
         return False
     if page_id is PageId.GAMES:
@@ -72,6 +82,16 @@ def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
         return profile is not None and profile.capabilities.artwork.supports_photos
     if page_id is PageId.PODCASTS:
         return profile is not None and profile.capabilities.audio.supports_podcasts
+    if page_id is PageId.CALENDAR:
+        return profile is not None and (
+            profile.capabilities.extras.calendar is FeatureSupport.SUPPORTED
+            or profile.capabilities.extras.todos is FeatureSupport.SUPPORTED
+        )
+    if page_id is PageId.ALARMS:
+        return profile is not None and (
+            profile.capabilities.extras.alarms is FeatureSupport.SUPPORTED
+            or profile.capabilities.extras.sleep_timer is FeatureSupport.SUPPORTED
+        )
     return True
 
 
@@ -88,6 +108,8 @@ _PAGE_LABEL_SOURCES = cast(
         PageId.GENIUS: QT_TRANSLATE_NOOP("Navigation", "Genius"),
         PageId.GAMES: QT_TRANSLATE_NOOP("Navigation", "Games"),
         PageId.PHOTOS: QT_TRANSLATE_NOOP("Navigation", "Photos"),
+        PageId.CALENDAR: QT_TRANSLATE_NOOP("Navigation", "Calendar"),
+        PageId.ALARMS: QT_TRANSLATE_NOOP("Navigation", "Alarms"),
         PageId.PODCASTS: QT_TRANSLATE_NOOP("Navigation", "Podcasts"),
         PageId.AUDIOBOOKS: QT_TRANSLATE_NOOP("Navigation", "Audiobooks"),
         PageId.MOVIES: QT_TRANSLATE_NOOP("Navigation", "Movies"),

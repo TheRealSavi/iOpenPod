@@ -14,6 +14,59 @@ then beyond it.
 
 ## Current stage
 
+Settings > iPod Preferences groups and searches saved observations. Explicit
+Apply/Revert editing is implemented behind the currently disabled development
+flag `ENABLE_IPOD_PREFERENCES_WRITES`, for verified fields in the latest studied Mini 1/2,
+Nano 1/3/4/5/6/7, Video 5/5.5 and Classic firmwares. The readable catalog is
+broader than the edit allowlist: partial meanings, raw values and bounded Unknown
+Data summaries remain visible without authorizing writes. Exact identity and
+file framing qualify each interpretation and editor. Nano 5/6/7 use the separate
+`iPodSettings.xml` model; earlier targets use binary Preferences. Nano 4's
+extensionless named store and Nano 6's timer store are additionally read-only.
+Optional legacy Nano binary state does not gate XML edits. Clock uncertainty
+remains nonblocking, and unrelated bytes remain preserved. Changes use
+source-checked Storage Transactions. Successful file publication is distinct from
+live firmware adoption, because the iPod can retain and later save its in-memory
+settings.
+Qualified saved Nano 5/6/7 cities now join Classic city rules and Mini effective
+offsets as evidence for the Library's captured Device Time Context. Its historical
+Host interpretation is shared by date reads and explicit new date writes;
+unchanged native words remain preserved. Missing, contradictory or reset-request
+clock evidence falls back to the database offset or UTC without blocking Library
+work. Video and Nano 1/3/4 retain that fallback until a clock source is qualified.
+Later settings changes do not reinterpret the loaded Library or become Library
+write preconditions. See [the time contract](docs/ipod-time.md#captured-clock-sources).
+See [ADR-0248](docs/adr/0248-edit-qualified-firmware-preferences.md) and the
+[supported fields](docs/ipod-preferences.md#qualified-firmware-preference-editing).
+The [coverage matrix and remaining questions](docs/research/preferences-model-coverage-2026-11-07.md)
+distinguish the independently verified targets and unknown settings.
+
+Calendar and Alarms are implemented behind the currently disabled development
+flag `ENABLE_EXTRAS_PAGES`. When enabled, Compact navigation offers **Extras**;
+Sidebar lists the two pages directly for supported devices. Calendar includes events and To Dos,
+unchanged `.ics`/`.vcs` import, and basic iCalendar 2.0 editing. A native month grid
+and day agenda support date selection, search across entries, and new events on the
+selected day; To Dos offer a completion action. Calendar lists named and empty calendars alongside an
+All calendars view. New calendars and renamed groups use `X-WR-CALNAME`; a group
+rename publishes all captured member files together. New entries target a chosen
+calendar, and imports can retain their original names or receive an explicit name.
+Ambiguous or unsupported containers remain readable without name editing.
+Mini 2 / 1.4.1 additionally displays and edits qualified floating daily/weekly
+series. Its native COUNT search and year-3000 bounds remain explicit. The four
+latest Classic targets additionally edit one saved reminder before an event's
+start, without inventing an action or sound. These capabilities are independently
+qualified: Classic/Video recurrence and Mini/Video reminder edits remain read-only.
+Unknown repeats retain saved dates and bytes; occurrence edits affect the source
+series. See [ADR-0249](docs/adr/0249-qualify-calendar-occurrences-and-reminders-by-firmware.md).
+Alarms use large, localized times and contextual editing. Existing saved
+alarms expose only verified time/repeat fields for the latest studied Mini 2 and
+Classic firmware. Video's next-alarm snapshot is read-only: its persistent
+per-city alarms are a separate artifact. Device-specific Sleep Timer guidance remains on-device
+because a mounted-file control protocol is not established. Unknown dates and
+properties remain preserved; optional Extras failures never block Library loading
+or Sync. Publication uses source-checked Storage Transactions. See
+[ADR-0247](docs/adr/0247-manage-extras-through-qualified-lossless-file-edits.md).
+
 The Track metadata editor offers 22 translated EQ presets and **Use iPod setting**.
 Unknown assignments remain preserved until explicitly replaced, and mixed
 selections remain unchanged until edited. The Track table uses the same labels.
@@ -225,8 +278,9 @@ Video stream choices can retain primary and alternate audio with their languages
 default status and saved intent. Native subtitle preparation validates track
 headers and repairs unsafe clocks only through exact rescaling. Caption payloads
 are verified, including rejection of remuxes that would drop field-2 data. The
-qualified Classic Preferences view displays Alternate Audio without adding a
-physical settings writer. Device switching and rendering still require playback
+initial qualified Classic Preferences view exposed Alternate Audio read-only;
+the exact-firmware editor now offers saved-byte edits under ADR-0248. Device
+switching and rendering still require playback
 acceptance. See [ADR-0205](docs/adr/0205-adopt-native-video-playback-contracts.md).
 
 Artwork reads now use stored filenames and primary pixel lengths, preserve
@@ -473,11 +527,14 @@ counters remain evidence rather than per-service delivery state. See
 Last.fm dates older than its backdating window are moved to the current day for
 submission, with original evidence retained separately while pending (ADR-0102).
 
-iPodDB also provides lossless typed readers/writers for firmware Preferences and
-binary iTunesPrefs. They expose documented device and iTunes settings while
-retaining Unknown Data. Model-specific fields require explicit caller assertions;
-layout recognition remains separate from Device Identity. Companion plist modeling
-and physical preferences editing remain separate work.
+iPodDB also provides lossless typed readers/writers for firmware Preferences,
+qualified named settings in `iPodSettings.xml`, and binary iTunesPrefs. Pure
+inspectors additionally expose exact-profile saved fields, named Nano stores and
+nonblocking timer observations, with raw values and explicit limits. Observation
+catalogs do not grant editing authority. Unknown Data remains retained;
+model-specific fields require explicit caller assertions, and layout recognition
+remains separate from Device Identity. Companion plist modeling and physical
+firmware adoption tests remain separate work.
 Library dates now use a captured Device Time Context: an IANA key for historical city rules or an
 explicit fixed-offset fallback, UTC-only release/purchase fields, and local Mac
 conversion for Photo dates. Unknown zones fall back to UTC when no valid fixed
@@ -490,9 +547,13 @@ integer contracts. [ADR-0243](docs/adr/0243-use-whenever-for-calendar-interpreta
 and the [engineering guide](docs/datetime-engineering.md) document the type,
 precision, packaging and firmware-evidence boundaries. Monotonic elapsed timers
 and required plistlib/WinRT adapters remain distinct.
-Settings includes a read-only iPod Preferences tab under the iPod scope. Device selection captures
-binary preferences and optional saved DST rules through Storage and publishes display summaries with
-the Active iPod; switching or disconnecting clears the previous device's values.
+Settings includes an iPod Preferences tab with grouped, searchable observations
+and explicit edits for qualified fields. Device selection remains read-only: it
+captures binary preferences and optional saved DST rules through Storage and
+publishes display summaries with the Active iPod. The editor separately captures
+its binary or XML source and optional model-specific stores on refresh. An
+unreadable optional store does not hide other settings; switching or disconnecting
+clears the previous device's values and drafts.
 See [the Preferences contract](docs/ipod-preferences.md) and ADR-0097.
 
 iOpenPod 2.0 is in its foundation and binary-format implementation stage. Current

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from device_registry.extras import native_extras_capabilities
 from device_registry.models import (
     ArtworkCapabilities,
     ArtworkFormat,
@@ -709,6 +710,7 @@ def _profile_capabilities(
 ) -> DeviceCapabilities:
     capabilities = replace(
         _CAPABILITIES_BY_IDENTITY[(family, generation)],
+        extras=native_extras_capabilities(family, generation),
         supports_games=(
             (family == "iPod" and generation in {"5th Gen", "5.5th Gen"})
             or (

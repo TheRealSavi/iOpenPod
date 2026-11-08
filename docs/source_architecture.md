@@ -19,8 +19,10 @@ Brief Summary:
   it does not query host devices itself.
 - **iPodDB** knows how to parse, model, and write iPod-specific database formats,
   including iTunesDB, ArtworkDB, and PhotosDB, and the flat firmware Preferences
-  and binary iTunesPrefs artifacts, plus read-only Firmware DST Rules. Its preferences codecs consume bytes and return typed
-  settings plus retained Unknown Data; model identity and file publication remain
+  and binary iTunesPrefs artifacts, named Nano settings and read-only Firmware DST
+  Rules. Its preferences codecs consume bytes and return typed settings plus
+  retained Unknown Data. Pure inspectors return non-authorizing saved-field
+  observations and bounded issues; model identity and file publication remain
   outside this boundary. The Application Layer supplies a captured Device Time
   Context; iPodDB owns field-specific epoch conversion using Whenever with the
   supplied IANA key or effective fixed offset. Native words and semantic Unix
@@ -43,6 +45,54 @@ Brief Summary:
   See [the Preferences contract](ipod-preferences.md) and [time contract](ipod-time.md).
 - **iOpenPod** is the application. Its Application Layer coordinates Device Registry,
   iPodDB, Storage, application state, and the GUI.
+
+Extras follows the same boundaries: Device Registry separates native Calendar,
+To Do, Alarm and Sleep Timer availability from exact-firmware writer qualification;
+`iPodDB.calendar` retains and edits Calendar bytes, and `iPodDB.alarms` patches
+proven fields of existing records. The Application Layer owns background capture,
+connection/revision checks and Storage Transactions. GUI pages only submit typed
+intents. Sleep Timer has no qualified mounted-file control protocol. See
+[ADR-0247](adr/0247-manage-extras-through-qualified-lossless-file-edits.md).
+Video's Preferences alarm word is a read-only Clock Alarm Projection; the
+separate per-city `Device/clock` artifact does not yet have a qualified editor.
+This distinction does not restrict Video Calendar editing or Library workflows.
+
+Calendar occurrence projection and saved-reminder authoring use independently
+qualified byte-only profiles composed from exact Registry firmware evidence.
+Mini 2's bounded daily/weekly floating occurrence subset is separate from the
+four latest Classics' single start-relative reminder writer. The GUI retains
+source-series identity for every occurrence; it does not implement recurrence,
+timezone or scheduler rules. Unsupported patterns remain preserved observations.
+See [ADR-0249](adr/0249-qualify-calendar-occurrences-and-reminders-by-firmware.md)
+for the target matrix, bounds and native receipts.
+
+Firmware Preferences uses a separate capture and explicit Apply/Revert workflow.
+Device Registry qualifies the exact firmware target through one shared resolver
+for Preferences, Extras and captured clock evidence. Each workflow retains its
+own capability subset. iPodDB owns saved-field
+inspection, authorable domains and lossless coupled edits. Binary inspection
+requires exact profile/version/extent, including readable reset-request files
+whose edits remain disabled. Named inspection selects an exact profile and store.
+Raw values, partial meanings and bounded Unknown Data summaries are retained;
+interpretation issues do not create Library dependencies. The Application Layer
+merges qualified edit descriptors into observations by logical key and publishes
+through Storage against the captured source and current identity. The GUI groups
+and searches the resulting display model without receiving bytes or writer access.
+
+Preferences framing and native edit definitions live separately from edit
+execution. Named inspection, scalar editing and clock evidence share a bounded
+XML parser while retaining independent interpretation and authoring rules.
+Alarm codecs reuse Preferences framing; application date policy does not repeat
+native sizes or version words. See the [source ownership map](ipod-preferences.md#source-ownership).
+
+Nano 5/6/7 named settings use a separate lossless `iPodSettings.xml` document and
+source precondition. Their optional legacy binary blob does not authorize or block
+XML edits. Nano 4's extensionless `iPodSettings` and Nano 6's
+`iPodTimerSettings.xml` are independently captured read-only stores. Timer calendar
+components use Whenever without inventing a timezone or resolving DST; malformed
+dates remain nonblocking observations. Saved bytes and live firmware adoption
+remain distinct. See
+[ADR-0248](adr/0248-edit-qualified-firmware-preferences.md).
 
 The four packages ship together as one iOpenPod application and one distribution.
 They are separate to keep responsibilities and dependencies clear, not because they

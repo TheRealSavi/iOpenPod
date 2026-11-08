@@ -7,7 +7,38 @@ while `iPod_Control/iTunes/iTunesPrefs` stores iTunes settings. The companion
 Neither binary file is an application settings file or a general Apple property
 list. See the API contract in [ipod-preferences.md](../ipod-preferences.md).
 
-## Established timezone layouts
+**2026-11-07 extension:** exact latest firmware now qualifies native preference
+editing, including compound Shuffle, model-specific Clicker meanings and full
+u32 language observations. The historical generic language-byte API below is
+retained for compatibility, not imposed on qualified native formats. See the
+[Classic write investigation](preferences-classic-writes-2026-11-07.md),
+[Mini/Video write investigation](preferences-mini-video-writes-2026-11-07.md) and
+[application decision](../adr/0248-edit-qualified-firmware-preferences.md).
+
+The [expanded latest-firmware coverage](preferences-model-coverage-2026-11-07.md)
+adds Mini 1 and Nano 1/3/4, and a separate named XML model for Nano 5/6/7.
+The historical layout table below does not qualify their clocks by file length;
+current Nano profiles preserve unqualified time fields and keep datetime issues
+nonblocking. `iPodSettings.xml` is distinct from both binary artifacts above.
+
+The later [whole-file inventory](preferences-complete-inventory-2026-11-07.md)
+tracks five dedicated firmware groups, with exact field domains, UI mappings,
+consumer evidence and unresolved intervals. Historical generic offsets below
+must not override those independently qualified per-model findings.
+
+## Reference timezone layouts and the Video correction
+
+**2026-11-06 correction:** the historical libgpod inference at Video `0xB22`
+is false for latest release 1.3, independently verified on updater families
+13/20/25. Native alarm selection/getter/save execution establishes low 12-bit
+minutes of day with four retained high bits in the unsigned word. These files
+have extent 2,924 and format version `0x39`. iOpenPod now suppresses their
+timezone interpretation, retains the original bytes and public raw-field API,
+and uses the diagnosed database-offset/UTC fallback. The language-only inverse
+edit remains lossless; a new alleged timezone edit is rejected. See the
+[audit and pinned native receipt](mini-video-datetime-support-audit-2026-11-06.md).
+The reference formulas below document the prior evidence and remaining generic
+behavior; they are not Apple Video 1.3 clock contracts.
 
 [libgpod's timezone reader](https://github.com/gtkpod/libgpod/blob/main/src/itdb_tzinfo.c#L249)
 selects these exact lengths, then reads a signed little-endian 16-bit value:
@@ -15,15 +46,16 @@ selects these exact lengths, then reads a signed little-endian 16-bit value:
 | Bytes | Offset | Source's device examples | Encoding |
 | --- | --- | --- | --- |
 | 2,892 | `0xB10` | Fourth generation | Zone/DST code |
-| 2,924 | `0xB22` | Video | Minute-based code |
+| 2,924 | `0xB22` | Video | Historical minute-based inference; disproven for version `0x39` |
 | 2,952 | `0xB70` | nano 3 / Classic | City ID |
 | 2,956 | `0xB70` | Classic | City ID |
 | 2,960 | `0xB70` | nano 4 | City ID |
 
 For fourth generation, validate `0 <= raw <= 48`, subtract 25, then compute
 `((adjusted >> 1) + (adjusted & 1)) * 3600`. Testing parity before subtraction is
-incorrect. The Original iOpenPod does that and differs by one hour. For Video,
-compute `raw * 60 - 28800`; the primary reader accepts offsets within ±12 hours.
+incorrect. The Original iOpenPod does that and differs by one hour. For its Video
+case, libgpod computes `raw * 60 - 28800` and accepts offsets within ±12 hours.
+That arithmetic cannot turn the latest Video's alarm setting into a timezone.
 See [the conversion functions](https://github.com/gtkpod/libgpod/blob/main/src/itdb_tzinfo.c#L117).
 
 The source has no model parameter, signature check, or Preferences writer. Its

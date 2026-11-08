@@ -28,6 +28,8 @@ def classic_preferences(
 ) -> bytes:
     data = bytearray((17 * index + 9) % 256 for index in range(size))
     struct.pack_into("<I", data, 0, version)
+    # Ordinary saved clock evidence must not accidentally request a reset.
+    struct.pack_into("<I", data, 4, 0)
     data[2808] = 0
     data[0xB6C] = dst
     struct.pack_into("<I", data, 0xB70, city)
@@ -52,6 +54,9 @@ def test_latest_profiles_preserve_full_city_and_raw_clock_state(
     document = parse_preferences(source, profile=profile)
     assert isinstance(document.settings, ClassicPreferences)
     assert document.settings.city_id == city
+    # Latest Classic firmware loads the entire language u32. Keep the nonzero
+    # upper bytes in this fixture to detect accidental truncation on a no-op.
+    assert document.settings.language_code == struct.unpack_from("<I", source, 0xAF8)[0]
     assert document.extended_settings == ClassicClockPreferences(
         version, dst, -1, 0xFFFFFFFF
     )
@@ -60,7 +65,9 @@ def test_latest_profiles_preserve_full_city_and_raw_clock_state(
     )
     assert write_preferences(document) == source
     edited = replace(document, settings=replace(document.settings, language_code=7))
-    assert write_preferences(edited) == source[:2808] + b"\x07" + source[2809:]
+    expected = bytearray(source)
+    struct.pack_into("<I", expected, 0xAF8, 7)
+    assert write_preferences(edited) == expected
 
 
 @pytest.mark.parametrize("family,release,model,size,version,profile", CLASSIC_TARGETS)

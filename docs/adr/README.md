@@ -311,3 +311,6 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0244: Share smooth wheel and middle-button scrolling](0244-share-smooth-wheel-and-middle-button-scrolling.md)
 - [ADR-0245: Present video through the existing Playback Backend](0245-present-video-through-the-existing-playback-backend.md)
 - [ADR-0246: Edit Track EQ with canonical presets and preserve it during Sync](0246-edit-track-eq-with-canonical-presets-and-preserve-it-during-sync.md)
+- [ADR-0247: Manage Extras through qualified lossless file edits](0247-manage-extras-through-qualified-lossless-file-edits.md)
+- [ADR-0248: Edit qualified firmware Preferences](0248-edit-qualified-firmware-preferences.md)
+- [ADR-0249: Qualify Calendar occurrences and reminders by firmware](0249-qualify-calendar-occurrences-and-reminders-by-firmware.md)

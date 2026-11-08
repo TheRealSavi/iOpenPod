@@ -162,6 +162,87 @@ QLabel[browserTitle="true"] {{
     font-weight: 700;
 }}
 
+/* Hallmark · native app redesign · Calendar and Alarms
+ * system: iOpenPod semantic tokens · structure: month/agenda and time-led lists
+ * motion: existing controls · enrichment: none · preserve native keyboard input
+ * pre-emit critique: P5 H4 E4 S5 R5 V4 · native app gates reviewed
+ */
+QWidget#calendarPage,
+QWidget#alarmsPage {{
+    background-color: {tokens.window};
+}}
+
+QLabel[extrasHeading="true"] {{
+    font-family: "{typography.display}";
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 600;
+}}
+
+QLabel[extrasTitle="true"] {{
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 600;
+}}
+
+QLabel[extrasMuted="true"] {{
+    color: {tokens.text_secondary};
+}}
+
+QLabel[extrasEmpty="true"] {{
+    color: {tokens.text_secondary};
+    font-size: {typography.heading_pt:g}pt;
+    padding: {LAYOUT.space_lg}px;
+}}
+
+QTabWidget[extrasTabs="true"]::pane {{
+    border: none;
+    border-top: 1px solid {tokens.border};
+    padding-top: {LAYOUT.space_md}px;
+}}
+
+QTabWidget[extrasTabs="true"] QTabBar::tab {{
+    background: transparent;
+    color: {tokens.text_secondary};
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0 {LAYOUT.space_md}px;
+}}
+
+QTabWidget[extrasTabs="true"] QTabBar::tab:selected {{
+    color: {tokens.accent};
+    border-bottom-color: {tokens.accent};
+}}
+
+QTabWidget[extrasTabs="true"] QTabBar::tab:hover {{
+    background-color: {tokens.surface_hover};
+}}
+
+QTabWidget[extrasTabs="true"] QTabBar::tab:focus {{
+    border: 1px solid {tokens.focus};
+}}
+
+QTreeWidget[extrasList="true"],
+QCalendarWidget#calendarMonthGrid,
+QCalendarWidget#calendarMonthGrid QAbstractItemView {{
+    background-color: {tokens.surface};
+    alternate-background-color: {tokens.surface};
+    border: none;
+    selection-background-color: {tokens.surface_selected};
+    selection-color: {tokens.text};
+    outline: none;
+}}
+
+QFrame#sleepTimerPanel {{
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QTimeEdit#alarmTime {{
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+}}
+
 QLabel#pageDescription,
 QLabel#gamesEmptyDetail,
 QLabel#pageMeta,
@@ -251,6 +332,8 @@ QLabel#playlistEmpty {{
 }}
 
 QLabel#playlistEditorError,
+QLabel#calendarEditorError,
+QLabel#alarmEditorError,
 QLabel#metadataEditError,
 QLabel#photoAlbumManagerError {{
     color: {tokens.danger};
@@ -259,6 +342,8 @@ QLabel#photoAlbumManagerError {{
 QDialog#onboardingDialog,
 QDialog#helpSupportDialog,
 QDialog#playlistEditor,
+QDialog#calendarEditor,
+QDialog#alarmEditor,
 QDialog#metadataEditor,
 QDialog#artworkCropDialog,
 QDialog#consolidateArtworkDialog,
@@ -1210,6 +1295,7 @@ QListWidget#metadataSectionNav::item:selected {{
 }}
 
 QDialog#metadataEditor QPlainTextEdit,
+QDialog#calendarEditor QPlainTextEdit,
 QTreeWidget#metadataTechnicalDetails,
 QDialog#metadataEditor QTableWidget {{
     color: {tokens.text};
@@ -1221,6 +1307,7 @@ QDialog#metadataEditor QTableWidget {{
 }}
 
 QDialog#metadataEditor QPlainTextEdit:focus,
+QDialog#calendarEditor QPlainTextEdit:focus,
 QDialog#metadataEditor QTableWidget:focus,
 QTreeWidget#metadataTechnicalDetails:focus {{
     border-color: {tokens.focus};
@@ -2257,7 +2344,13 @@ QFrame[viewModes="true"] QToolButton[iconButton="true"]:checked {{
     background-color: {tokens.surface};
 }}
 
-QLineEdit {{
+QLineEdit,
+QSpinBox[ipodPreferenceEditor="true"],
+QDialog#calendarEditor QSpinBox,
+QDialog#calendarEditor QDateEdit,
+QDialog#calendarEditor QTimeEdit,
+QDialog#alarmEditor QDateEdit,
+QDialog#alarmEditor QTimeEdit {{
     min-height: {LAYOUT.control_height}px;
     padding: 0 {LAYOUT.space_sm}px;
     color: {tokens.text};
@@ -2268,11 +2361,23 @@ QLineEdit {{
     selection-background-color: {tokens.accent};
 }}
 
-QLineEdit:hover {{
+QLineEdit:hover,
+QSpinBox[ipodPreferenceEditor="true"]:hover,
+QDialog#calendarEditor QSpinBox:hover,
+QDialog#calendarEditor QDateEdit:hover,
+QDialog#calendarEditor QTimeEdit:hover,
+QDialog#alarmEditor QDateEdit:hover,
+QDialog#alarmEditor QTimeEdit:hover {{
     border-color: {tokens.text_secondary};
 }}
 
-QLineEdit:focus {{
+QLineEdit:focus,
+QSpinBox[ipodPreferenceEditor="true"]:focus,
+QDialog#calendarEditor QSpinBox:focus,
+QDialog#calendarEditor QDateEdit:focus,
+QDialog#calendarEditor QTimeEdit:focus,
+QDialog#alarmEditor QDateEdit:focus,
+QDialog#alarmEditor QTimeEdit:focus {{
     border: 1px solid {tokens.focus};
 }}
 

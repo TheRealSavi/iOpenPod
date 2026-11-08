@@ -58,7 +58,8 @@ Smart rules retain their bytes and saved membership.
 SQLite regeneration uses the same best-effort dates. Preferences remain captured
 read-only evidence, but their readability and later fingerprint are not Library
 save preconditions. Database, sidecar, resource and device-session preconditions
-remain enforced. Explicit future Preferences editing remains a separate workflow.
+remain enforced. Explicit Preferences editing remains a separate workflow;
+ADR-0248 subsequently qualifies its source-checked publication.
 
 Podcast models accept signed Unix dates; malformed persisted optional dates become
 missing without discarding listening counts. Date display must handle pre-1970
@@ -81,3 +82,30 @@ unknown or changing Preferences, SQLite regeneration, extreme Track/Photo/Smart
 dates, missing layout fields, Podcast history and portable date display. Firmware
 verification is static instruction checking plus reconstructed arithmetic; it is
 not execution on ARM or physical-device acceptance across all iPod generations.
+
+## Clarification: qualified named Nano clock evidence, 2026-11-07
+
+The same optional clock-evidence policy now includes `DateTime.TimeZone` from
+`iPod_Control/Device/iPodSettings.xml` for exact latest Nano 5/6/7 and updater-39
+refresh targets. Capture the bounded, verified source before Library projection.
+iPodDB interprets the named setting into typed evidence; the Application Layer
+resolves an audited geographical IANA key with Whenever and retains it in the
+existing Device Time Context. This extends the existing boundary and precedence,
+without introducing a clock writer or reproducing the firmware's DST evaluator.
+
+Nano 5's geographical mapping is explicit Host policy. Nano 6/7 use their exact
+packaged timezone record names only where the audit supports the mapping.
+Contradictory, unsupported, missing, malformed or duplicate evidence falls back
+to the retained database header offset, then UTC. A packaged base offset is not
+a captured effective offset, and saved bias/DST is never added again. Qualified
+Mini effective offsets and Classic city rules retain their existing policies;
+Video and Nano 1/3/4 gain no inferred clock source. Binary Preferences requesting
+a reset withhold their saved clock evidence because firmware discards that state.
+
+Reads and explicit new date writes share the captured context for that Library
+source; unchanged native words retain their bytes. The XML capture fingerprint
+verifies the observation but is not a later Library write precondition. Explicit
+Preferences publication remains a separate, source-checked workflow (ADR-0248),
+and neither it nor a later external settings change reinterprets a loaded Library.
+Saved city state and Host historical rules remain estimates of the Firmware
+Calendar, not proof of live adoption, Raw Hardware Clock origin or past location.

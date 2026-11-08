@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QAbstractButton, QComboBox, QLabel, QLineEdit, QTabWidget
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QComboBox,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTabWidget,
+)
 from tests.iOpenPod.app.services.test_device_coordinator import (
     _ipod_volume,  # pyright: ignore[reportPrivateUsage]
 )
@@ -25,6 +32,7 @@ from iOpenPod.app.services.ipod_preferences import read_ipod_preferences
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.widgets.ipod_preferences import IPodPreferencesView
+from iOpenPod.GUI.widgets.search_field import SearchField
 from storage import Storage
 from storage.testing import VirtualStoragePlatform
 
@@ -54,7 +62,7 @@ def test_settings_preferences_tab_is_read_only_and_tracks_active_device(
                 i for i in range(tabs.count()) if tabs.tabText(i) == "iPod Preferences"
             )
         )
-        assert note.text() == "iPod preferences are read-only."
+        assert "read-only" in note.text()
         changes = QSignalSpy(context.settings.settingChanged)
         timezone = view.findChild(QLabel, "ipodPreference_device_timezone")
         unknown = view.findChild(QLabel, "ipodPreference_itunes_open_itunes")
@@ -67,8 +75,13 @@ def test_settings_preferences_tab_is_read_only_and_tracks_active_device(
         )
         assert not timezone.textInteractionFlags() & Qt.TextInteractionFlag.TextEditable
         assert not view.findChildren(QComboBox)
-        assert not view.findChildren(QLineEdit)
-        assert not view.findChildren(QAbstractButton)
+        assert all(
+            isinstance(field, SearchField) for field in view.findChildren(QLineEdit)
+        )
+        apply = view.findChild(QPushButton, "ipodPreferencesApply")
+        revert = view.findChild(QPushButton, "ipodPreferencesRevert")
+        assert apply is not None and not apply.isEnabled()
+        assert revert is not None and not revert.isEnabled()
         APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
         assert view.findChild(QLabel, "ipodPreference_device_timezone") is not None
         missing = IPodPreferenceSection(
@@ -101,9 +114,7 @@ def test_settings_preferences_tab_is_read_only_and_tracks_active_device(
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
 
 
-@pytest.mark.parametrize(
-    "raw,display", ((0, "Off"), (1, "On"), (255, "Unknown (code 255)"))
-)
+@pytest.mark.parametrize("raw,display", ((0, "Off"), (1, "On"), (255, "Unknown (255)")))
 def test_qualified_alternate_audio_is_selectable_read_only_text(
     tmp_path: Path, raw: int, display: str
 ) -> None:
@@ -142,15 +153,19 @@ def test_qualified_alternate_audio_is_selectable_read_only_text(
         assert dst_detail is not None and "historical timezones" in dst_detail.text()
         value = view.findChild(QLabel, "ipodPreference_device_alternate_audio")
         assert value is not None and value.text() == display
-        assert value.accessibleName() == "Alternate Audio"
+        assert value.accessibleName() == "Alternate audio"
         assert value.textFormat() is Qt.TextFormat.PlainText
         assert (
             value.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse
         )
         assert not value.textInteractionFlags() & Qt.TextInteractionFlag.TextEditable
         assert not view.findChildren(QComboBox)
-        assert not view.findChildren(QLineEdit)
-        assert not view.findChildren(QAbstractButton)
+        search = view.findChild(SearchField, "ipodPreferencesSearch")
+        assert search is not None
+        assert view.findChildren(QLineEdit) == [search]
+        assert all(
+            search.isAncestorOf(button) for button in view.findChildren(QAbstractButton)
+        )
         view.retranslate_ui()
         translated = view.findChild(QLabel, "ipodPreference_device_alternate_audio")
         assert translated is not None and translated.text() == display

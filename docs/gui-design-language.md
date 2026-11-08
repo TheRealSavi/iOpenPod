@@ -575,6 +575,25 @@ image is feathered before crossfading so interrupted blends retain their edges.
 It never runs workflows or reads editable field contents to make an example.
 See the [capture notes](../src/iOpenPod/assets/settings/README.md).
 
+## Calendar and Alarms
+
+Extras uses the shared Page Header, semantic Action Buttons, Search Field, and
+App Combo Box. Calendar pairs a native keyboard-navigable month grid with a day
+agenda; narrow panes stack the two. Painted cell previews mark saved date ranges,
+including exclusive all-day ends. Imported timezone identifiers stay attached to
+their civil dates, and repeating entries show saved dates without speculative
+expansion. All events keeps undated or unreadable entries reachable. Search spans
+dates; clearing it restores the selected day. New events start on that day. To Dos
+offer an explicit completion action that preserves their other fields.
+
+Alarm rows emphasize localized times, with names and repeat settings beneath them.
+Both pages paint list rows through one delegate, without persistent per-row widgets.
+Selection reveals contextual editing; device changes dismiss stale editors.
+Sleep Timer has a separate, quiet instruction surface for the selected iPod.
+Enable switches, sound choices, new-alarm controls, and running countdowns are not
+presented without a qualified device operation. All colors, fonts and interaction
+states derive from the existing theme, including Light and Dark appearances.
+
 ## Ownership
 
 `GUI/presentation/theme` is one deep Theme Module. Its public concepts are semantic

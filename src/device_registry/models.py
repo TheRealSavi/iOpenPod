@@ -305,6 +305,80 @@ class FeatureSupport(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ExtrasCapabilities:
+    """Native Extras availability, independent of iOpenPod's file codecs.
+
+    UNKNOWN means the catalog has no qualified evidence; it is not evidence
+    that the firmware lacks the application. Never infer a host write protocol
+    from native Calendar, Alarm or sleep-timer availability.
+    """
+
+    calendar: FeatureSupport = FeatureSupport.UNKNOWN
+    todos: FeatureSupport = FeatureSupport.UNKNOWN
+    alarms: FeatureSupport = FeatureSupport.UNKNOWN
+    sleep_timer: FeatureSupport = FeatureSupport.UNKNOWN
+
+
+class AlarmFormat(StrEnum):
+    """Qualified saved format, not an authorization to create alarm defaults."""
+
+    NONE = "none"
+    CLASSIC = "classic"
+    MINI = "mini"
+    VIDEO = "video"
+
+
+class FirmwareTarget(StrEnum):
+    """Studied firmware targets, independent of the Preferences binary codec."""
+
+    MINI_1_1_4_1 = "mini_1_1_4_1"
+    MINI_2_1_4_1 = "mini_2_1_4_1"
+    NANO_1_1_3_1 = "nano_1_1_3_1"
+    NANO_3_1_1_3 = "nano_3_1_1_3"
+    NANO_4_1_0_4 = "nano_4_1_0_4"
+    NANO_5_1_0_2 = "nano_5_1_0_2"
+    NANO_6_1_2 = "nano_6_1_2"
+    NANO_7_1_0_4 = "nano_7_1_0_4"
+    NANO_UPDATER_39_1_1_2 = "nano_updater_39_1_1_2"
+    VIDEO_1_3 = "video_1_3"
+    CLASSIC_6_1_1_2 = "classic_6_1_1_2"
+    CLASSIC_120GB_2_0_1 = "classic_120gb_2_0_1"
+    CLASSIC_UPDATER_35_2_0_4 = "classic_updater_35_2_0_4"
+    CLASSIC_UPDATER_38_2_0_5 = "classic_updater_38_2_0_5"
+
+
+@dataclass(frozen=True, slots=True)
+class PreferencesSupport:
+    """Possible saved format from identity, not standalone write permission.
+
+    The codec must still verify exact framing and the individual edited fields.
+    Storage and the application own publication and device reload requirements.
+    """
+
+    target: FirmwareTarget | None = None
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ExtrasSupport:
+    """Application codec qualification from one profile and ranked evidence.
+
+    alarm_write permits edits to proven fields of an existing captured record.
+    It does not permit creating records, changing unknown modes, or clock sync.
+    sleep_timer describes native support; sleep_timer_write describes whether
+    a host control protocol is established. These are deliberately separate.
+    """
+
+    calendar_write: bool = False
+    calendar_firmware: FirmwareTarget | None = field(default=None, kw_only=True)
+    alarm_format: AlarmFormat = AlarmFormat.NONE
+    alarm_write: bool = False
+    sleep_timer: FeatureSupport = FeatureSupport.UNKNOWN
+    sleep_timer_write: bool = False
+    reason: str = "The connected firmware is not qualified for Extras editing."
+
+
+@dataclass(frozen=True, slots=True)
 class GeniusCapabilities:
     """Native Genius features, independent of generated data or app readiness.
 
@@ -335,6 +409,7 @@ class DeviceCapabilities:
     database: DatabaseCapabilities
     genius: GeniusCapabilities = field(default_factory=GeniusCapabilities, kw_only=True)
     supports_games: bool = field(default=False, kw_only=True)
+    extras: ExtrasCapabilities = field(default_factory=ExtrasCapabilities, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

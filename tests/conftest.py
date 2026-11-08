@@ -20,6 +20,22 @@ def pytest_configure() -> None:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
+@pytest.fixture
+def enable_extras_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opt feature tests into Extras without changing the application's default."""
+    from iOpenPod.app import developer_flags
+
+    monkeypatch.setattr(developer_flags, "ENABLE_EXTRAS_PAGES", True)
+
+
+@pytest.fixture
+def enable_ipod_preferences_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise the implemented writer while ordinary app tests stay read-only."""
+    from iOpenPod.app import developer_flags
+
+    monkeypatch.setattr(developer_flags, "ENABLE_IPOD_PREFERENCES_WRITES", True)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def isolated_storage_writer_locks(
     tmp_path_factory: pytest.TempPathFactory,

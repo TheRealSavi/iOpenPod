@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QStyleOptionComboBox,
     QWidget,
 )
+from whenever import Time
 
 from iOpenPod.app.backups.models import SnapshotInfo
 from iOpenPod.app.core.settings.definitions import (
@@ -41,6 +42,7 @@ from iOpenPod.app.core.settings.stores import (
     DeviceSettingsStore,
     GlobalSettingsStore,
 )
+from iOpenPod.app.models.extras import AlarmItem
 from iOpenPod.app.scrobbling.models import ScrobbleResult
 from iOpenPod.GUI.dialogs.linux_identity_setup import (
     LinuxIdentitySetupDialog,
@@ -48,7 +50,9 @@ from iOpenPod.GUI.dialogs.linux_identity_setup import (
 )
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import ScrobbleReportDialog
+from iOpenPod.GUI.pages.alarms_page import AlarmEditor
 from iOpenPod.GUI.pages.backup_page import BackupSnapshotCard
+from iOpenPod.GUI.pages.calendar_page import CalendarEditor
 from iOpenPod.GUI.presentation.theme.backup_styles import render_backup_page_style
 from iOpenPod.GUI.presentation.theme.dynamic import genius_artwork_colors
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -73,6 +77,7 @@ from iOpenPod.GUI.widgets.themed_buttons import (
     IconButtonKind,
     apply_action_button_kind,
 )
+from iPodDB.calendar import CalendarEntryKind
 
 
 def _application() -> QApplication:
@@ -622,6 +627,35 @@ def test_scrobble_report_renders_and_switches_with_every_app_theme() -> None:
         parent.deleteLater()
         manager.close()
         APPLICATION.setPalette(original_palette)
+        APPLICATION.setStyleSheet(original_stylesheet)
+
+
+@pytest.mark.parametrize("tokens", ALL_TOKENS)
+def test_extras_editors_render_opaque_dialog_and_notes_surfaces(
+    tokens: ThemeTokens,
+) -> None:
+    original_stylesheet = APPLICATION.styleSheet()
+    APPLICATION.setStyleSheet(render_stylesheet(tokens, resolve_typography()))
+    calendar = CalendarEditor(CalendarEntryKind.EVENT, None)
+    alarm = AlarmEditor(AlarmItem(0, "Alarm", Time(7), None, True))
+    try:
+        for dialog in (calendar, alarm):
+            dialog.show()
+            dialog.ensurePolished()
+        APPLICATION.processEvents()
+        for dialog in (calendar, alarm):
+            background = dialog.grab().toImage().pixelColor(2, 2)
+            assert background == QColor(tokens.window)
+            assert background.alpha() == 255
+        notes = calendar.findChild(QPlainTextEdit, "calendarDescription")
+        assert notes is not None
+        viewport = notes.viewport().grab().toImage()
+        assert viewport.pixelColor(
+            viewport.width() // 2, viewport.height() // 2
+        ) == QColor(tokens.surface)
+    finally:
+        calendar.close()
+        alarm.close()
         APPLICATION.setStyleSheet(original_stylesheet)
 
 

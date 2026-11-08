@@ -2,6 +2,9 @@
 
 The [Classic datetime file map](research/classic-datetime-file-map-2026-11-06.md)
 lists concrete files, byte offsets, purposes and remaining interpretation limits.
+The [Mini 2 and Video comparison](research/mini-video-datetime-firmware-2026-11-06.md)
+records their distinct clock paths and the Video alarm-field correction; the
+Classic file map is not a universal layout for earlier devices.
 
 `iPodDB.device_time` is the shared conversion contract. `IPodLibrary.device_time`
 retains a `DeviceTimeContext`: a captured IANA key or whole-second Whenever
@@ -59,11 +62,61 @@ corrects San Jose, San Juan, Rio de Janeiro and Victoria. Qualified Classic city
 existing header-fallback diagnostic. Interpretation preserves original Preferences
 and date bytes; it does not migrate historical timestamps.
 
-Device selection captures Preferences before publishing the semantic Library.
-The same captured bytes feed the read-only Settings tab. Unreadable or later
-changed Preferences do not block a Library save: the captured interpretation
-keeps the same key/offset/provenance for that Library source. Database, sidecar and resource checks
-remain enforced. The iTunes preferences file is display-only.
+## Captured clock sources
+
+Device selection captures qualified clock settings through a bounded, verified
+Storage read before projecting the semantic Library. The interpretation requires
+the connected device's qualified firmware identity and the source's expected
+framing; similar file sizes or neighboring settings do not establish a clock
+layout. XML version and an embedded software-version value cannot qualify the
+connected firmware. The Nano 7/refresh pair, like the later Classic 160GB pair,
+requires explicit updater-family identity. The following latest targets have
+distinct contracts:
+
+| Device and firmware | Clock evidence used for Library dates | Limits |
+| --- | --- | --- |
+| Mini 1 and Mini 2 / 1.4.1 | Binary Preferences selector supplies an effective fixed offset. | Already includes the selector's DST choice; it supplies no geographical identity or historical transitions. |
+| Nano 1 / 1.3.1, Nano 3 / 1.1.3, Nano 4 / 1.0.4 | No qualified saved clock source. | Use a valid database header offset, otherwise UTC. Nano 4's extensionless named store does not establish a timezone. |
+| Video 5/5.5 / 1.3 | No qualified saved timezone source. | The former timezone field is an alarm projection. Use the header/UTC fallback. |
+| Classic 6 / 1.1.2, 6.5 / 2.0.1, 7 / 2.0.4, 7.5 / 2.0.5 | Qualified full-width saved city selects audited IANA rules. | City zero and contradictory or unknown mappings fall back. Saved bias, DST and annual rules are separate observations. |
+| Nano 5 / 1.0.2, updater 34 | `DateTime.TimeZone` in `iPodSettings.xml` selects an explicitly audited geographical IANA mapping. | The firmware's signed-minute base-offset table is not an effective-offset fallback. |
+| Nano 6 / 1.2, updater 36; Nano 7 / 1.0.4, updater 37; Nano 7 refresh / 1.1.2, updater 39 | The same XML key selects the exact target's packaged timezone record name, subject to the Host mapping audit. | Packaged rule semantics and live override selection are not reproduced; contradictory mappings fall back. |
+
+For the qualified Nano XML targets, iPodDB returns typed clock evidence containing
+the raw setting and its interpreted city; the Application Layer validates the
+audited IANA key with Whenever and captures it as `PREFERENCES_CITY`. The source is
+`iPod_Control/Device/iPodSettings.xml`, not the optional neighboring binary
+Preferences blob. World Clock entries, 12/24-hour display settings and the Nano 6
+timer store do not replace this source. Nano 5 withholds Manchester (city 38) and
+city 205, which is in the native table but beyond the registered maximum of 204.
+Nano 6/7 withhold three contradictory label/record pairs: Manchester (38) with
+`America/New_York`, Cape Town (118) with `Africa/Bissau`, and Chennai (185) with
+`Asia/Colombo`. These remain observable without silently choosing either
+interpretation.
+
+Missing, unreadable, malformed, duplicate or unsupported clock settings and
+unavailable Host timezone rules retain a diagnostic and use a valid database
+header offset or an explicit UTC estimate.
+Missing or conflicting identity cannot grant a legacy clock decoder to a
+recognized latest Nano 3 or Classic frame. In particular, failed qualification
+must not reinterpret Nano 3 bytes as a city or narrow a Classic u32 city to u16.
+These cases retain their source and use the nonblocking header/UTC fallback.
+
+A qualified binary Preferences file with a reset request also withholds its saved
+clock settings because the firmware discards that payload. Readable settings and
+raw values remain available for inspection. A Nano base offset alone never
+becomes an effective offset, and neither saved DST nor clock bias is added to
+native dates. The selected city does not prove that firmware has adopted the
+saved file or that past dates used the same city.
+
+The Device Time Context is frozen for that Library source. Reads and explicit new
+date writes use the same captured interpretation in opposite directions; unchanged
+native date words remain preserved. Unreadable or later changed Preferences,
+including the Nano XML file, do not become Library save preconditions. Their
+capture fingerprint verifies the initial read, not a later Library publication.
+Database, sidecar, resource and device-session checks remain enforced. Explicit
+Preferences editing is separately source-checked and does not reinterpret an
+already loaded Library. The iTunes preferences file is display-only.
 
 SQLite publication uses already-resolved Unix dates. Locations creation dates
 come from Track date added; release and purchase dates also populate store date
@@ -73,6 +126,8 @@ remain retained rather than being rewritten to endorse an estimate.
 
 Physical Preferences editing and device clock synchronization are separate
 workflows. No timezone migration is implicit in loading or saving a Library.
+
+## Classic firmware evidence and remaining limits
 
 All four latest Classic targets maintain an adjusted calendar using a separate
 software bias; manual corrections can enter that bias. New play/skip dates already encode the
@@ -173,8 +228,9 @@ corrections without replacing the paired-capture evidence below.
 Before the Whenever migration, read-only verification matched 3,729 nonzero paired date
 values across the supplied nano 5 and nano 7 CDB/SQLite captures. Both CDB
 round trips were byte-identical and all eight input file hashes stayed unchanged.
-The nano 7 check explicitly asserted New York for research; its unknown city zero
-still uses the diagnosed header fallback at runtime. One pre-existing nano 5
+The nano 7 check explicitly asserted New York for research; it did not qualify a
+saved primary city. A current capture without a qualified city still uses the
+diagnosed header fallback. One pre-existing nano 5
 zero-Mac/nonzero-SQL skipped-date discrepancy was retained, not normalized.
 
 The [datetime engineering guide](datetime-engineering.md) maps the current code,

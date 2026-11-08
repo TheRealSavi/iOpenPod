@@ -13,6 +13,7 @@ Classic database words are little-endian; Smart rule operands are big-endian.
 | --- | --- |
 | `iPod_Control/Device/Preferences` | Firmware reads and persists city, Saved DST State and Saved Clock Correction. Host synchronization can indirectly change them. |
 | `iPod_Control/Device/dst` | Optional annual DST rule input read by qualified 6.5/7/7.5 consumers; producer/write contract unknown. Classic 6 consumer unqualified. |
+| `iPod_Control/Device/alarms` | Firmware reads/writes Alarm app entries in a variable-length token stream; scheduled scalar and repeat fields are independently qualified on all four latest targets. |
 | `iPod_Control/iTunes/iTunesDB` | Host-authored Library metadata read by firmware: Track dates, Playlist fields and Smart rules. Playback updates are exported through sidecars. |
 | `iPod_Control/iTunes/Play Counts` | Firmware writes pending playback changes; Host reads and reconciles them into the Library. |
 | `Photos/Photo Database` | Host supplies photo metadata for device reading, including original/taken date fields. |
@@ -21,6 +22,8 @@ Classic database words are little-endian; Smart rule operands are big-endian.
 
 Sources: [Preferences contract][preferences], [all-four support][support],
 [sidecar codec][sidecars], [image definition][mhii], [Apple Classic guide][manual].
+The new Alarm file evidence is detailed in the
+[Calendar and Alarm follow-up](calendar-alarm-firmware-2026-11-06.md).
 
 ## Preferences: clock state rather than an absolute timestamp
 
@@ -165,6 +168,13 @@ is not evidence that all four Classics read that file. [CDB codec][cdb],
 
 ## Images, calendars and remaining files
 
+Classic `Device/alarms` uses outer token container `0x3a` and record container
+`5`. Field `6` carries the scheduled u32 scalar; field `0x3b` carries repeat mode.
+The inspected alarm arithmetic uses a 1970 calendar coordinate, whose complete
+producer's UTC/local provenance remains open. These are tagged fields, not fixed
+file offsets or ordinary 1904 media words. See the
+[native record and scheduling report](../../../ipod-firmware-lab/notes/classic-alarm-persistence-2026-11-06.md).
+
 Both image databases share `mhii+0x28` (`original_date`) and `mhii+0x2C`
 (`exif_taken_date`), LE u32. The current Photo model treats them as local Mac
 dates. Their all-four firmware date semantics are less qualified than the Track
@@ -177,13 +187,16 @@ events, deadlines, recurrence and alarms. `Z` denotes UTC; a `TZID` refers to
 zone rules; a date-time without either is floating; `VALUE=DATE` is date-only.
 These are format semantics, not a claim that every Classic implements the full
 standard or every timezone component. [Apple guide][manual], [iCalendar][ical]
+Native date/property and duration/trigger paths are now covered by the
+[Calendar follow-up](calendar-alarm-firmware-2026-11-06.md). Full-file acceptance
+and recurrence expansion remain separate from leaf parsing.
 
 The documented `iTunesPrefs` prefix has no verified date field; its unknown
 history/tail cannot be called date-free. SQLite Library/Locations/Dynamic date
 columns on qualified other devices use a separate 2001 epoch, but must not be
 promoted to the Classic Library format. Classic Extras.itdb is observed; its
 presence alone establishes no generic SQLite datetime contract. Stopwatch logs,
-voice-memo dates, alarms/world-clock persistence, game saves, contact date fields,
+voice-memo dates, remaining alarm/world-clock persistence, game saves, contact date fields,
 media-container dates and filesystem timestamps require their own format audits.
 Apple documents several of these date-bearing features without specifying their
 private on-disk layouts. [Auxiliary inventory][auxiliary], [Apple guide][manual]

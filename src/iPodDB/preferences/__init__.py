@@ -1,18 +1,31 @@
 """Lossless typed contracts for firmware Preferences and binary iTunesPrefs."""
 
+from iPodDB.preferences.binary_inspection import inspect_binary_preferences
+from iPodDB.preferences.clock_evidence import (
+    NamedClockEvidence,
+    read_named_clock_evidence,
+)
 from iPodDB.preferences.codec import parse_preferences, write_preferences
 from iPodDB.preferences.definitions import (
     CityPreferences,
     Classic201Preferences,
     ClassicClockPreferences,
     ClassicPreferences,
+    FirmwareLanguagePreferences,
     FourthGenerationPreferences,
+    Mini1Preferences,
+    Mini2Preferences,
+    NamedPreferencesProfile,
     Nano3Preferences,
+    PreferenceField,
+    PreferenceKey,
     PreferencesLayout,
     PreferencesProfile,
     PreferencesSettings,
+    Video13Preferences,
     VideoPreferences,
     VolumeLimitPreferences,
+    matches_preferences_profile,
 )
 from iPodDB.preferences.dst import (
     DSTRule,
@@ -23,6 +36,10 @@ from iPodDB.preferences.dst import (
     DSTTransition,
     DSTWeek,
     parse_dst_table,
+)
+from iPodDB.preferences.inspection_models import (
+    PreferenceInspection,
+    PreferenceObservation,
 )
 from iPodDB.preferences.itunes import (
     ITunesPreferencesDocument,
@@ -40,8 +57,25 @@ from iPodDB.preferences.itunes_definitions import (
 from iPodDB.preferences.models import (
     CityTimezone,
     FixedOffsetTimezone,
+    NamedPreferencesDocument,
     PreferencesDocument,
     PreferencesTimezone,
+)
+from iPodDB.preferences.named import (
+    available_named_preferences,
+    named_preference_value,
+    parse_named_preferences,
+    update_named_preferences,
+    write_named_preferences,
+)
+from iPodDB.preferences.named_inspection import (
+    inspect_named_binary_preferences,
+    inspect_named_preferences,
+)
+from iPodDB.preferences.native import (
+    available_preferences,
+    preference_value,
+    update_preferences,
 )
 
 __all__ = [
@@ -57,12 +91,22 @@ __all__ = [
     "DSTTableProfile",
     "DSTTransition",
     "DSTWeek",
+    "FirmwareLanguagePreferences",
     "FixedOffsetTimezone",
     "FourthGenerationPreferences",
     "ITunesPreferences",
     "ITunesPreferencesDocument",
     "ITunesPreferencesProfile",
+    "Mini1Preferences",
+    "Mini2Preferences",
+    "NamedClockEvidence",
+    "NamedPreferencesDocument",
+    "NamedPreferencesProfile",
     "Nano3Preferences",
+    "PreferenceField",
+    "PreferenceInspection",
+    "PreferenceKey",
+    "PreferenceObservation",
     "PreferenceToggle",
     "PreferencesDocument",
     "PreferencesLayout",
@@ -72,11 +116,25 @@ __all__ = [
     "ShuffleVoiceOverPreferences",
     "SyncMode",
     "SyncSelection",
+    "Video13Preferences",
     "VideoPreferences",
     "VolumeLimitPreferences",
+    "available_named_preferences",
+    "available_preferences",
+    "inspect_binary_preferences",
+    "inspect_named_binary_preferences",
+    "inspect_named_preferences",
+    "matches_preferences_profile",
+    "named_preference_value",
     "parse_dst_table",
     "parse_itunes_preferences",
+    "parse_named_preferences",
     "parse_preferences",
+    "preference_value",
+    "read_named_clock_evidence",
+    "update_named_preferences",
+    "update_preferences",
     "write_itunes_preferences",
+    "write_named_preferences",
     "write_preferences",
 ]

@@ -4,7 +4,14 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
 
-from device_registry import DeviceProfile
+from device_registry import (
+    DeviceEvidence,
+    DeviceIdentifier,
+    DeviceProfile,
+    EvidenceAuthority,
+    PreferencesSupport,
+    resolve_preferences_support,
+)
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.models.ipod_preferences import (
     IPodPreference,
@@ -12,10 +19,13 @@ from iOpenPod.app.models.ipod_preferences import (
     PreferenceFileStatus,
 )
 from iOpenPod.app.services.classic_calendar import resolve_classic_calendar
-from iOpenPod.app.services.device_time import resolve_device_time
+from iOpenPod.app.services.device_time import (
+    resolve_device_time,
+    resolve_named_device_time,
+)
+from iOpenPod.app.services.preference_observations import observation_rows
 from iPodDB.device_time import DeviceTimeContext
 from iPodDB.preferences import (
-    CityPreferences,
     CityTimezone,
     Classic201Preferences,
     ClassicClockPreferences,
@@ -23,15 +33,22 @@ from iPodDB.preferences import (
     DSTTableDocument,
     DSTTableProfile,
     FixedOffsetTimezone,
+    FourthGenerationPreferences,
     ITunesPreferencesProfile,
+    NamedClockEvidence,
+    NamedPreferencesProfile,
     Nano3Preferences,
     PreferencesDocument,
     PreferencesLayout,
     PreferencesProfile,
+    VideoPreferences,
     VolumeLimitPreferences,
+    inspect_binary_preferences,
+    matches_preferences_profile,
     parse_dst_table,
     parse_itunes_preferences,
     parse_preferences,
+    read_named_clock_evidence,
 )
 from storage import DevicePath, FilePrecondition, FilesystemSession, StorageError
 
@@ -45,6 +62,7 @@ class CapturedIPodPreferences:
     # None means the observation could not be verified, not that the file is absent.
     time_precondition: FilePrecondition | None
     daylight_saving_rules: DSTTableDocument | None = None
+    device_bytes: bytes | None = None
 
 
 def read_ipod_preferences(
@@ -101,9 +119,76 @@ def capture_ipod_preferences(
     sections: tuple[IPodPreferenceSection, ...] = (device, itunes)
     if dst_section.status is not PreferenceFileStatus.MISSING:
         sections += (dst_section,)
-    return CapturedIPodPreferences(
-        sections, resolve_device_time(document), precondition, dst
+    context = resolve_device_time(document)
+    support = _preferences_support(profile, firmware_versions, updater_family_ids)
+    if support.target is not None and support.target.value in (
+        "nano_5_1_0_2",
+        "nano_6_1_2",
+        "nano_7_1_0_4",
+        "nano_updater_39_1_1_2",
+    ):
+        clock_section, context = _capture_named_clock(
+            session, NamedPreferencesProfile(support.target.value)
+        )
+        sections += (clock_section,)
+    return CapturedIPodPreferences(sections, context, precondition, dst, data)
+
+
+def _capture_named_clock(
+    session: FilesystemSession, profile: NamedPreferencesProfile
+) -> tuple[IPodPreferenceSection, DeviceTimeContext]:
+    """Capture optional Nano clock evidence before Library projection.
+
+    The XML fingerprint verifies this read, but is deliberately not a Library
+    publication precondition. The captured context stays with the Library source.
+    World clocks, display format and the legacy binary blob cannot replace it.
+    """
+    evidence: NamedClockEvidence | None = None
+
+    def project(data: bytes) -> tuple[IPodPreference, ...]:
+        nonlocal evidence
+        evidence = read_named_clock_evidence(data, profile=profile)
+        raw = evidence.raw_value
+        return (
+            IPodPreference(
+                "clock_city",
+                source_text("Clock city"),
+                evidence.city_label or source_text("Unknown"),
+                raw_value=raw.decode("utf-8", errors="replace")[:512] if raw else "",
+                detail=" ".join(evidence.issues),
+            ),
+            IPodPreference(
+                "date_timezone",
+                source_text("Timezone used for library dates"),
+                evidence.iana_timezone or source_text("Unknown"),
+            ),
+        )
+
+    section, _, _ = _read_section(
+        session,
+        "named_clock",
+        source_text("Device clock settings"),
+        DevicePath("iPod_Control/Device/iPodSettings.xml"),
+        project,
     )
+    context = (
+        resolve_named_device_time(evidence)
+        if evidence is not None
+        else DeviceTimeContext(
+            detail="The Nano named clock settings could not be captured. "
+            + section.detail
+        )
+    )
+    return replace(
+        section,
+        detail=context.detail,
+        rows=tuple(
+            replace(row, value=context.timezone_name or source_text("Unknown"))
+            if row.key == "date_timezone"
+            else row
+            for row in section.rows
+        ),
+    ), context
 
 
 def _capture_dst(
@@ -240,6 +325,32 @@ def _toggle(value: int) -> str:
     return {0: source_text("Off"), 1: source_text("On")}.get(value, _unknown(value))
 
 
+def _preferences_support(
+    profile: DeviceProfile,
+    firmware_versions: tuple[str, ...],
+    updater_family_ids: tuple[int, ...],
+) -> PreferencesSupport:
+    # These tuples have already been reduced to the strongest observations by
+    # the caller. Preserve conflicts instead of picking a release or family.
+    return resolve_preferences_support(
+        profile,
+        DeviceEvidence(
+            firmware_versions=tuple(
+                DeviceIdentifier(
+                    value, "Selected firmware evidence", EvidenceAuthority.DERIVED
+                )
+                for value in firmware_versions
+            ),
+            updater_family_ids=tuple(
+                DeviceIdentifier(
+                    value, "Selected updater evidence", EvidenceAuthority.DERIVED
+                )
+                for value in updater_family_ids
+            ),
+        ),
+    )
+
+
 def _device_document(
     data: bytes,
     profile: DeviceProfile,
@@ -254,6 +365,43 @@ def _device_document(
             # A qualified target with unrecognized bytes must not fall back to a
             # narrower city field and alias an unknown u32 ID to a known u16 ID.
             return parse_preferences(data, layout=PreferencesLayout.UNKNOWN)
+    support = _preferences_support(profile, firmware_versions, updater_family_ids)
+    if support.target is not None:
+        try:
+            return parse_preferences(
+                data, profile=PreferencesProfile(support.target.value)
+            )
+        except ValueError:
+            return parse_preferences(data, layout=PreferencesLayout.UNKNOWN)
+    # Missing or contradictory identity must not grant a weaker legacy clock
+    # decoder to a recognized latest frame. In particular Nano 3's qualified
+    # current frame has no verified city field, while the historical size-only
+    # decoder would alias its bytes as one. Classic's legacy decoder would also
+    # narrow the current u32 city to u16 after failed exact qualification.
+    if (
+        profile.family == "iPod Classic"
+        or (profile.family, profile.generation) == ("iPod Nano", "3rd Gen")
+    ) and any(
+        matches_preferences_profile(data, candidate)
+        for candidate in (
+            PreferencesProfile.CLASSIC_6_1_1_2,
+            PreferencesProfile.CLASSIC_120GB_2_0_1,
+            PreferencesProfile.CLASSIC_UPDATER_35_2_0_4,
+            PreferencesProfile.NANO_4_1_0_4,
+            PreferencesProfile.CLASSIC_UPDATER_38_2_0_5,
+        )
+    ):
+        return parse_preferences(data, layout=PreferencesLayout.UNKNOWN)
+    if profile.family == "iPod Nano" and profile.generation in (
+        "4th Gen",
+        "5th Gen",
+        "6th Gen",
+        "7th Gen",
+    ):
+        # Equal extents do not establish Classic clock/city offsets. Touch
+        # firmware also owns a separate named settings store. Unknown firmware
+        # keeps its bytes and uses the normal nonblocking Library date fallback.
+        return parse_preferences(data, layout=PreferencesLayout.UNKNOWN)
     document = parse_preferences(data)
     if document.settings is None:
         return document
@@ -291,7 +439,11 @@ def _device_rows(
         return ()
     zone = document.timezone
     timezone: str = source_text("Unknown")
-    if zone is None and not isinstance(settings, (CityPreferences, ClassicPreferences)):
+    if (
+        zone is None
+        and not document.has_video13_framing
+        and isinstance(settings, (FourthGenerationPreferences, VideoPreferences))
+    ):
         timezone = _unknown(settings.timezone_code)
     if isinstance(zone, CityTimezone):
         timezone = zone.timezone_name or source_text(
@@ -361,6 +513,18 @@ def _device_rows(
                 "clock_bias_seconds",
                 "Saved clock correction (raw seconds word)",
                 str(extension.clock_bias_seconds),
+            ),
+        )
+    inspection = inspect_binary_preferences(document)
+    observed = observation_rows(inspection)
+    observed_keys = {item.key for item in observed}
+    rows = observed + tuple(item for item in rows if item.key not in observed_keys)
+    if inspection.issues:
+        rows += (
+            IPodPreference(
+                "inspection_notes",
+                source_text("Interpretation notes"),
+                "\n".join(inspection.issues),
             ),
         )
     return rows

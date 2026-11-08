@@ -57,6 +57,7 @@ _VIDEO_PAGES = (
     PageId.VIDEOS,
 )
 _MAINTENANCE_PAGES = (PageId.BACKUPS, PageId.NORMALIZE_TAGS)
+_EXTRAS_PAGES = (PageId.CALENDAR, PageId.ALARMS)
 _PAGE_GLYPHS = {
     PageId.ALBUMS: "album",
     PageId.ARTISTS: "user",
@@ -71,6 +72,8 @@ _PAGE_GLYPHS = {
     PageId.VIDEOS: "video",
     PageId.BACKUPS: "box",
     PageId.NORMALIZE_TAGS: "check-circle",
+    PageId.CALENDAR: "grid",
+    PageId.ALARMS: "bell",
 }
 _PLAYLIST_GLYPHS = {
     PlaylistKind.PLAYLIST.value: "playlist",
@@ -369,6 +372,10 @@ class CompactTopBar(QFrame):
             )
             self._direct[page_id] = button
             center.addWidget(button)
+        self._extras = self._button("compactExtras", self._center)
+        self._extras_menu = self._page_menu(self._extras, _EXTRAS_PAGES)
+        self._extras_menu.setObjectName("compactExtrasMenu")
+        center.addWidget(self._extras)
 
         self._right = QWidget(self)
         right = self._row(self._right)
@@ -407,6 +414,7 @@ class CompactTopBar(QFrame):
         for menu in (
             self._audio_menu,
             self._video_menu,
+            self._extras_menu,
             self._maintenance_menu,
             self._device_menu,
             self.playlist_tree.creation_menu,
@@ -519,6 +527,9 @@ class CompactTopBar(QFrame):
         self._video.setVisible(any(self.page_available(page) for page in _VIDEO_PAGES))
         self._audio.setVisible(any(self.page_available(page) for page in _AUDIO_PAGES))
         self._playlists.setVisible(self.page_available(PageId.PLAYLISTS))
+        self._extras.setVisible(
+            any(self.page_available(page) for page in _EXTRAS_PAGES)
+        )
         if active_ipod is None:
             self.set_normalization_count(0)
         self._refresh_device_image()
@@ -614,6 +625,8 @@ class CompactTopBar(QFrame):
         self._video.setAccessibleName(self.tr("Video"))
         self._playlists.setText(self.tr("Playlists") + " ▾")
         self._playlists.setAccessibleName(page_label(PageId.PLAYLISTS))
+        self._extras.setText(self.tr("Extras") + " ▾")
+        self._extras.setAccessibleName(self.tr("Extras"))
         self._maintenance.setText(self.tr("Maintenance") + " ▾")
         self._maintenance.setAccessibleName(self.tr("Maintenance"))
         self._settings.setAccessibleName(page_label(PageId.SETTINGS))

@@ -6,6 +6,11 @@ manual. It adds no hardware observations or native probes. Exact Classic
 24/1.1.2, 33/2.0.1, 35/2.0.4, and 38/2.0.5 parity is stated only where existing
 evidence establishes it; ordinary format support is not an all-four firmware proof.
 
+**November 7 supplement:** the [whole-file Preferences investigation](preferences-complete-inventory-2026-11-07.md)
+adds independently traced Video Clock storage and later-Nano timer stores below.
+Those new claims come from original firmware instructions and bounded probes;
+they do not widen the earlier Classic claims by analogy.
+
 ## Photo Database and ArtworkDB
 
 The two files share the MHII image-header layout. Offsets below are relative to
@@ -97,10 +102,39 @@ traced here. [iCalendar specification][ical]
 For a vCard-formatted contact, `BDAY` names a birthday and `REV` a revision
 date/time under the format specification. This does not establish that the
 Classic displays or consumes either field. Notes may contain dates as ordinary
-text; no structured Notes calendar field is established. Exact alarm/stopwatch
+text; no structured Notes calendar field is established. The new
+[Calendar and Alarm investigation](calendar-alarm-firmware-2026-11-06.md)
+qualifies Classic `iPod_Control/Device/alarms` token records and bounded repeat
+logic on all four latest targets. It also separates Mini/Video Alarm Preferences,
+imported Calendar reminders and hardware wake scheduling. Remaining stopwatch
 storage paths and layouts, and the source of voice-memo display timestamps
 (filename, filesystem metadata, or companion record), remain unmapped in this
 inventory. [vCard specification][vcard]
+
+## Video clocks and later-Nano timer stores
+
+| Latest target | Artifact and exact locations | Meaning and interpretation |
+| --- | --- | --- |
+| Video 5/5.5 / 1.3, families 13/20/25 | `iPod_Control/Device/clock`; per-clock tags 2 (region), 3 (city), `0x14` (DST), 5 (nested alarm) | Variable tagged records, not fixed file offsets. Startup loads individual clocks/alarms here. The collection projects its earliest alarm into Preferences `0xB22` and associated fields; that projection is not a persistent per-city alarm editor. |
+| Nano 6 / 1.2 | `iPod_Control/Device/iPodTimerSettings.xml`, `Timer.DateTime`, `Timer.SleepiPod`, `Timer.SoundIndex` | Running timer deadline is a separator-free local civil `YYYYMMDDhhmmss` string with no UTC/offset marker. SleepiPod distinguishes the sleep action; SoundIndex has registered bounds 0–24. |
+| Nano 7 / 1.0.4 and refresh / 1.1.2 | Same Timer keys in `iPod_Control/Device/iPodSettings.xml` | Same observed deadline spelling and registration bounds, but a different containing store from Nano 6. Do not create a Nano 6 timer file on Nano 7 by analogy. |
+
+Video's nested alarm container 5 stores LE u32 tag 6 as minutes in that city's
+civil clock basis, tag 7 as alarm kind, and tags `0x1F` and 8 as separate retained
+words whose full meanings remain incomplete. Kind 8 is the ordinary disabled
+value. The one-byte city DST field has no alignment filler. The native record
+reader/writer roundtrips 125-byte records; this does not qualify every malformed
+full-file case. Preferences cannot establish the live selected city's enable
+state: its saved projection and the current Clock collection have distinct
+getters and predicates.
+
+The [Video report](preferences-video-complete-2026-11-07.md) records constructor,
+tagged import/export, startup and projection traces. The
+[Nano 5/6/7 report](preferences-nano567-complete-2026-11-07.md) records exact
+registration, path construction, timer formatting and reader behavior. Native
+malformed-string handling, DST overlap/gap resolution and complete timer
+clock-change rescheduling remain unresolved. Preserve unknown values and retain
+nonblocking date estimates; none of these optional files is a Library dependency.
 
 ## Other scoped unknowns
 
