@@ -364,7 +364,10 @@ def test_checked_native_media_masks_retain_composites_and_drive_size_totals() ->
     assert sqlite_value(databases.dynamic, "SELECT count(*) FROM rental_info") == 1
 
 
-def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> None:
+@pytest.mark.parametrize("audiobook", [False, True])
+def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation(
+    audiobook: bool,
+) -> None:
     source = browse_source()
     specifications = (
         (AudioEncoding.MP3, "MPEG audio file", "mp3"),
@@ -376,6 +379,8 @@ def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> Non
     tracks: list[Track] = []
     media: list[PreparedMedia] = []
     for index, (encoding, label, extension) in enumerate(specifications, start=1):
+        if audiobook and encoding in (AudioEncoding.AAC, AudioEncoding.ALAC):
+            extension = "m4b"
         payload = f"codec-{encoding.value}".encode()
         location = f"iPod_Control/Music/F00/codec-{index}.{extension}"
         track = Track(
@@ -386,6 +391,7 @@ def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> Non
             1_000,
             size_bytes=len(payload),
             bitrate_kbps=256,
+            media_types=(MediaType.AUDIOBOOK,) if audiobook else (MediaType.AUDIO,),
             metadata=TrackMetadata(
                 file_format=label,
                 sample_rate_hz=44_100,
@@ -400,6 +406,7 @@ def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> Non
                     location, len(payload), hashlib.sha256(payload).hexdigest()
                 ),
                 encoding,
+                audiobook=audiobook,
             )
         )
     desired = replace(source.snapshot, tracks=(*source.snapshot.tracks, *tracks))
@@ -431,7 +438,7 @@ def test_sqlite_uses_checked_native_codec_facts_after_audio_preparation() -> Non
 
     assert actual == {
         "Codec mp3": (301, FILE_EXTENSION_INT["mp3"], 1),
-        "Codec aac": (502, FILE_EXTENSION_INT["m4a"], 3),
+        "Codec aac": (502, FILE_EXTENSION_INT["m4b" if audiobook else "m4a"], 3),
         "Codec alac": (503, FILE_EXTENSION_INT["m4a"], 3),
         "Codec wav": (110, FILE_EXTENSION_INT["wav"], 1),
         "Codec aiff": (111, FILE_EXTENSION_INT["aiff"], 1),

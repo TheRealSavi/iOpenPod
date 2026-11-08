@@ -3033,6 +3033,83 @@ def test_disabling_playlist_reconciliation_still_cleans_explicit_track_removal(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize("encoding", list(AudioEncoding))
+@pytest.mark.parametrize(
+    "kind", [MediaType.AUDIO, MediaType.AUDIOBOOK, MediaType.PODCAST]
+)
+def test_sync_audio_destination_matches_classification_and_encoding(
+    tmp_path: Path, encoding: AudioEncoding, kind: MediaType
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        request = _request(device, _host(tmp_path, "Book"))
+        host = replace(request.host.snapshot.tracks[0], media_types=(kind,))
+        with capture_host_file(
+            request.host.sources[0].path, checkpoint=lambda: None
+        ) as captured:
+            inspection = _parse(
+                json.dumps(
+                    {
+                        "format": {
+                            "format_name": "mov",
+                            "size": str(captured.fingerprint.size),
+                        },
+                        "streams": [
+                            {
+                                "index": 0,
+                                "codec_type": "audio",
+                                "codec_name": encoding.value,
+                                "duration": "1.5",
+                                "sample_rate": "44100",
+                            }
+                        ],
+                    }
+                ).encode(),
+                captured,
+            )
+            output = PreparedTranscode(
+                captured.snapshot, inspection, encoding, captured.fingerprint, True
+            )
+            song = _song(request, host, output)
+        mp4_book = kind is MediaType.AUDIOBOOK and encoding in (
+            AudioEncoding.AAC,
+            AudioEncoding.ALAC,
+        )
+        extension = (
+            "m4b"
+            if mp4_book
+            else {
+                AudioEncoding.AAC: "m4a",
+                AudioEncoding.ALAC: "m4a",
+                AudioEncoding.MP3: "mp3",
+                AudioEncoding.WAV: "wav",
+                AudioEncoding.AIFF: "aiff",
+            }[encoding]
+        )
+        assert song.track.metadata.location.endswith("." + extension)
+        assert song.source.media.file.relative_path == song.track.metadata.location
+        code = (
+            b"M4B "
+            if kind is MediaType.AUDIOBOOK and encoding is AudioEncoding.AAC
+            else {
+                AudioEncoding.AAC: b"M4A ",
+                AudioEncoding.ALAC: b"M4A ",
+                AudioEncoding.MP3: b"MP3 ",
+                AudioEncoding.WAV: b"WAV ",
+                AudioEncoding.AIFF: b"AIFF",
+            }[encoding]
+        )
+        assert song.source.media.filetype == int.from_bytes(code, "big")
+        assert song.track.media_types == (kind,)
+        if encoding in (AudioEncoding.AAC, AudioEncoding.ALAC):
+            assert song.source.media.audio_format_flag == 0xFFFF
+            assert song.source.media.mpeg_audio_type == (
+                51 if encoding is AudioEncoding.AAC else 0
+            )
+    finally:
+        device.coordinator.close()
+
+
 def test_prepared_silent_video_uses_motion_duration_without_audio_sample_rate(
     tmp_path: Path,
 ) -> None:

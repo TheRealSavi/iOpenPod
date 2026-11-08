@@ -492,6 +492,14 @@ capture and saving remain future work. See
 containing a validated device-relative name, size, and SHA-256. Semantic media facts
 come from the desired Track. This input represents caller-owned media inspection;
 it neither probes nor copies the media. Extra or contradictory resources are errors.
+
+Manual import and Sync select `.m4b` destinations for AAC/ALAC Audiobooks after
+classification. `prepared_audio(..., audiobook=True)` selects the M4B format code
+for AAC; ALAC retains the M4A/zero-MPEG-type native lossless convention, keeping
+SQLite's codec interpretation distinct from older AAC M4B records with zero MPEG
+type. Codec flags remain encoding-derived. Other encodings keep their codec
+extensions. This applies to
+new and replacement media; unrelated edits do not rename retained files.
 Preparation validates supplied resources even when the draft is unchanged. Valid
 captured inventory and source-file context may accompany a no-op; unrequested media
 facts, duplicate identities or paths, invalid inventory, and source bytes that do

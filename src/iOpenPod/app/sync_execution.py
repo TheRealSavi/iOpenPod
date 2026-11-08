@@ -39,6 +39,7 @@ from iOpenPod.app.library_write import (
     WriteItemProgress,
     WriteProgress,
 )
+from iOpenPod.app.media.audio_formats import audio_file_details
 from iOpenPod.app.media.importing import (
     ImportedSong,
     LibraryMediaSource,
@@ -2346,13 +2347,7 @@ def _song(
     audio = next(iter(output.inspection.audio_streams), None)
     motion = next(iter(output.inspection.video_streams), None)
     extension, description = (
-        {
-            AudioEncoding.MP3: ("mp3", "MPEG audio file"),
-            AudioEncoding.AAC: ("m4a", "AAC audio file"),
-            AudioEncoding.ALAC: ("m4a", "Apple Lossless audio file"),
-            AudioEncoding.WAV: ("wav", "WAV audio file"),
-            AudioEncoding.AIFF: ("aiff", "AIFF audio file"),
-        }[output.encoding]
+        audio_file_details(output.encoding, host.media_kind)
         if isinstance(output.encoding, AudioEncoding)
         else ("m4v", "MPEG-4 video file")
     )
@@ -2414,7 +2409,12 @@ def _song(
         location, track.size_bytes, output.inspection.fingerprint.sha256
     )
     media = (
-        prepared_audio(0, dependency, output.encoding)
+        prepared_audio(
+            0,
+            dependency,
+            output.encoding,
+            audiobook=track.media_kind is MediaKind.AUDIOBOOK,
+        )
         if isinstance(output.encoding, AudioEncoding)
         else prepared_video(
             0, dependency, has_audio=bool(output.inspection.audio_streams)

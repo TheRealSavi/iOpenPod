@@ -1,4 +1,4 @@
-"""Native facts for observed music encodings, independent of filenames and I/O."""
+"""Native audio facts from observed encoding and explicit audiobook intent."""
 
 from enum import StrEnum
 
@@ -14,13 +14,19 @@ class AudioEncoding(StrEnum):
 
 
 def prepared_audio(
-    track_id: int, file: FileDependency, encoding: AudioEncoding
+    track_id: int,
+    file: FileDependency,
+    encoding: AudioEncoding,
+    *,
+    audiobook: bool = False,
 ) -> PreparedMedia:
     """Encode observed audio facts without claiming unmeasured gapless data.
 
     Filetype/format flags follow Original iOpenPod's constants/mhit_writer;
     MPEG types 12 (MP3) and 51 (AAC) follow libgpod's itdb_track_set_defaults.
     AAC in an audiobook container is still AAC, never the Audible codec.
+    AAC Audiobooks use M4B; ALAC retains the M4A/zero-MPEG-type lossless convention.
+    Both can have an M4B filename without changing their codec flags.
     """
     code, mp3, av, mpeg = {
         AudioEncoding.MP3: (b"MP3 ", 1, 0xFFFF, 12),
@@ -29,6 +35,8 @@ def prepared_audio(
         AudioEncoding.WAV: (b"WAV ", 0, 0, 0),
         AudioEncoding.AIFF: (b"AIFF", 0, 0, 0),
     }[encoding]
+    if audiobook and encoding is AudioEncoding.AAC:
+        code = b"M4B "
     return PreparedMedia(track_id, file, int.from_bytes(code, "big"), mp3, av, mpeg, 0)
 
 

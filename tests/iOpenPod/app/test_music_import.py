@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import Event
 
 import pytest
+from mutagen.mp4 import MP4
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 
@@ -22,7 +23,7 @@ from iPodDB.iTunesDB.cdb import compress_iTunesCDB, decompress_iTunesCDB
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.constants import FILE_EXTENSION_INT
-from iPodDB.library import CoverFormat, CoverPixelFormat, IPodLibrary
+from iPodDB.library import CoverFormat, CoverPixelFormat, IPodLibrary, MediaKind
 from storage import HardwareIdentifiers, HostPath, Storage
 from storage.testing import VirtualStoragePlatform
 
@@ -76,6 +77,62 @@ def build_nano5_device(tmp_path: Path) -> Device:
     coordinator = DeviceCoordinator(storage)
     coordinator.select_device(coordinator.discover_devices().candidates[0].id)
     return Device(root, storage, platform, coordinator, {})
+
+
+@pytest.mark.parametrize("name", ["tone.m4a", "lossless.m4a"])
+@pytest.mark.parametrize("evidence", ["suffix", "tag"])
+def test_audiobook_import_publishes_m4b_path_and_native_format(
+    tmp_path: Path, name: str, evidence: str
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        source = song_file(tmp_path, name)
+        if evidence == "suffix":
+            source = HostPath(Path(source.path).rename(tmp_path / "book.m4b"))
+        else:
+            tags = MP4(source.path)  # type: ignore[no-untyped-call]
+            tags["stik"] = [2]
+            tags.save()  # type: ignore[no-untyped-call]
+        song = MusicImporter().inspect(
+            source, device.active.profile, checkpoint=lambda: None
+        )
+        assert song.track.media_kind is MediaKind.AUDIOBOOK
+        assert song.track.metadata.location.endswith(".m4b")
+        assert song.source.media.file.relative_path == song.track.metadata.location
+        workspace = LibraryWorkspace()
+        workspace.load(device.active.library)
+        workspace.add_songs((song,), workspace.edit_revision)
+        review = device.coordinator.prepare_library(
+            LibraryPreparationRequest(
+                workspace.desired_snapshot(),
+                device.active,
+                1,
+                1,
+                media=workspace.media_sources,
+            ),
+            lambda _: None,
+            Event(),
+        )
+        assert review.result.prepared is not None, review.result.issues
+        result = device.save(review)
+        assert result.active is not None, result.issues
+        added = result.active.library.tracks[-1]
+        assert added.metadata.location.endswith(".m4b")
+        assert (device.root / added.metadata.location).read_bytes() == Path(
+            source.path
+        ).read_bytes()
+        document = parse_iTunesDB(
+            (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+        )
+        header = tuple(document.find_chunks(MhitHeader))[-1].chunk.header
+        assert header.filetype == int.from_bytes(
+            b"M4B " if name == "tone.m4a" else b"M4A ", "big"
+        )
+        assert header.media_type == 8
+        assert header.mpeg_audio_type == (51 if name == "tone.m4a" else 0)
+        assert header.av_flag == 0xFFFF
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.parametrize("first_artwork", [False, True])

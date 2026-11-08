@@ -11,6 +11,7 @@ from mutagen.mp3 import BitrateMode
 from PIL import Image, ImageOps
 from whenever import Instant
 
+from iOpenPod.app.media.audio_formats import audio_file_details
 from iOpenPod.app.media.chapters import imported_chapters
 from iOpenPod.app.media.image_pixels import rgb_image
 from iOpenPod.app.media.inspection import MediaInspectionError, MediaInspector
@@ -25,6 +26,7 @@ from iPodDB.library import (
     ArtworkPixels,
     AudioEncoding,
     FileDependency,
+    MediaKind,
     PreparedMedia,
     Track,
     TrackMetadata,
@@ -120,16 +122,7 @@ class MusicImporter:
         audio = observed.audio_streams[0]
         duration = audio.duration_seconds or observed.duration_seconds
         assert duration is not None and audio.sample_rate_hz is not None
-        extension, description = {
-            AudioEncoding.MP3: ("mp3", "MPEG audio file"),
-            AudioEncoding.AAC: ("m4a", "AAC audio file"),
-            AudioEncoding.ALAC: ("m4a", "Apple Lossless audio file"),
-            AudioEncoding.WAV: ("wav", "WAV audio file"),
-            AudioEncoding.AIFF: ("aiff", "AIFF audio file"),
-        }[encoding]
-        location = MusicPathAllocator(
-            profile.capabilities.database.music_directory_count
-        ).allocate(extension)
+        _, description = audio_file_details(encoding, MediaKind.MUSIC)
         track = Track(
             0,
             source.path.stem,
@@ -148,7 +141,6 @@ class MusicImporter:
                 ),
                 date_added=Instant.now().timestamp(),
                 last_modified=observed.fingerprint.modified_ns // 1_000_000_000,
-                location=location,
                 chapters=imported_chapters(observed.chapters),
             ),
         )
@@ -163,11 +155,18 @@ class MusicImporter:
         )
         # The Host observation may report lyric presence, but an incoming draft
         # must let verified PreparedLyrics evidence derive the device flag.
-        track = replace(track, metadata=replace(track.metadata, has_lyrics=False))
+        extension, _ = audio_file_details(encoding, track.media_kind)
+        location = MusicPathAllocator(
+            profile.capabilities.database.music_directory_count
+        ).allocate(extension)
+        track = replace(
+            track, metadata=replace(track.metadata, has_lyrics=False, location=location)
+        )
         media = prepared_audio(
             0,
             FileDependency(location, track.size_bytes, observed.fingerprint.sha256),
             encoding,
+            audiobook=track.media_kind is MediaKind.AUDIOBOOK,
         )
         return ImportedSong(
             track, LibraryMediaSource(source, observed.fingerprint, media), cover
