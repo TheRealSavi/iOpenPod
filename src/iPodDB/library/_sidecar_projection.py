@@ -136,8 +136,11 @@ def _tracks(
             _merge(track, entries[identity], context) if identity in entries else track
             for track, identity in zip(tracks, identities, strict=True)
         )
-    if len(document.entries) > len(tracks):
+    if document.format != "Play Counts" and len(document.entries) > len(tracks):
         raise ValueError("Playback sidecar has more rows than the Track table.")
+    # Play Counts rows are positional and may outlive the Track table after a
+    # device reset or partial Library replacement. Apply the rows that still
+    # have a matching Track and ignore unmatched trailing evidence.
     return tuple(
         _merge(
             track,

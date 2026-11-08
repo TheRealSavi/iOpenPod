@@ -672,7 +672,6 @@ def test_stats_projects_supported_fields_without_inventing_skip_count(
 @pytest.mark.parametrize(
     "sidecars",
     [
-        (PlaybackSidecar("Play Counts", counts(((1, 0, 0),) * 3, width=12)),),
         (PlaybackSidecar("Play Counts", b"broken"),),
         (PlaybackSidecar("OTGPlaylistInfo", otg((0, 999))),),
         (

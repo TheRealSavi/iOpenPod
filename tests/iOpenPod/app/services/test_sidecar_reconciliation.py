@@ -610,6 +610,26 @@ def test_malformed_sidecar_blocks_selection_without_committing_other_valid_sidec
         device.coordinator.close()
 
 
+def test_play_counts_rows_beyond_track_table_are_ignored_during_selection(
+    tmp_path: Path,
+) -> None:
+    device = build_device(tmp_path)
+    directory = device.root / "iPod_Control/iTunes"
+    try:
+        path = directory / "Play Counts"
+        path.write_bytes(counts(((3, 0, 0), (8, 0, 0), (21, 0, 0)), width=12))
+
+        selected = device.coordinator.select_device(device.active.candidate.id)
+
+        assert [track.play_count for track in selected.library.tracks] == [3, 8]
+        assert not path.exists()
+        assert path.with_name("Play Counts.bak").read_bytes() == counts(
+            ((3, 0, 0), (8, 0, 0), (21, 0, 0)), width=12
+        )
+    finally:
+        device.coordinator.close()
+
+
 def test_track_removal_commits_correct_history_and_otg_membership(
     tmp_path: Path,
 ) -> None:
