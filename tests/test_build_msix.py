@@ -33,6 +33,11 @@ def make_package(path: Path, executable: bytes, *, version: str) -> None:
         archive.writestr("Assets/StoreLogo.png", b"tile")
         archive.writestr("Assets/Square44x44Logo.png", b"tile")
         archive.writestr("Assets/Square150x150Logo.png", b"tile")
+        for size in package_app.WINDOWS_ICON_TARGET_SIZES:
+            archive.writestr(
+                f"Assets/Square44x44Logo.targetsize-{size}_altform-unplated.png",
+                b"icon",
+            )
         archive.writestr("AppxBlockMap.xml", b"block map")
 
 

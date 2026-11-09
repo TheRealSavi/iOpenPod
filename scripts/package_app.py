@@ -26,6 +26,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "build/packaging"
 APP_ID = "io.github.therealsavi.iOpenPod"
+WINDOWS_ICON_TARGET_SIZES = (16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256)
 
 
 def project_version() -> str:
@@ -57,6 +58,10 @@ def generate_assets() -> None:
         ):
             image.resize((size, size), Image.Resampling.LANCZOS).save(
                 tiles / f"{name}.png"
+            )
+        for size in WINDOWS_ICON_TARGET_SIZES:
+            image.resize((size, size), Image.Resampling.LANCZOS).save(
+                tiles / f"Square44x44Logo.targetsize-{size}_altform-unplated.png"
             )
     version = project_version()
     fields = (*map(int, version.split(".")), 0)

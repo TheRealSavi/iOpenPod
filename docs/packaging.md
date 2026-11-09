@@ -85,6 +85,8 @@ never invented by the build script.
 
 The copied Original iOpenPod icon is used in the application, executable, bundle,
 desktop entry, and Store tiles. See its [provenance](../src/iOpenPod/assets/icons/README.md).
+Windows MSIX packages also include unplated target-size icons so Windows can show
+the artwork without shrinking it onto a colored backplate.
 The available master is 256 pixels. ICNS includes larger converted representations;
 the original high-resolution artwork is still needed for final store art review.
 

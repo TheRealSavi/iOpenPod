@@ -165,6 +165,15 @@ def test_original_icon_is_retained_and_store_assets_have_required_sizes(
     ):
         with Image.open(tmp_path / "Assets" / f"{name}.png") as image:
             assert image.size == (size, size)
+    for size in (16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256):
+        path = (
+            tmp_path
+            / "Assets"
+            / f"Square44x44Logo.targetsize-{size}_altform-unplated.png"
+        )
+        with Image.open(path) as image:
+            assert image.size == (size, size)
+            assert image.mode == "RGBA"
     with Image.open(tmp_path / "iOpenPod.icns") as image:
         assert image.size == (1024, 1024)
 

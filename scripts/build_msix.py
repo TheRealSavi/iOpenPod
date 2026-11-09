@@ -117,6 +117,10 @@ def check_msix(package: Path, executable: Path, version: str) -> None:
             "Assets/Square150x150Logo.png",
             "AppxBlockMap.xml",
         }
+        required.update(
+            f"Assets/Square44x44Logo.targetsize-{size}_altform-unplated.png"
+            for size in package_app.WINDOWS_ICON_TARGET_SIZES
+        )
         if not required.issubset(members):
             raise ValueError(
                 f"MSIX is missing members: {sorted(required - set(members))}"
