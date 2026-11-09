@@ -3,7 +3,14 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QLocale, QPoint, Qt, QUrl
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QLocale,
+    QPoint,
+    Qt,
+    QUrl,
+    QVariantAnimation,
+)
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QLabel,
@@ -41,6 +48,7 @@ from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
+from iOpenPod.GUI.widgets.settings_tab import SettingsExampleImage
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, IconButton
 from storage import AtomicHostFile
@@ -83,6 +91,35 @@ def _finish_page(dialog: OnboardingDialog) -> None:
         _button(dialog, "Next").click()
     assert _pages(dialog).currentIndex() == _pages(dialog).count() - 1
     assert _button(dialog, "Next").text() == dialog.tr("Finish")
+
+
+@pytest.mark.parametrize("page_index", [0, 1, 2])
+def test_choice_preview_crossfades_and_handles_rapid_changes(page_index: int) -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    dialog = _dialog(settings)
+    dialog.show()
+    for _ in range(page_index):
+        _button(dialog, "Next").click()
+    APPLICATION.processEvents()
+    preview = _page(dialog).findChild(SettingsExampleImage)
+    assert preview is not None
+    animation = preview.findChild(QVariantAnimation, "settingsImageCrossfade")
+    assert animation is not None
+    choices = _page(dialog).findChildren(QRadioButton)
+    initial = next(i for i, choice in enumerate(choices) if choice.isChecked())
+    other = (initial + 1) % len(choices)
+    start = preview.frame()
+    _choose(dialog, other)
+    assert animation.state() == QAbstractAnimation.State.Running
+    assert preview.frame() == start
+    animation.setCurrentTime(animation.duration() // 2)
+    middle = preview.frame()
+    assert middle != start
+    _choose(dialog, initial)
+    assert preview.frame() == middle
+    animation.setCurrentTime(animation.duration())
+    assert preview.frame() == start
+    dialog.reject()
 
 
 def test_choice_tiles_support_full_surface_clicks_and_arrow_keys() -> None:

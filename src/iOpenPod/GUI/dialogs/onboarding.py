@@ -46,6 +46,7 @@ from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.GUI.dialogs.help_support import HelpSupportPage
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets.settings_tab import SettingsExampleImage
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
     ActionButtonKind,
@@ -58,17 +59,22 @@ logger = logging.getLogger(__name__)
 _SCREENSHOTS = Path(__file__).parents[2] / "assets" / "onboarding"
 
 
-class _Screenshot(QWidget):
-    """Fit an actual app capture without imposing its native size on the dialog."""
+class _Screenshot(SettingsExampleImage):
+    """Fit a capture and share the Settings preview crossfade."""
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self._pixmap = QPixmap()
+        self._filename = ""
+        self._available = False
         self.setMinimumSize(1, 120)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-    def set_image(self, filename: str, description: str) -> None:
-        self._pixmap = QPixmap(str(_SCREENSHOTS / filename))
+    def set_screenshot(self, filename: str, description: str) -> None:
+        if filename != self._filename:
+            image = QPixmap(str(_SCREENSHOTS / filename))
+            self._filename = filename
+            self._available = not image.isNull()
+            self.set_image(image, animate=self.isVisible())
         self.setAccessibleName(description)
         self.setToolTip(description)
         self.update()
@@ -77,22 +83,15 @@ class _Screenshot(QWidget):
         return QSize(640, 300)
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        painter = QPainter(self)
-        if self._pixmap.isNull():
+        if self._available:
+            super().paintEvent(event)
+        else:
+            painter = QPainter(self)
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
                 self.tr("Preview unavailable"),
             )
-            return
-        size = self._pixmap.size().scaled(
-            self.size(), Qt.AspectRatioMode.KeepAspectRatio
-        )
-        target = self.rect()
-        target.setSize(size)
-        target.moveCenter(self.rect().center())
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawPixmap(target, self._pixmap)
 
 
 def _label(text: str, name: str, parent: QWidget) -> QLabel:
@@ -117,7 +116,7 @@ class _Page(QWidget):
         self.content.addWidget(self.caption)
 
     def illustrate(self, filename: str, caption: str) -> None:
-        self.preview.set_image(filename, caption)
+        self.preview.set_screenshot(filename, caption)
         self.caption.setText(caption)
 
 
@@ -542,7 +541,7 @@ class OnboardingDialog(QDialog):
                 if self._navigation.selected_value == NavigationStyle.SIDEBAR.value
                 else "compact"
             )
-            self._sync_start.preview.set_image(
+            self._sync_start.preview.set_screenshot(
                 f"sync-start-{style}.png", self._sync_start.caption.text()
             )
         self._scroll.verticalScrollBar().setValue(0)
