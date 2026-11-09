@@ -251,6 +251,62 @@ def test_terminal_outcomes_replace_progress_and_allow_return_to_library(
         APPLICATION.processEvents()
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "source.timezone_unresolved",
+        "source.timezone_fallback",
+        "source.timezone_policy",
+        "source.approximate_dates",
+    ],
+)
+@pytest.mark.parametrize("other_warning", [False, True])
+def test_date_warnings_are_only_in_technical_details(
+    code: str, other_warning: bool
+) -> None:
+    page = SyncExecutionPage()
+    try:
+        issues = [
+            WriteIssue(
+                code,
+                "Date interpretation warning.",
+                IssueSeverity.WARNING,
+                detail="Clock evidence.",
+                artifact="iTunesDB",
+            )
+        ]
+        if other_warning:
+            issues.append(
+                WriteIssue("sync.warning", "Other warning.", IssueSeverity.WARNING)
+            )
+        page.show_result(
+            SyncExecutionResult(SyncExecutionStatus.SUCCESS, issues=tuple(issues))
+        )
+        headings = page.findChildren(QLabel, "syncResultMessageHeading")
+        assert [label.text() for label in headings] == (
+            ["Warnings (1)"] if other_warning else []
+        )
+        messages = " ".join(
+            label.text() for label in page.findChildren(QLabel, "syncResultMessage")
+        )
+        assert "Date interpretation warning." not in messages
+        assert ("Other warning." in messages) is other_warning
+        description = page.findChild(QLabel, "syncResultDescription")
+        assert description is not None
+        assert ("warnings to review" in description.text()) is other_warning
+        details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
+        toggle = page.findChild(QPushButton, "syncResultTechnicalToggle")
+        assert details is not None and toggle is not None and not toggle.isHidden()
+        assert (
+            code in details.toPlainText() and "Clock evidence." in details.toPlainText()
+        )
+        toggle.click()
+        assert not details.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
 def test_messages_are_grouped_by_severity_with_complete_expandable_details() -> None:
     page = SyncExecutionPage()
     try:

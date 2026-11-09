@@ -42,6 +42,23 @@ if TYPE_CHECKING:
     from iPodDB.library import WriteIssue
 
 
+_TECHNICAL_TIME_WARNINGS = frozenset(
+    {
+        "source.timezone_unresolved",
+        "source.timezone_fallback",
+        "source.timezone_policy",
+        "source.approximate_dates",
+    }
+)
+
+
+def _technical_time_warning(issue: WriteIssue) -> bool:
+    return (
+        issue.severity is IssueSeverity.WARNING
+        and issue.code in _TECHNICAL_TIME_WARNINGS
+    )
+
+
 class SyncExecutionPage(QWidget):
     _STAGES = (
         "sync.validate",
@@ -602,7 +619,9 @@ class SyncExecutionPage(QWidget):
         }
         tone = tones[result.status]
         if result.status is SyncExecutionStatus.SUCCESS and any(
-            issue.severity is IssueSeverity.WARNING for issue in result.issues
+            issue.severity is IssueSeverity.WARNING
+            and not _technical_time_warning(issue)
+            for issue in result.issues
         ):
             description = self.tr(
                 "Your changes were saved to your iPod. There are warnings to review below; they did not stop the Sync."
@@ -703,6 +722,8 @@ class SyncExecutionPage(QWidget):
                         "More affected items are listed in Technical details."
                     )
             lines.append(line)
+            if _technical_time_warning(issues[0]):
+                continue
             messages.append(
                 SyncResultMessage(
                     IssueSeverity(severity),
