@@ -1603,6 +1603,59 @@ def test_nano5_without_retained_hash72_material_blocks_before_mutation(
     coordinator.close()
 
 
+@pytest.mark.parametrize("model", ["MA002", "MA450"])
+@pytest.mark.parametrize("scheme", [1, 2, 3, 4, 65535])
+def test_video_selection_uses_model_checksum_despite_source_scheme(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, model: str, scheme: int
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / model, model_number=model)
+    directory = root / "iPod_Control" / "iTunes"
+    database = directory / "iTunesDB"
+    document = parse_iTunesDB(_database_with_track(track_header_size=0x184))
+    original = write_iTunesDB(
+        replace(document, header=replace(document.header, hashing_scheme=scheme))
+    )
+    database.write_bytes(original)
+    history = counts()
+    playlist = otg((0, 0))
+    (directory / "Play Counts").write_bytes(history)
+    (directory / "OTGPlaylistInfo").write_bytes(playlist)
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        active = coordinator.select_device(
+            coordinator.discover_devices().candidates[0].id
+        )
+        assert active.library.tracks[0].play_count == 3
+        assert active.library.playlists[-1].track_ids == (
+            active.library.tracks[0].track_id,
+            active.library.tracks[0].track_id,
+        )
+        assert parse_iTunesDB(database.read_bytes()).header.hashing_scheme == 0
+        assert IPodLibrary.parse(database.read_bytes()).snapshot == active.library
+        for name, payload in (("Play Counts", history), ("OTGPlaylistInfo", playlist)):
+            assert not (directory / name).exists()
+            assert (directory / (name + ".bak")).read_bytes() == payload
+        assert "hashing scheme" in caplog.text
+        edited = replace(
+            active.library,
+            tracks=(replace(active.library.tracks[0], title="Updated"),),
+        )
+        review = coordinator.prepare_library(
+            LibraryPreparationRequest(edited, active, 1, 1), lambda _: None, Event()
+        )
+        assert review.result.prepared is not None, review.result.issues
+        saved = coordinator.save_library(review, active, lambda _: None, Event())
+        assert saved.active is not None, saved.issues
+        reloaded = coordinator.select_device(active.candidate.id)
+        assert reloaded.library.tracks[0].title == "Updated"
+        assert reloaded.library.tracks[0].play_count == 3
+        assert reloaded.library.playlists == active.library.playlists
+    finally:
+        coordinator.close()
+
+
 @pytest.mark.parametrize("metadata", [None, b""])
 def test_nano5_selection_commits_playback_without_postprocess_metadata(
     tmp_path: Path,

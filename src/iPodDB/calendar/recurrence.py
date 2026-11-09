@@ -1,8 +1,8 @@
-"""Bounded Mini 2 recurrence matching, qualified by original event-membership probes.
+"""Bounded recurrence matching, qualified by original event-membership probes.
 
 Only floating, same-day DAILY/WEEKLY series are expanded. No RFC recurrence
 engine, Host timezone, exception merging or monthly day-clamping is inferred.
-See docs/research/calendar-recurrence-qualification-2026-11-08.md.
+See docs/research/calendar-firmware-coverage-2026-11-08.md.
 """
 
 import re
@@ -25,7 +25,19 @@ from iPodDB.calendar.models import (
 
 
 def supports_recurrence(profile: CalendarProfile) -> bool:
-    return profile is CalendarProfile.MINI_2_1_4_1
+    return type(profile) is CalendarProfile and profile in {
+        CalendarProfile.MINI_1_1_4_1,
+        CalendarProfile.MINI_2_1_4_1,
+        CalendarProfile.NANO_1_1_3_1,
+        CalendarProfile.NANO_3_1_1_3,
+        CalendarProfile.NANO_4_1_0_4,
+        CalendarProfile.NANO_5_1_0_2,
+        CalendarProfile.VIDEO_1_3,
+        CalendarProfile.CLASSIC_6_1_1_2,
+        CalendarProfile.CLASSIC_120GB_2_0_1,
+        CalendarProfile.CLASSIC_UPDATER_35_2_0_4,
+        CalendarProfile.CLASSIC_UPDATER_38_2_0_5,
+    }
 
 
 def validate_recurrence(
@@ -33,7 +45,7 @@ def validate_recurrence(
 ) -> None:
     if not supports_recurrence(profile):
         raise CalendarEditError(
-            "Recurring Calendar edits are qualified only for Mini 2 / 1.4.1."
+            "Recurring Calendar edits are not qualified for this firmware."
         )
     if (
         type(rule.frequency) is not CalendarFrequency

@@ -28,6 +28,17 @@ def native_extras_capabilities(family: str, generation: str) -> ExtrasCapabiliti
         )
     )
     support = FeatureSupport.SUPPORTED if known else FeatureSupport.UNKNOWN
+    if (
+        family == "iPod Nano"
+        and generation in {"1st Gen", "3rd Gen", "4th Gen", "5th Gen"}
+    ) or (family == "iPod Mini" and generation == "1st Gen"):
+        return ExtrasCapabilities(
+            calendar=FeatureSupport.SUPPORTED, todos=FeatureSupport.SUPPORTED
+        )
+    if family == "iPod Nano" and generation in {"6th Gen", "7th Gen"}:
+        return ExtrasCapabilities(
+            calendar=FeatureSupport.UNSUPPORTED, todos=FeatureSupport.UNSUPPORTED
+        )
     return ExtrasCapabilities(support, support, support, support)
 
 
@@ -55,6 +66,16 @@ def resolve_extras_support(
         strongest_values(evidence.firmware_versions),
         strongest_values(evidence.updater_family_ids),
     )
+    if firmware in {
+        FirmwareTarget.NANO_6_1_2,
+        FirmwareTarget.NANO_7_1_0_4,
+        FirmwareTarget.NANO_UPDATER_39_1_1_2,
+    }:
+        return ExtrasSupport(
+            calendar_firmware=firmware,
+            sleep_timer=sleep,
+            reason="This firmware explicitly reports no Calendar support. Clock Alarm editing is not qualified.",
+        )
     # This explicit subset is independent of Preferences authoring support.
     formats = {
         FirmwareTarget.MINI_2_1_4_1: AlarmFormat.MINI,
@@ -64,24 +85,43 @@ def resolve_extras_support(
         FirmwareTarget.CLASSIC_UPDATER_35_2_0_4: AlarmFormat.CLASSIC,
         FirmwareTarget.CLASSIC_UPDATER_38_2_0_5: AlarmFormat.CLASSIC,
     }
-    target = formats.get(firmware) if firmware is not None else None
-    if target is None:
+    calendar_targets = {
+        FirmwareTarget.MINI_1_1_4_1,
+        FirmwareTarget.NANO_1_1_3_1,
+        FirmwareTarget.NANO_3_1_1_3,
+        FirmwareTarget.NANO_4_1_0_4,
+        FirmwareTarget.NANO_5_1_0_2,
+        FirmwareTarget.MINI_2_1_4_1,
+        FirmwareTarget.VIDEO_1_3,
+        FirmwareTarget.CLASSIC_6_1_1_2,
+        FirmwareTarget.CLASSIC_120GB_2_0_1,
+        FirmwareTarget.CLASSIC_UPDATER_35_2_0_4,
+        FirmwareTarget.CLASSIC_UPDATER_38_2_0_5,
+    }
+    target = (
+        formats.get(firmware, AlarmFormat.NONE)
+        if firmware is not None
+        else AlarmFormat.NONE
+    )
+    if firmware not in calendar_targets and target is AlarmFormat.NONE:
         return ExtrasSupport(
             sleep_timer=sleep,
             reason="This model and firmware combination is not qualified for Extras editing.",
         )
     return ExtrasSupport(
-        calendar_write=True,
-        calendar_firmware=firmware,
+        calendar_write=firmware in calendar_targets,
+        calendar_firmware=firmware if firmware in calendar_targets else None,
         alarm_format=target,
         # Video projects its next alarm into Preferences from the separate
         # per-city Device/clock store. Patching that projection does not edit a
         # persistent Clock Alarm. See preferences-video-complete-2026-11-07.md.
-        alarm_write=target is not AlarmFormat.VIDEO,
+        alarm_write=target in {AlarmFormat.MINI, AlarmFormat.CLASSIC},
         sleep_timer=sleep,
         reason=(
             "Saved clock alarms are managed on the iPod. The displayed time is a read-only snapshot and may be disabled or out of date."
             if target is AlarmFormat.VIDEO
+            else "Calendar editing is qualified independently of Clock Alarm editing."
+            if target is AlarmFormat.NONE
             else "Existing alarm time fields are editable; new alarms, sound, enable state and remote sleep-timer control are not qualified."
         ),
     )

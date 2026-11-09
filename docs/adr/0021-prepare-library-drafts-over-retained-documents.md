@@ -61,7 +61,10 @@ are cloned for replacement. Clearing an association removes direct Track referen
 and every reverse ownership link for that Track. The first ArtworkDB requires an
 explicit, evidenced root value because its field at 0x10 is not universally known.
 
-Signature requirements belong to artifacts. `WriteTarget.checksum` describes
+Signature requirements belong to artifacts. [ADR-0250](0250-prefer-device-write-policy-over-source-signature-markers.md)
+qualifies retained signature markers: the device's explicit Write Target owns the
+output scheme, and conflicting source markers produce log warnings.
+`WriteTarget.checksum` describes
 iTunesDB; `artwork_checksum` separately describes ArtworkDB. The implemented output
 scope is unsigned or HASH58 iTunesDB and unsigned ArtworkDB. Unsupported required
 signatures, compressed output, and SQLite companions block changed candidates.

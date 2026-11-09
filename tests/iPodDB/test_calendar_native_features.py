@@ -9,6 +9,7 @@ from iPodDB.calendar import (
     CalendarEditError,
     CalendarEntryChanges,
     CalendarEntryDraft,
+    CalendarEntryKind,
     CalendarFrequency,
     CalendarProfile,
     CalendarRecurrenceRule,
@@ -18,6 +19,8 @@ from iPodDB.calendar import (
     parse_calendar,
     project_occurrences,
     serialize_calendar,
+    supports_recurrence,
+    supports_reminders,
     update_entry,
 )
 
@@ -27,6 +30,65 @@ CLASSICS = tuple(
 )
 START = PlainDateTime(2026, 11, 1, 9)
 END = PlainDateTime(2026, 11, 1, 10)
+
+
+@pytest.mark.parametrize(
+    "profile",
+    tuple(
+        profile for profile in CalendarProfile if profile is not CalendarProfile.UNKNOWN
+    ),
+)
+def test_native_status_is_not_inferred_from_ignored_completion_metadata(
+    profile: CalendarProfile,
+) -> None:
+    raw = (
+        b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\n"
+        b"SUMMARY:Task\r\nCOMPLETED:20261101T090000Z\r\nPERCENT-COMPLETE:100\r\n"
+        b"END:VTODO\r\nEND:VCALENDAR\r\n"
+    )
+    document = parse_calendar(raw, profile=profile)
+    assert not document.entries[0].completed
+    assert document.entries[0].completed_at is not None
+    assert serialize_calendar(document) == raw
+    updated = update_entry(
+        document, 0, CalendarEntryChanges(summary="Renamed"), profile=profile
+    )
+    assert not updated.entries[0].completed
+    assert updated.raw_bytes == raw.replace(b"SUMMARY:Task", b"SUMMARY:Renamed")
+
+
+@pytest.mark.parametrize(
+    "profile",
+    tuple(
+        profile for profile in CalendarProfile if profile is not CalendarProfile.UNKNOWN
+    ),
+)
+def test_native_todo_completion_authors_status_without_host_progress_or_timestamp(
+    profile: CalendarProfile,
+) -> None:
+    document = create_calendar(
+        (
+            CalendarEntryDraft(
+                kind=CalendarEntryKind.TODO, summary="Task", completed=True
+            ),
+        ),
+        profile=profile,
+    )
+    assert b"STATUS:COMPLETED\r\n" in document.raw_bytes
+    assert b"\r\nCOMPLETED:" not in document.raw_bytes
+    imported = parse_calendar(
+        document.raw_bytes.replace(
+            b"STATUS:COMPLETED\r\n",
+            b"STATUS:COMPLETED\r\nCOMPLETED:20261101T090000Z\r\nPERCENT-COMPLETE:100\r\n",
+        )
+    )
+    reopened = update_entry(
+        imported, 0, CalendarEntryChanges(completed=False), profile=profile
+    )
+    assert not reopened.entries[0].completed
+    assert b"\r\nSTATUS:" not in reopened.raw_bytes
+    assert b"\r\nCOMPLETED:" not in reopened.raw_bytes
+    assert b"PERCENT-COMPLETE:100\r\n" in reopened.raw_bytes
 
 
 def _series(
@@ -40,6 +102,10 @@ def _series(
 
 
 @pytest.mark.parametrize(
+    "profile",
+    tuple(profile for profile in CalendarProfile if supports_recurrence(profile)),
+)
+@pytest.mark.parametrize(
     "rule,offsets",
     (
         ("FREQ=DAILY;INTERVAL=2;COUNT=3", (0, 2, 4)),
@@ -49,13 +115,13 @@ def _series(
         ("FREQ=DAILY;COUNT=1", (0,)),
     ),
 )
-def test_mini_membership_matches_qualified_native_vectors(
-    rule: str, offsets: tuple[int, ...]
+def test_each_profile_matches_qualified_native_membership(
+    rule: str, offsets: tuple[int, ...], profile: CalendarProfile
 ) -> None:
     raw = _series("RRULE:" + rule)
     document = parse_calendar(raw)
     result = project_occurrences(
-        document.entries[0], Date(2026, 10, 30), Date(2026, 12, 8), profile=MINI
+        document.entries[0], Date(2026, 10, 30), Date(2026, 12, 8), profile=profile
     )
     assert result.expanded
     assert [occurrence.start.value for occurrence in result.occurrences] == [
@@ -110,8 +176,11 @@ def test_unqualified_rules_retain_saved_dates_and_bytes(rule: str) -> None:
     assert serialize_calendar(document) == raw
 
 
-@pytest.mark.parametrize("profile", (CalendarProfile.UNKNOWN, *CLASSICS))
-def test_mini_expansion_is_not_transferred_to_other_firmwares(
+@pytest.mark.parametrize(
+    "profile",
+    tuple(profile for profile in CalendarProfile if not supports_recurrence(profile)),
+)
+def test_unqualified_firmware_cannot_author_or_expand_repeats(
     profile: CalendarProfile,
 ) -> None:
     entry = parse_calendar(_series("RRULE:FREQ=DAILY;COUNT=3")).entries[0]
@@ -148,8 +217,11 @@ def test_recurrence_edit_changes_only_its_property() -> None:
     assert removed.raw_bytes == raw.replace(b"RRULE:FREQ=DAILY;COUNT=3\r\n", b"")
 
 
-@pytest.mark.parametrize("profile", CLASSICS)
-def test_classic_creates_only_one_trigger_without_invented_action(
+@pytest.mark.parametrize(
+    "profile",
+    tuple(profile for profile in CalendarProfile if supports_reminders(profile)),
+)
+def test_each_profile_creates_one_trigger_without_invented_action(
     profile: CalendarProfile,
 ) -> None:
     draft = CalendarEntryDraft(start=START, end=END, reminder=CalendarReminderDraft(15))
@@ -210,7 +282,10 @@ def test_unsupported_reminders_remain_readonly_and_survive_text_edits(
         )
 
 
-@pytest.mark.parametrize("profile", (CalendarProfile.UNKNOWN, MINI))
+@pytest.mark.parametrize(
+    "profile",
+    tuple(profile for profile in CalendarProfile if not supports_reminders(profile)),
+)
 def test_new_reminders_are_not_authorized_by_parser_recognition(
     profile: CalendarProfile,
 ) -> None:

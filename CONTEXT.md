@@ -51,11 +51,14 @@ All calendars view. New calendars and renamed groups use `X-WR-CALNAME`; a group
 rename publishes all captured member files together. New entries target a chosen
 calendar, and imports can retain their original names or receive an explicit name.
 Ambiguous or unsupported containers remain readable without name editing.
-Mini 2 / 1.4.1 additionally displays and edits qualified floating daily/weekly
-series. Its native COUNT search and year-3000 bounds remain explicit. The four
-latest Classic targets additionally edit one saved reminder before an event's
-start, without inventing an action or sound. These capabilities are independently
-qualified: Classic/Video recurrence and Mini/Video reminder edits remain read-only.
+The [lab-wide Calendar matrix](docs/research/calendar-firmware-coverage-2026-11-08.md)
+extends basic editing and naming to Mini 1 and Nano 1/3/4/5, independently of
+Clock Alarm editing. Exact-image qualification enables floating daily/weekly
+series and one saved start-relative reminder on Mini 1/2, Nano 1/3/4/5, Video and
+the four latest Classics. Native COUNT search
+and year-3000 bounds remain explicit; no action or sound is invented. Nano 6/7
+explicitly report no Calendar support. Nano 2 remains unknown because the lab
+has encrypted firmware only.
 Unknown repeats retain saved dates and bytes; occurrence edits affect the source
 series. See [ADR-0249](docs/adr/0249-qualify-calendar-occurrences-and-reminders-by-firmware.md).
 Alarms use large, localized times and contextual editing. Existing saved

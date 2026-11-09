@@ -59,8 +59,11 @@ This distinction does not restrict Video Calendar editing or Library workflows.
 
 Calendar occurrence projection and saved-reminder authoring use independently
 qualified byte-only profiles composed from exact Registry firmware evidence.
-Mini 2's bounded daily/weekly floating occurrence subset is separate from the
-four latest Classics' single start-relative reminder writer. The GUI retains
+The bounded daily/weekly floating occurrence subset and single start-relative
+reminder writer are qualified independently for each target in the
+[lab-wide Calendar matrix](research/calendar-firmware-coverage-2026-11-08.md).
+Calendar qualification never grants Clock Alarm editing. Nano 6/7's explicit
+negative capability and Nano 2's encrypted-evidence gap remain distinct. The GUI retains
 source-series identity for every occurrence; it does not implement recurrence,
 timezone or scheduler rules. Unsupported patterns remain preserved observations.
 See [ADR-0249](adr/0249-qualify-calendar-occurrences-and-reminders-by-firmware.md)

@@ -314,3 +314,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0247: Manage Extras through qualified lossless file edits](0247-manage-extras-through-qualified-lossless-file-edits.md)
 - [ADR-0248: Edit qualified firmware Preferences](0248-edit-qualified-firmware-preferences.md)
 - [ADR-0249: Qualify Calendar occurrences and reminders by firmware](0249-qualify-calendar-occurrences-and-reminders-by-firmware.md)
+- [ADR-0250: Prefer device write policy over source signature markers](0250-prefer-device-write-policy-over-source-signature-markers.md)

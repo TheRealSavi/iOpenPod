@@ -184,19 +184,26 @@ class CalendarOptions(QWidget):
             if isinstance(label, QLabel):
                 label.setText(text)
         self.reminder.setText(self.tr("Saved reminder before event start"))
+        notes: list[str] = []
         if supports_recurrence(self._profile):
-            text = self.tr(
-                "Mini 2 / 1.4.1: daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved."
+            notes.append(
+                self.tr(
+                    "Daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved."
+                )
             )
-        elif supports_reminders(self._profile):
-            text = self.tr(
-                "Qualified Classic firmware: one saved reminder before a floating event's start. This does not confirm live adoption, sound or physical delivery."
+        if supports_reminders(self._profile):
+            notes.append(
+                self.tr(
+                    "One saved reminder before a floating event's start is supported. This does not confirm live adoption, sound or physical delivery."
+                )
             )
-        else:
-            text = self.tr(
-                "Repeat and reminder editing are not qualified for this firmware. Imported settings are preserved."
+        if not notes:
+            notes.append(
+                self.tr(
+                    "Repeat and reminder editing are not qualified for this firmware. Imported settings are preserved."
+                )
             )
-        self._note.setText(text)
+        self._note.setText("\n\n".join(notes))
         if self.isVisible():
             self._fit_note()
 

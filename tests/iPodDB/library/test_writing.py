@@ -674,6 +674,37 @@ def test_artwork_output_preserves_file_prefix_and_clears_both_links() -> None:
     assert not removal.prepared.artwork_files
 
 
+@pytest.mark.parametrize("checksum", [WriteChecksum.NONE, WriteChecksum.HASH58])
+def test_write_target_overrides_unknown_source_scheme(
+    checksum: WriteChecksum, caplog: pytest.LogCaptureFixture
+) -> None:
+    original = library().serialize().itunes
+    document = parse_iTunesDB(original)
+    original = write_iTunesDB(
+        replace(document, header=replace(document.header, hashing_scheme=65535))
+    )
+    source = IPodLibrary.parse(original)
+    guid = bytes.fromhex("0011223344556677")
+    target = WriteTarget(checksum=checksum, firewire_guid=guid)
+    unchanged = source.prepare(source.analyze(source.begin_draft(), target))
+    assert unchanged.prepared is not None, unchanged.issues
+    assert unchanged.prepared.itunes == original
+    assert "Ignoring source iTunesDB hashing scheme" not in caplog.text
+
+    desired = replace(
+        source.snapshot,
+        playlists=(replace(source.snapshot.playlists[0], name="Updated"),),
+    )
+    result = source.prepare(source.analyze(source.begin_draft(desired), target))
+    assert result.prepared is not None, result.issues
+    assert "Ignoring source iTunesDB hashing scheme 65535" in caplog.text
+    assert parse_iTunesDB(result.prepared.itunes).header.hashing_scheme == (
+        0 if checksum is WriteChecksum.NONE else 1
+    )
+    if checksum is WriteChecksum.HASH58:
+        assert verify_hash58(result.prepared.itunes, guid)
+
+
 def test_hash58_detects_tampering_and_preserves_non_signature_header_data() -> None:
     source = library()
     guid = bytes.fromhex("0011223344556677")

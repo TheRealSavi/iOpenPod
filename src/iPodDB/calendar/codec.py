@@ -168,12 +168,17 @@ def _property(line: _Line, data: bytes) -> CalendarProperty:
 
 
 def parse_calendar(
-    data: bytes, *, limits: CalendarLimits = _DEFAULT_LIMITS
+    data: bytes,
+    *,
+    limits: CalendarLimits = _DEFAULT_LIMITS,
+    profile: CalendarProfile = CalendarProfile.UNKNOWN,
 ) -> CalendarDocument:
     """Inspect bounded bytes, returning an opaque retained document on bad framing.
 
     Optional malformed dates project as INVALID values. A legacy or unknown file
     remains importable/preservable even when the supported writer is unavailable.
+    Qualified firmware profiles use native To Do status; a retained COMPLETED
+    timestamp alone does not mark the native task complete.
     """
     if (
         min(
@@ -271,7 +276,7 @@ def parse_calendar(
     for calendar in calendars:
         for component in calendar.children:
             if component.name in (CalendarEntryKind.EVENT, CalendarEntryKind.TODO):
-                entries.append(_entry(len(entries), component, editable))
+                entries.append(_entry(len(entries), component, editable, profile))
     return CalendarDocument(
         data,
         tuple(roots),
@@ -337,7 +342,12 @@ def _date(prop: CalendarProperty | None) -> CalendarDateTime | None:
         )
 
 
-def _entry(index: int, component: CalendarComponent, editable: bool) -> CalendarEntry:
+def _entry(
+    index: int,
+    component: CalendarComponent,
+    editable: bool,
+    profile: CalendarProfile,
+) -> CalendarEntry:
     properties = {prop.name: prop for prop in reversed(component.properties)}
     counts = Counter(prop.name for prop in component.properties)
     issues: list[str] = []
@@ -389,7 +399,11 @@ def _entry(index: int, component: CalendarComponent, editable: bool) -> Calendar
         dates[2],
         dates[3],
         bool(status and status.value.upper() == "COMPLETED")
-        or (status is None and "COMPLETED" in properties),
+        or (
+            profile is CalendarProfile.UNKNOWN
+            and status is None
+            and "COMPLETED" in properties
+        ),
         editable,
         timing_editable,
         recurring,
@@ -500,7 +514,8 @@ def _draft_bytes(
             rows.append(_date_line(name, value, newline))
     if draft.kind is CalendarEntryKind.TODO and draft.completed:
         rows.append(_fold("STATUS:COMPLETED", newline))
-        rows.append(_date_line("COMPLETED", draft.completed_at or stamp, newline))
+        if draft.completed_at is not None or profile is CalendarProfile.UNKNOWN:
+            rows.append(_date_line("COMPLETED", draft.completed_at or stamp, newline))
     if draft.recurrence is not None:
         if draft.kind is not CalendarEntryKind.EVENT:
             raise CalendarEditError("Qualified recurrence belongs to events.")
@@ -547,12 +562,15 @@ def create_calendar(
             else b""
         )
         + body
-        + b"END:VCALENDAR\r\n"
+        + b"END:VCALENDAR\r\n",
+        profile=profile,
     )
 
 
-def _authored(data: bytes) -> CalendarDocument:
-    document = parse_calendar(data)
+def _authored(
+    data: bytes, *, profile: CalendarProfile = CalendarProfile.UNKNOWN
+) -> CalendarDocument:
+    document = parse_calendar(data, profile=profile)
     if not document.editable:
         raise CalendarEditError(
             "The edited Calendar exceeds the supported format or size limits."
@@ -585,7 +603,8 @@ def add_entry(
     )
     offset = calendar.end_line_start
     return _authored(
-        document.raw_bytes[:offset] + content + document.raw_bytes[offset:]
+        document.raw_bytes[:offset] + content + document.raw_bytes[offset:],
+        profile=profile,
     )
 
 
@@ -615,6 +634,7 @@ def update_entry(
 ) -> CalendarDocument:
     _calendar(document)
     entry = _find_entry(document, entry_id)
+    entry = _entry(entry.entry_id, entry.component, document.editable, profile)
     if not entry.editable:
         raise CalendarEditError(
             "This entry's field encoding or repeated properties cannot be edited safely."
@@ -677,15 +697,23 @@ def update_entry(
         replacements["STATUS"] = _fold(
             "STATUS:COMPLETED" if changes.completed else "STATUS:NEEDS-ACTION", newline
         )
+        if changes.completed is False and profile is not CalendarProfile.UNKNOWN:
+            replacements["STATUS"] = b""
         if not changes.completed:
             replacements["COMPLETED"] = b""
-        elif changes.completed_at is UNCHANGED and not entry.completed:
+        elif (
+            changes.completed_at is UNCHANGED
+            and not entry.completed
+            and profile is CalendarProfile.UNKNOWN
+        ):
             replacements["COMPLETED"] = _date_line(
                 "COMPLETED", stamp or Instant.now(), newline
             )
     elif isinstance(changes.completed_at, Instant):
         replacements["STATUS"] = _fold("STATUS:COMPLETED", newline)
-    if changes.completed is not None or isinstance(changes.completed_at, Instant):
+    if profile is CalendarProfile.UNKNOWN and (
+        changes.completed is not None or isinstance(changes.completed_at, Instant)
+    ):
         # RFC 5545 completion consistency, not a claim about firmware handling.
         # Reopening does not imply zero progress; omit the optional percentage.
         # Unrelated edits retain its original bytes, including unknown parameters.
@@ -814,7 +842,7 @@ def update_entry(
     data = document.raw_bytes
     for start_offset, end_offset, replacement in sorted(patches, reverse=True):
         data = data[:start_offset] + replacement + data[end_offset:]
-    return _authored(data)
+    return _authored(data, profile=profile)
 
 
 def _calendar_name(name: str) -> str:

@@ -112,7 +112,9 @@ def read_extras(
                     break
                 key = str(entry.path)
                 files.append(ExtrasFile(key, captured.data, captured.fingerprint))
-                document = parse_calendar(captured.data)
+                document = parse_calendar(
+                    captured.data, profile=calendar_profile(support)
+                )
                 for component in document.components:
                     if component.name != "VCALENDAR":
                         continue
@@ -344,7 +346,9 @@ def prepare_change(
             )
             if destination is not None:
                 source = _calendar_source(catalog, destination)
-                document = parse_calendar(source.data)
+                document = parse_calendar(
+                    source.data, profile=calendar_profile(support)
+                )
                 path = DevicePath(source.key)
             else:
                 document = create_calendar(name="iOpenPod")
@@ -364,7 +368,7 @@ def prepare_change(
                 raise ValueError(
                     "Calendar edits must stay inside the Calendars folder."
                 )
-            document = parse_calendar(source.data)
+            document = parse_calendar(source.data, profile=calendar_profile(support))
             if isinstance(change, RemoveCalendar):
                 document = remove_entry(document, item.index)
             else:

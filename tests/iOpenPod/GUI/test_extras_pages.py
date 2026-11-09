@@ -298,7 +298,7 @@ def test_todo_completion_preserves_existing_due_date() -> None:
         _find(editor, QCheckBox, "calendarCompleted").setChecked(True)
         edit = editor.selected_edit()
         assert isinstance(edit, CalendarEntryChanges)
-        assert edit.completed is True and isinstance(edit.completed_at, Instant)
+        assert edit.completed is True and edit.completed_at is UNCHANGED
         assert edit.due is UNCHANGED
     finally:
         editor.close()
@@ -666,10 +666,7 @@ def test_todo_completion_preserves_unknown_due_and_uses_explicit_controller_inte
         assert existing is item
         assert edit.completed is not completed
         assert edit.due is UNCHANGED
-        if completed:
-            assert edit.completed_at is None
-        else:
-            assert isinstance(edit.completed_at, Instant)
+        assert edit.completed_at is UNCHANGED
         controller.working = True
         controller.changed.emit()
         assert not _find(page, QPushButton, "calendarComplete").isEnabled()
@@ -962,7 +959,7 @@ def test_mini_recurring_occurrence_appears_on_future_day_but_edits_source_series
         APPLICATION.processEvents()
 
 
-def test_classic_does_not_borrow_mini_recurrence_expansion() -> None:
+def test_unknown_firmware_does_not_borrow_qualified_recurrence_expansion() -> None:
     source = _calendar(
         "DTSTART:20261101T090000\r\nDTEND:20261101T100000\r\nRRULE:FREQ=WEEKLY;COUNT=3"
     )
@@ -971,7 +968,7 @@ def test_classic_does_not_borrow_mini_recurrence_expansion() -> None:
             calendar=(source,),
             support=ExtrasSupport(
                 calendar_write=True,
-                calendar_firmware=FirmwareTarget.CLASSIC_120GB_2_0_1,
+                calendar_firmware=None,
             ),
         )
     )
@@ -990,7 +987,7 @@ def test_classic_does_not_borrow_mini_recurrence_expansion() -> None:
         page.close()
 
 
-def test_mini_editor_authors_qualified_repeat_without_reminder() -> None:
+def test_mini_editor_offers_qualified_repeat_and_reminder() -> None:
     editor = CalendarEditor(
         CalendarEntryKind.EVENT,
         None,
@@ -1008,14 +1005,12 @@ def test_mini_editor_authors_qualified_repeat_without_reminder() -> None:
             CalendarFrequency.WEEKLY, 2, 3
         )
         assert draft.reminder is None
-        assert not _find(editor, QCheckBox, "calendarReminder").isVisibleTo(editor)
+        assert _find(editor, QCheckBox, "calendarReminder").isVisibleTo(editor)
     finally:
         editor.close()
 
 
-def test_classic_editor_authors_saved_reminder_and_preserves_unsupported_repeats() -> (
-    None
-):
+def test_classic_editor_offers_saved_reminder_and_qualified_repeat() -> None:
     editor = CalendarEditor(
         CalendarEntryKind.EVENT,
         None,
@@ -1029,7 +1024,7 @@ def test_classic_editor_authors_saved_reminder_and_preserves_unsupported_repeats
         assert isinstance(draft, CalendarEntryDraft)
         assert draft.reminder == CalendarReminderDraft(30)
         assert draft.recurrence is None
-        assert not _find(editor, AppComboBox, "calendarRepeat").isVisibleTo(editor)
+        assert _find(editor, AppComboBox, "calendarRepeat").isVisibleTo(editor)
     finally:
         editor.close()
 
@@ -1082,5 +1077,28 @@ def test_classic_firmware_explanation_is_not_clipped() -> None:
         APPLICATION.processEvents()
         note = _find(editor, QLabel, "calendarFirmwareNote")
         assert note.height() >= note.heightForWidth(note.width())
+    finally:
+        editor.close()
+
+
+@pytest.mark.parametrize(
+    "profile", (CalendarProfile.MINI_2_1_4_1, CalendarProfile.CLASSIC_120GB_2_0_1)
+)
+def test_editor_can_author_repeat_and_reminder_together(
+    profile: CalendarProfile,
+) -> None:
+    editor = CalendarEditor(
+        CalendarEntryKind.EVENT, None, initial_date=Date(2026, 11, 1), profile=profile
+    )
+    try:
+        _find(editor, AppComboBox, "calendarRepeat").setCurrentIndex(1)
+        _find(editor, QCheckBox, "calendarReminder").setChecked(True)
+        _find(editor, QSpinBox, "calendarReminderMinutes").setValue(15)
+        draft = editor.selected_edit()
+        assert isinstance(draft, CalendarEntryDraft)
+        assert draft.recurrence == CalendarRecurrenceRule(CalendarFrequency.DAILY)
+        assert draft.reminder == CalendarReminderDraft(15)
+        note = _find(editor, QLabel, "calendarFirmwareNote").text()
+        assert "Daily/weekly" in note and "saved reminder" in note
     finally:
         editor.close()

@@ -8,8 +8,9 @@
 
 Recurrence tokens and reminder constructors do not establish complete Calendar
 behavior. The user requires firmware-backed behavior with explicit target
-differences. New original-instruction experiments qualify a narrow Mini 2
-occurrence subset and a separate Classic saved-reminder subset. A generic RFC
+differences. The initial Mini 2 recurrence and Classic reminder experiments are
+extended by the [lab-wide coverage investigation](../research/calendar-firmware-coverage-2026-11-08.md).
+Exact-image experiments qualify each additional profile independently. A generic RFC
 recurrence engine or an invented alarm action would exceed that evidence.
 
 ## Decision
@@ -23,14 +24,22 @@ publication retains the existing source-checked Storage workflow.
 
 | Target | Recurrence display and editing | Calendar Reminder editing |
 | --- | --- | --- |
-| Mini 2 / updater 7 / 1.4.1 | Qualified subset below | Preserved, read-only |
-| Classic / updater 24 / 1.1.2 | Saved dates only; recurrence preserved | Qualified subset below |
-| Classic / updater 33 / 2.0.1 | Saved dates only; recurrence preserved | Qualified subset below |
-| Classic / updater 35 / 2.0.4 | Saved dates only; recurrence preserved | Qualified subset below |
-| Classic / updater 38 / 2.0.5 | Saved dates only; recurrence preserved | Qualified subset below |
-| Video 5/5.5 / 1.3 and other targets | Saved dates only; recurrence preserved | Preserved, read-only |
+| Mini 1 / updaters 3, 6 / 1.4.1 | Qualified subset below | Qualified subset below |
+| Mini 2 / updater 7 / 1.4.1 | Qualified subset below | Qualified subset below |
+| Nano 1 / updaters 14, 17 / 1.3.1 | Qualified subset below | Qualified subset below |
+| Nano 3 / updater 26 / 1.1.3 | Qualified subset below | Qualified subset below |
+| Nano 4 / updater 31 / 1.0.4 | Qualified subset below | Qualified subset below |
+| Nano 5 / updater 34 / 1.0.2 | Qualified subset below | Qualified subset below |
+| Video / updaters 13, 20, 25 / 1.3 | Qualified subset below | Qualified subset below |
+| Classic / updater 24 / 1.1.2 | Qualified subset below | Qualified subset below |
+| Classic / updater 33 / 2.0.1 | Qualified subset below | Qualified subset below |
+| Classic / updater 35 / 2.0.4 | Qualified subset below | Qualified subset below |
+| Classic / updater 38 / 2.0.5 | Qualified subset below | Qualified subset below |
+| Nano 6 / 1.2, Nano 7 / 1.0.4 and 1.1.2 | Native Calendar unsupported | Native Calendar unsupported |
+| Nano 2 / updaters 19, 29 / 1.1.3 | Unknown: encrypted firmware only | Unknown: encrypted firmware only |
+| Other targets | Saved dates only; recurrence preserved | Preserved, read-only |
 
-### Mini occurrence subset
+### Qualified occurrence subset
 
 Only same-day, whole-second floating VEVENT start/end pairs before year 3000,
 with DAILY or WEEKLY RRULEs, positive intervals, and either COUNT or a floating
@@ -53,9 +62,9 @@ retain their Calendar Entry's source identity; edit and remove actions explicitl
 affect the whole series. There is no individual-occurrence editor or detached
 exception authoring. Unknown patterns show their saved dates with an explanation.
 
-### Classic saved-reminder subset
+### Qualified saved-reminder subset
 
-The four targets independently qualify a single nested VALARM with one relative
+The supported targets independently qualify a single nested VALARM with one relative
 TRIGGER. The initial editor authors only reminders zero to 10,080 minutes before
 the floating event start. This one-week bound is an application input limit.
 The native start anchor is the default; new components contain TRIGGER only.
@@ -69,8 +78,9 @@ trigger observations remain visible even where they do not qualify editing.
 
 Successful publication proves saved bytes. It does not prove live firmware
 adoption, hardware arming, sound or physical notification delivery. Clock Alarms
-and Sleep Timer remain separate workflows. Mini and Video do not inherit the
-Classic authoring subset from similar trigger parsing.
+and Sleep Timer remain separate workflows. Each additional target has its own
+constructor, property-dispatch and relative-trigger evidence; matching strings
+alone do not grant authoring rights.
 
 ## Evidence and validation
 

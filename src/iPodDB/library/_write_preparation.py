@@ -859,23 +859,20 @@ def _prepare(
                 else None,
             ),
         )
+    expected_schemes = {
+        WriteChecksum.NONE: (0,),
+        WriteChecksum.HASH58: (0, 1),
+        WriteChecksum.HASH72: (0, 1, 2),
+        WriteChecksum.HASHAB: (0, 3, 4),
+    }
     if (
         plan.changes_itunes
-        and document.header.hashing_scheme
-        and plan.target.checksum is WriteChecksum.NONE
+        and document.header.hashing_scheme not in expected_schemes[plan.target.checksum]
     ):
-        issues.append(
-            WriteIssue(
-                "target.signature_required",
-                "The source database is signed; supply its supported signature target before editing.",
-            )
-        )
-    if plan.changes_itunes and document.header.hashing_scheme not in (0, 1, 2, 3, 4):
-        issues.append(
-            WriteIssue(
-                "target.unsupported_source_signature",
-                "The retained iTunesDB uses an unsupported signature scheme. Its signing requirements cannot be replaced implicitly.",
-            )
+        logger.warning(
+            "Ignoring source iTunesDB hashing scheme %d; using write target checksum %s",
+            document.header.hashing_scheme,
+            plan.target.checksum.value,
         )
     if _blocked(issues):
         return LibraryWriteResult(tuple(issues))
@@ -949,6 +946,12 @@ def _prepare(
             )
         phase = "serialization"
         notify(WritePhase.SERIALIZATION)
+        if plan.changes_itunes and plan.target.checksum is WriteChecksum.NONE:
+            # The selected device's write policy owns the output scheme. Keep
+            # retained signature bytes as Unknown Data on unsigned targets.
+            candidate = replace(
+                candidate, header=replace(candidate.header, hashing_scheme=0)
+            )
         binary_document = candidate
         logical_itunes = write_iTunesDB(candidate)
         retained_output = source.serialize()

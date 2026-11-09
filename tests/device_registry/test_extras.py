@@ -116,9 +116,77 @@ def test_wrong_family_or_historical_release_does_not_qualify() -> None:
 def test_unstudied_generation_remains_unknown_and_unidentified_device_cannot_write() -> (
     None
 ):
-    profile = _profile("iPod Nano", "5th Gen")
+    profile = _profile("iPod Nano", "2nd Gen")
     assert profile.capabilities.extras.calendar is FeatureSupport.UNKNOWN
     assert not resolve_extras_support(
         profile, DeviceEvidence(firmware_versions=(_id("1.3"),))
     ).calendar_write
     assert not resolve_extras_support(None, DeviceEvidence()).alarm_write
+
+
+@pytest.mark.parametrize("updater", (19, 29))
+def test_encrypted_only_nano_2_does_not_obtain_calendar_qualification(
+    updater: int,
+) -> None:
+    profile = _profile("iPod Nano", "2nd Gen")
+    support = resolve_extras_support(
+        profile,
+        DeviceEvidence(
+            firmware_versions=(_id("1.1.3"),), updater_family_ids=(_id(updater),)
+        ),
+    )
+    assert profile.capabilities.extras.calendar is FeatureSupport.UNKNOWN
+    assert not support.calendar_write and support.calendar_firmware is None
+
+
+@pytest.mark.parametrize(
+    "generation,firmware,updater",
+    (("6th Gen", "1.2", 36), ("7th Gen", "1.0.4", 37), ("7th Gen", "1.1.2", 39)),
+)
+def test_native_calendar_exclusion_does_not_grant_any_writer(
+    generation: str, firmware: str, updater: int
+) -> None:
+    support = resolve_extras_support(
+        _profile("iPod Nano", generation),
+        DeviceEvidence(
+            firmware_versions=(_id(firmware),), updater_family_ids=(_id(updater),)
+        ),
+    )
+    assert not support.calendar_write
+    assert not support.alarm_write
+    assert support.calendar_firmware is not None
+    assert "no Calendar support" in support.reason
+
+
+@pytest.mark.parametrize(
+    "family,generation,firmware,updater,expected",
+    (
+        ("iPod Mini", "1st Gen", "1.4.1", 3, "mini_1_1_4_1"),
+        ("iPod Mini", "1st Gen", "1.4.1", 6, "mini_1_1_4_1"),
+        ("iPod Nano", "1st Gen", "1.3.1", 14, "nano_1_1_3_1"),
+        ("iPod Nano", "1st Gen", "1.3.1", 17, "nano_1_1_3_1"),
+        ("iPod Nano", "3rd Gen", "1.1.3", 26, "nano_3_1_1_3"),
+        ("iPod Nano", "4th Gen", "1.0.4", 31, "nano_4_1_0_4"),
+        ("iPod Nano", "5th Gen", "1.0.2", 34, "nano_5_1_0_2"),
+    ),
+)
+def test_nano_calendar_qualification_does_not_enable_clock_alarm_writer(
+    family: str, generation: str, firmware: str, updater: int, expected: str
+) -> None:
+    profile = _profile(family, generation)
+    assert profile.capabilities.extras.calendar is FeatureSupport.SUPPORTED
+    support = resolve_extras_support(
+        profile,
+        DeviceEvidence(
+            firmware_versions=(_id(firmware),), updater_family_ids=(_id(updater),)
+        ),
+    )
+    assert support.calendar_write and support.calendar_firmware is not None
+    assert support.calendar_firmware.value == expected
+    assert support.alarm_format is AlarmFormat.NONE
+    assert not support.alarm_write and not support.sleep_timer_write
+    conflict = DeviceEvidence(updater_family_ids=(_id(24),))
+    assert not resolve_extras_support(
+        profile,
+        DeviceEvidence(firmware_versions=(_id(firmware),)).merged_with(conflict),
+    ).calendar_write

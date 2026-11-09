@@ -455,7 +455,6 @@ class CalendarEditor(QDialog):
                 if self._kind is CalendarEntryKind.TODO
                 else None,
                 completed=self._completed.isChecked(),
-                completed_at=Instant.now() if self._completed.isChecked() else None,
             )
         entry = self._item.entry
         changed = [
@@ -486,9 +485,6 @@ class CalendarEditor(QDialog):
             if changed[2] and self._kind is CalendarEntryKind.TODO
             else UNCHANGED,
             completed=completed if completed != entry.completed else None,
-            completed_at=(Instant.now() if completed else None)
-            if completed != entry.completed
-            else UNCHANGED,
         )
 
     def _accept_valid(self) -> None:
@@ -851,9 +847,7 @@ class CalendarPage(QWidget):
             return
         complete = not item.entry.completed
         self._controller.save_calendar(
-            CalendarEntryChanges(
-                completed=complete, completed_at=Instant.now() if complete else None
-            ),
+            CalendarEntryChanges(completed=complete),
             item,
         )
 
@@ -1300,7 +1294,7 @@ class CalendarPage(QWidget):
         self._trees[1].setAccessibleName(self.tr("To Dos"))
         self._note.setText(
             self.tr(
-                "Mini 2 / 1.4.1: qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once."
+                "Qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once."
             )
             if supports_recurrence(self._controller.calendar_profile)
             else self.tr(

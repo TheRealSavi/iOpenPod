@@ -12,7 +12,13 @@ type CalendarValue = Date | PlainDateTime | Instant
 
 class CalendarProfile(StrEnum):
     UNKNOWN = "unknown"
+    MINI_1_1_4_1 = "mini_1_1_4_1"
     MINI_2_1_4_1 = "mini_2_1_4_1"
+    NANO_1_1_3_1 = "nano_1_1_3_1"
+    NANO_3_1_1_3 = "nano_3_1_1_3"
+    NANO_4_1_0_4 = "nano_4_1_0_4"
+    NANO_5_1_0_2 = "nano_5_1_0_2"
+    VIDEO_1_3 = "video_1_3"
     CLASSIC_6_1_1_2 = "classic_6_1_1_2"
     CLASSIC_120GB_2_0_1 = "classic_120gb_2_0_1"
     CLASSIC_UPDATER_35_2_0_4 = "classic_updater_35_2_0_4"

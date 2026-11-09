@@ -1263,12 +1263,20 @@ iOpenPod no puede leer ni cambiar el temporizador a través de esta conexión.</
         <translation>Minutos antes del inicio</translation>
     </message>
     <message>
+        <source>Daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved.</source>
+        <translation>Las repeticiones diarias/semanales requieren inicio y fin sin zona horaria el mismo día, antes del año 3000. Se conservan las repeticiones de día completo, con zona horaria y complejas.</translation>
+    </message>
+    <message>
+        <source>One saved reminder before a floating event&apos;s start is supported. This does not confirm live adoption, sound or physical delivery.</source>
+        <translation>Se admite un recordatorio guardado antes del inicio de un evento sin zona horaria. Esto no confirma su adopción en ejecución, sonido ni notificación física.</translation>
+    </message>
+    <message>
         <source>Mini 2 / 1.4.1: daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved.</source>
-        <translation>Mini 2 / 1.4.1: Las repeticiones diarias/semanales requieren inicio y fin sin zona horaria el mismo día, antes del año 3000. Se conservan las repeticiones de día completo, con zona horaria y complejas.</translation>
+        <translation type="vanished">Mini 2 / 1.4.1: Las repeticiones diarias/semanales requieren inicio y fin sin zona horaria el mismo día, antes del año 3000. Se conservan las repeticiones de día completo, con zona horaria y complejas.</translation>
     </message>
     <message>
         <source>Qualified Classic firmware: one saved reminder before a floating event&apos;s start. This does not confirm live adoption, sound or physical delivery.</source>
-        <translation>Firmware Classic verificado: un recordatorio guardado antes del inicio de un evento sin zona horaria. Esto no confirma su adopción en ejecución, sonido ni notificación física.</translation>
+        <translation type="vanished">Firmware Classic verificado: un recordatorio guardado antes del inicio de un evento sin zona horaria. Esto no confirma su adopción en ejecución, sonido ni notificación física.</translation>
     </message>
     <message>
         <source>Repeat and reminder editing are not qualified for this firmware. Imported settings are preserved.</source>
@@ -1374,6 +1382,10 @@ iOpenPod no puede leer ni cambiar el temporizador a través de esta conexión.</
         <translation>Todas las entradas guardadas</translation>
     </message>
     <message>
+        <source>Qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once.</source>
+        <translation>Se muestran las repeticiones diarias y semanales verificadas sin zona horaria. Las demás conservan sus fechas guardadas. Todas las entradas guardadas muestra cada serie una vez.</translation>
+    </message>
+    <message>
         <source>Repeating event · The calendar shows its saved dates.</source>
         <translation type="vanished">Evento recurrente · El calendario muestra sus fechas guardadas.</translation>
     </message>
@@ -1463,7 +1475,7 @@ iOpenPod no puede leer ni cambiar el temporizador a través de esta conexión.</
     </message>
     <message>
         <source>Mini 2 / 1.4.1: qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once.</source>
-        <translation>Mini 2 / 1.4.1: Se muestran las repeticiones diarias y semanales verificadas sin zona horaria. Las demás conservan sus fechas guardadas. Todas las entradas guardadas muestra cada serie una vez.</translation>
+        <translation type="vanished">Mini 2 / 1.4.1: Se muestran las repeticiones diarias y semanales verificadas sin zona horaria. Las demás conservan sus fechas guardadas. Todas las entradas guardadas muestra cada serie una vez.</translation>
     </message>
     <message>
         <source>Recurrence expansion is not qualified for this firmware. Repeating events show their saved dates.</source>

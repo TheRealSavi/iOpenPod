@@ -1263,12 +1263,20 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Minuten vor Beginn</translation>
     </message>
     <message>
+        <source>Daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved.</source>
+        <translation>Tägliche/wöchentliche Wiederholungen benötigen Beginn und Ende ohne Zeitzone am selben Tag vor dem Jahr 3000. Ganztägige, zeitzonenbezogene und komplexe Wiederholungen bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>One saved reminder before a floating event&apos;s start is supported. This does not confirm live adoption, sound or physical delivery.</source>
+        <translation>Eine gespeicherte Erinnerung vor Beginn eines Termins ohne Zeitzone wird unterstützt. Dies bestätigt weder die Übernahme im laufenden Betrieb noch einen Ton oder die tatsächliche Benachrichtigung.</translation>
+    </message>
+    <message>
         <source>Mini 2 / 1.4.1: daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved.</source>
-        <translation>Mini 2 / 1.4.1: Tägliche/wöchentliche Wiederholungen benötigen Beginn und Ende ohne Zeitzone am selben Tag vor dem Jahr 3000. Ganztägige, zeitzonenbezogene und komplexe Wiederholungen bleiben erhalten.</translation>
+        <translation type="vanished">Mini 2 / 1.4.1: Tägliche/wöchentliche Wiederholungen benötigen Beginn und Ende ohne Zeitzone am selben Tag vor dem Jahr 3000. Ganztägige, zeitzonenbezogene und komplexe Wiederholungen bleiben erhalten.</translation>
     </message>
     <message>
         <source>Qualified Classic firmware: one saved reminder before a floating event&apos;s start. This does not confirm live adoption, sound or physical delivery.</source>
-        <translation>Verifizierte Classic-Firmware: eine gespeicherte Erinnerung vor Beginn eines Termins ohne Zeitzone. Dies bestätigt weder die Übernahme im laufenden Betrieb noch einen Ton oder die tatsächliche Benachrichtigung.</translation>
+        <translation type="vanished">Verifizierte Classic-Firmware: eine gespeicherte Erinnerung vor Beginn eines Termins ohne Zeitzone. Dies bestätigt weder die Übernahme im laufenden Betrieb noch einen Ton oder die tatsächliche Benachrichtigung.</translation>
     </message>
     <message>
         <source>Repeat and reminder editing are not qualified for this firmware. Imported settings are preserved.</source>
@@ -1374,6 +1382,10 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Alle gespeicherten Einträge</translation>
     </message>
     <message>
+        <source>Qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once.</source>
+        <translation>Verifizierte tägliche und wöchentliche Termine ohne Zeitzone werden angezeigt. Andere Wiederholungen behalten ihre gespeicherten Datumswerte. Alle gespeicherten Einträge zeigt jede Serie einmal.</translation>
+    </message>
+    <message>
         <source>Repeating event · The calendar shows its saved dates.</source>
         <translation type="vanished">Wiederkehrendes Ereignis · Der Kalender zeigt seine gespeicherten Datumsangaben.</translation>
     </message>
@@ -1463,7 +1475,7 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
     <message>
         <source>Mini 2 / 1.4.1: qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once.</source>
-        <translation>Mini 2 / 1.4.1: Verifizierte tägliche und wöchentliche Termine ohne Zeitzone werden angezeigt. Andere Wiederholungen behalten ihre gespeicherten Datumswerte. Alle gespeicherten Einträge zeigt jede Serie einmal.</translation>
+        <translation type="vanished">Mini 2 / 1.4.1: Verifizierte tägliche und wöchentliche Termine ohne Zeitzone werden angezeigt. Andere Wiederholungen behalten ihre gespeicherten Datumswerte. Alle gespeicherten Einträge zeigt jede Serie einmal.</translation>
     </message>
     <message>
         <source>Recurrence expansion is not qualified for this firmware. Repeating events show their saved dates.</source>

@@ -1,4 +1,4 @@
-"""Qualified single relative Calendar Reminders for the four latest Classics."""
+"""Qualified single relative Calendar Reminders, with exact firmware profiles."""
 
 from iPodDB.calendar.models import (
     CalendarDateForm,
@@ -9,8 +9,15 @@ from iPodDB.calendar.models import (
     CalendarReminderDraft,
 )
 
-_CLASSICS = frozenset(
+_TARGETS = frozenset(
     (
+        CalendarProfile.MINI_1_1_4_1,
+        CalendarProfile.MINI_2_1_4_1,
+        CalendarProfile.NANO_1_1_3_1,
+        CalendarProfile.NANO_3_1_1_3,
+        CalendarProfile.NANO_4_1_0_4,
+        CalendarProfile.NANO_5_1_0_2,
+        CalendarProfile.VIDEO_1_3,
         CalendarProfile.CLASSIC_6_1_1_2,
         CalendarProfile.CLASSIC_120GB_2_0_1,
         CalendarProfile.CLASSIC_UPDATER_35_2_0_4,
@@ -20,7 +27,7 @@ _CLASSICS = frozenset(
 
 
 def supports_reminders(profile: CalendarProfile) -> bool:
-    return type(profile) is CalendarProfile and profile in _CLASSICS
+    return type(profile) is CalendarProfile and profile in _TARGETS
 
 
 def validate_reminder(
@@ -28,7 +35,7 @@ def validate_reminder(
 ) -> None:
     if not supports_reminders(profile):
         raise CalendarEditError(
-            "Calendar Reminder edits are qualified only for the four latest Classic targets."
+            "Calendar Reminder edits are not qualified for this firmware."
         )
     if (
         type(reminder.minutes_before) is not int
