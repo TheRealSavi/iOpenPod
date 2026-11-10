@@ -901,7 +901,14 @@ def _correlate_ioreg_by_port_location(
     result: dict[str, HardwareIdentifiers] = {}
     for match in re.finditer(r'"BSD Name"\s*=\s*"(disk\d+)"', media_text):
         bsd_name = match.group(1)
-        info = _diskutil_info(Path(f"/dev/{bsd_name}"))
+        try:
+            info = _diskutil_info(Path(f"/dev/{bsd_name}"))
+        except MountInspectionError as error:
+            # Hardware enrichment is optional: a disk that vanished between the
+            # IOMedia snapshot and this lookup, or a diskutil timeout, must not
+            # abort discovery for the Volumes that are still mounted.
+            logger.debug("Could not read bus location for %s: %s", bsd_name, error)
+            continue
         tree_path = info.get("DeviceTreePath")
         if not isinstance(tree_path, str) or "@" not in tree_path:
             continue

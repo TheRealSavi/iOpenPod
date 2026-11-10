@@ -669,3 +669,39 @@ def test_ioreg_index_correlates_by_port_location_when_media_omits_usb_serial(
             transport_serial="000A270024360EA0",
         )
     }
+
+
+def test_ioreg_index_skips_disks_whose_location_lookup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Optional hardware enrichment must never abort discovery."""
+
+    media_text = (
+        "+-o Apple iPod Media  <class IOMedia>\n"
+        '  |   "BSD Name" = "disk4"\n'
+        "+-o Other Media  <class IOMedia>\n"
+        '  |   "BSD Name" = "disk5"\n'
+    )
+    devices_payload = plistlib.dumps(
+        {
+            "IORegistryEntryLocation": "00100000",
+            "USB Serial Number": "000A270024360EA0",
+            "idVendor": 1452,
+            "idProduct": 4711,
+        }
+    )
+
+    def run_ioreg(command: list[str]) -> bytes:
+        return media_text.encode() if "IOMedia" in command else devices_payload
+
+    def diskutil_info(target: Path) -> dict[str, object]:
+        if target == Path("/dev/disk4"):
+            raise MountInspectionError("diskutil timed out for a disk that vanished")
+        return {"DeviceTreePath": "IODeviceTree:/usb-drd0-port-hs@00100000"}
+
+    monkeypatch.setattr("storage.platform.macos._run_ioreg", run_ioreg)
+    monkeypatch.setattr("storage.platform.macos._diskutil_info", diskutil_info)
+
+    index = _ioreg_hardware_index()
+
+    assert set(index) == {"disk5"}
