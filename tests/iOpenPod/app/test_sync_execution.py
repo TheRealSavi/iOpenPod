@@ -865,10 +865,17 @@ def test_execution_builds_one_comparison_for_validation_and_playlists(
         library: LibrarySnapshot,
         *,
         file_tag_policy: str | None = None,
+        sync_ratings: bool = False,
     ) -> SyncPlan:
         nonlocal comparisons
         comparisons += 1
-        return prepare_sync_plan(host, ipod, library, file_tag_policy=file_tag_policy)
+        return prepare_sync_plan(
+            host,
+            ipod,
+            library,
+            file_tag_policy=file_tag_policy,
+            sync_ratings=sync_ratings,
+        )
 
     try:
         request = _request(device, _host(tmp_path, "New", playlists=True))
