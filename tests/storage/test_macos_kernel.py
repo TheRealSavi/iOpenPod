@@ -6,6 +6,7 @@ from __future__ import annotations
 import ctypes
 import errno
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,7 @@ from storage.platform.macos import (
     _DarwinVolumeCapabilities,
     _decode_required_c_string,
     _diskutil_info,
+    _ioreg_hardware_index,
     _observation_from_kernel,
     _parse_volume_attributes,
     _read_statfs,
@@ -583,3 +585,87 @@ int main(int argc, char **argv) {
         bytes(snapshot.f_mntfromname),
         b"",
     ]
+
+
+def test_diskutil_fallback_trusts_kernel_uuid_over_diskutil_placeholder(
+    tmp_path: Path,
+) -> None:
+    """HFS+ Volumes written by older iTunes report an all-zero DiskArbitration UUID."""
+
+    snapshot = _snapshot(tmp_path)
+    info: dict[str, object] = {
+        "DeviceIdentifier": "disk4s2",
+        "DeviceNode": "/dev/disk4s2",
+        "ParentWholeDisk": "disk4",
+        "MountPoint": str(tmp_path),
+        "VolumeUUID": "00000000-0000-0000-0000-000000000000",
+    }
+
+    identity = _validate_diskutil_fallback(info, snapshot, kernel_uuid=_VOLUME_UUID)
+
+    assert identity == _VOLUME_UUID
+
+
+def test_diskutil_fallback_still_rejects_placeholder_without_kernel_evidence(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path)
+    info: dict[str, object] = {
+        "DeviceIdentifier": "disk4s2",
+        "DeviceNode": "/dev/disk4s2",
+        "ParentWholeDisk": "disk4",
+        "MountPoint": str(tmp_path),
+        "VolumeUUID": "00000000-0000-0000-0000-000000000000",
+    }
+
+    with pytest.raises(MountInspectionError):
+        _validate_diskutil_fallback(info, snapshot)
+
+
+def test_ioreg_index_correlates_by_port_location_when_media_omits_usb_serial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Some macOS releases keep the USB serial out of the IOMedia subtree."""
+
+    media_text = (
+        "+-o Apple iPod Media  <class IOMedia>\n"
+        '  |   "Whole" = Yes\n'
+        '  |   "BSD Name" = "disk4"\n'
+        "  +-o partition map@1  <class IOMedia>\n"
+        '    |   "BSD Name" = "disk4s1"\n'
+    )
+    devices_payload = plistlib.dumps(
+        {
+            "IORegistryEntryLocation": "00100000",
+            "USB Serial Number": "000A270024360EA0",
+            "idVendor": 1452,
+            "idProduct": 4711,
+        }
+    )
+
+    def run_ioreg(command: list[str]) -> bytes:
+        return media_text.encode() if "IOMedia" in command else devices_payload
+
+    diskutil_calls: list[Path] = []
+
+    def diskutil_info(target: Path) -> dict[str, object]:
+        diskutil_calls.append(target)
+        return {
+            "DeviceTreePath": (
+                "IODeviceTree:/arm-io@10F00000/usb-drd0@82280000/usb-drd0-port-hs@00100000"
+            )
+        }
+
+    monkeypatch.setattr("storage.platform.macos._run_ioreg", run_ioreg)
+    monkeypatch.setattr("storage.platform.macos._diskutil_info", diskutil_info)
+
+    index = _ioreg_hardware_index()
+
+    assert diskutil_calls == [Path("/dev/disk4")]
+    assert index == {
+        "disk4": HardwareIdentifiers(
+            usb_vendor_id=1452,
+            usb_product_id=4711,
+            transport_serial="000A270024360EA0",
+        )
+    }

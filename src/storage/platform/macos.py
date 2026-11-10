@@ -38,6 +38,10 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 _VOLUMES_DIRECTORY = Path("/Volumes")
+
+# Placeholder identity that DiskArbitration reports for HFS+ Volumes written by
+# older iTunes releases, including several iPod models.
+_ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 _ATTR_CMN_RETURNED_ATTRS = 0x80000000
 _ATTR_VOL_INFO = 0x80000000
 _ATTR_VOL_CAPABILITIES = 0x00020000
@@ -722,13 +726,18 @@ def _require_same_snapshot(
         )
 
 
-def _normalized_uuid(value: str) -> str:
+def _parse_uuid(value: str) -> str:
     try:
         parsed = uuid.UUID(value.strip())
     except (AttributeError, ValueError) as error:
         raise MountInspectionError(
             "diskutil did not provide a valid Volume UUID"
         ) from error
+    return str(parsed).upper()
+
+
+def _normalized_uuid(value: str) -> str:
+    parsed = uuid.UUID(_parse_uuid(value))
     if parsed.int == 0:
         raise MountInspectionError("diskutil returned an all-zero Volume UUID")
     return str(parsed).upper()
@@ -740,7 +749,7 @@ def _fallback_uuid(info: dict[str, object]) -> str:
     )
     if not value:
         raise MountInspectionError("diskutil did not provide a stable Volume identity")
-    return _normalized_uuid(value)
+    return _parse_uuid(value)
 
 
 def _validate_diskutil_fallback(
@@ -773,7 +782,14 @@ def _validate_diskutil_fallback(
             "diskutil described a different Mount Point than statfs"
         )
     fallback_uuid = _fallback_uuid(info)
-    if kernel_uuid is not None and fallback_uuid != _normalized_uuid(kernel_uuid):
+    if kernel_uuid is None:
+        return _normalized_uuid(fallback_uuid)
+    kernel = _normalized_uuid(kernel_uuid)
+    if fallback_uuid != kernel:
+        if fallback_uuid == _ZERO_UUID:
+            # DiskArbitration reports a placeholder for this Volume while the
+            # kernel exposes a real identifier; the kernel is authoritative.
+            return kernel
         raise MountInspectionError(
             "diskutil and the kernel reported different Volume identities"
         )
@@ -817,11 +833,83 @@ def _ioreg_hardware_index() -> dict[str, HardwareIdentifiers]:
         media_output.decode("utf-8", errors="replace")
     )
     serial_to_identifiers = _parse_ioreg_usb_devices(devices_output)
-    return {
+    indexed = {
         bsd_name: identifiers
         for bsd_name, serial in bsd_to_serial.items()
         if (identifiers := serial_to_identifiers.get(serial)) is not None
     }
+    if indexed:
+        return indexed
+    # Some macOS releases stop printing the owning USB serial inside the IOMedia
+    # subtree, which leaves `_parse_ioreg_media_serials` empty and strips every
+    # device of its USB identity. Correlate through the port location instead.
+    return _correlate_ioreg_by_port_location(
+        media_output.decode("utf-8", errors="replace"),
+        devices_output,
+    )
+
+
+def _correlate_ioreg_by_port_location(
+    media_text: str,
+    devices_payload: bytes,
+) -> dict[str, HardwareIdentifiers]:
+    """Correlate mounted BSD disks with USB devices by bus location."""
+
+    try:
+        parsed: object = plistlib.loads(devices_payload)
+    except (plistlib.InvalidFileException, TypeError, ValueError):
+        return {}
+
+    by_location: dict[str, HardwareIdentifiers] = {}
+
+    def normalise(value: object) -> str:
+        return str(value).strip().upper().lstrip("0") if value is not None else ""
+
+    def collect(node: object) -> None:
+        if isinstance(node, list):
+            for item in cast("list[object]", node):
+                collect(item)
+            return
+        if not isinstance(node, dict):
+            return
+        properties = cast("dict[object, object]", node)
+        location = normalise(properties.get("IORegistryEntryLocation"))
+        serial_value = properties.get("USB Serial Number") or properties.get(
+            "kUSBSerialNumberString"
+        )
+        vendor_id = _object_identifier(properties.get("idVendor"))
+        product_id = _object_identifier(properties.get("idProduct"))
+        if (
+            location
+            and isinstance(serial_value, str)
+            and vendor_id is not None
+            and product_id is not None
+        ):
+            by_location[location] = HardwareIdentifiers(
+                usb_vendor_id=vendor_id,
+                usb_product_id=product_id,
+                transport_serial=_normalized_transport_serial(serial_value),
+            )
+        children = properties.get("IORegistryEntryChildren")
+        if isinstance(children, list):
+            collect(cast("list[object]", children))
+
+    collect(parsed)
+    if not by_location:
+        return {}
+
+    result: dict[str, HardwareIdentifiers] = {}
+    for match in re.finditer(r'"BSD Name"\s*=\s*"(disk\d+)"', media_text):
+        bsd_name = match.group(1)
+        info = _diskutil_info(Path(f"/dev/{bsd_name}"))
+        tree_path = info.get("DeviceTreePath")
+        if not isinstance(tree_path, str) or "@" not in tree_path:
+            continue
+        location = normalise(tree_path.rsplit("@", 1)[1])
+        identifiers = by_location.get(location)
+        if identifiers is not None:
+            result[bsd_name] = identifiers
+    return result
 
 
 def _run_ioreg(command: list[str]) -> bytes:
