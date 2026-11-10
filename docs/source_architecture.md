@@ -3546,3 +3546,13 @@ That provides the strongest decoupling.
 18. **Only one user-selected Active iPod is loaded at a time.**
 
 This arrangement keeps device knowledge, database knowledge, storage safety, and application behavior distinct while still allowing the four modules to cooperate through narrow, explicit interfaces.
+
+## Rating reconciliation
+
+The Application Layer owns native rating interpretation, reviewed baseline
+comparison and conflict policy. Sync captures the default-off Host write-back
+choice; it applies the resolved iPod rating through Library preparation and
+requests Host replacement only after verified device publication. Storage owns
+staging, source validation and atomic Host replacement. Failed Host updates retain
+rating baselines for retry. See
+[ADR-0251](adr/0251-reconcile-ratings-through-opt-in-host-back-sync.md).

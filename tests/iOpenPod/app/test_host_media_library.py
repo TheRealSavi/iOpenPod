@@ -323,7 +323,7 @@ def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) 
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.cache.reused == 0
-    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 16
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 17
 
 
 @pytest.mark.parametrize("damage", ["zero_size", "different_source"])
@@ -486,7 +486,7 @@ def test_in_memory_cache_notices_external_invalidation(
         cache.path.write_bytes(b"invalid")
     changed = scanner.scan((folder,), checkpoint=lambda: None)
     assert changed.cache == HostMediaCacheStats(inspected=1)
-    assert json.loads(cache.path.read_bytes())["version"] == 16
+    assert json.loads(cache.path.read_bytes())["version"] == 17
 
 
 def test_cache_save_failure_retains_work_in_memory_and_retries_persistence(
@@ -1792,7 +1792,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         == "1,2,3"
     )
     stored = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert stored["version"] == 16
+    assert stored["version"] == 17
     assert "payload_sha256" not in stored["entries"][0]["metadata"]
 
 
@@ -2247,7 +2247,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 16
+    assert document["version"] == 17
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {

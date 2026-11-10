@@ -53,3 +53,19 @@ def test_id3_popm_rating_is_unchanged(tmp_path: Path) -> None:
     parsed.tags.add(FRAMES.POPM(email="user@example.test", rating=196, count=0))
     parsed.save()
     assert scan_twice(tmp_path).rating == 80
+
+
+@pytest.mark.parametrize("raw", ["nan", "inf", "-1", "256", "true"])
+def test_invalid_native_rating_is_ignored(raw: str) -> None:
+    from iOpenPod.app.media.tags import read_tag_values
+
+    assert "rating" not in {tag.name for tag in read_tag_values({"RATING": [raw]})}
+
+
+@pytest.mark.parametrize("key", ["RATING", "rating", "WM/SharedUserRating"])
+def test_native_rating_aliases(key: str) -> None:
+    from iOpenPod.app.media.tags import read_tag_values
+
+    assert {tag.name: tag.value for tag in read_tag_values({key: ["4"]})}[
+        "rating"
+    ] == "80"

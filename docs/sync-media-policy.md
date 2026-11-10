@@ -106,3 +106,10 @@ representative media coverage and supported-device hardware records remain
 validation work.
 See [Sync validation](sync-validation.md) for the exercised combinations and known
 backend limits; encoder advertisement alone is not playback validation.
+
+## Current rating implementation
+
+The broader Back Sync history above describes the historical implementation.
+Current rating reads, opt-in writes, conflict choices and export coverage are
+specified in [Host media tags](host-media-tags.md#rating-reads-and-back-sync) and
+[ADR-0251](adr/0251-reconcile-ratings-through-opt-in-host-back-sync.md).

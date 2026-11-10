@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 # Native names precede editor/FFprobe aliases. Order defines conflict precedence.
 _ALIASES: dict[str, tuple[str, ...]] = {
+    "rating": ("----:com.apple.iTunes:RATING", "RATING", "WM/SharedUserRating"),
     "title": ("TIT2", "©nam", "title"),
     "artist": ("TPE1", "©ART", "artist", "Author"),
     "album": ("TALB", "©alb", "album", "WM/AlbumTitle"),
@@ -204,6 +205,21 @@ def read_tag_values(tags: object) -> tuple[MediaTag, ...]:
             if text.strip():
                 result[field] = text if field == "lyrics" else text.strip()
                 break
+    if "rating" in result:
+        try:
+            value = float(result["rating"])
+            if not math.isfinite(value) or not 0 <= value <= 255:
+                raise ValueError("Invalid rating")
+            scaled = (
+                value * 20
+                if value <= 5
+                else value
+                if value <= 100
+                else value * 100 / 255
+            )
+            result["rating"] = str(min(100, int(scaled / 20 + 0.5) * 20))
+        except ValueError:
+            del result["rating"]
     if isinstance(tags, ID3):
         native = cast("Any", tags)
         podcast = native.get("PCST")

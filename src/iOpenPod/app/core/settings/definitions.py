@@ -357,6 +357,17 @@ SPOKEN_WORD_BITRATE = SettingDefinition[int](
     device_overridable=True,
     validator=lambda value: type(value) is int and value in (32, 48, 64, 80, 96),
 )
+BACK_SYNC_RATINGS = SettingDefinition[bool](
+    key="sync/back-sync-ratings",
+    value_type=bool,
+    default=False,
+)
+RATING_CONFLICT_POLICY = SettingDefinition[str](
+    key="sync/rating-conflict-policy",
+    value_type=str,
+    default="host",
+    validator=_one_of("host", "ipod", "average"),
+)
 COMPUTE_MISSING_BPM = SettingDefinition[bool](
     key="sync/compute-missing-bpm",
     value_type=bool,

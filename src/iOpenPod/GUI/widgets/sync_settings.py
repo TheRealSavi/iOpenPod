@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
+    BACK_SYNC_RATINGS,
     COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
@@ -15,6 +16,7 @@ from iOpenPod.app.core.settings.definitions import (
     LOSSY_QUALITY,
     NORMALIZE_SAMPLE_RATE,
     NORMALIZE_TAGS_AFTER_SYNC,
+    RATING_CONFLICT_POLICY,
     RETRANSCODE_LOSSY,
     ROCKBOX_METADATA_SUPPORT,
     ROTATE_TALL_PHOTOS,
@@ -107,6 +109,10 @@ class SyncSettings(QWidget):
             scope, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
         )
         self._genius = _Choice(scope, ANALYZE_FOR_GENIUS, "analyzeForGenius", self)
+        self._ratings = _Choice(scope, BACK_SYNC_RATINGS, "backSyncRatings", self)
+        self._rating_policy = _Choice(
+            scope, RATING_CONFLICT_POLICY, "ratingConflictPolicy", self
+        )
         self._bpm = _Choice(scope, COMPUTE_MISSING_BPM, "computeMissingBpm", self)
         self._normalize = _Choice(
             scope, NORMALIZE_TAGS_AFTER_SYNC, "normalizeTagsAfterSync", self
@@ -123,6 +129,7 @@ class SyncSettings(QWidget):
             self._scrobble,
             self._genius,
             self._bpm,
+            self._ratings,
             self._sound_check,
             self._normalize,
             self._rotate,
@@ -133,6 +140,7 @@ class SyncSettings(QWidget):
         group.setMaximumWidth(960)
         for row in self._rows:
             group.add_row(row)
+        group.add_row(self._rating_policy)
         group.add_row(self._podcast_row)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -168,6 +176,25 @@ class SyncSettings(QWidget):
                 "Analyze music and refresh native Genius recommendations during Sync "
                 "on supported iPods. Off skips Genius generation and keeps existing "
                 "Genius data where possible."
+            ),
+        )
+        self._ratings.set_copy(
+            self.tr("Sync star ratings to Host files"),
+            self.tr(
+                "Write changed ratings to paired Host files after verified Sync. Off by default."
+            ),
+        )
+        self._rating_policy.configure(
+            (
+                (self.tr("Host wins"), "host"),
+                (self.tr("iPod wins"), "ipod"),
+                (self.tr("Average"), "average"),
+            )
+        )
+        self._rating_policy.set_copy(
+            self.tr("When both ratings change"),
+            self.tr(
+                "Choose which rating to use when the Host and iPod ratings both changed."
             ),
         )
         self._bpm.set_copy(

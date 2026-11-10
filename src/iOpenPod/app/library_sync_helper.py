@@ -107,8 +107,15 @@ class SyncDetails:
     host_tag_sha256: str | None = None
     file_tag_policy: str | None = None
     stream_selection_sha256: str | None = None
+    host_rating: int | None = None
+    ipod_rating: int | None = None
 
     def __post_init__(self) -> None:
+        for rating in (self.host_rating, self.ipod_rating):
+            if rating is not None and (
+                type(rating) is not int or not 0 <= rating <= 100
+            ):
+                raise ValueError("Sync rating baselines must use the 0-100 scale")
         if not self.last_synced_at.strip():
             raise ValueError("Sync Details require a last-synced timestamp")
         if self.host_size_bytes < 0:
@@ -1589,6 +1596,8 @@ def _sync_document(value: SyncDetails | None) -> dict[str, object] | None:
         "host_tag_sha256": value.host_tag_sha256,
         "file_tag_policy": value.file_tag_policy,
         "stream_selection_sha256": value.stream_selection_sha256,
+        "host_rating": value.host_rating,
+        "ipod_rating": value.ipod_rating,
     }
 
 
@@ -1666,6 +1675,8 @@ def _sync_from_document(value: object) -> SyncDetails | None:
         "host_tag_sha256",
         "file_tag_policy",
         "stream_selection_sha256",
+        "host_rating",
+        "ipod_rating",
     }
     row = _object(value, "Sync details")
     if not required <= row.keys() or row.keys() - required - optional:
@@ -1708,6 +1719,12 @@ def _sync_from_document(value: object) -> SyncDetails | None:
             if row.get("file_tag_policy") is None
             else _text(row["file_tag_policy"], "file_tag_policy")
         ),
+        host_rating=None
+        if row.get("host_rating") is None
+        else _nonnegative_integer(row["host_rating"], "host_rating"),
+        ipod_rating=None
+        if row.get("ipod_rating") is None
+        else _nonnegative_integer(row["ipod_rating"], "ipod_rating"),
         stream_selection_sha256=(
             None
             if row.get("stream_selection_sha256") is None

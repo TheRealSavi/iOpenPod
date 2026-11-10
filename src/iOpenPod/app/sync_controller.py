@@ -11,10 +11,12 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
+    BACK_SYNC_RATINGS,
     COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
     FIT_THUMBNAILS,
     NORMALIZE_TAGS_AFTER_SYNC,
+    RATING_CONFLICT_POLICY,
     ROCKBOX_METADATA_SUPPORT,
     ROTATE_TALL_PHOTOS,
 )
@@ -422,6 +424,8 @@ class SyncController(QObject):
                 self._workspace.revision,
                 settings=read_transcoder_settings(self._settings),
                 options=SyncOptions(
+                    back_sync_ratings=self._settings.get(BACK_SYNC_RATINGS),
+                    rating_conflict_policy=self._settings.get(RATING_CONFLICT_POLICY),
                     compute_missing_bpm=self._settings.get(COMPUTE_MISSING_BPM),
                     scrobble=self._settings.get(SCROBBLE_DURING_SYNC),
                     analyze_for_genius=self._settings.get(ANALYZE_FOR_GENIUS),
