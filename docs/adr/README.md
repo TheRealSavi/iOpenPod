@@ -315,5 +315,3 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0248: Edit qualified firmware Preferences](0248-edit-qualified-firmware-preferences.md)
 - [ADR-0249: Qualify Calendar occurrences and reminders by firmware](0249-qualify-calendar-occurrences-and-reminders-by-firmware.md)
 - [ADR-0250: Prefer device write policy over source signature markers](0250-prefer-device-write-policy-over-source-signature-markers.md)
-- [ADR-0251: Reconcile ratings through opt-in Host Back Sync](0251-reconcile-ratings-through-opt-in-host-back-sync.md)
-- [ADR-0252: Reinspect legacy Host Tracks for native ratings](0252-reinspect-legacy-host-tracks-for-native-ratings.md)

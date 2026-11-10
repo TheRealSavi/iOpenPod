@@ -140,8 +140,4 @@ iPod baselines. Concurrent differing changes use Host wins (default), iPod wins,
 or Average. Unknown baselines never authorize the first Host write. Deliberate
 clears propagate as zero. Supported writes are MP3, MP4, FLAC, Ogg Vorbis and Opus;
 other native formats remain readable. Exported ID3/MP4 copies receive their current
-Library rating independently of Host Back Sync. See
-[ADR-0251](adr/0251-reconcile-ratings-through-opt-in-host-back-sync.md).
-
-The legacy cache migration preserves acoustic analysis while refreshing native
-ratings; see [ADR-0252](adr/0252-reinspect-legacy-host-tracks-for-native-ratings.md).
+Library rating independently of Host Back Sync.

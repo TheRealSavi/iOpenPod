@@ -3555,4 +3555,4 @@ choice; it applies the resolved iPod rating through Library preparation and
 requests Host replacement only after verified device publication. Storage owns
 staging, source validation and atomic Host replacement. Failed Host updates retain
 rating baselines for retry. See
-[ADR-0251](adr/0251-reconcile-ratings-through-opt-in-host-back-sync.md).
+[Host media tags](host-media-tags.md#rating-reads-and-back-sync).

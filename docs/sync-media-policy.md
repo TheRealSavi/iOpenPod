@@ -111,5 +111,4 @@ backend limits; encoder advertisement alone is not playback validation.
 
 The broader Back Sync history above describes the historical implementation.
 Current rating reads, opt-in writes, conflict choices and export coverage are
-specified in [Host media tags](host-media-tags.md#rating-reads-and-back-sync) and
-[ADR-0251](adr/0251-reconcile-ratings-through-opt-in-host-back-sync.md).
+specified in [Host media tags](host-media-tags.md#rating-reads-and-back-sync).
