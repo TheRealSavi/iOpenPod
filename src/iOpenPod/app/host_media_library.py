@@ -3223,24 +3223,6 @@ def _decode_cache_contents(
     decoded_records: list[_CachedRecord] = []
     for entry in entries:
         record = _record_from_document(entry, version=version)
-        if (
-            version < 17
-            and isinstance(record, _CachedTrackRecord)
-            and Path(record.path).suffix.casefold()
-            in {
-                ".m4a",
-                ".m4b",
-                ".mp4",
-                ".m4v",
-                ".mov",
-                ".flac",
-                ".ogg",
-                ".opus",
-                ".ape",
-                ".wma",
-            }
-        ):
-            continue
         if version < 14 and isinstance(record, _CachedPlaylistRecord):
             # Earlier parsers dropped network and valid POSIX name references.
             # Reparse unchanged Playlists without rereading cached media.
@@ -3434,6 +3416,10 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             # Reobserve old coverless records once rather than reuse that claim.
             embedded_artwork_available = bool(artwork_kind_value)
             metadata_complete = metadata_complete and embedded_artwork_available
+        if version <= 16:
+            # Earlier parsers omitted native ratings while marking Tracks complete.
+            # Reinspect each unchanged Track once; retain its Acoustic Fingerprint.
+            metadata_complete = False
         artwork_path_value = _text(metadata["artwork_path"], "artwork_path")
         artwork_digest_value = _text(
             metadata["artwork_content_sha256"],

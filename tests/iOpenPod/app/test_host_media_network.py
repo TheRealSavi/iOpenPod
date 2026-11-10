@@ -148,7 +148,7 @@ def test_network_playlist_target_still_requires_review_before_inspection(
     assert not Path(inspected[0]).exists()
 
 
-def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
+def test_v12_cache_reparses_network_playlist_and_track_without_rereading_photo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     song = tmp_path / "Song.wav"
@@ -208,8 +208,8 @@ def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
         checkpoint: Callable[[], None] | None = None,
         max_bytes: int | None = None,
     ) -> object:
-        if self.path in {HostPath(song), HostPath(photo)}:
-            pytest.fail("Playlist migration reread unchanged Track or Photo content")
+        if self.path == HostPath(photo):
+            pytest.fail("Playlist migration reread unchanged Photo content")
         return native_open(self, checkpoint=checkpoint, max_bytes=max_bytes)
 
     monkeypatch.setattr(LocalHostFile, "open_read", reject_media_read)
@@ -220,7 +220,7 @@ def test_v12_cache_reparses_network_playlist_without_rereading_tracks_or_photos(
     assert pending.external_references[0].playlists == (HostPath(playlist),)
     assert not pending.external_references[0].available
     assert not pending.issues
-    assert pending.cache == HostMediaCacheStats(reused=2, inspected=1)
+    assert pending.cache == HostMediaCacheStats(reused=1, inspected=2)
     stored = json.loads(cache.path.read_bytes())
     assert stored["version"] == 17
     playlist_entry = next(row for row in stored["entries"] if row["kind"] == "playlist")

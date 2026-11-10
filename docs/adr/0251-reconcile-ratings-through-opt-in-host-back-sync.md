@@ -33,7 +33,8 @@ MP3 writes POPM; MP4 writes `----:com.apple.iTunes:RATING`, independently of the
 content-advisory `rtng` atom; FLAC, Ogg Vorbis and Opus write `RATING`. Legacy
 ID3v2.2 conversion is rejected. Exported ID3/MP4 copies receive the current Library
 rating, including clears. Ratings do not authorize listening-history tag writes.
-Host Media Scan Cache v17 refreshes previously unsupported native rating formats.
+Host Media Scan Cache v17 reinspects legacy Track metadata once while retaining
+cached Acoustic Fingerprints; see ADR-0252.
 
 Tests use authored media and virtual devices. Physical iPods, native Windows and
 network filesystem replacement still require acceptance on those platforms.

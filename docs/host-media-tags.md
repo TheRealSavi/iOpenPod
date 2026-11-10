@@ -3,7 +3,8 @@
 The Application Layer's `media.tags` adapter interprets native Mutagen values and
 FFprobe metadata for Host Media Scan, music import, and Sync enrichment. Scanning
 is read-only. Normalized fields survive Host Media Scan Cache v17. Older caches migrate while
-reusing unchanged covered media; pre-v17 native-rating formats are reinspected. Pre-v12 no-cover records
+reusing unchanged covered media. Pre-v17 Track metadata is reinspected once
+while retaining cached Acoustic Fingerprints; Photos and folder artwork stay reusable. Pre-v12 no-cover records
 are reinspected once because they did not distinguish absent artwork from an
 unreadable embedded image. Tags describe Library classification, not codec
 compatibility. See [ADR-0133](adr/0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md).
@@ -127,9 +128,10 @@ as Music, matching [Original iOpenPod issue 222](https://github.com/TheRealSavi/
 
 ## Rating reads and Back Sync
 
-Numeric native ratings accept 1–5 stars, 0–100 percentages, or values above 100
-on the 0–255 scale, rounded to whole stars. Zero is unrated. Malformed, negative,
-nonfinite and out-of-range values are ignored. ID3 POPM keeps its existing mapping.
+Numeric native ratings accept 1–5 stars and 0–100 percentages. Values above 100
+use the original POPM thresholds. Positive values round to at least one whole
+star and clamp at five; nonpositive values become zero. Nonnumeric and nonfinite
+values are ignored. ID3 POPM keeps its existing mapping.
 MP4 content advisory remains separate from star ratings.
 
 Settings > Sync > Sync star ratings to Host files is off by default. With it on,
@@ -140,3 +142,6 @@ clears propagate as zero. Supported writes are MP3, MP4, FLAC, Ogg Vorbis and Op
 other native formats remain readable. Exported ID3/MP4 copies receive their current
 Library rating independently of Host Back Sync. See
 [ADR-0251](adr/0251-reconcile-ratings-through-opt-in-host-back-sync.md).
+
+The legacy cache migration preserves acoustic analysis while refreshing native
+ratings; see [ADR-0252](adr/0252-reinspect-legacy-host-tracks-for-native-ratings.md).
