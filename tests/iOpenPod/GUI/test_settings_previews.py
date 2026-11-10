@@ -1,6 +1,7 @@
 """Settings illustrations follow layout, hover, and popup lifetime without writes."""
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import (
@@ -13,10 +14,11 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QEnterEvent, QPalette, QPixmap
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QGraphicsOpacityEffect, QTabWidget, QWidget
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QTabBar, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.core.settings.definitions import DarkTheme, LightTheme
+from iOpenPod.GUI.pages import settings_page
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.settings_illustrations import (
     SettingExample,
@@ -26,6 +28,7 @@ from iOpenPod.GUI.presentation.settings_illustrations import (
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
+from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
 from iOpenPod.GUI.widgets.settings_tab import (
     SettingsExampleImage,
     SettingsPreview,
@@ -90,16 +93,51 @@ def test_tabs_and_all_categories_share_responsive_width(page: SettingsPage) -> N
             _settle()
             tab = tabs.currentWidget()
             assert isinstance(tab, SettingsTab)
-            expected = (
-                960 if width >= 1720 else tab.viewport().width() - 2 * LAYOUT.space_lg
-            )
-            assert tabs.tabBar().width() == expected
+            available = tab.viewport().width() - 2 * LAYOUT.space_lg
+            expected = 960 if width >= 1720 else available
+            assert tabs.tabBar().width() == available
             assert tab.preview.isVisible() == (width >= 1720)
             bar_left = tabs.tabBar().mapTo(page, tabs.tabBar().rect().topLeft()).x()
             for group in tab.findChildren(SettingGroup):
                 if group.isVisible():
                     assert group.width() == expected
                     assert group.mapTo(page, group.rect().topLeft()).x() == bar_left
+
+
+def _visible_tabs_fit(bar: QTabBar) -> bool:
+    visible = [index for index in range(bar.count()) if bar.isTabVisible(index)]
+    return bar.tabRect(visible[-1]).right() < bar.width()
+
+
+@pytest.mark.parametrize("language", ["en", "de", "es"])
+def test_every_tab_fits_beside_the_example_with_the_linux_tab(
+    monkeypatch: pytest.MonkeyPatch, language: str
+) -> None:
+    monkeypatch.setattr(settings_page, "sys", SimpleNamespace(platform="linux"))
+    context = build_context()
+    context.settings.load_device("one", {})
+    context.i18n_manager.set_language(language)
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    try:
+        page.resize(1760, 1000)
+        page.show()
+        _settle()
+        tabs = page.findChild(QTabWidget, "settingsTabs")
+        switcher = page.findChild(SettingsScopeSwitcher)
+        assert tabs is not None and switcher is not None
+        bar = tabs.tabBar()
+        for device in (False, True):
+            switcher.select_device(device)
+            _settle()
+            tab = tabs.currentWidget()
+            assert isinstance(tab, SettingsTab)
+            assert bar.width() == tab.viewport().width() - 2 * LAYOUT.space_lg
+            assert _visible_tabs_fit(bar)
+    finally:
+        page.close()
+        page.deleteLater()
+        context.i18n_manager.set_language("en")
+        context.shutdown()
 
 
 def test_dropdown_retains_example_and_highlights_without_saving(

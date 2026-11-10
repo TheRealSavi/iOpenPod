@@ -1570,6 +1570,10 @@ QTabBar::tab:hover {{
     background-color: {tokens.surface_hover};
 }}
 
+QTabWidget#settingsTabs QTabBar::tab {{
+    min-width: 0px;
+}}
+
 QTabWidget#playbackTabs QTabBar::tab {{
     min-width: {LAYOUT.playback_pane_width // 3 - 2 * LAYOUT.space_xs}px;
     padding: 0 {LAYOUT.space_xs}px;

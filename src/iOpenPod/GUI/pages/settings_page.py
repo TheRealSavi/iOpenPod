@@ -564,7 +564,10 @@ class SettingsPage(QWidget):
     def _update_tab_width(self) -> None:
         current = self._tabs.currentWidget()
         if isinstance(current, SettingsTab):
-            self._tabs.tabBar().setFixedWidth(current.column_width)
+            # Span the page, including beside the example image, so every label fits.
+            self._tabs.tabBar().setFixedWidth(
+                max(1, current.viewport().width() - 2 * LAYOUT.space_lg)
+            )
 
     def retranslate_ui(self) -> None:
         self._update_version()
@@ -769,6 +772,7 @@ class SettingsPage(QWidget):
             else self._appearance_tab
         )
         del blocker
+        self._update_tab_width()
         self._draft_all_changes_row.setVisible(not device)
         self._navigation_style_row.setVisible(not device)
         self._volume_presentation_row.setVisible(not device)

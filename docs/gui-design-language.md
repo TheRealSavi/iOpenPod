@@ -535,10 +535,13 @@ fixed text widths.
 
 ## Settings examples
 
-Settings tabs align with the setting groups and share their responsive width.
-Below 1,720 logical pixels of Settings page width, the column fills the available
-viewport inside the standard page margins. At that width and above, it returns to
-960 logical pixels and reserves the remaining space for an example image.
+Settings tabs start at the left edge of the setting groups and always span the
+available viewport inside the standard page margins, including beside the example
+image. Below 1,720 logical pixels of Settings page width, the column fills that same
+width. At that width and above, it returns to 960 logical pixels and reserves the
+remaining space for an example image. Settings tabs size to their labels rather than
+the shared minimum tab width and share any spare width, so tabs may differ in width;
+scroll buttons appear only when the page itself is too narrow for every label.
 
 Hovering an illustrated Setting row shows its example; an open dropdown retains priority until
 it closes. Rows without a meaningful visual example leave the space blank.
