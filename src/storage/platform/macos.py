@@ -861,6 +861,7 @@ def _correlate_ioreg_by_port_location(
         return {}
 
     by_location: dict[str, HardwareIdentifiers] = {}
+    shared_locations: set[str] = set()
 
     def normalise(value: object) -> str:
         return str(value).strip().upper().lstrip("0") if value is not None else ""
@@ -885,16 +886,26 @@ def _correlate_ioreg_by_port_location(
             and vendor_id is not None
             and product_id is not None
         ):
-            by_location[location] = HardwareIdentifiers(
+            identifiers = HardwareIdentifiers(
                 usb_vendor_id=vendor_id,
                 usb_product_id=product_id,
                 transport_serial=_normalized_transport_serial(serial_value),
             )
+            existing = by_location.get(location)
+            if existing is not None and existing != identifiers:
+                # Port locations are only unique per controller. Two devices on
+                # different controllers can share one, and picking either would
+                # attach the wrong hardware identity to a mounted iPod.
+                shared_locations.add(location)
+            else:
+                by_location[location] = identifiers
         children = properties.get("IORegistryEntryChildren")
         if isinstance(children, list):
             collect(cast("list[object]", children))
 
     collect(parsed)
+    for location in shared_locations:
+        by_location.pop(location, None)
     if not by_location:
         return {}
 

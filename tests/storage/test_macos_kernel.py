@@ -705,3 +705,43 @@ def test_ioreg_index_skips_disks_whose_location_lookup_fails(
     index = _ioreg_hardware_index()
 
     assert set(index) == {"disk5"}
+
+
+def test_ioreg_index_ignores_port_locations_shared_by_distinct_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A port location is only unique per controller."""
+
+    media_text = (
+        "+-o First Media  <class IOMedia>\n"
+        '  |   "BSD Name" = "disk4"\n'
+        "+-o Second Media  <class IOMedia>\n"
+        '  |   "BSD Name" = "disk5"\n'
+    )
+    devices_payload = plistlib.dumps(
+        [
+            {
+                "IORegistryEntryLocation": "00100000",
+                "USB Serial Number": "000A270024360EA0",
+                "idVendor": 1452,
+                "idProduct": 4711,
+            },
+            {
+                "IORegistryEntryLocation": "00100000",
+                "USB Serial Number": "000A270024360EA1",
+                "idVendor": 1452,
+                "idProduct": 4712,
+            },
+        ]
+    )
+
+    def run_ioreg(command: list[str]) -> bytes:
+        return media_text.encode() if "IOMedia" in command else devices_payload
+
+    def diskutil_info(_target: Path) -> dict[str, object]:
+        return {"DeviceTreePath": "IODeviceTree:/usb-port-hs@00100000"}
+
+    monkeypatch.setattr("storage.platform.macos._run_ioreg", run_ioreg)
+    monkeypatch.setattr("storage.platform.macos._diskutil_info", diskutil_info)
+
+    assert _ioreg_hardware_index() == {}
