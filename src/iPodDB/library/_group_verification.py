@@ -240,7 +240,10 @@ def verify_browse_groups(
                     f"Artist {identity} is shared by distinct exact names.",
                     output[first_id],
                 )
-            if (candidates and candidates != {identity}) or (
+            # A vintage Library can hold several native browse records for one
+            # name. The writer keeps one of them, so any retained candidate is
+            # an acceptable owner; inventing or borrowing an ID is not.
+            if (candidates and identity not in candidates) or (
                 not candidates and identity in source_browse_ids
             ):
                 fail(

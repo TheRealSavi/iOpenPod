@@ -38,7 +38,7 @@ from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._track_header_expansion import field_fits
 from iPodDB.library._track_writing import edit_text
 from iPodDB.library.models import LibrarySnapshot, Track
-from iPodDB.library.writing import WriteIssue
+from iPodDB.library.writing import IssueSeverity, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 logger = logging.getLogger(__name__)
@@ -297,15 +297,44 @@ def reconcile_hidden(
                 # membership change; keep each Track's existing association.
                 if not split_artist and all(t in original.tracks for t in members):
                     continue
+                if split_artist:
+                    issues.append(
+                        WriteIssue(
+                            "library.ambiguous_group",
+                            "Album or artist group has conflicting source identities.",
+                            field="album" if album else "artist",
+                        )
+                    )
+                    continue
+                # Several native records already carry this name, which older
+                # iTunes builds left behind. Adding members needs no new owner,
+                # so keep the record that owns most of the group instead of
+                # refusing the whole write. The choice stays visible as a
+                # warning: nothing downstream can tell which record the user
+                # actually meant.
+                member_ids = {t.track_id for t in members}
+                identity = max(
+                    sorted(candidates),
+                    key=lambda candidate: len(
+                        native_members.get(candidate, set()) & member_ids
+                    ),
+                )
                 issues.append(
                     WriteIssue(
                         "library.ambiguous_group",
-                        "Album or artist group has conflicting source identities.",
+                        "Several native browse records carry this name; "
+                        "the one owning most members was kept.",
+                        severity=IssueSeverity.WARNING,
                         field="album" if album else "artist",
+                        detail=(
+                            f"Dataset {dataset_kind}, candidates "
+                            f"{sorted(candidates)!r}, kept {identity}, "
+                            f"requested group {key!r}."
+                        ),
                     )
                 )
-                continue
-            identity = next(iter(candidates), 0)
+            else:
+                identity = next(iter(candidates), 0)
             if row_counts[identity] > 1:
                 issues.append(
                     WriteIssue(
