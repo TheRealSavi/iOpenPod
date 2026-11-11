@@ -1,221 +1,245 @@
-"""Firmware-qualified recurrence and saved reminder controls for event drafts."""
+"""Repeat and saved reminder controls for Calendar event drafts."""
 
-from PySide6.QtCore import QDate, QEvent
-from PySide6.QtGui import QResizeEvent
+from PySide6.QtCore import QDate, QEvent, QTime
 from PySide6.QtWidgets import (
     QCheckBox,
     QDateEdit,
     QFormLayout,
     QLabel,
     QSpinBox,
+    QTimeEdit,
     QWidget,
 )
-from whenever import Date, PlainDateTime, Time
+from whenever import Date, Instant, PlainDateTime
 
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.calendar_repeat_editor import (
+    CalendarDateList,
+    CalendarRepeatEditor,
+)
 from iPodDB.calendar import (
     UNCHANGED,
-    CalendarDateForm,
     CalendarEditError,
     CalendarEntry,
     CalendarEntryKind,
-    CalendarFrequency,
-    CalendarProfile,
+    CalendarExceptions,
     CalendarRecurrenceRule,
     CalendarReminderDraft,
     Unchanged,
     editable_reminder,
+    recurrence_exceptions,
     recurrence_rule,
-    supports_recurrence,
-    supports_reminders,
     validate_calendar_recurrence,
     validate_calendar_reminder,
+    validate_exceptions,
 )
+
+_ABSOLUTE = 4
 
 
 class CalendarOptions(QWidget):
-    """Preserve unsupported source state and emit only explicitly changed options."""
+    """Edit recognized event options and keep other imported properties intact."""
 
     def __init__(
         self,
-        profile: CalendarProfile,
         entry: CalendarEntry | None,
         kind: CalendarEntryKind,
         initial_date: Date,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._profile = profile
         self._entry = entry
-        self._rule = recurrence_rule(entry, profile) if entry else None
-        self._reminder = editable_reminder(entry, profile) if entry else None
+        rule = recurrence_rule(entry) if entry else None
+        self._reminder = editable_reminder(entry) if entry else None
         event = kind is CalendarEntryKind.EVENT
-        floating = entry is None or bool(
-            entry.start and entry.start.form is CalendarDateForm.FLOATING
+        properties: set[str] = (
+            {prop.name for prop in entry.component.properties} if entry else set()
         )
-        self._can_repeat = (
-            event
-            and supports_recurrence(profile)
-            and floating
-            and (entry is None or not entry.has_recurrence or self._rule is not None)
+        can_edit_repeats = event and not ({"DURATION", "RECURRENCE-ID"} & properties)
+        self._can_repeat = can_edit_repeats and (
+            "RRULE" not in properties or rule is not None
         )
-        self._can_remind = (
-            event
-            and supports_reminders(profile)
-            and floating
-            and (entry is None or not entry.reminders or self._reminder is not None)
-        )
-        layout = QFormLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self.frequency = AppComboBox(self)
-        self.frequency.setObjectName("calendarRepeat")
-        self.frequency.addItems(
-            [self.tr("Does not repeat"), self.tr("Daily"), self.tr("Weekly")]
-        )
-        self.interval = QSpinBox(self)
-        self.interval.setObjectName("calendarRepeatInterval")
-        self.interval.setRange(1, 1000)
-        self.limit = AppComboBox(self)
-        self.limit.setObjectName("calendarRepeatLimit")
-        self.limit.addItems(
-            [
-                self.tr("Firmware default end"),
-                self.tr("After a number of occurrences"),
-                self.tr("Through a date"),
-            ]
-        )
-        self.count = QSpinBox(self)
-        self.count.setObjectName("calendarRepeatCount")
-        self.count.setRange(1, 10000)
-        self.count.setValue(3)
-        self.until = QDateEdit(self)
-        self.until.setObjectName("calendarRepeatUntil")
-        self.until.setCalendarPopup(True)
-        self.until.setDateRange(QDate(100, 1, 1), QDate(2999, 12, 31))
-        self.until.setDate(
-            QDate(initial_date.year, initial_date.month, initial_date.day)
-        )
-        if self._rule is not None:
-            rule = self._rule
-            self.frequency.setCurrentIndex(
-                1 if rule.frequency is CalendarFrequency.DAILY else 2
+        self._can_exceptions = can_edit_repeats
+        exceptions = CalendarExceptions()
+        if entry is not None and self._can_exceptions:
+            try:
+                saved = recurrence_exceptions(entry)
+                if saved != CalendarExceptions():
+                    validate_exceptions(
+                        saved,
+                        entry.start.value if entry.start else None,
+                        entry.end.value if entry.end else None,
+                    )
+                exceptions = saved
+            except ValueError:
+                self._can_exceptions = False
+        self._can_remind = event and (
+            entry is None
+            or (
+                entry.start is not None
+                and entry.start.value is not None
+                and (not entry.reminders or self._reminder is not None)
             )
-            self.interval.setValue(rule.interval)
-            if rule.count is not None:
-                self.limit.setCurrentIndex(1)
-                self.count.setValue(rule.count)
-            elif rule.until is not None:
-                self.limit.setCurrentIndex(2)
-                self.until.setDate(
-                    QDate(rule.until.year, rule.until.month, rule.until.day)
-                )
-        if entry is not None and entry.has_recurrence and self._rule is None:
-            self.frequency.addItem(self.tr("Imported repeat (preserved)"))
-            self.frequency.setCurrentIndex(3)
-        repeat_widgets = (
-            (self.tr("Repeat"), self.frequency),
-            (self.tr("Every"), self.interval),
-            (self.tr("Repeat ends"), self.limit),
-            (self.tr("Occurrences"), self.count),
-            (self.tr("Through"), self.until),
         )
-        for text, widget in repeat_widgets:
-            layout.addRow(text, widget)
-            widget.setEnabled(self._can_repeat)
-            widget.setVisible(supports_recurrence(profile) and event)
-            label = layout.labelForField(widget)
-            label.setVisible(supports_recurrence(profile) and event)
-        self.reminder = QCheckBox(self.tr("Saved reminder before event start"), self)
+
+        self._form = QFormLayout(self)
+        self._form.setContentsMargins(0, 0, 0, 0)
+        self._form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.advanced = QCheckBox(self)
+        self.advanced.setObjectName("calendarAdvancedRepeat")
+        self._repeat = CalendarRepeatEditor(
+            "calendarRepeat",
+            initial_date,
+            rule if self._can_repeat else None,
+            self,
+            locked="RRULE" in properties and not self._can_repeat,
+            advanced_toggle=self.advanced,
+        )
+        self._repeat.frequency.setEnabled(self._can_repeat)
+        self.added_dates = CalendarDateList(
+            "calendarAddedDates", initial_date, exceptions.added, self
+        )
+        self.excluded_dates = CalendarDateList(
+            "calendarExcludedDates", initial_date, exceptions.excluded, self
+        )
+        self._exclusion = CalendarRepeatEditor(
+            "calendarExclusionRule",
+            initial_date,
+            exceptions.exclusion_rule,
+            self,
+            exclusion=True,
+        )
+        self.advanced.setChecked(
+            exceptions != CalendarExceptions()
+            or bool(
+                rule
+                and (rule.weekdays or rule.month_days or rule.months or rule.week_start)
+            )
+        )
+        self._form.addRow(self._repeat)
+        self._form.addRow(QLabel(self), self.added_dates)
+        self._form.addRow(QLabel(self), self.excluded_dates)
+        self._form.addRow(self._exclusion)
+
+        self.reminder = QCheckBox(self)
         self.reminder.setObjectName("calendarReminder")
+        self.reminder_mode = AppComboBox(self)
+        self.reminder_mode.setObjectName("calendarReminderMode")
+        self.reminder_mode.addItems([""] * 5)
         self.minutes = QSpinBox(self)
         self.minutes.setObjectName("calendarReminderMinutes")
-        self.minutes.setRange(0, 10080)
-        self.minutes.setValue(self._reminder.minutes_before if self._reminder else 15)
-        self.reminder.setChecked(
-            bool(self._reminder is not None or (entry and entry.reminders))
+        self.minutes.setRange(0, (1 << 31) // 60)
+        self.seconds = QSpinBox(self)
+        self.seconds.setObjectName("calendarReminderSeconds")
+        self.seconds.setRange(0, 59)
+        saved_absolute = self._reminder.absolute_trigger if self._reminder else None
+        civil = (
+            saved_absolute.to_tz("UTC").to_plain()
+            if isinstance(saved_absolute, Instant)
+            else saved_absolute
         )
-        layout.addRow(self.reminder)
-        layout.addRow(self.tr("Minutes before start"), self.minutes)
-        for reminder_widget in (self.reminder, self.minutes):
-            reminder_widget.setEnabled(self._can_remind)
-            reminder_widget.setVisible(supports_reminders(profile) and event)
-        reminder_label = layout.labelForField(self.minutes)
-        reminder_label.setVisible(supports_reminders(profile) and event)
-        note = QLabel(self)
-        note.setWordWrap(True)
-        note.setObjectName("calendarFirmwareNote")
-        self._note = note
-        note.setVisible(event)
-        layout.addRow(note)
-        self._form = layout
-        self._show_repeats = supports_recurrence(profile) and event
-        self.frequency.currentIndexChanged.connect(self._update_controls)
-        self.limit.currentIndexChanged.connect(self._update_controls)
+        self.reminder_date = self._date_picker(
+            civil.date() if civil else initial_date, "calendarReminderDate"
+        )
+        self.reminder_time = QTimeEdit(self)
+        self.reminder_time.setObjectName("calendarReminderTime")
+        self.reminder_time.setDisplayFormat("HH:mm:ss")
+        self.reminder_time.setTime(
+            QTime(civil.hour, civil.minute, civil.second) if civil else QTime(9, 0)
+        )
+        self.reminder_utc = QCheckBox("UTC", self)
+        self.reminder_utc.setChecked(isinstance(saved_absolute, Instant))
+        offset = self._reminder.relative_seconds if self._reminder else -900
+        minutes, seconds = divmod(abs(offset or 0), 60)
+        self.minutes.setValue(minutes)
+        self.seconds.setValue(seconds)
+        if saved_absolute is not None:
+            self.reminder_mode.setCurrentIndex(_ABSOLUTE)
+        elif self._reminder is not None:
+            self.reminder_mode.setCurrentIndex(
+                2 * self._reminder.related_to_end + ((offset or 0) > 0)
+            )
+        self.reminder.setChecked(bool(entry and entry.reminders))
+        self.reminder.setEnabled(self._can_remind)
+        self._form.addRow(self.reminder)
+        for widget in (
+            self.reminder_mode,
+            self.minutes,
+            self.seconds,
+            self.reminder_date,
+            self.reminder_time,
+        ):
+            self._form.addRow(QLabel(self), widget)
+        self._form.addRow(self.reminder_utc)
+        self._note = QLabel(self)
+        self._note.setObjectName("calendarOptionsNote")
+        self._note.setWordWrap(True)
+        self._form.addRow(self._note)
+        self.setVisible(event)
+        self._repeat.frequency.currentIndexChanged.connect(self._update_controls)
+        self.advanced.toggled.connect(self._update_controls)
         self.reminder.toggled.connect(self._update_controls)
+        self.reminder_mode.currentIndexChanged.connect(self._update_controls)
         self._update_controls()
-        self._initial_repeat = self._repeat_snapshot()
+        self._initial_repeat = self._repeat.rule()
+        self._initial_exceptions = self._exceptions()
         self._initial_reminder = self._reminder_snapshot()
         self.retranslate_ui()
 
+    def _date_picker(self, day: Date, name: str) -> QDateEdit:
+        picker = QDateEdit(self)
+        picker.setObjectName(name)
+        picker.setCalendarPopup(True)
+        picker.setDateRange(QDate(100, 1, 1), QDate(9999, 12, 31))
+        picker.setDate(QDate(day.year, day.month, day.day))
+        return picker
+
     def retranslate_ui(self) -> None:
-        for index, text in enumerate(
-            (self.tr("Does not repeat"), self.tr("Daily"), self.tr("Weekly"))
-        ):
-            self.frequency.setItemText(index, text)
-        if self.frequency.count() > 3:
-            self.frequency.setItemText(3, self.tr("Imported repeat (preserved)"))
+        self._repeat.retranslate_ui()
+        self._exclusion.retranslate_ui()
+        self.added_dates.retranslate_ui(self.tr("Added repeat dates"))
+        self.excluded_dates.retranslate_ui(self.tr("Skipped repeat dates"))
         for index, text in enumerate(
             (
-                self.tr("Firmware default end"),
-                self.tr("After a number of occurrences"),
-                self.tr("Through a date"),
+                self.tr("Before start"),
+                self.tr("After start"),
+                self.tr("Before end"),
+                self.tr("After end"),
+                self.tr("At a date and time"),
             )
         ):
-            self.limit.setItemText(index, text)
-        for field, text in (
-            (self.frequency, self.tr("Repeat")),
-            (self.interval, self.tr("Every")),
-            (self.limit, self.tr("Repeat ends")),
-            (self.count, self.tr("Occurrences")),
-            (self.until, self.tr("Through")),
-            (self.minutes, self.tr("Minutes before start")),
+            self.reminder_mode.setItemText(index, text)
+        for widget, text in (
+            (self.added_dates, self.tr("Added repeat dates")),
+            (self.excluded_dates, self.tr("Skipped repeat dates")),
+            (self.reminder_mode, self.tr("Remind me")),
+            (self.minutes, self.tr("Minutes")),
+            (self.seconds, self.tr("Seconds")),
+            (self.reminder_date, self.tr("Date")),
+            (self.reminder_time, self.tr("Time")),
         ):
-            label = self._form.labelForField(field)
+            label = self._form.labelForField(widget)
             if isinstance(label, QLabel):
                 label.setText(text)
-        self.reminder.setText(self.tr("Saved reminder before event start"))
+                label.setBuddy(widget)
+        self.advanced.setText(self.tr("Advanced repeat options"))
+        self.reminder.setText(self.tr("Saved reminder"))
         notes: list[str] = []
-        if supports_recurrence(self._profile):
-            notes.append(
-                self.tr(
-                    "Daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved."
-                )
+        if self._entry and self._entry.reminders and not self._can_remind:
+            notes.append(self.tr("This imported reminder is preserved."))
+        if self._entry and self._entry.recurrence and not self._can_repeat:
+            notes.append(self.tr("This imported repeat rule is preserved."))
+        if (
+            self._entry
+            and not self._can_exceptions
+            and any(
+                prop.name in {"RDATE", "EXDATE", "EXRULE"}
+                for prop in self._entry.component.properties
             )
-        if supports_reminders(self._profile):
-            notes.append(
-                self.tr(
-                    "One saved reminder before a floating event's start is supported. This does not confirm live adoption, sound or physical delivery."
-                )
-            )
-        if not notes:
-            notes.append(
-                self.tr(
-                    "Repeat and reminder editing are not qualified for this firmware. Imported settings are preserved."
-                )
-            )
-        self._note.setText("\n\n".join(notes))
-        if self.isVisible():
-            self._fit_note()
-
-    def _fit_note(self) -> None:
-        self._note.setMinimumHeight(
-            max(0, self._note.heightForWidth(max(1, self.width())))
-        )
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        if hasattr(self, "_note"):
-            self._fit_note()
+        ):
+            notes.append(self.tr("These imported repeat exceptions are preserved."))
+        self._note.setText("\n".join(notes))
+        self._note.setVisible(bool(self._note.text()))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.LanguageChange:
@@ -223,81 +247,93 @@ class CalendarOptions(QWidget):
         super().changeEvent(event)
 
     def _update_controls(self) -> None:
-        repeating = self._can_repeat and self.frequency.currentIndex() in (1, 2)
-        for field in (self.interval, self.limit, self.count, self.until):
-            field.setEnabled(repeating)
-        for field, visible in (
-            (self.count, self.limit.currentIndex() == 1),
-            (self.until, self.limit.currentIndex() == 2),
-        ):
-            field.setVisible(self._show_repeats and visible and repeating)
-            self._form.labelForField(field).setVisible(
-                self._show_repeats and visible and repeating
-            )
-        self.minutes.setEnabled(self._can_remind and self.reminder.isChecked())
-        if not self._can_remind:
-            self.minutes.hide()
-            self._form.labelForField(self.minutes).hide()
+        repeating = self._can_repeat and self._repeat.rule() is not None
+        advanced = self.advanced.isChecked()
+        self.advanced.setVisible(repeating or self._can_exceptions)
+        self._repeat.set_advanced(advanced)
+        self._exclusion.set_advanced(advanced)
+        widget: QWidget
+        for widget in (self.added_dates, self.excluded_dates, self._exclusion):
+            self._form.setRowVisible(widget, advanced and self._can_exceptions)
+        enabled = self._can_remind and self.reminder.isChecked()
+        absolute = self.reminder_mode.currentIndex() == _ABSOLUTE
+        self._form.setRowVisible(self.reminder_mode, enabled)
+        for widget in (self.minutes, self.seconds):
+            self._form.setRowVisible(widget, enabled and not absolute)
+        for widget in (self.reminder_date, self.reminder_time, self.reminder_utc):
+            self._form.setRowVisible(widget, enabled and absolute)
 
-    def _repeat_snapshot(self) -> tuple[int, int, int, int, int]:
-        return (
-            self.frequency.currentIndex(),
-            self.interval.value(),
-            self.limit.currentIndex(),
-            self.count.value(),
-            self.until.date().toJulianDay(),
+    def _exceptions(self) -> CalendarExceptions:
+        return CalendarExceptions(
+            tuple(sorted(self.added_dates.values())),
+            tuple(sorted(self.excluded_dates.values())),
+            self._exclusion.rule(),
         )
 
-    def _reminder_snapshot(self) -> tuple[bool, int]:
-        return self.reminder.isChecked(), self.minutes.value()
+    def _reminder_snapshot(self) -> tuple[object, ...]:
+        return (
+            self.reminder.isChecked(),
+            self.reminder_mode.currentIndex(),
+            self.minutes.value(),
+            self.seconds.value(),
+            self.reminder_date.date().toJulianDay(),
+            self.reminder_time.time().msecsSinceStartOfDay(),
+            self.reminder_utc.isChecked(),
+        )
 
     def recurrence_change(self) -> CalendarRecurrenceRule | Unchanged | None:
-        if not self._can_repeat or self._repeat_snapshot() == self._initial_repeat:
-            return UNCHANGED
-        if self.frequency.currentIndex() == 0:
-            return None
-        until = None
-        if self.limit.currentIndex() == 2:
-            date = self.until.date()
-            until = Date(date.year(), date.month(), date.day()).at(Time(23, 59, 59))
-            if (
-                self._rule
-                and self._rule.until
-                and until.date() == self._rule.until.date()
-            ):
-                until = self._rule.until
-        return CalendarRecurrenceRule(
-            CalendarFrequency.DAILY
-            if self.frequency.currentIndex() == 1
-            else CalendarFrequency.WEEKLY,
-            self.interval.value(),
-            self.count.value() if self.limit.currentIndex() == 1 else None,
-            until,
+        rule = self._repeat.rule()
+        return rule if self._can_repeat and rule != self._initial_repeat else UNCHANGED
+
+    def exceptions_change(self) -> CalendarExceptions | Unchanged:
+        values = self._exceptions()
+        return (
+            values
+            if self._can_exceptions and values != self._initial_exceptions
+            else UNCHANGED
         )
 
     def reminder_change(self) -> CalendarReminderDraft | Unchanged | None:
         if not self._can_remind or self._reminder_snapshot() == self._initial_reminder:
             return UNCHANGED
-        return (
-            CalendarReminderDraft(self.minutes.value())
-            if self.reminder.isChecked()
-            else None
+        if not self.reminder.isChecked():
+            return None
+        mode = self.reminder_mode.currentIndex()
+        if mode == _ABSOLUTE:
+            day, time = self.reminder_date.date(), self.reminder_time.time()
+            value = PlainDateTime(
+                day.year(),
+                day.month(),
+                day.day(),
+                time.hour(),
+                time.minute(),
+                time.second(),
+            )
+            return CalendarReminderDraft(
+                absolute_trigger=value.assume_utc()
+                if self.reminder_utc.isChecked()
+                else value
+            )
+        offset = self.minutes.value() * 60 + self.seconds.value()
+        return CalendarReminderDraft(
+            offset if mode % 2 else -offset, related_to_end=mode >= 2
         )
 
     def validation_error(self, start: object, end: object) -> str:
         try:
             repeat = self.recurrence_change()
+            exceptions = self.exceptions_change()
             reminder = self.reminder_change()
             if isinstance(repeat, CalendarRecurrenceRule):
-                validate_calendar_recurrence(repeat, self._profile, start, end)
+                validate_calendar_recurrence(repeat, start, end)
+            if isinstance(exceptions, CalendarExceptions):
+                validate_exceptions(exceptions, start, end)
             if isinstance(reminder, CalendarReminderDraft):
-                if not isinstance(start, PlainDateTime):
+                if start is None:
                     raise CalendarEditError(
-                        self.tr("Saved reminders require a floating event start.")
+                        self.tr("Choose an event start for the reminder.")
                     )
-                validate_calendar_reminder(
-                    reminder, self._profile, has_end=end is not None
-                )
+                validate_calendar_reminder(reminder, has_end=end is not None)
         except ValueError as error:
             return str(error)
         return ""

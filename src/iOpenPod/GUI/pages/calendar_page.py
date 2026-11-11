@@ -5,10 +5,21 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QCoreApplication, QDate, QEvent, QLocale, Qt, QTime
+from PySide6.QtCore import (
+    QCoreApplication,
+    QDate,
+    QEvent,
+    QLocale,
+    QPoint,
+    Qt,
+    QTime,
+    Signal,
+)
+from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDateEdit,
     QDialog,
     QFileDialog,
@@ -18,6 +29,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QScrollArea,
@@ -46,24 +58,52 @@ from iPodDB.calendar import (
     CalendarEntryChanges,
     CalendarEntryDraft,
     CalendarEntryKind,
-    CalendarProfile,
+    CalendarExceptions,
+    CalendarOccurrence,
     CalendarRecurrenceRule,
     CalendarReminderDraft,
+    CalendarTodoStatus,
     project_occurrences,
-    supports_recurrence,
+    skippable_occurrence_start,
 )
 
 if TYPE_CHECKING:
-    from PySide6.QtGui import QResizeEvent, QShowEvent
+    from PySide6.QtGui import QAction, QResizeEvent, QShowEvent
 
     from iOpenPod.app.extras_controller import ExtrasController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.models.extras import CalendarGroup, CalendarItem
 
 
+_TODO_STATES = (
+    None,
+    CalendarTodoStatus.IN_PROCESS,
+    CalendarTodoStatus.COMPLETED,
+    CalendarTodoStatus.CANCELLED,
+)
+_OCCURRENCE_ROLE = Qt.ItemDataRole.UserRole + 1
+
+
+def _todo_state_text(status: CalendarTodoStatus | None) -> str:
+    if status is CalendarTodoStatus.IN_PROCESS:
+        return QCoreApplication.translate("CalendarPage", "In progress")
+    if status is CalendarTodoStatus.COMPLETED:
+        return QCoreApplication.translate("CalendarPage", "Completed")
+    if status is CalendarTodoStatus.CANCELLED:
+        return QCoreApplication.translate("CalendarPage", "Cancelled")
+    return QCoreApplication.translate("CalendarPage", "Open")
+
+
 def _entry_marker(item: CalendarItem) -> CalendarMarker | None:
-    """Project saved civil dates, never resolving TZIDs or expanding recurrence."""
+    """Turn a saved span or one projected day into a month-grid marker."""
     entry = item.entry
+    if item.occurrence is not None and (day := item.occurrence.day) is not None:
+        date = QDate(day.year, day.month, day.day)
+        return CalendarMarker(
+            date,
+            date,
+            entry.summary or QCoreApplication.translate("CalendarPage", "Untitled"),
+        )
     start = (
         (item.occurrence.start if item.occurrence else entry.start)
         if entry.kind is CalendarEntryKind.EVENT
@@ -215,7 +255,9 @@ class _DateInput(QWidget):
             time.second(),
         )
 
-    def value(self, *, all_day: bool) -> Date | PlainDateTime | Instant | None:
+    def value(
+        self, *, all_day: bool, utc: bool | None = None
+    ) -> Date | PlainDateTime | Instant | None:
         if not self.include.isChecked():
             return None
         date, time = self.date.date(), self.time.time()
@@ -223,7 +265,7 @@ class _DateInput(QWidget):
         if all_day:
             return civil
         local = civil.at(Time(time.hour(), time.minute(), time.second()))
-        return local.assume_utc() if self._utc else local
+        return local.assume_utc() if (self._utc if utc is None else utc) else local
 
 
 class CalendarEditor(QDialog):
@@ -236,7 +278,7 @@ class CalendarEditor(QDialog):
         parent: QWidget | None = None,
         *,
         initial_date: Date | None = None,
-        profile: CalendarProfile = CalendarProfile.UNKNOWN,
+        zone_names: tuple[str, ...] = (),
     ) -> None:
         super().__init__(parent)
         self.setObjectName("calendarEditor")
@@ -249,7 +291,7 @@ class CalendarEditor(QDialog):
         if entry is not None:
             for value in (entry.start, entry.end, entry.due):
                 if value is not None and (
-                    value.form in {CalendarDateForm.ZONED, CalendarDateForm.INVALID}
+                    value.form is CalendarDateForm.INVALID
                     or value.value is None
                     or (
                         isinstance(value.value, (Date, PlainDateTime))
@@ -287,9 +329,41 @@ class CalendarEditor(QDialog):
         self._start = _DateInput("calendarStart", start, self, utc=utc)
         self._end = _DateInput("calendarEnd", end, self, utc=utc)
         self._due = _DateInput("calendarDue", due, self, utc=utc)
-        self._completed = QCheckBox(self)
-        self._completed.setObjectName("calendarCompleted")
-        self._completed.setChecked(entry.completed if entry else False)
+        if entry is not None:
+            for control, value in ((self._start, entry.start), (self._end, entry.end)):
+                if value is not None and value.tzid:
+                    control.zone.setText(value.tzid)
+        self._has_saved_zone = bool(
+            entry and any(value and value.tzid for value in (entry.start, entry.end))
+        )
+        self._zone_names = zone_names
+        self._time_basis = AppComboBox(self)
+        self._time_basis.setObjectName("calendarTimeBasis")
+        self._time_basis.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self._time_basis.setMinimumContentsLength(8)
+        self._time_basis.addItems(["", "UTC", *zone_names])
+        for index, name in enumerate(zone_names, start=2):
+            self._time_basis.setItemData(index, name, Qt.ItemDataRole.ToolTipRole)
+        saved_tzid = entry.start.tzid if entry and entry.start else None
+        if isinstance(start, Instant) or (saved_tzid and saved_tzid.casefold() == "z"):
+            self._time_basis.setCurrentIndex(1)
+        elif saved_tzid is not None:
+            for index, name in enumerate(zone_names, start=2):
+                if name.casefold() == saved_tzid.casefold():
+                    self._time_basis.setCurrentIndex(index)
+                    break
+        self._initial_basis = self._time_basis.currentIndex()
+        self._show_time_basis = (
+            kind is CalendarEntryKind.EVENT and self._timing_editable
+        )
+        self._todo_state = AppComboBox(self)
+        self._todo_state.setObjectName("calendarTodoStatus")
+        self._todo_state.addItems([""] * len(_TODO_STATES))
+        self._todo_state.setCurrentIndex(
+            _TODO_STATES.index(entry.todo_status if entry else None)
+        )
         self._timing_note = QLabel(self)
         self._timing_note.setObjectName("pageDescription")
         self._timing_note.setWordWrap(True)
@@ -301,6 +375,7 @@ class CalendarEditor(QDialog):
         self._labels: list[tuple[QLabel, str]] = []
         form = QFormLayout()
         form.setSpacing(LAYOUT.space_sm)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         for label, widget in [
             ("Title", self._summary),
             ("Location", self._location),
@@ -324,9 +399,21 @@ class CalendarEditor(QDialog):
         for widget in (self._start, self._end):
             widget.setVisible(kind is CalendarEntryKind.EVENT)
         self._due.setVisible(kind is CalendarEntryKind.TODO)
-        self._completed.setVisible(kind is CalendarEntryKind.TODO)
-        form.addRow(self._completed)
-        self._options = CalendarOptions(profile, entry, kind, today, self)
+        for label, choice, visible in (
+            (
+                "Time zone",
+                self._time_basis,
+                self._show_time_basis,
+            ),
+            ("Status", self._todo_state, kind is CalendarEntryKind.TODO),
+        ):
+            field = QLabel(self)
+            field.setBuddy(choice)
+            self._labels.append((field, label))
+            form.addRow(field, choice)
+            form.setRowVisible(choice, visible)
+        form.addRow(self._timing_note)
+        self._options = CalendarOptions(entry, kind, today, self)
         form.addRow(self._options)
         self._cancel = ActionButton(parent=self)
         self._cancel.clicked.connect(self.reject)
@@ -347,7 +434,6 @@ class CalendarEditor(QDialog):
         fields_layout = QVBoxLayout(fields_panel)
         fields_layout.setContentsMargins(0, 0, 0, 0)
         fields_layout.addLayout(form)
-        fields_layout.addWidget(self._timing_note)
         fields_layout.addWidget(self._error)
         self._fields_scroll = QScrollArea(self)
         self._fields_scroll.setObjectName("calendarEditorFields")
@@ -358,7 +444,7 @@ class CalendarEditor(QDialog):
         self._fields_scroll.setMaximumHeight(600)
         layout.addWidget(self._fields_scroll, 1)
         layout.addLayout(actions)
-        self._all_day.setEnabled(self._timing_editable)
+        self._all_day.setEnabled(self._timing_editable and not self._has_saved_zone)
         for widget in (self._start, self._end, self._due):
             widget.setEnabled(self._timing_editable)
         self._initial_dates = tuple(
@@ -393,7 +479,8 @@ class CalendarEditor(QDialog):
         all_day = self._all_day.isChecked()
         for widget in (self._start, self._end, self._due):
             widget.time.setVisible(not all_day)
-            widget.zone.setVisible(not all_day)
+            widget.zone.setVisible(not all_day and not self._show_time_basis)
+        self._time_basis.setEnabled(not all_day)
         self._refresh_timing_note()
 
     def _refresh_timing_note(self) -> None:
@@ -416,6 +503,10 @@ class CalendarEditor(QDialog):
             self._timing_note.setText(
                 self.tr("The end date is the first day after this all-day event.")
             )
+        elif self._show_time_basis:
+            self._timing_note.setText(
+                self.tr("Changing the time zone keeps the clock times shown above.")
+            )
         else:
             self._timing_note.setText(
                 self.tr("Times use the iPod's local clock unless marked UTC.")
@@ -424,6 +515,7 @@ class CalendarEditor(QDialog):
     def selected_edit(self) -> CalendarEntryDraft | CalendarEntryChanges:
         edit = self._base_edit()
         recurrence = self._options.recurrence_change()
+        exceptions = self._options.exceptions_change()
         reminder = self._options.reminder_change()
         if isinstance(edit, CalendarEntryDraft):
             return replace(
@@ -431,32 +523,44 @@ class CalendarEditor(QDialog):
                 recurrence=recurrence
                 if isinstance(recurrence, CalendarRecurrenceRule)
                 else None,
+                exceptions=exceptions
+                if isinstance(exceptions, CalendarExceptions)
+                else None,
                 reminder=reminder
                 if isinstance(reminder, CalendarReminderDraft)
                 else None,
             )
-        return replace(edit, recurrence=recurrence, reminder=reminder)
+        return replace(
+            edit, recurrence=recurrence, exceptions=exceptions, reminder=reminder
+        )
 
     def _base_edit(self) -> CalendarEntryDraft | CalendarEntryChanges:
         all_day = self._all_day.isChecked()
+        status = _TODO_STATES[self._todo_state.currentIndex()]
+        event = self._kind is CalendarEntryKind.EVENT
+        basis = self._time_basis.currentIndex() if event and not all_day else 0
+        tzid = self._zone_names[basis - 2] if basis >= 2 else None
         if self._item is None:
             return CalendarEntryDraft(
                 kind=self._kind,
                 summary=self._summary.text().strip(),
                 location=self._location.text(),
                 description=self._description.toPlainText(),
-                start=self._start.value(all_day=all_day)
-                if self._kind is CalendarEntryKind.EVENT
+                start=self._start.value(all_day=all_day, utc=basis == 1)
+                if event
                 else None,
-                end=self._end.value(all_day=all_day)
-                if self._kind is CalendarEntryKind.EVENT
-                else None,
+                end=self._end.value(all_day=all_day, utc=basis == 1) if event else None,
+                tzid=tzid,
                 due=self._due.value(all_day=all_day)
                 if self._kind is CalendarEntryKind.TODO
                 else None,
-                completed=self._completed.isChecked(),
+                todo_status=status,
             )
         entry = self._item.entry
+        zone_changed = (
+            self._show_time_basis and not all_day and basis != self._initial_basis
+        )
+        utc = basis == 1 if zone_changed else None
         changed = [
             self._timing_editable
             and (widget.snapshot() != original or all_day != self._initial_all_day)
@@ -464,7 +568,6 @@ class CalendarEditor(QDialog):
                 (self._start, self._end, self._due), self._initial_dates, strict=True
             )
         ]
-        completed = self._completed.isChecked()
         return CalendarEntryChanges(
             summary=self._summary.text().strip()
             if self._summary.text().strip() != entry.summary
@@ -475,16 +578,17 @@ class CalendarEditor(QDialog):
             description=self._description.toPlainText()
             if self._description.toPlainText() != entry.description
             else None,
-            start=self._start.value(all_day=all_day)
-            if changed[0] and self._kind is CalendarEntryKind.EVENT
+            start=self._start.value(all_day=all_day, utc=utc)
+            if event and (changed[0] or zone_changed)
             else UNCHANGED,
-            end=self._end.value(all_day=all_day)
-            if changed[1] and self._kind is CalendarEntryKind.EVENT
+            end=self._end.value(all_day=all_day, utc=utc)
+            if event and (changed[1] or zone_changed)
             else UNCHANGED,
+            tzid=tzid if zone_changed else UNCHANGED,
             due=self._due.value(all_day=all_day)
             if changed[2] and self._kind is CalendarEntryKind.TODO
             else UNCHANGED,
-            completed=completed if completed != entry.completed else None,
+            todo_status=status if status != entry.todo_status else UNCHANGED,
         )
 
     def _accept_valid(self) -> None:
@@ -505,7 +609,7 @@ class CalendarEditor(QDialog):
         if error:
             self._error.setText(error)
             return
-        edit = self.selected_edit()
+        edit = self._base_edit()
         start = edit.start
         end = edit.end
         if isinstance(edit, CalendarEntryChanges) and self._item is not None:
@@ -572,6 +676,8 @@ class CalendarEditor(QDialog):
                 self.tr("Edit To Do") if self._item else self.tr("New To Do")
             )
         labels = {
+            "Time zone": self.tr("Time zone"),
+            "Status": self.tr("Status"),
             "Title": self.tr("Title"),
             "Location": self.tr("Location"),
             "Notes": self.tr("Notes"),
@@ -582,7 +688,9 @@ class CalendarEditor(QDialog):
         for label, source in self._labels:
             label.setText(labels[source])
         self._all_day.setText(self.tr("All day"))
-        self._completed.setText(self.tr("Completed"))
+        self._time_basis.setItemText(0, self.tr("iPod local time"))
+        for index, status in enumerate(_TODO_STATES):
+            self._todo_state.setItemText(index, _todo_state_text(status))
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._save.setText(self.tr("Save"))
         for widget in (self._start, self._end, self._due):
@@ -597,6 +705,25 @@ class CalendarEditor(QDialog):
         if event.type() == QEvent.Type.LanguageChange:
             self.retranslate_ui()
         super().changeEvent(event)
+
+
+class _CalendarEntryList(QTreeWidget):
+    """Anchor the entry menu to a clicked row or the keyboard's current row."""
+
+    entryMenuRequested = Signal(QTreeWidgetItem, QPoint)
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        keyboard = event.reason() == QContextMenuEvent.Reason.Keyboard
+        row = self.currentItem() if keyboard else self.itemAt(event.pos())
+        if row is None:
+            return
+        self.setCurrentItem(row)
+        point = event.globalPos()
+        if keyboard:
+            self.scrollToItem(row)
+            point = self.viewport().mapToGlobal(self.visualItemRect(row).center())
+        self.entryMenuRequested.emit(row, point)
+        event.accept()
 
 
 class CalendarPage(QWidget):
@@ -653,7 +780,7 @@ class CalendarPage(QWidget):
         self._tabs.setCornerWidget(search_corner, Qt.Corner.TopRightCorner)
         self._trees: list[QTreeWidget] = []
         for name in ("calendarEvents", "calendarTodos"):
-            tree = QTreeWidget(self._tabs)
+            tree = _CalendarEntryList(self._tabs)
             tree.setObjectName(name)
             tree.setRootIsDecorated(False)
             tree.setProperty("extrasList", True)
@@ -667,16 +794,16 @@ class CalendarPage(QWidget):
                 tree.hideColumn(column)
             tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             tree.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-            tree.itemSelectionChanged.connect(self._selection_changed)
-            tree.itemActivated.connect(lambda: self._open_editor())
+            tree.entryMenuRequested.connect(self._show_entry_menu)
+            tree.itemActivated.connect(self._activate_entry)
             self._trees.append(tree)
         agenda = QWidget(self)
-        agenda_layout = QVBoxLayout(agenda)
-        agenda_layout.setContentsMargins(LAYOUT.space_md, 0, 0, 0)
-        agenda_layout.setSpacing(LAYOUT.space_sm)
-        agenda_layout.addWidget(self._agenda_title)
-        agenda_layout.addWidget(self._scope)
-        agenda_layout.addWidget(self._trees[0], 1)
+        self._agenda_layout = QVBoxLayout(agenda)
+        self._agenda_layout.setContentsMargins(LAYOUT.space_md, 0, 0, 0)
+        self._agenda_layout.setSpacing(LAYOUT.space_sm)
+        self._agenda_layout.addWidget(self._agenda_title)
+        self._agenda_layout.addWidget(self._scope)
+        self._agenda_layout.addWidget(self._trees[0], 1)
         self._splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self._splitter.setObjectName("calendarSplit")
         self._splitter.setChildrenCollapsible(False)
@@ -691,43 +818,14 @@ class CalendarPage(QWidget):
         self._todo_layout.setContentsMargins(0, 0, 0, 0)
         self._todo_layout.addWidget(self._trees[1], 1)
         self._tabs.addTab(todos, "")
-        self._details = QLabel(self)
-        self._details.setObjectName("calendarDetails")
-        self._details.setTextFormat(Qt.TextFormat.PlainText)
-        self._details.setWordWrap(True)
-        self._details.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        self._details_scroll = QScrollArea(self)
-        self._details_scroll.setWidgetResizable(True)
-        self._details_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._details_scroll.setMaximumHeight(110)
-        self._details_scroll.setWidget(self._details)
         self._empty = QLabel(self)
         self._empty.setObjectName("calendarEmpty")
         self._empty.setWordWrap(True)
         self._empty.setProperty("extrasMuted", True)
-        agenda_layout.addWidget(self._empty)
+        self._agenda_layout.addWidget(self._empty)
         self._note = QLabel(self)
         self._note.setWordWrap(True)
         self._note.setProperty("extrasMuted", True)
-        self._edit = ActionButton(parent=self)
-        self._edit.setObjectName("calendarEdit")
-        self._remove = ActionButton(parent=self, kind=ActionButtonKind.QUIET)
-        self._remove.setObjectName("calendarRemove")
-        self._complete = ActionButton(parent=self)
-        self._complete.setObjectName("calendarComplete")
-        actions = QHBoxLayout()
-        actions.addWidget(self._edit)
-        actions.addWidget(self._remove)
-        actions.addWidget(self._complete)
-        actions.addStretch(1)
-        self._inspector = QWidget(self)
-        inspector_layout = QVBoxLayout(self._inspector)
-        inspector_layout.setContentsMargins(0, LAYOUT.space_sm, 0, 0)
-        inspector_layout.addWidget(self._details_scroll)
-        inspector_layout.addLayout(actions)
-        agenda_layout.addWidget(self._inspector)
         body = QVBoxLayout()
         body.setContentsMargins(
             LAYOUT.space_lg, LAYOUT.space_sm, LAYOUT.space_lg, LAYOUT.space_lg
@@ -749,16 +847,13 @@ class CalendarPage(QWidget):
         self._calendar_filter.currentIndexChanged.connect(self._refresh)
         self._create_calendar.clicked.connect(self._create_named_calendar)
         self._rename_calendar.clicked.connect(self._rename_named_calendar)
-        self._new.clicked.connect(lambda: self._open_editor(new=True))
-        self._edit.clicked.connect(lambda: self._open_editor())
-        self._remove.clicked.connect(self._remove_selected)
+        self._new.clicked.connect(lambda: self._open_editor())
         self._import.clicked.connect(self._import_file)
         self._refresh_button.clicked.connect(controller.refresh)
         self._tabs.currentChanged.connect(self._tab_changed)
         self._month.selected.connect(self._refresh)
         self._scope.currentIndexChanged.connect(self._refresh)
         self._search.queryChanged.connect(self._refresh)
-        self._complete.clicked.connect(self._toggle_complete)
         controller.changed.connect(self._refresh)
         self._refresh()
 
@@ -810,56 +905,39 @@ class CalendarPage(QWidget):
     def _tab_changed(self) -> None:
         # The empty message follows its list rather than occupying the month grid.
         if self._tabs.currentIndex() == 0:
-            agenda = self._splitter.widget(1)
-            if agenda is not None and (layout := agenda.layout()) is not None:
-                layout.addWidget(self._empty)
-                layout.addWidget(self._inspector)
+            self._agenda_layout.addWidget(self._empty)
         else:
             self._todo_layout.addWidget(self._empty)
-            self._todo_layout.addWidget(self._inspector)
         self._note.setVisible(
             self._tabs.currentIndex() == 0
             and any(
                 item.entry.has_recurrence for item in self._controller.catalog.calendar
             )
         )
-        self._selection_changed()
+        self._update_list_state()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        orientation = (
-            Qt.Orientation.Vertical if self.width() < 780 else Qt.Orientation.Horizontal
-        )
+        stacked = self.width() < 780
+        orientation = Qt.Orientation.Vertical if stacked else Qt.Orientation.Horizontal
         if self._splitter.orientation() != orientation:
             self._splitter.setOrientation(orientation)
-            self._splitter.setSizes(
-                [380, 240] if orientation is Qt.Orientation.Vertical else [640, 320]
+            self._agenda_layout.setContentsMargins(
+                0 if stacked else LAYOUT.space_md,
+                LAYOUT.space_sm if stacked else 0,
+                0,
+                0,
             )
-
-    def _toggle_complete(self) -> None:
-        item = self._selected()
-        if (
-            item is None
-            or item.entry.kind is not CalendarEntryKind.TODO
-            or not item.entry.editable
-            or not self._writable()
-        ):
-            return
-        complete = not item.entry.completed
-        self._controller.save_calendar(
-            CalendarEntryChanges(completed=complete),
-            item,
-        )
+            self._splitter.setSizes([380, 240] if stacked else [640, 320])
 
     def _writable(self) -> bool:
         support = self._controller.catalog.support
         return bool(self._controller.can_write and support and support.calendar_write)
 
-    def _selected(self) -> CalendarItem | None:
-        current = self._trees[self._tabs.currentIndex()].currentItem()
-        if current is None:
+    def _source_item(self, row: QTreeWidgetItem | None) -> CalendarItem | None:
+        if row is None:
             return None
-        key: object = current.data(0, Qt.ItemDataRole.UserRole)
+        key: object = row.data(0, Qt.ItemDataRole.UserRole)
         return next(
             (
                 item
@@ -869,8 +947,79 @@ class CalendarPage(QWidget):
             None,
         )
 
+    def _activate_entry(self, row: QTreeWidgetItem) -> None:
+        if (item := self._source_item(row)) is not None:
+            self._open_editor(item)
+
+    def _show_entry_menu(self, row: QTreeWidgetItem, position: QPoint) -> None:
+        item = self._source_item(row)
+        active = self._controller.active_ipod
+        if item is None or active is None:
+            return
+        entry = item.entry
+        occurrence: object = row.data(0, _OCCURRENCE_ROLE)
+        day = occurrence.day if isinstance(occurrence, CalendarOccurrence) else None
+        start = (
+            skippable_occurrence_start(entry, occurrence)
+            if isinstance(occurrence, CalendarOccurrence)
+            else None
+        )
+
+        menu = QMenu(self)
+        menu.setObjectName("calendarEntryMenu")
+        edit = menu.addAction(
+            self.tr("Edit series") if entry.has_recurrence else self.tr("Edit")
+        )
+        skip = (
+            menu.addAction(self.tr("Skip this occurrence"))
+            if day is not None and start is not None
+            else None
+        )
+        complete = (
+            menu.addAction(
+                self.tr("Mark incomplete")
+                if entry.completed
+                else self.tr("Mark complete")
+            )
+            if entry.kind is CalendarEntryKind.TODO
+            else None
+        )
+        menu.addSeparator()
+        remove = menu.addAction(
+            self.tr("Remove series") if entry.has_recurrence else self.tr("Remove")
+        )
+        can_edit = entry.editable and self._writable()
+        for action in (edit, skip, complete, remove):
+            if action is not None:
+                action.setEnabled(can_edit)
+
+        def run(chosen: QAction) -> None:
+            if (
+                not can_edit
+                or active is not self._controller.active_ipod
+                or item not in self._controller.catalog.calendar
+                or not self._writable()
+            ):
+                return
+            if chosen is edit:
+                self._open_editor(item)
+            elif chosen is skip and day is not None and start is not None:
+                self._controller.skip_calendar_occurrence(item, day, start)
+            elif chosen is complete:
+                self._controller.save_calendar(
+                    CalendarEntryChanges(completed=not entry.completed), item
+                )
+            elif chosen is remove:
+                self._remove_entry(item)
+
+        menu.triggered.connect(run)
+        menu.aboutToHide.connect(menu.deleteLater)
+        menu.popup(position)
+
     def _refresh(self) -> None:
-        selected = self._selected()
+        selected = self._source_item(
+            self._trees[self._tabs.currentIndex()].currentItem()
+        )
         if self._shown_device is not self._controller.active_ipod:
             self._shown_device = self._controller.active_ipod
             selected = None
@@ -923,7 +1072,6 @@ class CalendarPage(QWidget):
                 source.entry,
                 first_date,
                 last,
-                profile=self._controller.calendar_profile,
             )
             if source.entry.has_recurrence and not result.expanded:
                 self._unexpanded_recurrence = True
@@ -984,14 +1132,16 @@ class CalendarPage(QWidget):
                             )
                             if part
                         ),
-                        self.tr("Completed")
-                        if entry.completed
+                        _todo_state_text(entry.todo_status)
+                        if entry.todo_status is not None
                         else (self.tr("Repeating") if entry.has_recurrence else ""),
                     ]
                 )
                 row.setData(
                     0, Qt.ItemDataRole.UserRole, (item.document_key, item.index)
                 )
+                if item.occurrence is not None:
+                    row.setData(0, _OCCURRENCE_ROLE, item.occurrence)
                 row.setToolTip(1, row.text(1))
                 row.setToolTip(
                     0,
@@ -1022,28 +1172,8 @@ class CalendarPage(QWidget):
                 self._dialog.set_writable(self._writable())
         self.retranslate_ui()
 
-    def _selection_changed(self) -> None:
-        item = self._selected()
+    def _update_list_state(self) -> None:
         writable = self._writable()
-        self._edit.setText(
-            self.tr("Edit series")
-            if item and item.entry.has_recurrence
-            else self.tr("Edit")
-        )
-        self._remove.setText(
-            self.tr("Remove series")
-            if item and item.entry.has_recurrence
-            else self.tr("Remove")
-        )
-        self._edit.setEnabled(bool(writable and item and item.entry.editable))
-        self._remove.setEnabled(bool(writable and item and item.entry.editable))
-        self._complete.setVisible(self._tabs.currentIndex() == 1)
-        self._complete.setEnabled(bool(writable and item and item.entry.editable))
-        self._complete.setText(
-            self.tr("Mark incomplete")
-            if item and item.entry.completed
-            else self.tr("Mark complete")
-        )
         self._new.setText(
             self.tr("New event")
             if self._tabs.currentIndex() == 0
@@ -1065,7 +1195,7 @@ class CalendarPage(QWidget):
         ):
             self._empty.setText(
                 self.tr(
-                    "No saved dates or qualified occurrences for this day. Some repeats cannot be expanded for this firmware."
+                    "No entries for this day. Some imported repeats are shown only on their saved dates."
                 )
             )
         elif self._tabs.currentIndex() == 0:
@@ -1082,79 +1212,22 @@ class CalendarPage(QWidget):
             )
         else:
             self._empty.setText(self.tr("No To Dos on this iPod."))
-        if item is None:
-            self._details.clear()
-        else:
-            entry = item.entry
-            parts = [
-                entry.summary,
-                item.calendar_name or self.tr("Other (unnamed)"),
-                entry.location,
-                entry.description,
-            ]
-            if entry.recurrence is not None:
-                parts.append(
-                    self.tr("Saved repeat rule: {rule}").format(
-                        rule=entry.recurrence.raw
-                    )
-                )
-            for reminder in entry.reminders:
-                if reminder.relative_seconds is not None:
-                    parts.append(
-                        self.tr(
-                            "Saved reminder: {seconds} seconds relative to {anchor}"
-                        ).format(
-                            seconds=reminder.relative_seconds,
-                            anchor=self.tr("end")
-                            if reminder.related_to_end
-                            else self.tr("start"),
-                        )
-                    )
-                elif reminder.absolute_trigger is not None:
-                    parts.append(
-                        self.tr("Saved absolute reminder (read-only): {value}").format(
-                            value=reminder.absolute_trigger.raw
-                        )
-                    )
-                else:
-                    parts.append(self.tr("Uninterpreted reminder preserved."))
-            if entry.has_recurrence:
-                parts.append(
-                    self.tr(
-                        "Repeating series · Editing or removing this entry affects the whole series."
-                    )
-                )
-            if entry.issues:
-                parts.append(
-                    self.tr(
-                        "Some details could not be read. Your original entry is preserved."
-                    )
-                )
-                self._details.setToolTip("\n".join(entry.issues))
-            else:
-                self._details.setToolTip("")
-            if not entry.editable:
-                parts.append(
-                    self.tr("This imported entry can be viewed but cannot be edited.")
-                )
-            self._details.setText("\n".join(part for part in parts if part))
-        self._details_scroll.setVisible(bool(self._details.text()))
-        self._inspector.setVisible(item is not None)
 
-    def _open_editor(self, *, new: bool = False) -> None:
+    def _open_editor(self, item: CalendarItem | None = None) -> None:
         active = self._controller.active_ipod
         if not self._writable() or self._dialog is not None:
             return
-        item = None if new else self._selected()
-        if not new and (item is None or not item.entry.editable):
+        if item is not None and not item.entry.editable:
             return
         kind = (
-            CalendarEntryKind.EVENT
+            item.entry.kind
+            if item is not None
+            else CalendarEntryKind.EVENT
             if self._tabs.currentIndex() == 0
             else CalendarEntryKind.TODO
         )
-        destination = self._selected_calendar() if new else None
-        if new and destination is None:
+        destination = self._selected_calendar() if item is None else None
+        if item is None and destination is None:
             groups = [
                 group for group in self._controller.catalog.calendars if group.editable
             ]
@@ -1172,15 +1245,22 @@ class CalendarPage(QWidget):
                 if active is not self._controller.active_ipod or not self._writable():
                     return
                 destination = groups[labels.index(chosen)]
-        if new and destination is not None and not destination.editable:
+        if destination is not None and not destination.editable:
             return
+        zones = destination.zones if destination else ()
+        if (
+            item is not None
+            and item.entry.timing_editable
+            and kind is CalendarEntryKind.EVENT
+        ):
+            zones = item.zone_names
         date = self._month.grid.selectedDate()
         dialog = CalendarEditor(
             kind,
             item,
             self,
             initial_date=Date(date.year(), date.month(), date.day()),
-            profile=self._controller.calendar_profile,
+            zone_names=zones,
         )
         self._dialog = dialog
         self._editing = item
@@ -1205,10 +1285,8 @@ class CalendarPage(QWidget):
         dialog.finished.connect(finished)
         dialog.open()
 
-    def _remove_selected(self) -> None:
-        item, active = self._selected(), self._controller.active_ipod
-        if item is None or not item.entry.editable or not self._writable():
-            return
+    def _remove_entry(self, item: CalendarItem) -> None:
+        active = self._controller.active_ipod
         question = QMessageBox(self)
         question.setWindowTitle(
             self.tr("Remove entire repeating series?")
@@ -1229,6 +1307,7 @@ class CalendarPage(QWidget):
         if (
             answer == QMessageBox.StandardButton.Yes
             and active is self._controller.active_ipod
+            and item in self._controller.catalog.calendar
             and self._writable()
         ):
             self._controller.remove_calendar(item)
@@ -1275,8 +1354,6 @@ class CalendarPage(QWidget):
         self._refresh_button.setText(
             QCoreApplication.translate("CommonActions", "Refresh")
         )
-        self._edit.setText(self.tr("Edit"))
-        self._remove.setText(self.tr("Remove"))
         self._search.setPlaceholderText(self.tr("Search entries"))
         self._search.setAccessibleName(self.tr("Search Calendar and To Dos"))
         self._scope.setItemText(0, self.tr("Selected day"))
@@ -1292,15 +1369,7 @@ class CalendarPage(QWidget):
         self._scope.setEnabled(not self._search.text().strip())
         self._trees[0].setAccessibleName(self.tr("Events"))
         self._trees[1].setAccessibleName(self.tr("To Dos"))
-        self._note.setText(
-            self.tr(
-                "Qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once."
-            )
-            if supports_recurrence(self._controller.calendar_profile)
-            else self.tr(
-                "Recurrence expansion is not qualified for this firmware. Repeating events show their saved dates."
-            )
-        )
+        self._note.setText(self.tr("All saved entries lists each series once."))
         self._note.setVisible(
             self._tabs.currentIndex() == 0
             and any(
@@ -1319,17 +1388,9 @@ class CalendarPage(QWidget):
         support = self._controller.catalog.support
         qualification = ""
         if active is not None and support is not None and not support.calendar_write:
-            qualification = (
-                self.tr(
-                    "{model} · Firmware {firmware}\nCalendar is read-only because editing support could not be confirmed for this model and firmware."
-                ).format(
-                    model=active.profile.display_name, firmware=active.firmware_version
-                )
-                if active.firmware_version
-                else self.tr(
-                    "{model}: Calendar is read-only because the iPod's firmware version could not be confirmed."
-                ).format(model=active.profile.display_name)
-            )
+            qualification = self.tr(
+                "Calendar editing is unavailable for {model}."
+            ).format(model=active.profile.display_name)
         if active is None:
             self._status.setText(self.tr("Choose an iPod to view its Calendar."))
         else:
@@ -1351,7 +1412,7 @@ class CalendarPage(QWidget):
             )
         self._status.setVisible(bool(self._status.text()))
         self._status.setToolTip("\n".join(self._controller.catalog.issues))
-        self._selection_changed()
+        self._update_list_state()
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)

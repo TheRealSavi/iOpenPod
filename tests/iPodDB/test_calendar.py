@@ -223,15 +223,12 @@ def test_simple_authoring_add_update_remove_and_todo_completion() -> None:
         CalendarEntryKind.TODO,
     ]
     original_event = document.entries[0].component.raw_bytes
-    completed = update_entry(
-        document, 1, CalendarEntryChanges(completed=True), stamp=STAMP
-    )
+    completed = update_entry(document, 1, CalendarEntryChanges(completed=True))
     assert completed.entries[1].completed
-    assert completed.entries[1].completed_at is not None
-    assert completed.entries[1].completed_at.value == STAMP
+    assert completed.entries[1].completed_at is None
     assert completed.entries[0].component.raw_bytes == original_event
     reopened = update_entry(
-        completed, 1, CalendarEntryChanges(completed=False, due=None), stamp=STAMP
+        completed, 1, CalendarEntryChanges(completed=False, due=None)
     )
     assert not reopened.entries[1].completed
     assert reopened.entries[1].completed_at is None
@@ -508,7 +505,8 @@ def test_completed_timestamp_without_status_is_visible_and_explicit_edits_stay_c
         b"BEGIN:VTODO\r\nSUMMARY:Done\r\nCOMPLETED:20261107T120000Z\r\nEND:VTODO\r\n"
     )
     document = parse_calendar(raw)
-    assert document.entries[0].completed
+    assert not document.entries[0].completed
+    assert document.entries[0].completed_at is not None
     with pytest.raises(CalendarEditError, match="conflicts"):
         update_entry(
             document, 0, CalendarEntryChanges(completed=False, completed_at=STAMP)
@@ -523,7 +521,7 @@ def test_completed_timestamp_without_status_is_visible_and_explicit_edits_stay_c
     "changes",
     [CalendarEntryChanges(completed=True), CalendarEntryChanges(completed_at=STAMP)],
 )
-def test_completion_updates_existing_percentage_and_retains_its_parameters(
+def test_completion_preserves_existing_percentage_and_its_parameters(
     changes: CalendarEntryChanges,
 ) -> None:
     percentage = b'PERCENT-COMPLETE;X-KEEP="part:one":4\r\n 0\r\n'
@@ -533,16 +531,17 @@ def test_completion_updates_existing_percentage_and_retains_its_parameters(
         + b"X-UNKNOWN:preserved\r\nEND:VTODO\r\n"
     )
     original = parse_calendar(raw)
-    completed = update_entry(original, 0, changes, stamp=STAMP)
+    completed = update_entry(original, 0, changes)
     assert completed.entries[0].completed
-    assert completed.entries[0].completed_at is not None
-    assert completed.entries[0].completed_at.value == STAMP
-    assert b'PERCENT-COMPLETE;X-KEEP="part:one":100\r\n' in completed.raw_bytes
+    assert (completed.entries[0].completed_at is not None) is (
+        changes.completed_at == STAMP
+    )
+    assert percentage in completed.raw_bytes
     assert b"X-UNKNOWN:preserved\r\n" in completed.raw_bytes
     assert original.raw_bytes == raw
 
 
-def test_reopening_removes_percentage_without_claiming_zero_progress() -> None:
+def test_reopening_preserves_percentage_metadata() -> None:
     raw = calendar(
         b"BEGIN:VTODO\r\nSUMMARY:Task\r\nSTATUS:COMPLETED\r\n"
         b"COMPLETED:20261107T120000Z\r\nPERCENT-COMPLETE;X-KEEP=old:100\r\n"
@@ -553,16 +552,14 @@ def test_reopening_removes_percentage_without_claiming_zero_progress() -> None:
     )
     assert not reopened.entries[0].completed
     assert reopened.entries[0].completed_at is None
-    assert b"PERCENT-COMPLETE" not in reopened.raw_bytes
-    assert b"STATUS:NEEDS-ACTION\r\n" in reopened.raw_bytes
+    assert b"PERCENT-COMPLETE;X-KEEP=old:100\r\n" in reopened.raw_bytes
+    assert b"STATUS:" not in reopened.raw_bytes
     assert b"X-UNKNOWN:preserved\r\n" in reopened.raw_bytes
 
 
 def test_completion_does_not_add_absent_percentage() -> None:
     original = parse_calendar(calendar(b"BEGIN:VTODO\r\nSUMMARY:Task\r\nEND:VTODO\r\n"))
-    completed = update_entry(
-        original, 0, CalendarEntryChanges(completed=True), stamp=STAMP
-    )
+    completed = update_entry(original, 0, CalendarEntryChanges(completed=True))
     reopened = update_entry(completed, 0, CalendarEntryChanges(completed=False))
     assert b"PERCENT-COMPLETE" not in completed.raw_bytes
     assert b"PERCENT-COMPLETE" not in reopened.raw_bytes
@@ -582,7 +579,7 @@ def test_unrelated_edits_preserve_percentage_bytes(
 ) -> None:
     percentage = b'PERCENT-COMPLETE;X-KEEP="part:one":4\r\n 0\r\n'
     raw = calendar(b"BEGIN:VTODO\r\nSUMMARY:Task\r\n" + percentage + b"END:VTODO\r\n")
-    updated = update_entry(parse_calendar(raw), 0, changes, stamp=STAMP)
+    updated = update_entry(parse_calendar(raw), 0, changes)
     assert percentage in updated.raw_bytes
     if changes == CalendarEntryChanges():
         assert updated.raw_bytes == raw
@@ -602,7 +599,7 @@ def test_duplicate_percentages_are_retained_read_only() -> None:
         CalendarEntryChanges(summary="Renamed"),
     ):
         with pytest.raises(CalendarEditError, match="repeated properties"):
-            update_entry(document, 0, changes, stamp=STAMP)
+            update_entry(document, 0, changes)
     assert document.raw_bytes == raw
 
 

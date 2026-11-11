@@ -1117,6 +1117,10 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Das Enddatum ist der erste Tag nach diesem ganztägigen Ereignis.</translation>
     </message>
     <message>
+        <source>Changing the time zone keeps the clock times shown above.</source>
+        <translation>Beim Ändern der Zeitzone bleiben die oben angezeigten Uhrzeiten erhalten.</translation>
+    </message>
+    <message>
         <source>Times use the iPod&apos;s local clock unless marked UTC.</source>
         <translation>Uhrzeiten richten sich nach der lokalen Uhr des iPod, sofern sie nicht als UTC gekennzeichnet sind.</translation>
     </message>
@@ -1157,6 +1161,14 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Neue Aufgabe</translation>
     </message>
     <message>
+        <source>Time zone</source>
+        <translation>Zeitzone</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
         <source>Title</source>
         <translation>Titel</translation>
     </message>
@@ -1173,8 +1185,12 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Ganztägig</translation>
     </message>
     <message>
+        <source>iPod local time</source>
+        <translation>Ortszeit des iPod</translation>
+    </message>
+    <message>
         <source>Completed</source>
-        <translation>Erledigt</translation>
+        <translation type="vanished">Erledigt</translation>
     </message>
     <message>
         <source>Save</source>
@@ -1208,67 +1224,243 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     <name>CalendarOptions</name>
     <message>
         <source>Does not repeat</source>
-        <translation>Keine Wiederholung</translation>
+        <translation type="vanished">Keine Wiederholung</translation>
     </message>
     <message>
         <source>Daily</source>
-        <translation>Täglich</translation>
+        <translation type="vanished">Täglich</translation>
     </message>
     <message>
         <source>Weekly</source>
-        <translation>Wöchentlich</translation>
+        <translation type="vanished">Wöchentlich</translation>
     </message>
     <message>
         <source>Firmware default end</source>
-        <translation>Standardende der Firmware</translation>
+        <translation type="vanished">Standardende der Firmware</translation>
     </message>
     <message>
         <source>After a number of occurrences</source>
-        <translation>Nach einer Anzahl von Terminen</translation>
+        <translation type="vanished">Nach einer Anzahl von Terminen</translation>
     </message>
     <message>
         <source>Through a date</source>
-        <translation>Bis zu einem Datum</translation>
+        <translation type="vanished">Bis zu einem Datum</translation>
     </message>
     <message>
         <source>Imported repeat (preserved)</source>
-        <translation>Importierte Wiederholung (beibehalten)</translation>
+        <translation type="vanished">Importierte Wiederholung (beibehalten)</translation>
+    </message>
+    <message>
+        <source>Monthly</source>
+        <translation type="vanished">Monatlich</translation>
+    </message>
+    <message>
+        <source>Yearly</source>
+        <translation type="vanished">Jährlich</translation>
+    </message>
+    <message>
+        <source>Imported repeat</source>
+        <translation type="vanished">Importierte Wiederholung</translation>
+    </message>
+    <message>
+        <source>No end date</source>
+        <translation type="vanished">Ohne Enddatum</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation type="vanished">Standard</translation>
+    </message>
+    <message>
+        <source>Monday</source>
+        <translation type="vanished">Montag</translation>
+    </message>
+    <message>
+        <source>Tuesday</source>
+        <translation type="vanished">Dienstag</translation>
+    </message>
+    <message>
+        <source>Wednesday</source>
+        <translation type="vanished">Mittwoch</translation>
+    </message>
+    <message>
+        <source>Thursday</source>
+        <translation type="vanished">Donnerstag</translation>
+    </message>
+    <message>
+        <source>Friday</source>
+        <translation type="vanished">Freitag</translation>
+    </message>
+    <message>
+        <source>Saturday</source>
+        <translation type="vanished">Samstag</translation>
+    </message>
+    <message>
+        <source>Sunday</source>
+        <translation type="vanished">Sonntag</translation>
+    </message>
+    <message>
+        <source>Before start</source>
+        <translation>Vor Beginn</translation>
+    </message>
+    <message>
+        <source>After start</source>
+        <translation>Nach Beginn</translation>
+    </message>
+    <message>
+        <source>Before end</source>
+        <translation>Vor Ende</translation>
+    </message>
+    <message>
+        <source>After end</source>
+        <translation>Nach Ende</translation>
+    </message>
+    <message>
+        <source>At a date and time</source>
+        <translation>An einem Datum und zu einer Uhrzeit</translation>
     </message>
     <message>
         <source>Repeat</source>
-        <translation>Wiederholen</translation>
+        <translation type="vanished">Wiederholen</translation>
     </message>
     <message>
         <source>Every</source>
-        <translation>Alle</translation>
+        <translation type="vanished">Alle</translation>
     </message>
     <message>
         <source>Repeat ends</source>
-        <translation>Wiederholung endet</translation>
+        <translation type="vanished">Wiederholung endet</translation>
     </message>
     <message>
         <source>Occurrences</source>
-        <translation>Termine</translation>
+        <translation type="vanished">Termine</translation>
     </message>
     <message>
         <source>Through</source>
-        <translation>Bis</translation>
+        <translation type="vanished">Bis</translation>
+    </message>
+    <message>
+        <source>Weekdays</source>
+        <translation type="vanished">Wochentage</translation>
+    </message>
+    <message>
+        <source>Days of month</source>
+        <translation type="vanished">Monatstage</translation>
+    </message>
+    <message>
+        <source>Months</source>
+        <translation type="vanished">Monate</translation>
+    </message>
+    <message>
+        <source>Week starts on</source>
+        <translation type="vanished">Wochenbeginn</translation>
+    </message>
+    <message>
+        <source>Add dates</source>
+        <translation type="vanished">Termine hinzufügen</translation>
+    </message>
+    <message>
+        <source>Skip dates</source>
+        <translation type="vanished">Termine überspringen</translation>
+    </message>
+    <message>
+        <source>Skip repeat rule</source>
+        <translation type="vanished">Wiederholungsregel zum Überspringen</translation>
+    </message>
+    <message>
+        <source>Added repeat dates</source>
+        <translation>Zusätzliche Wiederholungstermine</translation>
+    </message>
+    <message>
+        <source>Skipped repeat dates</source>
+        <translation>Ausgelassene Wiederholungstermine</translation>
+    </message>
+    <message>
+        <source>Remind me</source>
+        <translation>Erinnern</translation>
+    </message>
+    <message>
+        <source>Minutes</source>
+        <translation>Minuten</translation>
+    </message>
+    <message>
+        <source>Seconds</source>
+        <translation>Sekunden</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Datum</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Uhrzeit</translation>
+    </message>
+    <message>
+        <source>Advanced repeat options</source>
+        <translation>Erweiterte Wiederholungsoptionen</translation>
+    </message>
+    <message>
+        <source>These imported repeat exceptions are preserved.</source>
+        <translation>Diese importierten Ausnahmen für Wiederholungen bleiben erhalten.</translation>
+    </message>
+    <message>
+        <source>Use only the last matching weekday of each month</source>
+        <translation type="vanished">Nur den letzten passenden Wochentag jedes Monats verwenden</translation>
+    </message>
+    <message>
+        <source>Saved reminder</source>
+        <translation>Gespeicherte Erinnerung</translation>
+    </message>
+    <message>
+        <source>MO,WE or 1MO,-1FR</source>
+        <translation type="vanished">MO,WE oder 1MO,-1FR</translation>
+    </message>
+    <message>
+        <source>1,15 or -1 for the last day</source>
+        <translation type="vanished">1,15 oder -1 für den letzten Tag</translation>
+    </message>
+    <message>
+        <source>1,11</source>
+        <translation type="vanished">1,11</translation>
+    </message>
+    <message>
+        <source>YYYY-MM-DD, YYYY-MM-DD</source>
+        <translation type="vanished">YYYY-MM-DD, YYYY-MM-DD</translation>
+    </message>
+    <message>
+        <source>This imported reminder is preserved.</source>
+        <translation>Die importierte Erinnerung bleibt erhalten.</translation>
+    </message>
+    <message>
+        <source>This imported repeat rule is preserved.</source>
+        <translation>Die importierte Wiederholungsregel bleibt erhalten.</translation>
+    </message>
+    <message>
+        <source>Enter a comma-separated list of repeat values.</source>
+        <translation type="vanished">Geben Sie die Wiederholungswerte durch Kommas getrennt ein.</translation>
+    </message>
+    <message>
+        <source>Enter repeat dates as YYYY-MM-DD.</source>
+        <translation type="vanished">Geben Sie die Wiederholungsdaten im Format YYYY-MM-DD ein.</translation>
+    </message>
+    <message>
+        <source>Choose an event start for the reminder.</source>
+        <translation>Wählen Sie einen Beginn für den Termin mit Erinnerung.</translation>
     </message>
     <message>
         <source>Saved reminder before event start</source>
-        <translation>Gespeicherte Erinnerung vor Terminbeginn</translation>
+        <translation type="vanished">Gespeicherte Erinnerung vor Terminbeginn</translation>
     </message>
     <message>
         <source>Minutes before start</source>
-        <translation>Minuten vor Beginn</translation>
+        <translation type="vanished">Minuten vor Beginn</translation>
     </message>
     <message>
         <source>Daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved.</source>
-        <translation>Tägliche/wöchentliche Wiederholungen benötigen Beginn und Ende ohne Zeitzone am selben Tag vor dem Jahr 3000. Ganztägige, zeitzonenbezogene und komplexe Wiederholungen bleiben erhalten.</translation>
+        <translation type="vanished">Tägliche/wöchentliche Wiederholungen benötigen Beginn und Ende ohne Zeitzone am selben Tag vor dem Jahr 3000. Ganztägige, zeitzonenbezogene und komplexe Wiederholungen bleiben erhalten.</translation>
     </message>
     <message>
         <source>One saved reminder before a floating event&apos;s start is supported. This does not confirm live adoption, sound or physical delivery.</source>
-        <translation>Eine gespeicherte Erinnerung vor Beginn eines Termins ohne Zeitzone wird unterstützt. Dies bestätigt weder die Übernahme im laufenden Betrieb noch einen Ton oder die tatsächliche Benachrichtigung.</translation>
+        <translation type="vanished">Eine gespeicherte Erinnerung vor Beginn eines Termins ohne Zeitzone wird unterstützt. Dies bestätigt weder die Übernahme im laufenden Betrieb noch einen Ton oder die tatsächliche Benachrichtigung.</translation>
     </message>
     <message>
         <source>Mini 2 / 1.4.1: daily/weekly repeats require floating start and end times on the same day, before year 3000. All-day, zoned and complex repeats are preserved.</source>
@@ -1280,11 +1472,11 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
     <message>
         <source>Repeat and reminder editing are not qualified for this firmware. Imported settings are preserved.</source>
-        <translation>Die Bearbeitung von Wiederholungen und Erinnerungen ist für diese Firmware nicht verifiziert. Importierte Einstellungen bleiben erhalten.</translation>
+        <translation type="vanished">Die Bearbeitung von Wiederholungen und Erinnerungen ist für diese Firmware nicht verifiziert. Importierte Einstellungen bleiben erhalten.</translation>
     </message>
     <message>
         <source>Saved reminders require a floating event start.</source>
-        <translation>Gespeicherte Erinnerungen benötigen einen Terminbeginn ohne Zeitzone.</translation>
+        <translation type="vanished">Gespeicherte Erinnerungen benötigen einen Terminbeginn ohne Zeitzone.</translation>
     </message>
 </context>
 <context>
@@ -1318,6 +1510,18 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Erledigt</translation>
     </message>
     <message>
+        <source>In progress</source>
+        <translation>In Bearbeitung</translation>
+    </message>
+    <message>
+        <source>Cancelled</source>
+        <translation>Abgesagt</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Offen</translation>
+    </message>
+    <message>
         <source>Repeating</source>
         <translation>Wiederkehrend</translation>
     </message>
@@ -1328,6 +1532,10 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     <message>
         <source>Remove series</source>
         <translation>Serie entfernen</translation>
+    </message>
+    <message>
+        <source>Skip this occurrence</source>
+        <translation>Diesen Termin auslassen</translation>
     </message>
     <message>
         <source>Mark incomplete</source>
@@ -1355,7 +1563,7 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
     <message>
         <source>No saved dates or qualified occurrences for this day. Some repeats cannot be expanded for this firmware.</source>
-        <translation>Keine gespeicherten Datumswerte oder verifizierten Termine für diesen Tag. Manche Wiederholungen können für diese Firmware nicht berechnet werden.</translation>
+        <translation type="vanished">Keine gespeicherten Datumswerte oder verifizierten Termine für diesen Tag. Manche Wiederholungen können für diese Firmware nicht berechnet werden.</translation>
     </message>
     <message>
         <source>Nothing planned for this day. Add an event or choose another date.</source>
@@ -1375,7 +1583,7 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
     <message>
         <source>Saved absolute reminder (read-only): {value}</source>
-        <translation>Gespeicherte absolute Erinnerung (schreibgeschützt): {value}</translation>
+        <translation type="vanished">Gespeicherte absolute Erinnerung (schreibgeschützt): {value}</translation>
     </message>
     <message>
         <source>All saved entries</source>
@@ -1383,19 +1591,27 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
     <message>
         <source>Qualified floating daily and weekly occurrences are shown. Other repeats retain their saved dates. All saved entries lists each series once.</source>
-        <translation>Verifizierte tägliche und wöchentliche Termine ohne Zeitzone werden angezeigt. Andere Wiederholungen behalten ihre gespeicherten Datumswerte. Alle gespeicherten Einträge zeigt jede Serie einmal.</translation>
+        <translation type="vanished">Verifizierte tägliche und wöchentliche Termine ohne Zeitzone werden angezeigt. Andere Wiederholungen behalten ihre gespeicherten Datumswerte. Alle gespeicherten Einträge zeigt jede Serie einmal.</translation>
     </message>
     <message>
         <source>Repeating event · The calendar shows its saved dates.</source>
         <translation type="vanished">Wiederkehrendes Ereignis · Der Kalender zeigt seine gespeicherten Datumsangaben.</translation>
     </message>
     <message>
+        <source>Saved absolute reminder: {value}</source>
+        <translation type="vanished">Gespeicherte Erinnerung zum festen Zeitpunkt: {value}</translation>
+    </message>
+    <message>
+        <source>Reminder for the saved event: {value}</source>
+        <translation type="vanished">Erinnerung für den gespeicherten Termin: {value}</translation>
+    </message>
+    <message>
         <source>Some details could not be read. Your original entry is preserved.</source>
-        <translation>Einige Details konnten nicht gelesen werden. Ihr ursprünglicher Eintrag bleibt erhalten.</translation>
+        <translation type="vanished">Einige Details konnten nicht gelesen werden. Ihr ursprünglicher Eintrag bleibt erhalten.</translation>
     </message>
     <message>
         <source>This imported entry can be viewed but cannot be edited.</source>
-        <translation>Dieser importierte Eintrag kann angezeigt, aber nicht bearbeitet werden.</translation>
+        <translation type="vanished">Dieser importierte Eintrag kann angezeigt, aber nicht bearbeitet werden.</translation>
     </message>
     <message>
         <source>New entry</source>
@@ -1458,6 +1674,14 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Ausgewählter Tag</translation>
     </message>
     <message>
+        <source>All saved entries lists each series once.</source>
+        <translation>Unter „Alle gespeicherten Einträge“ erscheint jede Serie einmal.</translation>
+    </message>
+    <message>
+        <source>Calendar editing is unavailable for {model}.</source>
+        <translation>Der Kalender kann auf {model} nicht bearbeitet werden.</translation>
+    </message>
+    <message>
         <source>All events</source>
         <translation type="vanished">Alle Ereignisse</translation>
     </message>
@@ -1479,7 +1703,7 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
     <message>
         <source>Recurrence expansion is not qualified for this firmware. Repeating events show their saved dates.</source>
-        <translation>Die Berechnung wiederkehrender Termine ist für diese Firmware nicht verifiziert. Wiederholungen zeigen ihre gespeicherten Datumswerte.</translation>
+        <translation type="vanished">Die Berechnung wiederkehrender Termine ist für diese Firmware nicht verifiziert. Wiederholungen zeigen ihre gespeicherten Datumswerte.</translation>
     </message>
     <message>
         <source>Some Calendar files could not be opened. Other entries are still available.</source>
@@ -1490,20 +1714,32 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
         <translation>Aufgaben</translation>
     </message>
     <message>
+        <source>No entries for this day. Some imported repeats are shown only on their saved dates.</source>
+        <translation>Keine Einträge an diesem Tag. Manche importierte Wiederholungen erscheinen nur an den gespeicherten Terminen.</translation>
+    </message>
+    <message>
         <source>Saved repeat rule: {rule}</source>
-        <translation>Gespeicherte Wiederholungsregel: {rule}</translation>
+        <translation type="vanished">Gespeicherte Wiederholungsregel: {rule}</translation>
+    </message>
+    <message>
+        <source>Calendar timezone: {name}</source>
+        <translation type="vanished">Kalenderzeitzone: {name}</translation>
+    </message>
+    <message>
+        <source>The event timezone could not be resolved within this Calendar.</source>
+        <translation type="vanished">Die Zeitzone des Termins konnte in diesem Kalender nicht ermittelt werden.</translation>
     </message>
     <message>
         <source>Saved reminder: {seconds} seconds relative to {anchor}</source>
-        <translation>Gespeicherte Erinnerung: {seconds} Sekunden relativ zu {anchor}</translation>
+        <translation type="vanished">Gespeicherte Erinnerung: {seconds} Sekunden relativ zu {anchor}</translation>
     </message>
     <message>
         <source>end</source>
-        <translation>Ende</translation>
+        <translation type="vanished">Ende</translation>
     </message>
     <message>
         <source>start</source>
-        <translation>Beginn</translation>
+        <translation type="vanished">Beginn</translation>
     </message>
     <message>
         <source>Saved reminder: {time}</source>
@@ -1511,11 +1747,11 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
     <message>
         <source>Uninterpreted reminder preserved.</source>
-        <translation>Nicht interpretierte Erinnerung beibehalten.</translation>
+        <translation type="vanished">Nicht interpretierte Erinnerung beibehalten.</translation>
     </message>
     <message>
         <source>Repeating series · Editing or removing this entry affects the whole series.</source>
-        <translation>Terminserie · Bearbeiten oder Entfernen dieses Eintrags betrifft die gesamte Serie.</translation>
+        <translation type="vanished">Terminserie · Bearbeiten oder Entfernen dieses Eintrags betrifft die gesamte Serie.</translation>
     </message>
     <message>
         <source>Title</source>
@@ -1556,16 +1792,179 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     <message>
         <source>{model} · Firmware {firmware}
 Calendar is read-only because editing support could not be confirmed for this model and firmware.</source>
-        <translation>{model} · Firmware {firmware}
+        <translation type="vanished">{model} · Firmware {firmware}
 Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung mit diesem Modell und dieser Firmware nicht bestätigt werden konnte.</translation>
     </message>
     <message>
         <source>{model}: Calendar is read-only because the iPod&apos;s firmware version could not be confirmed.</source>
-        <translation>{model}: Der Kalender ist schreibgeschützt, da die Firmware-Version des iPod nicht bestätigt werden konnte.</translation>
+        <translation type="vanished">{model}: Der Kalender ist schreibgeschützt, da die Firmware-Version des iPod nicht bestätigt werden konnte.</translation>
     </message>
     <message>
         <source>Choose an iPod to view its Calendar.</source>
         <translation>Wählen Sie einen iPod, um seinen Kalender anzuzeigen.</translation>
+    </message>
+</context>
+<context>
+    <name>CalendarRepeatEditor</name>
+    <message>
+        <source>{number} from end</source>
+        <translation>{number} von hinten</translation>
+    </message>
+    <message>
+        <source>Last</source>
+        <translation>Letzter</translation>
+    </message>
+    <message>
+        <source>First</source>
+        <translation>Erster</translation>
+    </message>
+    <message>
+        <source>Second</source>
+        <translation>Zweiter</translation>
+    </message>
+    <message>
+        <source>Third</source>
+        <translation>Dritter</translation>
+    </message>
+    <message>
+        <source>Fourth</source>
+        <translation>Vierter</translation>
+    </message>
+    <message>
+        <source>Fifth</source>
+        <translation>Fünfter</translation>
+    </message>
+    <message>
+        <source>{position} · {weekday}</source>
+        <translation>{position} · {weekday}</translation>
+    </message>
+    <message>
+        <source>No exclusion rule</source>
+        <translation>Keine Ausschlussregel</translation>
+    </message>
+    <message>
+        <source>Does not repeat</source>
+        <translation>Keine Wiederholung</translation>
+    </message>
+    <message>
+        <source>Daily</source>
+        <translation>Täglich</translation>
+    </message>
+    <message>
+        <source>Weekly</source>
+        <translation>Wöchentlich</translation>
+    </message>
+    <message>
+        <source>Monthly</source>
+        <translation>Monatlich</translation>
+    </message>
+    <message>
+        <source>Yearly</source>
+        <translation>Jährlich</translation>
+    </message>
+    <message>
+        <source>No end date</source>
+        <translation>Kein Enddatum</translation>
+    </message>
+    <message>
+        <source>After a number of occurrences</source>
+        <translation>Nach einer Anzahl von Terminen</translation>
+    </message>
+    <message>
+        <source>Through a date and time</source>
+        <translation>Bis zu einem Datum und einer Uhrzeit</translation>
+    </message>
+    <message>
+        <source>On weekdays</source>
+        <translation>Nach Wochentagen</translation>
+    </message>
+    <message>
+        <source>On days of the month</source>
+        <translation>Nach Monatstagen</translation>
+    </message>
+    <message>
+        <source>Any position</source>
+        <translation>Beliebige Position</translation>
+    </message>
+    <message>
+        <source>Every matching weekday</source>
+        <translation type="vanished">Jeder passende Wochentag</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Standard</translation>
+    </message>
+    <message>
+        <source>Imported repeat</source>
+        <translation>Importierte Wiederholung</translation>
+    </message>
+    <message>
+        <source>Skip repeat rule</source>
+        <translation>Ausschlussregel</translation>
+    </message>
+    <message>
+        <source>Repeat</source>
+        <translation>Wiederholen</translation>
+    </message>
+    <message>
+        <source>Every</source>
+        <translation>Intervall</translation>
+    </message>
+    <message>
+        <source>Repeat ends</source>
+        <translation>Wiederholung endet</translation>
+    </message>
+    <message>
+        <source>Occurrences</source>
+        <translation>Termine</translation>
+    </message>
+    <message>
+        <source>Through date</source>
+        <translation>Bis zum Datum</translation>
+    </message>
+    <message>
+        <source>Through time</source>
+        <translation>Bis zur Uhrzeit</translation>
+    </message>
+    <message>
+        <source>Monthly selection</source>
+        <translation>Monatliche Auswahl</translation>
+    </message>
+    <message>
+        <source>Week starts on</source>
+        <translation>Woche beginnt am</translation>
+    </message>
+    <message>
+        <source>Weekdays</source>
+        <translation>Wochentage</translation>
+    </message>
+    <message>
+        <source>Days of month</source>
+        <translation>Monatstage</translation>
+    </message>
+    <message>
+        <source>Months</source>
+        <translation>Monate</translation>
+    </message>
+    <message>
+        <source>Weekday</source>
+        <translation>Wochentag</translation>
+    </message>
+    <message>
+        <source>Position in the month</source>
+        <translation>Position im Monat</translation>
+    </message>
+    <message>
+        <source>Day of month</source>
+        <translation>Monatstag</translation>
+    </message>
+    <message>
+        <source>Month</source>
+        <translation>Monat</translation>
+    </message>
+    <message>
+        <source>Use only the last matching weekday of each month</source>
+        <translation>Nur den letzten passenden Wochentag jedes Monats verwenden</translation>
     </message>
 </context>
 <context>
@@ -13788,7 +14187,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The retained iTunesDB uses an unsupported signature scheme. Its signing requirements cannot be replaced implicitly.</source>
-        <translation>Die beibehaltene iTunesDB verwendet ein nicht unterstütztes Signaturverfahren. Ihre Signaturanforderungen können nicht ohne ausdrückliche Änderung ersetzt werden.</translation>
+        <translation type="vanished">Die beibehaltene iTunesDB verwendet ein nicht unterstütztes Signaturverfahren. Ihre Signaturanforderungen können nicht ohne ausdrückliche Änderung ersetzt werden.</translation>
     </message>
     <message>
         <source>The retained playback positions exceed this Track&apos;s duration. Unrelated edits preserve them.</source>
@@ -13900,7 +14299,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The source database is signed; supply its supported signature target before editing.</source>
-        <translation>Die Quelldatenbank ist signiert. Geben Sie vor der Bearbeitung das unterstützte Signaturziel an.</translation>
+        <translation type="vanished">Die Quelldatenbank ist signiert. Geben Sie vor der Bearbeitung das unterstützte Signaturziel an.</translation>
     </message>
     <message>
         <source>The symbolic link could not be followed: {error}</source>
@@ -15235,6 +15634,25 @@ Ein Neustart von iOpenPod entfernt keine bereits von udev zwischengespeicherten 
     <message>
         <source>Playback Queue</source>
         <translation>Wiedergabewarteschlange</translation>
+    </message>
+</context>
+<context>
+    <name>_RepeatList</name>
+    <message>
+        <source>Add</source>
+        <translation>Hinzufügen</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Entfernen</translation>
+    </message>
+    <message>
+        <source>Add to {list}</source>
+        <translation>Zu „{list}“ hinzufügen</translation>
+    </message>
+    <message>
+        <source>Remove from {list}</source>
+        <translation>Aus „{list}“ entfernen</translation>
     </message>
 </context>
 <context>

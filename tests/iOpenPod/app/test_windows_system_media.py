@@ -1,5 +1,6 @@
 """Tests for the Windows System Media Transport Controls adapter."""
 
+import sys
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import timedelta
@@ -423,6 +424,7 @@ def test_windows_session_rejects_invalid_window_id() -> None:
         WindowsSystemMediaSession(0, _bindings(_FakeControls()))
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires native PyWinRT")
 def test_real_pywinrt_binding_uses_winrt_time_span_shape() -> None:
     bindings = _load_bindings()
     assert bindings.make_time_span(1_500) == timedelta(milliseconds=1_500)

@@ -361,7 +361,7 @@ class PreferencesSupport:
 
 @dataclass(frozen=True, slots=True)
 class ExtrasSupport:
-    """Application codec qualification from one profile and ranked evidence.
+    """Calendar availability from the model and Clock Alarm layout evidence.
 
     alarm_write permits edits to proven fields of an existing captured record.
     It does not permit creating records, changing unknown modes, or clock sync.
@@ -370,8 +370,8 @@ class ExtrasSupport:
     """
 
     calendar_write: bool = False
-    calendar_firmware: FirmwareTarget | None = field(default=None, kw_only=True)
     alarm_format: AlarmFormat = AlarmFormat.NONE
+    alarm_firmware: FirmwareTarget | None = field(default=None, kw_only=True)
     alarm_write: bool = False
     sleep_timer: FeatureSupport = FeatureSupport.UNKNOWN
     sleep_timer_write: bool = False

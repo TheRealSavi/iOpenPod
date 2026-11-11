@@ -1,6 +1,7 @@
 """Platform channel selection never installs packages during inspection."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,13 @@ from storage.host_tools import HostToolEnvironment
 from storage.media_processing import MediaToolError, ToolOutput
 
 MISSING = tuple(MediaToolStatus(name) for name in TOOL_NAMES)
+# Host Paths must be absolute on the running platform, so inspection fakes
+# live under the native filesystem root rather than a Windows drive.
+TOOL_ROOT = Path(Path.cwd().anchor)
+
+
+def tool_path(relative: str) -> HostPath:
+    return HostPath(TOOL_ROOT / relative)
 
 
 def test_windows_uses_exact_packages_and_keeps_hash_verification() -> None:
@@ -154,7 +162,7 @@ def test_inspection_verifies_execution_and_reports_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def find_tool(name: str) -> HostPath | None:
-        return None if name == "fpcalc" else HostPath(f"C:/{name}.exe")
+        return None if name == "fpcalc" else tool_path(f"{name}.exe")
 
     def read_encoders(_executable: HostPath, **_kwargs: object) -> frozenset[str]:
         return frozenset({"aac"})
@@ -189,7 +197,7 @@ def test_inspection_rejects_an_unrelated_executable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def find_tool(name: str) -> HostPath:
-        return HostPath(f"C:/{name}.exe")
+        return tool_path(f"{name}.exe")
 
     def run(
         _executable: HostPath, _arguments: tuple[str, ...], **_kwargs: object
@@ -224,7 +232,7 @@ def test_inspection_reads_encoders_from_the_selected_ffmpeg(
     calls: list[tuple[str, tuple[str, ...]]] = []
 
     def find_tool(name: str) -> HostPath | None:
-        return HostPath("C:/tools/ffmpeg.exe") if name == "ffmpeg" else None
+        return tool_path("tools/ffmpeg.exe") if name == "ffmpeg" else None
 
     def run(
         executable: HostPath, arguments: tuple[str, ...], **_kwargs: object
@@ -249,8 +257,8 @@ def test_inspection_reads_encoders_from_the_selected_ffmpeg(
             line.split()[1:2] == [name.encode()] for line in listing.splitlines()
         )
     assert calls == [
-        (str(HostPath("C:/tools/ffmpeg.exe")), ("-version",)),
-        (str(HostPath("C:/tools/ffmpeg.exe")), ("-hide_banner", "-encoders")),
+        (str(tool_path("tools/ffmpeg.exe")), ("-version",)),
+        (str(tool_path("tools/ffmpeg.exe")), ("-hide_banner", "-encoders")),
     ]
 
 
@@ -258,7 +266,7 @@ def test_encoder_check_failure_is_not_a_missing_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def find_tool(name: str) -> HostPath:
-        return HostPath(f"C:/{name}.exe")
+        return tool_path(f"{name}.exe")
 
     def run(
         _executable: HostPath, _arguments: tuple[str, ...], **_kwargs: object
