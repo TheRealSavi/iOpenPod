@@ -24,6 +24,7 @@ from iOpenPod.app.core.settings.transcoding import encoder_bitrate_mode
 from iOpenPod.app.media.transcoding import LossyEncoder
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
 
 
@@ -113,6 +114,39 @@ def test_scope_changes_and_retranslation_never_write_settings(
         for name in ("draftAllChangesCombo", "navigationStyleCombo", "backupLocation"):
             control = page.findChild(QWidget, name)
             assert control is not None and not control.isVisible()
+    finally:
+        page.close()
+
+
+def test_scope_notice_only_appears_when_an_ipod_needs_to_be_chosen(
+    context: AppContext,
+) -> None:
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    page.resize(940, 620)
+    page.show()
+    header = page.findChild(PageHeader)
+    note = page.findChild(QLabel, "settingsScopeDescription")
+    choose = page.findChild(QPushButton, "settingsChooseIPod")
+    assert header is not None and note is not None and choose is not None
+    tabs = _tabs(page)
+    try:
+        APPLICATION.processEvents()
+        assert not note.isVisible()
+        assert tabs.geometry().top() == header.geometry().bottom() + 1
+        _switch(page, True)
+        assert note.isVisible() and choose.isVisible()
+        assert note.text().startswith("Choose an iPod to customize its settings.")
+        context.settings.load_device("one", {})
+        APPLICATION.processEvents()
+        for category in ("librarySettingsScroll", "ipodPreferencesScroll"):
+            _category(page, category)
+            APPLICATION.processEvents()
+            assert not note.isVisible() and not choose.isVisible()
+            assert tabs.isVisible()
+            assert tabs.geometry().top() == header.geometry().bottom() + 1
+        _switch(page, False)
+        assert not note.isVisible()
+        assert tabs.geometry().top() == header.geometry().bottom() + 1
     finally:
         page.close()
 
