@@ -309,9 +309,9 @@ def reconcile_hidden(
                 # Several native records already carry this name, which older
                 # iTunes builds left behind. Adding members needs no new owner,
                 # so keep the record that owns most of the group instead of
-                # refusing the whole write. The choice stays visible as a
-                # warning: nothing downstream can tell which record the user
-                # actually meant.
+                # refusing the whole write (ADR-0253). The choice stays visible
+                # as a warning: nothing downstream can tell which record the
+                # user actually meant.
                 member_ids = {t.track_id for t in members}
                 identity = max(
                     sorted(candidates),
