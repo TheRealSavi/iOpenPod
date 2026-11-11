@@ -8493,7 +8493,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Global defaults for your iPods. Individual iPod overrides take priority.</source>
-        <translation>Globale Standardwerte für deine iPods. Eigene Werte einzelner iPods haben Vorrang.</translation>
+        <translation type="vanished">Globale Standardwerte für deine iPods. Eigene Werte einzelner iPods haben Vorrang.</translation>
     </message>
     <message>
         <source>Choose an iPod to customize its settings. Unset settings follow the Host automatically.</source>

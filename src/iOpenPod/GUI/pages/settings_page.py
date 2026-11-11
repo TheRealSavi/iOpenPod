@@ -787,11 +787,12 @@ class SettingsPage(QWidget):
         self._tabs.setVisible(not device or connected)
         self._empty_scope.setVisible(device and not connected)
         self._choose_ipod.setVisible(device and not connected)
+        # The Host scope needs no note, so its tabs sit flush against the header.
+        self._scope_notice.setVisible(device)
         if not device:
-            text = self.tr(
-                "Global defaults for your iPods. Individual iPod overrides take priority."
-            )
-        elif not connected:
+            self._update_saved_note()
+            return
+        if not connected:
             text = self.tr(
                 "Choose an iPod to customize its settings. Unset settings follow the Host automatically."
             )
