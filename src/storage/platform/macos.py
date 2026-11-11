@@ -823,6 +823,9 @@ def _diskutil_info(target: Path) -> dict[str, object]:
     return cast("dict[str, object]", parsed)
 
 
+type _UsbOwner = tuple[int | None, HardwareIdentifiers]
+
+
 def _ioreg_hardware_index() -> dict[str, HardwareIdentifiers]:
     """Index whole disks by their owning USB device in one IOService snapshot."""
 
@@ -839,10 +842,9 @@ def _ioreg_hardware_index() -> dict[str, HardwareIdentifiers]:
     if not isinstance(roots, list):
         return {}
 
-    type UsbOwner = tuple[int | None, HardwareIdentifiers]
-    owners_by_disk: dict[str, set[UsbOwner]] = {}
+    owners_by_disk: dict[str, set[_UsbOwner]] = {}
 
-    def visit(nodes: list[object], parent_usb: UsbOwner | None = None) -> None:
+    def visit(nodes: list[object], parent_usb: _UsbOwner | None = None) -> None:
         for node in nodes:
             if not isinstance(node, dict):
                 continue

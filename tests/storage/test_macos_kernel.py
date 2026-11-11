@@ -722,7 +722,11 @@ def test_ioreg_index_only_accepts_a_single_usb_owner(
     }
     second = nano | {"IORegistryEntryID": second_entry_id}
     payload = plistlib.dumps([nano, second])
-    monkeypatch.setattr("storage.platform.macos._run_ioreg", lambda _command: payload)
+
+    def run_ioreg(_command: list[str]) -> bytes:
+        return payload
+
+    monkeypatch.setattr("storage.platform.macos._run_ioreg", run_ioreg)
 
     expected = (
         {
@@ -741,10 +745,10 @@ def test_ioreg_index_only_accepts_a_single_usb_owner(
 def test_ioreg_index_treats_truncated_archive_as_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "storage.platform.macos._run_ioreg",
-        lambda _command: b'<?xml version="1.0"?><plist><array>',
-    )
+    def run_ioreg(_command: list[str]) -> bytes:
+        return b'<?xml version="1.0"?><plist><array>'
+
+    monkeypatch.setattr("storage.platform.macos._run_ioreg", run_ioreg)
 
     assert _ioreg_hardware_index() == {}
 
@@ -783,11 +787,14 @@ def test_macos_discovery_continues_after_truncated_diskutil_plist(
             stdout = good_plist
         return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr=b"")
 
+    def read_volume_attributes(_path: Path) -> tuple[str | None, bool | None]:
+        return None, None
+
     monkeypatch.setattr("storage.platform.macos._VOLUMES_DIRECTORY", tmp_path)
     monkeypatch.setattr("storage.platform.macos._ioreg_hardware_index", dict)
     monkeypatch.setattr("storage.platform.macos._read_statfs", snapshots.__getitem__)
     monkeypatch.setattr(
-        "storage.platform.macos._read_volume_attributes", lambda _path: (None, None)
+        "storage.platform.macos._read_volume_attributes", read_volume_attributes
     )
     monkeypatch.setattr("storage.platform.macos.subprocess.run", run)
 
