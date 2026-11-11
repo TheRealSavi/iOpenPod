@@ -19,7 +19,7 @@ from iOpenPod.app.podcasts.feed_client import (
 from iOpenPod.app.podcasts.identity import track_podcast_identity
 from iOpenPod.app.podcasts.models import ListeningRecord
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan, plan_podcast_sync
-from iPodDB.library import WriteIssue
+from iPodDB.library import IssueSeverity, WriteIssue
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -109,6 +109,7 @@ def prepare_podcast_sync(
                             "kept unchanged; check the feed and retry Sync.",
                             title=subscription.title,
                         ),
+                        severity=IssueSeverity.WARNING,
                         detail=f"{subscription.feed_url}: {error}",
                     )
                 )

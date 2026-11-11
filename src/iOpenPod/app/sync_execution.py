@@ -958,7 +958,15 @@ class SyncExecutor:
                     artwork_deferred
                     or len(completed) < request.plan.change_count + podcast_changes
                     or bool(skipped_playlists)
-                    or any(issue.severity is IssueSeverity.ERROR for issue in issues)
+                    # A subscription whose feed could not be refreshed keeps its
+                    # episodes unchanged. That warnings-only outcome must not stop
+                    # the music changes, but the Sync still did not apply the
+                    # podcast state the user asked for.
+                    or any(
+                        issue.severity is IssueSeverity.ERROR
+                        or issue.code == "podcast.refresh_failed"
+                        for issue in issues
+                    )
                 )
                 recovery_path = saved.recovery_path
                 if recovery_path:
