@@ -14,7 +14,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QEnterEvent, QPalette, QPixmap
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QGraphicsOpacityEffect, QTabBar, QTabWidget, QWidget
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.core.settings.definitions import DarkTheme, LightTheme
@@ -79,7 +79,9 @@ def _shown_example(preview: SettingsPreview) -> SettingExample | None:
     return preview.example
 
 
-def test_tabs_and_all_categories_share_responsive_width(page: SettingsPage) -> None:
+def test_tabs_span_page_while_categories_keep_responsive_width(
+    page: SettingsPage,
+) -> None:
     tabs = page.findChild(QTabWidget, "settingsTabs")
     assert tabs is not None
     for width in (1000, 1400, 1719, 1720, 2064, 1300, 850):
@@ -95,18 +97,16 @@ def test_tabs_and_all_categories_share_responsive_width(page: SettingsPage) -> N
             assert isinstance(tab, SettingsTab)
             available = tab.viewport().width() - 2 * LAYOUT.space_lg
             expected = 960 if width >= 1720 else available
-            assert tabs.tabBar().width() == available
+            bar = tabs.tabBar()
+            assert bar.mapTo(page, bar.rect().topLeft()).x() == 0
+            assert bar.width() == width
             assert tab.preview.isVisible() == (width >= 1720)
-            bar_left = tabs.tabBar().mapTo(page, tabs.tabBar().rect().topLeft()).x()
             for group in tab.findChildren(SettingGroup):
                 if group.isVisible():
                     assert group.width() == expected
-                    assert group.mapTo(page, group.rect().topLeft()).x() == bar_left
-
-
-def _visible_tabs_fit(bar: QTabBar) -> bool:
-    visible = [index for index in range(bar.count()) if bar.isTabVisible(index)]
-    return bar.tabRect(visible[-1]).right() < bar.width()
+                    assert (
+                        group.mapTo(page, group.rect().topLeft()).x() == LAYOUT.space_lg
+                    )
 
 
 @pytest.mark.parametrize("language", ["en", "de", "es"])
@@ -129,10 +129,11 @@ def test_every_tab_fits_beside_the_example_with_the_linux_tab(
         for device in (False, True):
             switcher.select_device(device)
             _settle()
-            tab = tabs.currentWidget()
-            assert isinstance(tab, SettingsTab)
-            assert bar.width() == tab.viewport().width() - 2 * LAYOUT.space_lg
-            assert _visible_tabs_fit(bar)
+            assert bar.mapTo(page, bar.rect().topLeft()).x() == 0
+            assert bar.width() == page.width()
+            visible = [i for i in range(bar.count()) if bar.isTabVisible(i)]
+            assert bar.tabRect(visible[0]).left() == 0
+            assert bar.tabRect(visible[-1]).right() == bar.width() - 1
     finally:
         page.close()
         page.deleteLater()

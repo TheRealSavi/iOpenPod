@@ -118,7 +118,7 @@ def test_scope_changes_and_retranslation_never_write_settings(
         page.close()
 
 
-def test_only_the_ipod_scope_shows_a_note_under_the_header(
+def test_scope_notice_only_appears_when_an_ipod_needs_to_be_chosen(
     context: AppContext,
 ) -> None:
     page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
@@ -128,20 +128,25 @@ def test_only_the_ipod_scope_shows_a_note_under_the_header(
     note = page.findChild(QLabel, "settingsScopeDescription")
     choose = page.findChild(QPushButton, "settingsChooseIPod")
     assert header is not None and note is not None and choose is not None
+    tabs = _tabs(page)
     try:
         APPLICATION.processEvents()
         assert not note.isVisible()
-        assert _tabs(page).geometry().top() == header.geometry().bottom() + 1
+        assert tabs.geometry().top() == header.geometry().bottom() + 1
         _switch(page, True)
         assert note.isVisible() and choose.isVisible()
         assert note.text().startswith("Choose an iPod to customize its settings.")
         context.settings.load_device("one", {})
         APPLICATION.processEvents()
-        assert note.isVisible() and not choose.isVisible()
-        assert "Settings saved on this iPod." in note.text()
+        for category in ("librarySettingsScroll", "ipodPreferencesScroll"):
+            _category(page, category)
+            APPLICATION.processEvents()
+            assert not note.isVisible() and not choose.isVisible()
+            assert tabs.isVisible()
+            assert tabs.geometry().top() == header.geometry().bottom() + 1
         _switch(page, False)
         assert not note.isVisible()
-        assert _tabs(page).geometry().top() == header.geometry().bottom() + 1
+        assert tabs.geometry().top() == header.geometry().bottom() + 1
     finally:
         page.close()
 

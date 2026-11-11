@@ -8501,15 +8501,15 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Active iPod</source>
-        <translation>Aktiver iPod</translation>
+        <translation type="vanished">Aktiver iPod</translation>
     </message>
     <message>
         <source>%1 · Settings used by the iPod&apos;s firmware.</source>
-        <translation>%1 · Von der Firmware des iPod verwendete Einstellungen.</translation>
+        <translation type="vanished">%1 · Von der Firmware des iPod verwendete Einstellungen.</translation>
     </message>
     <message>
         <source>%1 · Settings saved on this iPod. Choose Use Host to follow global defaults.</source>
-        <translation>%1 · Einstellungen auf diesem iPod gespeichert. Wähle Host verwenden, um den globalen Standardwerten zu folgen.</translation>
+        <translation type="vanished">%1 · Einstellungen auf diesem iPod gespeichert. Wähle Host verwenden, um den globalen Standardwerten zu folgen.</translation>
     </message>
     <message>
         <source>Choose an iPod to view its settings.</source>

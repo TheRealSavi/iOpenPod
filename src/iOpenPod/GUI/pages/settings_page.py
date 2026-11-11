@@ -111,7 +111,6 @@ class SettingsPage(QWidget):
         super().__init__(parent)
         self._settings = settings
         self._editor = SettingsEditor(settings, self)
-        self._active_ipod: ActiveIPod | None = None
         self._theme_manager = theme_manager
         self._i18n_manager = i18n_manager
         self._version = get_version()
@@ -370,7 +369,6 @@ class SettingsPage(QWidget):
         self._tabs.setDocumentMode(True)
         self._tabs.setUsesScrollButtons(True)
         self._tabs.tabBar().setExpanding(True)
-        self._tabs.currentChanged.connect(self._update_tab_width)
         # Keep tab clicks from restoring an off-screen control and jumping the scroll.
         self._tabs.tabBar().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._transcoding_settings = TranscodingSettings(
@@ -497,7 +495,6 @@ class SettingsPage(QWidget):
         self._open_log_folder.clicked.connect(self._show_log_folder)
         self._donate.clicked.connect(self._open_donation_page)
         self._tabs.currentChanged.connect(self._update_saved_note)
-        self._tabs.currentChanged.connect(self._update_scope_state)
         self._ipod_preferences.stateChanged.connect(self._update_saved_note)
         self._tabs.currentChanged.connect(self._check_media_tools_tab)
         settings.settingChanged.connect(self._setting_changed)
@@ -558,22 +555,18 @@ class SettingsPage(QWidget):
         scroll = SettingsTab(
             name, widgets, self._tabs, theme_manager=self._theme_manager
         )
-        scroll.columnWidthChanged.connect(self._update_tab_width)
         return self._tabs.addTab(scroll, "")
-
-    def _update_tab_width(self) -> None:
-        current = self._tabs.currentWidget()
-        if isinstance(current, SettingsTab):
-            # Span the page, including beside the example image, so every label fits.
-            self._tabs.tabBar().setFixedWidth(
-                max(1, current.viewport().width() - 2 * LAYOUT.space_lg)
-            )
 
     def retranslate_ui(self) -> None:
         self._update_version()
         self._media_tools.retranslate_ui()
         self._header.set_title(self.tr("Settings"))
         self._scope_switcher.retranslate_ui()
+        self._scope_description.setText(
+            self.tr(
+                "Choose an iPod to customize its settings. Unset settings follow the Host automatically."
+            )
+        )
         self._choose_ipod.setText(self.tr("Choose iPod…"))
         self._tabs.setAccessibleName(self.tr("Settings categories"))
         self._tabs.setTabText(self._appearance_tab, self.tr("Appearance"))
@@ -744,9 +737,7 @@ class SettingsPage(QWidget):
         self._update_scope_state()
 
     def set_active_ipod(self, active: ActiveIPod | None) -> None:
-        self._active_ipod = active
         self._ipod_preferences.set_active_ipod(active)
-        self._update_scope_state()
 
     def _select_scope(self, device: bool) -> None:
         current = self._tabs.currentIndex()
@@ -772,7 +763,6 @@ class SettingsPage(QWidget):
             else self._appearance_tab
         )
         del blocker
-        self._update_tab_width()
         self._draft_all_changes_row.setVisible(not device)
         self._navigation_style_row.setVisible(not device)
         self._volume_presentation_row.setVisible(not device)
@@ -782,34 +772,10 @@ class SettingsPage(QWidget):
         self._update_scope_state()
 
     def _update_scope_state(self) -> None:
-        device = self._editor.device
-        connected = self._settings.device_connected
-        self._tabs.setVisible(not device or connected)
-        self._empty_scope.setVisible(device and not connected)
-        self._choose_ipod.setVisible(device and not connected)
-        # The Host scope needs no note, so its tabs sit flush against the header.
-        self._scope_notice.setVisible(device)
-        if not device:
-            self._update_saved_note()
-            return
-        if not connected:
-            text = self.tr(
-                "Choose an iPod to customize its settings. Unset settings follow the Host automatically."
-            )
-        else:
-            name = (
-                self._active_ipod.display_name
-                if self._active_ipod is not None
-                else self.tr("Active iPod")
-            )
-            text = (
-                self.tr("%1 · Settings used by the iPod's firmware.")
-                if self._tabs.currentIndex() == self._ipod_preferences_tab
-                else self.tr(
-                    "%1 · Settings saved on this iPod. Choose Use Host to follow global defaults."
-                )
-            ).replace("%1", name)
-        self._scope_description.setText(text)
+        needs_ipod = self._editor.device and not self._settings.device_connected
+        self._tabs.setVisible(not needs_ipod)
+        self._empty_scope.setVisible(needs_ipod)
+        self._scope_notice.setVisible(needs_ipod)
         self._update_saved_note()
 
     def _update_saved_note(self, _index: int = -1) -> None:
