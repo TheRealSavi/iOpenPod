@@ -10,24 +10,27 @@ from whenever import Date, Instant, PlainDateTime
 type CalendarValue = Date | PlainDateTime | Instant
 
 
-class CalendarProfile(StrEnum):
-    UNKNOWN = "unknown"
-    MINI_1_1_4_1 = "mini_1_1_4_1"
-    MINI_2_1_4_1 = "mini_2_1_4_1"
-    NANO_1_1_3_1 = "nano_1_1_3_1"
-    NANO_3_1_1_3 = "nano_3_1_1_3"
-    NANO_4_1_0_4 = "nano_4_1_0_4"
-    NANO_5_1_0_2 = "nano_5_1_0_2"
-    VIDEO_1_3 = "video_1_3"
-    CLASSIC_6_1_1_2 = "classic_6_1_1_2"
-    CLASSIC_120GB_2_0_1 = "classic_120gb_2_0_1"
-    CLASSIC_UPDATER_35_2_0_4 = "classic_updater_35_2_0_4"
-    CLASSIC_UPDATER_38_2_0_5 = "classic_updater_38_2_0_5"
-
-
 class CalendarFrequency(StrEnum):
     DAILY = "DAILY"
     WEEKLY = "WEEKLY"
+    MONTHLY = "MONTHLY"
+    YEARLY = "YEARLY"
+
+
+class CalendarWeekday(StrEnum):
+    MONDAY = "MO"
+    TUESDAY = "TU"
+    WEDNESDAY = "WE"
+    THURSDAY = "TH"
+    FRIDAY = "FR"
+    SATURDAY = "SA"
+    SUNDAY = "SU"
+
+
+@dataclass(frozen=True, slots=True)
+class CalendarDayRule:
+    weekday: CalendarWeekday
+    ordinal: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,17 +39,36 @@ class CalendarRecurrenceRule:
     interval: int = 1
     count: int | None = None
     until: PlainDateTime | None = None
+    weekdays: tuple[CalendarDayRule, ...] = ()
+    month_days: tuple[int, ...] = ()
+    months: tuple[int, ...] = ()
+    week_start: CalendarWeekday | None = None
+    last_matching_weekday: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CalendarExceptions:
+    added: tuple[Date, ...] = ()
+    excluded: tuple[Date, ...] = ()
+    exclusion_rule: CalendarRecurrenceRule | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class CalendarReminderDraft:
-    minutes_before: int
+    relative_seconds: int | None = None
     related_to_end: bool = False
+    absolute_trigger: PlainDateTime | Instant | None = None
 
 
 class CalendarEntryKind(StrEnum):
     EVENT = "VEVENT"
     TODO = "VTODO"
+
+
+class CalendarTodoStatus(StrEnum):
+    IN_PROCESS = "IN-PROCESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class CalendarDateForm(StrEnum):
@@ -146,6 +168,15 @@ class CalendarReminder:
 
 
 @dataclass(frozen=True, slots=True)
+class CalendarZone:
+    """A zone defined by the saved Calendar and bound while reading an entry."""
+
+    name: str
+    standard_offset: int | None
+    daylight_offset: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class CalendarEntry:
     """A document-local row, not an expanded recurrence occurrence."""
 
@@ -167,6 +198,9 @@ class CalendarEntry:
     component: CalendarComponent
     recurrence: CalendarRecurrence | None = None
     reminders: tuple[CalendarReminder, ...] = ()
+    calendar_version: str | None = None
+    zone: CalendarZone | None = None
+    todo_status: CalendarTodoStatus | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,8 +233,11 @@ class CalendarEntryDraft:
     due: CalendarValue | None = None
     completed: bool = False
     completed_at: Instant | None = None
+    todo_status: CalendarTodoStatus | None = None
+    tzid: str | None = None
     uid: str | None = None
     recurrence: CalendarRecurrenceRule | None = None
+    exceptions: CalendarExceptions | None = None
     reminder: CalendarReminderDraft | None = None
 
 
@@ -217,6 +254,7 @@ class CalendarEntryChanges:
 
     Text/boolean None means unchanged. Timing UNCHANGED means unchanged, so a
     summary edit never replaces a retained malformed, zoned or recurring date.
+    Setting tzid changes the timezone parameter on both event endpoints.
     """
 
     summary: str | None = None
@@ -224,10 +262,13 @@ class CalendarEntryChanges:
     location: str | None = None
     start: CalendarValue | Unchanged | None = UNCHANGED
     end: CalendarValue | Unchanged | None = UNCHANGED
+    tzid: str | Unchanged | None = UNCHANGED
     due: CalendarValue | Unchanged | None = UNCHANGED
     completed: bool | None = None
     completed_at: Instant | Unchanged | None = UNCHANGED
+    todo_status: CalendarTodoStatus | Unchanged | None = UNCHANGED
     recurrence: CalendarRecurrenceRule | Unchanged | None = UNCHANGED
+    exceptions: CalendarExceptions | Unchanged | None = UNCHANGED
     reminder: CalendarReminderDraft | Unchanged | None = UNCHANGED
 
 
@@ -245,6 +286,7 @@ class CalendarOccurrence:
 
     start: CalendarDateTime
     end: CalendarDateTime | None
+    day: Date | None = None
 
 
 @dataclass(frozen=True, slots=True)

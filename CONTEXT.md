@@ -41,26 +41,24 @@ See [ADR-0248](docs/adr/0248-edit-qualified-firmware-preferences.md) and the
 The [coverage matrix and remaining questions](docs/research/preferences-model-coverage-2026-11-07.md)
 distinguish the independently verified targets and unknown settings.
 
-Calendar and Alarms are implemented behind the currently disabled development
-flag `ENABLE_EXTRAS_PAGES`. When enabled, Compact navigation offers **Extras**;
-Sidebar lists the two pages directly for supported devices. Calendar includes events and To Dos,
-unchanged `.ics`/`.vcs` import, and basic iCalendar 2.0 editing. A native month grid
-and day agenda support date selection, search across entries, and new events on the
-selected day; To Dos offer a completion action. Calendar lists named and empty calendars alongside an
-All calendars view. New calendars and renamed groups use `X-WR-CALNAME`; a group
-rename publishes all captured member files together. New entries target a chosen
-calendar, and imports can retain their original names or receive an explicit name.
-Ambiguous or unsupported containers remain readable without name editing.
-The [lab-wide Calendar matrix](docs/research/calendar-firmware-coverage-2026-11-08.md)
-extends basic editing and naming to Mini 1 and Nano 1/3/4/5, independently of
-Clock Alarm editing. Exact-image qualification enables floating daily/weekly
-series and one saved start-relative reminder on Mini 1/2, Nano 1/3/4/5, Video and
-the four latest Classics. Native COUNT search
-and year-3000 bounds remain explicit; no action or sound is invented. Nano 6/7
-explicitly report no Calendar support. Nano 2 remains unknown because the lab
-has encrypted firmware only.
-Unknown repeats retain saved dates and bytes; occurrence edits affect the source
-series. See [ADR-0249](docs/adr/0249-qualify-calendar-occurrences-and-reminders-by-firmware.md).
+Calendar is available for Mini 1/2, Nano 1–5, Video and Classic through their
+Device Profiles. The same editor serves these models without a firmware version.
+Nano 2 follows the shared policy by user direction while its native firmware
+remains unreadable in the lab. Nano 6/7 report no Calendar support. Compact
+navigation offers Calendar under **Extras**, and Sidebar lists it directly.
+The Alarms page remains behind `ENABLE_EXTRAS_PAGES`.
+
+Calendar lists named and empty calendars alongside All calendars. Users can
+create or rename calendars, import original `.ics`/`.vcs` files, choose a name
+on import and select a destination for new entries. Group renames publish the
+captured member files together. The month grid and day agenda project daily,
+weekly, monthly and yearly series, supported selectors and added/excluded dates.
+They use the native day-query fallback and retain source identity for edits.
+Events can use local time, UTC or a usable zone defined in their Calendar.
+The editor supports saved start-relative, end-relative and absolute reminders,
+and the native To Do states. Unknown properties and unsupported combinations
+retain their original bytes. See [ADR-0251](docs/adr/0251-use-shared-calendar-behavior-by-model.md)
+and the [firmware evidence](docs/research/calendar-firmware-coverage-2026-11-08.md).
 Alarms use large, localized times and contextual editing. Existing saved
 alarms expose only verified time/repeat fields for the latest studied Mini 2 and
 Classic firmware. Video's next-alarm snapshot is read-only: its persistent

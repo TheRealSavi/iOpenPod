@@ -4,6 +4,9 @@
 - Date: 2026-11-07
 - Extends: ADR-0234, ADR-0240, ADR-0242 and ADR-0243
 
+ADR-0251 updates Calendar availability and editing. This record continues to
+govern Clock Alarm qualification and the Extras publication workflow.
+
 ## Context and decision
 
 The requested Calendar/To Do and Alarms/Sleep Timer pages operate on different

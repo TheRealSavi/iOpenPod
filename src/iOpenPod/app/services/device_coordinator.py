@@ -72,6 +72,7 @@ from iOpenPod.app.models.device import (
     DeviceDiscoveryIssue,
     DeviceReadiness,
 )
+from iOpenPod.app.models.extras import SaveAlarm
 from iOpenPod.app.models.photos import (
     FULL_RESOLUTION_REQUEST_ID,
     PhotoImage,
@@ -1369,24 +1370,30 @@ class DeviceCoordinator:
         try:
             with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
                 checkpoint()
-                dependencies = tuple(
-                    FilePrecondition(
-                        path,
-                        session.fingerprint(path) if session.exists(path) else None,
+                support = catalog.support
+                if support is None:
+                    raise DeviceChangedError("Reload Extras before saving.")
+                dependencies: tuple[FilePrecondition, ...] = ()
+                if isinstance(change, SaveAlarm):
+                    previous_support = support
+                    dependencies = tuple(
+                        FilePrecondition(
+                            path,
+                            session.fingerprint(path) if session.exists(path) else None,
+                        )
+                        for path in (
+                            _SYSINFO_PATH,
+                            _SYSINFO_EXTENDED_PATH,
+                            _SYSINFO_AUTHORITY_PATH,
+                        )
                     )
-                    for path in (
-                        _SYSINFO_PATH,
-                        _SYSINFO_EXTENDED_PATH,
-                        _SYSINFO_AUTHORITY_PATH,
-                    )
-                )
-                metadata, _issues = _read_device_metadata(session)
-                evidence = active.record.hardware_evidence.merged_with(metadata)
-                support = resolve_extras_support(expected.profile, evidence)
-                if support != catalog.support:
-                    raise DeviceChangedError(
-                        "The iPod firmware evidence changed. Reload Extras."
-                    )
+                    metadata, _issues = _read_device_metadata(session)
+                    evidence = active.record.hardware_evidence.merged_with(metadata)
+                    support = resolve_extras_support(expected.profile, evidence)
+                    if support != previous_support:
+                        raise DeviceChangedError(
+                            "The iPod firmware evidence changed. Reload Extras."
+                        )
                 transaction = extras.prepare_change(
                     catalog, change, dependencies=dependencies, checkpoint=checkpoint
                 )
