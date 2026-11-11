@@ -145,6 +145,7 @@ def test_sync_writes_changed_rating_to_paired_host_file(
     )
     from iOpenPod.app.sync_plan import (
         SyncPlanAction,
+        host_path_identity,
         prepare_sync_plan,
         select_sync_plan,
     )
@@ -178,9 +179,10 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         executor = SyncExecutor(device.coordinator)
         plan = select_sync_plan(
             prepare_sync_plan(host, ipod, active.library, sync_ratings=True),
-            selected_host_paths=frozenset({str(path)}),
+            selected_host_paths=frozenset({host_path_identity(str(path))}),
             selected_ipod_removals=frozenset(),
         )
+        assert any(item.action is SyncPlanAction.ADD for item in plan.items)
         result = executor.execute(
             SyncExecutionRequest(
                 plan,
@@ -290,7 +292,7 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         host = scan()
         plan = select_sync_plan(
             prepare_sync_plan(host, ipod, active.library, sync_ratings=True),
-            selected_host_paths=frozenset({str(path)}),
+            selected_host_paths=frozenset({host_path_identity(str(path))}),
             selected_ipod_removals=frozenset(),
         )
         assert any(item.action is SyncPlanAction.UPDATE for item in plan.items)
@@ -498,7 +500,7 @@ def test_rating_resolution(
     assert resolved_rating(host, ipod, bh, bi, policy) == expected
 
 
-@pytest.mark.parametrize("suffix,codec", [("ogg", "libvorbis"), ("opus", "libopus")])
+@pytest.mark.parametrize("suffix,codec", [("ogg", "vorbis"), ("opus", "libopus")])
 def test_ogg_rating_transform_round_trip(suffix: str, codec: str) -> None:
     import shutil
     import subprocess
@@ -517,6 +519,8 @@ def test_ogg_rating_transform_round_trip(suffix: str, codec: str) -> None:
             "2",
             "-c:a",
             codec,
+            "-strict",
+            "experimental",
             "-f",
             "ogg",
             "pipe:1",
