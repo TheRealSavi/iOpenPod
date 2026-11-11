@@ -1,52 +1,49 @@
-# ADR-0253: Reuse an existing native browse record when a name has duplicates
+# ADR-0253: Preserve native browse links during Track membership edits
 
 - Status: Accepted
 - Date: 2026-11-11
-- Amends: ADR-0172 for same-name duplicate native browse records
+- Amends: ADR-0172 for source Album Artist ownership and duplicate browse records
 
 ## Context
 
-ADR-0172 treats multiple candidate source records for one exact name as a
-preparation blocker, because such a condition does not identify the one record to
-preserve and clone.
+Several native Album or artist records can serve one group of Tracks with
+matching tags. One name can have two records with the same label. It can also
+span a Track Artist record and a record for the effective Album Artist.
 
-Older desktop iTunes builds could leave exactly that state behind: two or more
-native Album or artist records carrying the same name, each owning a subset of the
-Tracks. The members are then not a source-identity conflict — the name identifies
-one browse group, and every member already belongs to a retained record. Adding a
-Track to such a group needs no clone and no new identity, yet preparation refused
-the whole write, so an affected Library could not accept new music at all.
+A retained iTunes-written nano 7G Library contained a Various Artists record
+serving 35 compilation Tracks with 30 distinct Artist tags. The record label
+matched the effective Album Artist of every member. Removing a Track from an
+affected group invoked artist splitting and failed preparation. Synthetic
+fixtures also reproduced rejection on additions and removals with same-name
+native IDs for Albums and artists.
 
 ## Decision
 
-When a changed Album or artist group has several retained candidate records and
-the edit does not split the group by name, keep the candidate that owns the most
-surviving members of the group and relink the group's members to it. Equal overlap
-resolves to the lowest native ID, so the choice is deterministic.
+For membership edits in these groups, preserve the native browse links of
+surviving Tracks. Use the Album Artist interpretation for a source artist record
+when its label matches the effective Album Artist of all its members and at
+least one Track has a different Artist. Apply this preservation while the
+retained members keep their browse identity tags. ADR-0172 still governs
+explicit retagging and incompatible shared records.
 
-The selection is reported as `library.ambiguous_group` with `WARNING` severity:
-nothing downstream knows which record the user meant, so the outcome stays
-visible in the Sync report instead of being silent.
+Resolve incoming Tracks using the retained native Album and its artist links
+when that context applies. With compatible records of the same label, prefer
+the one with the most surviving members in the requested group, then the
+lowest native ID. Report that choice as a warning. For duplicate Album records,
+compare their browse metadata and known Store Album IDs before selecting a
+destination. Preserve separate Podcast ownership under ADR-0165.
 
-Independent verification accepts any retained candidate identity for such a group,
-because the writer may legitimately keep any of the existing records. It still
-rejects an identity outside the candidate set, and still rejects a group that
-borrows or invents an ID.
+When a removed Track was a native Album's representative, use the lowest
+surviving persistent Track ID in that Album, or zero if none survives. Preserve
+other bytes of the record. Verification checks each planned Track link in the
+reparsed database and compares retained records with the source, accounting
+for the allowed representative change. Album and artist SQLite PIDs remain
+projection-local.
 
-## What still blocks preparation
+## Validation
 
-- An artist-name change that splits one shared record across distinct exact names
-  (ADR-0172's clone path), including missing or repeated native IDs.
-- A changed native browse record shared by incompatible groups.
-- A retained group whose chosen owner appears more than once in the dataset.
-- Missing records, where no candidate exists at all.
-
-## Consequences
-
-- Adding media to a Library that carries same-name duplicate browse records
-  succeeds, and the chosen owner is observable.
-- The stale duplicate record is preserved unmodified and stays unreferenced by the
-  new members; the writer already keeps unreferenced records.
-- Two Libraries in the same state can converge on different owner choices if their
-  overlap differs. That is accepted: the records are equivalent by name, and the
-  choice is deterministic within one Library.
+Public preparation tests cover Album and artist addition, majority and tie
+selection, surviving duplicate owners, representative repair, and Album
+Artist links. Replay against the retained nano 7G capture prepared both
+removals with the captured SQLite companions and preserved all 831 surviving
+Tracks' native Album and artist IDs.

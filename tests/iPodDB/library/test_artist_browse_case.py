@@ -71,9 +71,11 @@ def artist_source(
     return IPodLibrary(write_iTunesDB(document))
 
 
-def add_track(source: IPodLibrary, artist: str) -> LibraryWriteResult:
+def add_track(
+    source: IPodLibrary, artist: str, *, filename: str = "new.mp3"
+) -> LibraryWriteResult:
     first = source.snapshot.tracks[0]
-    dependency = FileDependency("iPod_Control/Music/F00/new.mp3", 1024, "a" * 64)
+    dependency = FileDependency(f"iPod_Control/Music/F00/{filename}", 1024, "a" * 64)
     added = replace(
         first,
         track_id=-1,

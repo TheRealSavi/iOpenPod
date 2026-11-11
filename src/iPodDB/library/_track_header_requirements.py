@@ -3,8 +3,8 @@
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
-from iPodDB.library._artist_groups import shared_artist_changes
 from iPodDB.library._browse_groups import album_values, native_browse_groups
+from iPodDB.library._browse_membership import retained_browse_memberships
 from iPodDB.library._track_header_expansion import optional_field_available
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.shared.chunk import DatabaseDocument
@@ -53,13 +53,18 @@ def derived_header_requirements(
             require(track.track_id, "has_artwork")
 
     kinds = {s.chunk.header.dataset_type for s in document.find_chunks(MhsdHeader)}
-    artist_changes = shared_artist_changes(before.tracks, desired.tracks)
+    membership, artist_changes = retained_browse_memberships(document, before, desired)
     for kind, field in ((4, "album_id"), (8, "artist_id_ref")):
         if kind not in kinds:
             continue
         album = kind == 4
         prior_groups = native_browse_groups(before.tracks, album=album)
         for key, members in native_browse_groups(desired.tracks, album=album).items():
+            if key in membership[album]:
+                for track in members:
+                    if track.track_id not in previous:
+                        require(track.track_id, field)
+                continue
             prior = prior_groups.get(key, ())
             if (
                 {t.track_id for t in prior} != {t.track_id for t in members}
