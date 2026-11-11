@@ -196,8 +196,13 @@ def test_actual_parent_exit_requires_explicit_authorization(
         def close(self) -> None:
             closed.append(True)
 
+    def write(path: Path, data: bytes) -> None:
+        path.write_bytes(data)
+
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(helper, "ParentProcess", Parent)
+    # The simulated platform must not reach Storage's native Windows durability.
+    monkeypatch.setattr(helper, "durable_write", write)
 
     def no_sleep(_seconds: float) -> None:
         pass
