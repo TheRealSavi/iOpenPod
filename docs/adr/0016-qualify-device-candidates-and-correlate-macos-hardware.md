@@ -46,7 +46,8 @@ unrecognized iPod-shaped Volume can still explain why it is not selectable. macO
 can correlate the selected Volume to its current USB device and query VPD identity
 without requiring SysInfo or writing during discovery.
 
-The IOKit text and plist formats are now native-adapter inputs and require captured,
-multi-device regression fixtures. A mounted device without `iPod_Control` is not
+The macOS adapter reads one IOKit plist snapshot and uses each whole disk's
+nearest USB ancestor. The native input format requires captured, multi-device
+regression fixtures. A mounted device without `iPod_Control` is not
 offered for selection; supporting initialization of a blank iPod would require a
 separate explicit workflow rather than weakening normal discovery.

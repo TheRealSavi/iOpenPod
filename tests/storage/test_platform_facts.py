@@ -24,16 +24,6 @@ from storage.platform.linux import (
 )
 from storage.platform.macos import MacOSPlatformAdapter
 
-_MACOS_IOREG_MEDIA = b"""\
-+-o AppleUSBKeyboard@14100000  <class IOUSBHostDevice, ...>
-  |   \"USB Serial Number\" = \"KBD-ABCDEF\"
-+-o iPod@01130000  <class IOUSBHostDevice, ...>
-  |   \"USB Serial Number\" = \"000A270018A1F847\"
-  +-o IOUSBMassStorageDriver  <class IOUSBMassStorageDriver, ...>
-    +-o Apple iPod Media  <class IOMedia, ...>
-    |   \"BSD Name\" = \"disk4\"
-"""
-
 
 class _RecordingIOKit:
     def __init__(self) -> None:
@@ -64,13 +54,20 @@ def test_macos_inspection_correlates_bsd_disk_with_usb_hardware(
         "Writable": True,
         "AllocationBlockSize": 4096,
     }
-    usb_devices: list[dict[str, object]] = [
+    usb_devices = [
         {
+            "IOObjectClass": "IOUSBHostDevice",
+            "IORegistryEntryID": 100,
             "idVendor": 0x05AC,
             "idProduct": 0x1261,
             "USB Serial Number": "000A270018A1F847",
+            "IORegistryEntryChildren": [
+                {"IOObjectClass": "IOMedia", "BSD Name": "disk4", "Whole": True}
+            ],
         },
         {
+            "IOObjectClass": "IOUSBHostDevice",
+            "IORegistryEntryID": 101,
             "idVendor": 0x05AC,
             "idProduct": 0x0220,
             "USB Serial Number": "KBD-ABCDEF",
@@ -88,14 +85,7 @@ def test_macos_inspection_correlates_bsd_disk_with_usb_hardware(
                 stdout=plistlib.dumps(disk_info),
                 stderr=b"",
             )
-        if command == ["ioreg", "-r", "-c", "IOMedia"]:
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                stdout=_MACOS_IOREG_MEDIA,
-                stderr=b"",
-            )
-        if command == ["ioreg", "-a", "-r", "-c", "IOUSBHostDevice"]:
+        if command == ["ioreg", "-a", "-i", "-l", "-r", "-c", "IOUSBHostDevice"]:
             return subprocess.CompletedProcess(
                 command,
                 0,
