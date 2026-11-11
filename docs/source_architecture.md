@@ -2741,6 +2741,14 @@ Existing Host files and folders are never overwritten. The GUI receives semantic
 Photos and progress rather than device paths. See ADR-0053, ADR-0054, ADR-0055,
 ADR-0056, ADR-0057, ADR-0058, and ADR-0059.
 
+Playlist export can reference the mounted iPod, copy its Tracks beside the
+Playlist, or reference existing files in the configured Host Media Library
+folders. The Host option reads committed Sync Details for the requested Tracks
+from the Library Sync Helper and checks the recorded paths through Storage.
+It preserves the order and duplicates of matched occurrences. It publishes a
+Playlist even when every occurrence is skipped and reports the skipped count
+after publication.
+
 For example:
 
 ```text

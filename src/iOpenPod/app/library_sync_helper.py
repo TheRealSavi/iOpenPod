@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -60,6 +61,7 @@ _IPOD_CONTROL_PATH = DevicePath("iPod_Control")
 _PHOTOS_PATH = DevicePath("Photos")
 _FORMAT_VERSION = 7
 _MAX_RECORDS = 250_000
+logger = logging.getLogger(__name__)
 
 
 class LibrarySyncHelperError(RuntimeError):
@@ -350,6 +352,47 @@ def read_sync_history(
         loaded.revision is not None,
         loaded.playlists,
     )
+
+
+def read_track_sync_paths(
+    session: FilesystemSession,
+    tracks: tuple[Track, ...],
+    *,
+    checkpoint: Callable[[], None],
+) -> dict[int, str]:
+    """Read committed Host path hints for the requested, still-matching Tracks."""
+    checkpoint()
+    try:
+        loaded, issue = _load_helper(session)
+    except FilesystemSessionError:
+        raise
+    except (OSError, StorageError) as error:
+        logger.warning("Could not read the Library Sync Helper for export: %s", error)
+        return {}
+    if issue is not None:
+        logger.warning(
+            "Could not use the Library Sync Helper for export: %s", issue.detail
+        )
+        return {}
+
+    retained = {_track_key(record): record for record in loaded.tracks}
+    paths: dict[int, str] = {}
+    for track in tracks:
+        checkpoint()
+        record = retained.get(_track_key_for_track(track))
+        if record is None or record.sync is None or not record.sync.host_path_hint:
+            continue
+        try:
+            path = _track_path(track)
+            if record.path == path and _matches(
+                session, record, path, _regular_file(session, path)
+            ):
+                paths[track.track_id] = record.sync.host_path_hint
+        except FilesystemSessionError:
+            raise
+        except (OSError, StorageError, ValueError):
+            continue
+    return paths
 
 
 def publish_sync_helper(

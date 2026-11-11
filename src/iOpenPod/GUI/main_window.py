@@ -45,7 +45,7 @@ from iOpenPod.app.device_controller import (
     DeviceOperationFailure,
 )
 from iOpenPod.app.display_text import source_text
-from iOpenPod.app.host_media_folders import HostMediaFolder
+from iOpenPod.app.host_media_folders import HostMediaFolder, load_host_media_folders
 from iOpenPod.app.host_media_library import (
     HostMediaLibrary,
     HostMediaScanProgress,
@@ -55,6 +55,7 @@ from iOpenPod.app.library_export import (
     ExportProgress,
     ExportResult,
     PhotoExportResult,
+    PlaylistExportMode,
 )
 from iOpenPod.app.library_export_controller import LibraryExportController
 from iOpenPod.app.library_sync_helper import (
@@ -1411,6 +1412,7 @@ class MainWindow(QMainWindow):
         tracks = _tracks_from_signal(value)
         if tracks is None:
             return
+        active = self._context.device_controller.active_ipod
         if not self._export_controller.can_start:
             self._show_export_unavailable()
             return
@@ -1423,12 +1425,21 @@ class MainWindow(QMainWindow):
             )
             if directory is None:
                 return
+            if self._context.device_controller.active_ipod is not active:
+                self._show_export_unavailable()
+                return
+            mode = dialog.mode
             if self._export_controller.start_playlist(
                 name,
                 tracks,
                 directory,
                 dialog.selected_file_type,
-                dialog.mode,
+                mode,
+                host_folders=(
+                    load_host_media_folders(self._context.settings)
+                    if mode is PlaylistExportMode.HOST_REFERENCES
+                    else ()
+                ),
             ):
                 self._show_export_progress(self.tr("Preparing Playlist export…"))
         finally:
@@ -1605,6 +1616,20 @@ class MainWindow(QMainWindow):
                 )
         elif isinstance(value, ExportResult) and value.playlist_file is not None:
             detail = self.tr("Created %1").replace("%1", value.playlist_file.path.name)
+            if count := value.skipped_occurrences:
+                warning = english_count_fallback(
+                    "Skipped %n playlist track(s) that could not be found on this host.",
+                    self.tr(
+                        "Skipped %n playlist track(s) that could not be found on this host.",
+                        None,
+                        count,
+                    ),
+                    count,
+                )
+                QMessageBox.warning(
+                    self, self.tr("Export Complete"), detail + "\n\n" + warning
+                )
+                return
             if value.track_files:
                 detail += "\n" + english_count_fallback(
                     "Exported %n Track file(s) beside it.",

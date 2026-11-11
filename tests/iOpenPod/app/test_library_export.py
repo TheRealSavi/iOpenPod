@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from iOpenPod.app.display_text import SourceText
+from iOpenPod.app.host_media_folders import HostMediaFolder, HostMediaType
 from iOpenPod.app.library_export import (
     ExportProgress,
     LibraryExporter,
@@ -31,9 +32,20 @@ class _Source:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.copied: list[tuple[int, Path]] = []
+        self.sync_paths: dict[int, str] = {}
 
     def reference_for_track(self, track: Track) -> HostPath:
         return HostPath(self.root / f"F00/T{track.track_id}.mp3")
+
+    def sync_paths_for_tracks(
+        self, tracks: tuple[Track, ...], *, checkpoint: Callable[[], None]
+    ) -> dict[int, str]:
+        checkpoint()
+        return {
+            track.track_id: self.sync_paths[track.track_id]
+            for track in tracks
+            if track.track_id in self.sync_paths
+        }
 
     def copy_track_to_host(
         self,
@@ -154,6 +166,89 @@ def test_copying_a_playlist_exports_each_track_once_and_uses_relative_paths(
     assert dict(message.parameters) == {"name": "An Artist - First _ Song.mp3"}
     assert isinstance(progress[-1].message, SourceText)
     assert progress[-1].message.source == "Created {name}"
+
+
+@pytest.mark.parametrize("file_type", tuple(PlaylistFileType))
+def test_host_playlist_keeps_matching_occurrences_in_order_and_skips_missing_files(
+    tmp_path: Path, file_type: PlaylistFileType
+) -> None:
+    library = tmp_path / "Host Music"
+    library.mkdir()
+    first = library / "First # Song.flac"
+    second = library / "Second.mp3"
+    first.write_bytes(b"original flac")
+    second.write_bytes(b"original mp3")
+    missing = Track(3, "Missing", "", "", 1_000)
+    source = _Source(tmp_path / "iPod")
+    source.sync_paths = {1: str(first), 2: str(second), 3: str(library / "gone.mp3")}
+
+    result = _exporter(source).export_playlist(
+        "Road Trip",
+        (_ONE, missing, _TWO, _ONE, missing),
+        HostPath(tmp_path),
+        file_type,
+        PlaylistExportMode.HOST_REFERENCES,
+        host_folders=(HostMediaFolder(HostPath(library)),),
+    )
+
+    assert result.skipped_occurrences == 2
+    assert result.track_files == ()
+    assert source.copied == []
+    assert result.playlist_file is not None
+    content = Path(result.playlist_file).read_text(encoding="utf-8")
+    locations: list[str | None]
+    if file_type in (PlaylistFileType.M3U, PlaylistFileType.M3U8):
+        locations = [line for line in content.splitlines() if not line.startswith("#")]
+    elif file_type is PlaylistFileType.PLS:
+        locations = [
+            line.split("=", 1)[1]
+            for line in content.splitlines()
+            if line.startswith("File")
+        ]
+        assert "NumberOfEntries=3" in content
+    elif file_type is PlaylistFileType.XSPF:
+        locations = [
+            entry.text for entry in ET.fromstring(content).findall(".//{*}location")
+        ]
+    else:
+        locations = [
+            entry.get("src") for entry in ET.fromstring(content).findall(".//{*}media")
+        ]
+    if file_type in (PlaylistFileType.XSPF, PlaylistFileType.WPL):
+        assert locations == [first.as_uri(), second.as_uri(), first.as_uri()]
+    else:
+        assert locations == [str(first), str(second), str(first)]
+
+
+def test_host_playlist_can_be_empty_when_no_paths_fit_the_configured_folders(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "Music"
+    album = library / "Album"
+    album.mkdir(parents=True)
+    nested = album / "Nested.mp3"
+    outside = tmp_path / "Outside.mp3"
+    excluded_type = library / "Video.mp4"
+    for file in (nested, outside, excluded_type):
+        file.write_bytes(b"media")
+    source = _Source(tmp_path / "iPod")
+    source.sync_paths = {1: str(nested), 2: str(outside), 3: str(excluded_type)}
+    folder = HostMediaFolder(
+        HostPath(library), recurse=False, media_types=frozenset({HostMediaType.AUDIO})
+    )
+
+    result = _exporter(source).export_playlist(
+        "Road Trip",
+        (_ONE, _TWO, Track(3, "Video", "", "", 1_000)),
+        HostPath(tmp_path),
+        PlaylistFileType.M3U8,
+        PlaylistExportMode.HOST_REFERENCES,
+        host_folders=(folder,),
+    )
+
+    assert result.skipped_occurrences == 3
+    assert result.playlist_file is not None
+    assert Path(result.playlist_file).read_text(encoding="utf-8") == "#EXTM3U\n"
 
 
 def test_existing_playlist_gets_the_next_number_without_replacing_the_original(

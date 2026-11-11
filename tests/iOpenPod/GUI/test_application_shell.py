@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QListView,
+    QMessageBox,
     QProgressDialog,
     QPushButton,
     QSplitter,
@@ -61,6 +62,7 @@ from iOpenPod.app.core.settings.definitions import (
     PlayerPosition,
 )
 from iOpenPod.app.core.status import StatusAction, StatusProgress
+from iOpenPod.app.library_export import ExportResult
 from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.models.collection_list_model import (
@@ -107,6 +109,36 @@ from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import LibrarySnapshot, MediaType, Playlist, Track
+from storage import HostPath
+
+
+@pytest.mark.parametrize(("count", "noun"), [(1, "track"), (3, "tracks")])
+def test_playlist_export_completion_warns_about_skipped_tracks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, count: int, noun: str
+) -> None:
+    context = _context()
+    window = MainWindow(context, auto_discover=False)
+    warnings: list[tuple[str, str]] = []
+
+    def warn(_parent: QWidget, title: str, detail: str) -> None:
+        warnings.append((title, detail))
+
+    monkeypatch.setattr(QMessageBox, "warning", warn)
+    try:
+        window._export_finished(  # pyright: ignore[reportPrivateUsage]
+            ExportResult(HostPath(tmp_path / "Road Trip.m3u8"), (), count)
+        )
+
+        assert warnings == [
+            (
+                "Export Complete",
+                f"Created Road Trip.m3u8\n\nSkipped {count} playlist {noun} "
+                "that could not be found on this host.",
+            )
+        ]
+    finally:
+        window.close()
+        context.shutdown()
 
 
 @pytest.mark.parametrize("pending_update", ["player_rating", "playlist_scroll"])

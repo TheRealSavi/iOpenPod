@@ -4289,6 +4289,13 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <source>Export Complete</source>
         <translation>Export abgeschlossen</translation>
     </message>
+    <message numerus="yes">
+        <source>Skipped %n playlist track(s) that could not be found on this host.</source>
+        <translation>
+            <numerusform>%n Titel der Wiedergabeliste wurde übersprungen, weil er auf diesem Computer nicht gefunden wurde.</numerusform>
+            <numerusform>%n Titel der Wiedergabeliste wurden übersprungen, weil sie auf diesem Computer nicht gefunden wurden.</numerusform>
+        </translation>
+    </message>
     <message>
         <source>Export Failed</source>
         <translation>Export fehlgeschlagen</translation>
@@ -6920,12 +6927,23 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
         <translation>Titel kopieren</translation>
     </message>
     <message>
+        <source>Reference Tracks on this Host</source>
+        <translation>Auf Titel auf diesem Computer verweisen</translation>
+    </message>
+    <message>
         <source>Playlist file type</source>
         <translation>Dateityp der Wiedergabeliste</translation>
     </message>
     <message numerus="yes">
-        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <source>Choose where the exported Playlist should find its %n track occurrence(s).</source>
         <translation>
+            <numerusform>Wählen Sie, wo die exportierte Wiedergabeliste ihren %n Titeleintrag finden soll.</numerusform>
+            <numerusform>Wählen Sie, wo die exportierte Wiedergabeliste ihre %n Titeleinträge finden soll.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <translation type="vanished">
             <numerusform>Wählen Sie, ob die Wiedergabeliste weiterhin auf den eingebundenen iPod verweisen oder mit exportierten Kopien ihres %n Titeleintrags verwendet werden soll.</numerusform>
             <numerusform>Wählen Sie, ob die Wiedergabeliste weiterhin auf den eingebundenen iPod verweisen oder mit exportierten Kopien ihrer %n Titeleinträge verwendet werden soll.</numerusform>
         </translation>
@@ -6937,6 +6955,10 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
     <message>
         <source>Copy Tracks — export self-contained media files with Library metadata and cover artwork beside the Playlist</source>
         <translation>Titel kopieren · Mediendateien mit Metadaten der Mediathek und Cover neben der Wiedergabeliste exportieren, um sie unabhängig vom iPod zu verwenden</translation>
+    </message>
+    <message>
+        <source>Reference Tracks on this Host — use files in your Sync folders</source>
+        <translation>Auf Titel auf diesem Computer verweisen · Dateien aus Ihren Synchronisierungsordnern verwenden</translation>
     </message>
     <message>
         <source>Choose Folder…</source>
@@ -13820,6 +13842,10 @@ Playlists: %3</translation>
     <message>
         <source>Text contains an invalid Unicode character.</source>
         <translation>Der Text enthält ein ungültiges Unicode-Zeichen.</translation>
+    </message>
+    <message>
+        <source>The Active iPod changed during Playlist export.</source>
+        <translation>Der aktive iPod hat sich während des Exports der Wiedergabeliste geändert.</translation>
     </message>
     <message>
         <source>The Active iPod changed while the Photo was exported.</source>

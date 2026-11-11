@@ -4289,6 +4289,13 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
         <source>Export Complete</source>
         <translation>Exportación completada</translation>
     </message>
+    <message numerus="yes">
+        <source>Skipped %n playlist track(s) that could not be found on this host.</source>
+        <translation>
+            <numerusform>Se omitió %n pista de la lista de reproducción porque no se encontró en este equipo.</numerusform>
+            <numerusform>Se omitieron %n pistas de la lista de reproducción porque no se encontraron en este equipo.</numerusform>
+        </translation>
+    </message>
     <message>
         <source>Export Failed</source>
         <translation>No se pudo exportar</translation>
@@ -6920,12 +6927,23 @@ Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y
         <translation>Copiar pistas</translation>
     </message>
     <message>
+        <source>Reference Tracks on this Host</source>
+        <translation>Enlazar a las pistas de este equipo</translation>
+    </message>
+    <message>
         <source>Playlist file type</source>
         <translation>Tipo de archivo de la lista</translation>
     </message>
     <message numerus="yes">
-        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <source>Choose where the exported Playlist should find its %n track occurrence(s).</source>
         <translation>
+            <numerusform>Elige dónde debe buscar la lista de reproducción exportada su %n pista.</numerusform>
+            <numerusform>Elige dónde debe buscar la lista de reproducción exportada sus %n pistas.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <translation type="vanished">
             <numerusform>Elige si la lista debe seguir usando las pistas del iPod conectado o incluir copias exportadas de su %n entrada de pista.</numerusform>
             <numerusform>Elige si la lista debe seguir usando las pistas del iPod conectado o incluir copias exportadas de sus %n entradas de pistas.</numerusform>
         </translation>
@@ -6937,6 +6955,10 @@ Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y
     <message>
         <source>Copy Tracks — export self-contained media files with Library metadata and cover artwork beside the Playlist</source>
         <translation>Copiar pistas — exportar archivos independientes con los metadatos de la biblioteca y las portadas junto a la lista</translation>
+    </message>
+    <message>
+        <source>Reference Tracks on this Host — use files in your Sync folders</source>
+        <translation>Enlazar a las pistas de este equipo · Usa los archivos de tus carpetas de sincronización</translation>
     </message>
     <message>
         <source>Choose Folder…</source>
@@ -13820,6 +13842,10 @@ Playlists: %3</translation>
     <message>
         <source>Text contains an invalid Unicode character.</source>
         <translation>El texto contiene un carácter Unicode no válido.</translation>
+    </message>
+    <message>
+        <source>The Active iPod changed during Playlist export.</source>
+        <translation>El iPod activo cambió durante la exportación de la lista de reproducción.</translation>
     </message>
     <message>
         <source>The Active iPod changed while the Photo was exported.</source>
