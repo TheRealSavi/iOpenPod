@@ -13788,7 +13788,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The retained iTunesDB uses an unsupported signature scheme. Its signing requirements cannot be replaced implicitly.</source>
-        <translation>El iTunesDB conservado usa un sistema de firma no compatible. Sus requisitos de firma no se pueden reemplazar de forma implícita.</translation>
+        <translation type="vanished">El iTunesDB conservado usa un sistema de firma no compatible. Sus requisitos de firma no se pueden reemplazar de forma implícita.</translation>
     </message>
     <message>
         <source>The retained playback positions exceed this Track&apos;s duration. Unrelated edits preserve them.</source>
@@ -13900,7 +13900,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>The source database is signed; supply its supported signature target before editing.</source>
-        <translation>La base de datos de origen está firmada; proporciona su destino de firma compatible antes de editar.</translation>
+        <translation type="vanished">La base de datos de origen está firmada; proporciona su destino de firma compatible antes de editar.</translation>
     </message>
     <message>
         <source>The symbolic link could not be followed: {error}</source>
