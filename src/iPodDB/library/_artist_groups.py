@@ -27,7 +27,7 @@ def native_artist_name(row: ParsedChunk[ChunkHeader]) -> str | None:
 
 
 def shared_artist_changes(
-    before: Sequence[Track], desired: Sequence[Track]
+    before: Sequence[Track], desired: Sequence[Track], preserved: set[int]
 ) -> dict[str, frozenset[int]]:
     """Find exact-name groups needing reconciliation after shared ownership changes.
 
@@ -55,7 +55,7 @@ def shared_artist_changes(
         for name, members in prior.items()
         if members != current.get(name, set())
         for identity in references[name]
-        if len(names[identity]) > 1
+        if len(names[identity]) > 1 and identity not in preserved
     }
     affected: dict[str, frozenset[int]] = {}
     for name, members in current.items():

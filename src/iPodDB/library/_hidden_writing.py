@@ -25,20 +25,24 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_jump_table_mhod imp
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._album_index import master_tracks
-from iPodDB.library._artist_groups import native_artist_name, shared_artist_changes
+from iPodDB.library._artist_groups import native_artist_name
 from iPodDB.library._browse_groups import (
     album_values,
     native_browse_groups,
     unchanged_podcast_album_fields,
 )
 from iPodDB.library._browse_index import BrowseIndex, resolve_indexes
+from iPodDB.library._browse_membership import (
+    browse_reference,
+    retained_browse_memberships,
+)
 from iPodDB.library._document_edit import rebuild
 from iPodDB.library._identities import IdentityAllocator
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._track_header_expansion import field_fits
 from iPodDB.library._track_writing import edit_text
 from iPodDB.library.models import LibrarySnapshot, Track
-from iPodDB.library.writing import WriteIssue
+from iPodDB.library.writing import IssueSeverity, WriteIssue
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
 
 logger = logging.getLogger(__name__)
@@ -166,7 +170,7 @@ def reconcile_hidden(
     deleted_persistent_ids = {
         t.ipod.db_track_id
         for t in original.tracks
-        if t.ipod and t.track_id not in track_ids
+        if t.ipod and t.ipod.db_track_id and t.track_id not in track_ids
     }
     browse_ids = {
         value
@@ -189,7 +193,10 @@ def reconcile_hidden(
         ),
         64,
     )
-    artist_changes = shared_artist_changes(original.tracks, desired.tracks)
+    membership, artist_changes = retained_browse_memberships(
+        document, original, desired
+    )
+    source_track_ids = {t.track_id for t in original.tracks}
     # Album and artist datasets are optional in older formats. Retain unreferenced
     # records and their Unknown Data; only referenced groups are reconciled.
     for dataset_kind in (4, 8):
@@ -243,6 +250,54 @@ def reconcile_hidden(
         assigned: dict[int, int] = {}
         updated_rows = dict(rows)
         for key, members in groups.items():
+            retained = membership[album].get(key)
+            if retained is not None:
+                field = "album" if album else "artist"
+                if retained.ambiguous:
+                    issues.append(
+                        WriteIssue(
+                            "library.ambiguous_group",
+                            "The incoming Track has no unambiguous compatible browse record.",
+                            field=field,
+                            detail=f"Dataset {dataset_kind}, requested group {key!r}.",
+                        )
+                    )
+                    continue
+                new_artist_id = 0
+                reported: set[tuple[tuple[int, ...], int]] = set()
+                for track in members:
+                    if track.track_id in source_track_ids:
+                        continue
+                    identity = retained.links[track.track_id]
+                    if not identity:
+                        if not new_artist_id:
+                            new_artist_id = browse_allocator.take()
+                            updated_rows[new_artist_id] = edit_text(
+                                new_itunes_chunk(
+                                    MHII,
+                                    MhiiHeader(
+                                        artist_id=new_artist_id,
+                                        sql_id=sql_allocator.take(),
+                                    ),
+                                ),
+                                MhodType.ARTIST_ITEM_ARTIST,
+                                track.artist,
+                            )
+                        identity = new_artist_id
+                    assigned[track.track_id] = identity
+                    choices = retained.choices.get(track.track_id)
+                    if choices and (choices, identity) not in reported:
+                        reported.add((choices, identity))
+                        issues.append(
+                            WriteIssue(
+                                "library.ambiguous_group",
+                                "Several compatible browse records exist; an existing record was selected for the incoming Track.",
+                                severity=IssueSeverity.WARNING,
+                                field=field,
+                                detail=f"Dataset {dataset_kind}, candidates {choices!r}, selected {identity}.",
+                            )
+                        )
+                continue
             split_artist = not album and members[0].artist in artist_changes
             candidates = original_groups.get(key, set())
             if not candidates:
@@ -293,10 +348,6 @@ def reconcile_hidden(
                 )
                 continue
             if len(candidates) > 1:
-                # Existing duplicate groups are harmless until their fields or
-                # membership change; keep each Track's existing association.
-                if not split_artist and all(t in original.tracks for t in members):
-                    continue
                 issues.append(
                     WriteIssue(
                         "library.ambiguous_group",
@@ -420,14 +471,25 @@ def reconcile_hidden(
                 else 0,
             )
             assigned.update((t.track_id, identity) for t in members)
-        for identity, retained in tuple(updated_rows.items()):
-            if (
-                isinstance(retained.header, MhiaHeader)
-                and retained.header.album_track_db_id in deleted_persistent_ids
-            ):
-                updated_rows[identity] = replace(
-                    retained, header=replace(retained.header, album_track_db_id=0)
+        if album and deleted_persistent_ids:
+            surviving_pids: dict[int, set[int]] = defaultdict(set)
+            for track in desired.tracks:
+                owner = assigned.get(
+                    track.track_id, browse_reference(track, album=True)
                 )
+                surviving_pids[owner].add(persistent_tracks[track_ids[track.track_id]])
+            for identity, row in tuple(updated_rows.items()):
+                if (
+                    isinstance(row.header, MhiaHeader)
+                    and row.header.album_track_db_id in deleted_persistent_ids
+                ):
+                    updated_rows[identity] = replace(
+                        row,
+                        header=replace(
+                            row.header,
+                            album_track_db_id=min(surviving_pids[identity], default=0),
+                        ),
+                    )
         container = dataset.chunk.children[0]
         children = tuple(
             updated_rows[

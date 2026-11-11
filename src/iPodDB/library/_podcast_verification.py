@@ -14,8 +14,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
-from iPodDB.library._browse_groups import podcast_groups
-from iPodDB.library._group_verification import group_text
+from iPodDB.library._browse_groups import group_text, podcast_groups
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._projection import project_tracks
 from iPodDB.library.writing import WriteIssue

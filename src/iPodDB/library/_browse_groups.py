@@ -4,7 +4,26 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
 
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
+    MhodStringPayload,
+)
+from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library.models import MediaKind, Track
+from iPodDB.shared.chunk import ChunkHeader, ParsedChunk
+
+
+def group_text(chunk: ParsedChunk[ChunkHeader], kind: MhodType) -> str:
+    return next(
+        (
+            c.payload.value
+            for c in reversed(chunk.children)
+            if isinstance(c.header, MhodHeader)
+            and c.header.mhod_type == kind
+            and isinstance(c.payload, MhodStringPayload)
+        ),
+        "",
+    )
 
 
 def group_key(track: Track, *, album: bool) -> tuple[str, ...]:

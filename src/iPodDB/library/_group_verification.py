@@ -5,40 +5,27 @@ Shared semantic grouping inputs do not specify or bless its native record IDs.
 """
 
 from collections import Counter, defaultdict
+from dataclasses import replace
 
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhii import MhiiHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
-from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
-from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
-    MhodStringPayload,
-)
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
-from iPodDB.library._artist_groups import native_artist_name, shared_artist_changes
+from iPodDB.library._artist_groups import native_artist_name
 from iPodDB.library._browse_groups import (
     album_values,
+    group_text,
     native_browse_groups,
     unchanged_podcast_album_fields,
 )
+from iPodDB.library._browse_membership import retained_browse_memberships
 from iPodDB.library._track_header_expansion import optional_field_available
 from iPodDB.library.models import LibrarySnapshot, MediaKind, Track
 from iPodDB.library.writing import IdentityMapping, WriteIssue
+from iPodDB.shared.binary_struct import write_binary_struct_into
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
-
-
-def group_text(chunk: ParsedChunk[ChunkHeader], kind: MhodType) -> str:
-    return next(
-        (
-            c.payload.value
-            for c in reversed(chunk.children)
-            if isinstance(c.header, MhodHeader)
-            and c.header.mhod_type == kind
-            and isinstance(c.payload, MhodStringPayload)
-        ),
-        "",
-    )
 
 
 def _rows(
@@ -80,7 +67,12 @@ def verify_browse_groups(
         if track_ids.get(t.track_id, t.track_id) in native
     }
     kinds = {s.chunk.header.dataset_type for s in original.find_chunks(MhsdHeader)}
-    artist_changes = shared_artist_changes(before.tracks, desired.tracks)
+    membership, artist_changes = retained_browse_memberships(original, before, desired)
+    deleted_pids = {
+        c.header.db_track_id
+        for i, c in old_native.items()
+        if i not in output and c.header.db_track_id
+    }
     source_browse_ids = (
         {
             value
@@ -146,6 +138,12 @@ def verify_browse_groups(
             i: c.header.album_id if album else c.header.artist_id_ref
             for i, c in output.items()
         }
+        album_pids: dict[int, int] = {}
+        if album and deleted_pids:
+            for i, owner in refs.items():
+                pid = output[i].header.db_track_id
+                album_pids[owner] = min(album_pids.get(owner, pid), pid)
+        verified_records: set[int] = set()
         prior_owners: dict[int, set[int]] = defaultdict(set)
         prior_members: dict[int, list[Track]] = defaultdict(list)
         for identity, reference in source_refs.items():
@@ -162,6 +160,84 @@ def verify_browse_groups(
             ):
                 # The explicit per-show policy is checked independently after
                 # reparse; it intentionally joins artist/season browse groups.
+                continue
+            retained_group = membership[album].get(key)
+            if retained_group is not None and kind in kinds:
+                if retained_group.ambiguous:
+                    continue  # Reconciliation has already reported the ambiguity.
+                fresh_artist_id = 0
+                for t in members:
+                    if t.track_id not in refs:
+                        continue
+                    expected_id = retained_group.links[t.track_id]
+                    actual_id = refs[t.track_id]
+                    chunk = output[t.track_id]
+                    if expected_id or t.track_id in source_refs:
+                        if actual_id != expected_id:
+                            fail(
+                                "retained_reference",
+                                t.track_id,
+                                field,
+                                f"Dataset {kind}: expected ID {expected_id}, actual {actual_id}.",
+                                chunk,
+                            )
+                            continue
+                        if not actual_id or actual_id in verified_records:
+                            continue
+                        verified_records.add(actual_id)
+                        source_matches, matches = (
+                            source_rows.get(actual_id, []),
+                            rows.get(actual_id, []),
+                        )
+                        expected_rows = []
+                        for original_row in source_matches:
+                            header = bytearray(original_row.raw_header)
+                            native_header = original_row.header
+                            if (
+                                len(source_matches) == 1
+                                and isinstance(native_header, MhiaHeader)
+                                and native_header.album_track_db_id in deleted_pids
+                            ):
+                                write_binary_struct_into(
+                                    header,
+                                    replace(
+                                        native_header,
+                                        album_track_db_id=album_pids.get(actual_id, 0),
+                                    ),
+                                )
+                            expected_rows.append((bytes(header), original_row.raw_body))
+                        if [
+                            (row.raw_header, row.raw_body) for row in matches
+                        ] != expected_rows:
+                            fail(
+                                "group_metadata",
+                                t.track_id,
+                                field,
+                                f"Dataset {kind}: retained browse record {actual_id} changed.",
+                                chunk,
+                            )
+                    else:
+                        matches = rows.get(actual_id, [])
+                        if (
+                            not actual_id
+                            or actual_id in source_browse_ids
+                            or (fresh_artist_id and actual_id != fresh_artist_id)
+                            or len(matches) != 1
+                            or group_text(matches[0], MhodType.ARTIST_ITEM_ARTIST)
+                            != t.artist
+                            or not matches[0].header.sql_id
+                            or matches[0].header.sql_id in source_sql_ids
+                            or output_sql_counts[matches[0].header.sql_id] != 1
+                            or artist_owners[actual_id] != {t.artist}
+                        ):
+                            fail(
+                                "group_identity",
+                                t.track_id,
+                                field,
+                                f"Dataset {kind}: expected a fresh artist ID, actual {actual_id}.",
+                                chunk,
+                            )
+                        fresh_artist_id = actual_id
                 continue
             prior = prior_groups.get(key, ())
             member_ids = {t.track_id for t in members}
