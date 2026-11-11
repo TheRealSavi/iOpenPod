@@ -188,6 +188,7 @@ class _Candidate:
     track: Track | None = None
     artwork_sha256: str | None = None
     track_details_refreshed: bool = False
+    metadata_complete: bool = True
     artwork_available: bool = True
     has_video: bool | None = None
 
@@ -364,6 +365,7 @@ def prepare_sync_plan(
     destructive action.
     """
 
+    sync_ratings = sync_ratings and ipod.ratings_available
     host_candidates = _host_candidates(host)
     ipod_candidates = _ipod_candidates(ipod, ipod_library)
     host_remaining = set(range(len(host_candidates)))
@@ -968,12 +970,14 @@ def _paired_item(
         )
         rating_changed = (
             sync_ratings
+            and same_prior_path
+            and host.metadata_complete
             and host.track is not None
             and ipod.track is not None
-            and sync.host_rating is not None
-            and sync.ipod_rating is not None
+            and 0 <= ipod.track.rating <= 100
             and (
-                host.track.rating != sync.host_rating
+                sync.pending_rating is not None
+                or host.track.rating != sync.host_rating
                 or ipod.track.rating != sync.ipod_rating
             )
         )
@@ -1194,6 +1198,7 @@ def _host_candidates(library: HostMediaLibrary) -> tuple[_Candidate, ...]:
                     modified_ns=source.modified_ns,
                     track=track,
                     has_video=source.kind is HostMediaFileKind.VIDEO,
+                    metadata_complete=source.metadata_complete,
                     track_details_refreshed=host_path_identity(path) in rechecked_paths,
                     artwork_available=identity not in unavailable_artwork_paths,
                     artwork_sha256=(

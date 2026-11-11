@@ -13222,6 +13222,10 @@ Playlists: %3</translation>
         <translation>Aleatoria</translation>
     </message>
     <message>
+        <source>Rating Sync state could not be read and was left unchanged: {error}</source>
+        <translation>No se pudo leer el estado de la sincronización de valoraciones y se dejó intacto: {error}</translation>
+    </message>
+    <message>
         <source>Rating must be between 0 and 100.</source>
         <translation>La valoración debe estar entre 0 y 100.</translation>
     </message>
@@ -13776,6 +13780,10 @@ Playlists: %3</translation>
     <message>
         <source>Symbolic link skipped because Follow symbolic links is disabled.</source>
         <translation>Se omitió el enlace simbólico porque Seguir enlaces simbólicos está desactivado.</translation>
+    </message>
+    <message>
+        <source>Sync changes were saved, but Sync history could not be updated. Keep the iPod connected and rescan before another Sync.</source>
+        <translation>Se guardaron los cambios de sincronización, pero no se pudo actualizar el historial. Mantén el iPod conectado y vuelve a analizarlo antes de sincronizar de nuevo.</translation>
     </message>
     <message>
         <source>Sync checked tracks only</source>

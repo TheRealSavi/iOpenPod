@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,12 +52,19 @@ def replace_host_file(
                     shutil.copyfileobj(source, output, length=1024 * 1024)
                 output.seek(0)
                 transform(output)
-                if os.name != "nt":
+                if sys.platform != "win32":
                     os.fchmod(output.fileno(), mode)
                 output.flush()
                 os.fsync(output.fileno())
             observed.validate()
             checkpoint()
+            metadata = (
+                os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+                if isinstance(parent, int)
+                else path.lstat()
+            )
+            if metadata.st_nlink > 1:
+                raise ValueError("The paired Host file has multiple hard links.")
             if isinstance(parent, int):
                 os.replace(name, path.name, src_dir_fd=parent, dst_dir_fd=parent)
                 os.fsync(parent)

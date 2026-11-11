@@ -61,3 +61,20 @@ def test_link_swap_cannot_redirect_replacement(tmp_path: Path) -> None:
         replace_host_file(observation, swap)
     assert target.read_bytes() == b"untouched"
     assert path.is_symlink()
+
+
+def test_replacement_preserves_existing_hard_links(tmp_path: Path) -> None:
+    path = tmp_path / "track"
+    alias = tmp_path / "alias"
+    path.write_bytes(b"original")
+    try:
+        alias.hardlink_to(path)
+    except OSError as error:
+        pytest.skip(f"The test filesystem cannot create hard links: {error}")
+
+    observed = LocalHostFile.observe(HostPath(path))
+    with pytest.raises(ValueError, match="multiple hard links"):
+        replace_host_file(observed, lambda staged: staged.write(b"updated"))
+
+    assert path.samefile(alias)
+    assert path.read_bytes() == b"original"

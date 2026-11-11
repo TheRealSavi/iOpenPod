@@ -1,9 +1,12 @@
 """Ratings return only to the paired Host file after a verified Sync."""
 
+from __future__ import annotations
+
 import base64
 import io
+import os
 from pathlib import Path
-from typing import Any, BinaryIO, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 import pytest
 from mutagen.id3 import POPM, TIT2
@@ -13,6 +16,12 @@ from mutagen.mp4 import MP4, MP4FreeForm
 from iOpenPod.app.media.ratings import rewrite_rating_stream
 from iOpenPod.app.media.tags import read_tag_values
 from storage.media_processing import find_media_tool
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from iOpenPod.app.library_write import WriteProgress
+    from storage.host_input import LocalHostFile
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "media"
 
@@ -105,6 +114,7 @@ def test_rating_back_sync_requires_changed_known_baselines(
     "case",
     [
         "success",
+        "partial_star",
         "excluded",
         "write_failure",
         "device_failure",
@@ -113,11 +123,17 @@ def test_rating_back_sync_requires_changed_known_baselines(
         "zero",
         "conflict",
         "legacy",
+        "preview_helper",
+        "corrupt_rating_state",
         "host_only",
         "conflict_ipod",
         "conflict_average",
         "same",
         "optout",
+        "average_retry",
+        "average_retry_without_helper",
+        "same_facts",
+        "unreadable",
     ],
 )
 def test_sync_writes_changed_rating_to_paired_host_file(
@@ -128,15 +144,17 @@ def test_sync_writes_changed_rating_to_paired_host_file(
 
     from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 
+    from iOpenPod.app import back_sync
     from iOpenPod.app.host_media_folders import create_host_media_folder
     from iOpenPod.app.host_media_library import HostMediaLibrary, HostMediaScanner
     from iOpenPod.app.library_sync_helper import (
         LIBRARY_SYNC_HELPER_PATH,
+        RATING_SYNC_PATH,
         IPodMediaCacheStats,
         IPodMediaLibrary,
         _decode_helper,  # pyright: ignore[reportPrivateUsage]
+        _encode_helper,  # pyright: ignore[reportPrivateUsage]
     )
-    from iOpenPod.app.library_write import WriteProgress
     from iOpenPod.app.sync_execution import (
         SyncExecutionRequest,
         SyncExecutionStatus,
@@ -150,7 +168,9 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         select_sync_plan,
     )
     from storage import AtomicHostFile
+    from storage.host_replacement import replace_host_file
 
+    average_retry = case in {"average_retry", "average_retry_without_helper"}
     monkeypatch.setattr(
         "iOpenPod.app.host_media_fingerprint.FpcalcFingerprinter.fingerprint",
         lambda *args, **kwargs: "1,2,3",
@@ -196,7 +216,7 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                     rating_conflict_policy="ipod"
                     if case == "conflict_ipod"
                     else "average"
-                    if case == "conflict_average"
+                    if case == "conflict_average" or average_retry
                     else "host",
                 ),
             ),
@@ -211,10 +231,14 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         persisted = _decode_helper(
             (device.root / str(LIBRARY_SYNC_HELPER_PATH)).read_bytes()
         )
+        assert not persisted.inline_ratings
+        stored = next(
+            record.sync for record in persisted.tracks if record.sync is not None
+        )
+        assert stored.host_rating is None and stored.ipod_rating is None
+        ipod = device.coordinator.scan_ipod_media(active, lambda _: None, Event())
         baseline = next(
-            record.sync
-            for record in persisted.tracks
-            if record.sync is not None and record.sync.host_path_hint == str(path)
+            record.sync for record in ipod.tracks if record.sync is not None
         )
         assert baseline.host_rating == 60 and baseline.ipod_rating == 60
         track = next(
@@ -222,22 +246,36 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         )
         assert track.rating == 60
         if case == "legacy":
-            ipod = replace(
-                ipod,
-                tracks=tuple(
-                    replace(
-                        record,
-                        sync=replace(record.sync, host_rating=None, ipod_rating=None),
-                    )
-                    if record.sync is not None
-                    else record
-                    for record in ipod.tracks
-                ),
+            (device.root / str(RATING_SYNC_PATH)).unlink()
+            ipod = device.coordinator.scan_ipod_media(active, lambda _: None, Event())
+            assert (
+                ipod.tracks[0].sync is not None
+                and ipod.tracks[0].sync.host_rating is None
             )
+        if case == "preview_helper":
+            (device.root / str(RATING_SYNC_PATH)).unlink()
+            (device.root / str(LIBRARY_SYNC_HELPER_PATH)).write_bytes(
+                _encode_helper(
+                    ipod.tracks,
+                    ipod.images,
+                    persisted.library_sha256,
+                    updated_at=persisted.updated_at,
+                    include_inline_ratings=True,
+                )
+            )
+            ipod = device.coordinator.scan_ipod_media(active, lambda _: None, Event())
+            assert (
+                ipod.tracks[0].sync is not None
+                and ipod.tracks[0].sync.host_rating == 60
+            )
+        if case == "corrupt_rating_state":
+            (device.root / str(RATING_SYNC_PATH)).write_bytes(b"damaged")
+            ipod = device.coordinator.scan_ipod_media(active, lambda _: None, Event())
+            assert not ipod.ratings_available and ipod.tracks[0].sync is not None
         changed = replace(
-            track, rating=0 if case == "zero" else 60 if case == "host_only" else 80
+            track, rating={"zero": 0, "host_only": 60, "partial_star": 75}.get(case, 80)
         )
-        if case != "host_only":
+        if case not in {"host_only", "unreadable"}:
             review = device.prepare(
                 replace(
                     active.library,
@@ -252,10 +290,9 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             )
             assert saved.active is not None
             active = saved.active
-        if case in {
+        if average_retry or case in {
             "zero",
             "conflict",
-            "legacy",
             "host_only",
             "conflict_ipod",
             "conflict_average",
@@ -264,7 +301,7 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             "cancel_after_commit",
         }:
             with path.open("r+b") as writable:
-                if case in {
+                if average_retry or case in {
                     "conflict",
                     "host_only",
                     "conflict_ipod",
@@ -277,7 +314,7 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                         80
                         if case == "same"
                         else 20
-                        if case == "conflict_average"
+                        if case == "conflict_average" or average_retry
                         else 100,
                     )
                 writable.seek(0)
@@ -295,16 +332,57 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             selected_host_paths=frozenset({host_path_identity(str(path))}),
             selected_ipod_removals=frozenset(),
         )
+        if case == "corrupt_rating_state":
+            assert not plan.change_count
+            assert (device.root / str(RATING_SYNC_PATH)).read_bytes() == b"damaged"
+            return
+        if case == "unreadable":
+            host = replace(
+                host,
+                sources=tuple(
+                    replace(source, metadata_complete=False) for source in host.sources
+                ),
+                snapshot=replace(
+                    host.snapshot, tracks=(replace(host.snapshot.tracks[0], rating=0),)
+                ),
+            )
+            assert not prepare_sync_plan(
+                host, ipod, active.library, sync_ratings=True
+            ).change_count
+            return
         assert any(item.action is SyncPlanAction.UPDATE for item in plan.items)
         original = path.read_bytes()
         if case == "excluded":
             plan = replace(plan, items=())
-        if case == "write_failure":
+        if case == "same_facts":
+
+            def replace_at_same_mtime(
+                observed: LocalHostFile,
+                transform: Callable[[BinaryIO], object],
+                *,
+                checkpoint: Callable[[], None],
+            ) -> LocalHostFile:
+                new = replace_host_file(observed, transform, checkpoint=checkpoint)
+                os.utime(path, ns=(observed.modified_ns, observed.modified_ns))
+                updated = type(new).observe(new.path)
+                assert updated.size_bytes == observed.size_bytes
+                assert updated.modified_ns == observed.modified_ns
+                return updated
+
+            monkeypatch.setattr(back_sync, "replace_host_file", replace_at_same_mtime)
+        if case == "write_failure" or average_retry:
 
             def fail_write(*args: object, **kwargs: object) -> None:
                 raise OSError("Host file is read-only")
 
             monkeypatch.setattr("iOpenPod.app.back_sync.replace_host_file", fail_write)
+        publish_sync_success = device.coordinator.publish_sync_success
+        if case == "average_retry_without_helper":
+
+            def fail_helper(*args: object, **kwargs: object) -> None:
+                raise OSError("The Sync helper could not be published")
+
+            monkeypatch.setattr(device.coordinator, "publish_sync_success", fail_helper)
         if case == "device_failure":
 
             def fail_save(*args: object, **kwargs: object) -> None:
@@ -332,13 +410,70 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                     rating_conflict_policy="ipod"
                     if case == "conflict_ipod"
                     else "average"
-                    if case == "conflict_average"
+                    if case == "conflict_average" or average_retry
                     else "host",
                 ),
             ),
             progress,
             cancelled,
         )
+        if average_retry:
+            assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+            assert result.active is not None
+            assert (result.helper is None) == (case == "average_retry_without_helper")
+            assert (
+                next(
+                    t.rating
+                    for t in result.active.library.tracks
+                    if t.track_id == track.track_id
+                )
+                == 60
+            )
+            monkeypatch.setattr(back_sync, "replace_host_file", replace_host_file)
+            monkeypatch.setattr(
+                device.coordinator, "publish_sync_success", publish_sync_success
+            )
+            retry_host = scan()
+            retry_ipod = device.coordinator.scan_ipod_media(
+                result.active, lambda _: None, Event()
+            )
+            retry_plan = select_sync_plan(
+                prepare_sync_plan(
+                    retry_host, retry_ipod, result.active.library, sync_ratings=True
+                ),
+                selected_host_paths=frozenset({host_path_identity(str(path))}),
+                selected_ipod_removals=frozenset(),
+            )
+            retry = executor.execute(
+                SyncExecutionRequest(
+                    retry_plan,
+                    retry_host,
+                    retry_ipod,
+                    result.active,
+                    1,
+                    1,
+                    options=SyncOptions(
+                        back_sync_ratings=True, rating_conflict_policy="average"
+                    ),
+                ),
+                lambda _: None,
+                Event(),
+            )
+            assert retry.status is SyncExecutionStatus.SUCCESS, retry.issues
+            assert retry.active is not None
+            assert (
+                next(
+                    t.rating
+                    for t in retry.active.library.tracks
+                    if t.track_id == track.track_id
+                )
+                == 60
+            )
+            assert {
+                tag.name: tag.value
+                for tag in read_tag_values(_load_media(path, suffix).tags)
+            }["rating"] == "60"
+            return
         if case in {
             "excluded",
             "write_failure",
@@ -359,10 +494,12 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             ), result.issues
             if case in {"write_failure", "cancel_after_commit"}:
                 assert result.active is not None and result.helper is not None
-                retry = prepare_sync_plan(
+                retry_comparison = prepare_sync_plan(
                     scan(), result.helper, result.active.library, sync_ratings=True
                 )
-                assert any(i.action is SyncPlanAction.UPDATE for i in retry.items)
+                assert any(
+                    i.action is SyncPlanAction.UPDATE for i in retry_comparison.items
+                )
             return
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None and result.helper is not None
@@ -378,8 +515,21 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             if case in {"legacy", "optout", "conflict_average"}
             else "80"
         )
-        if case == "optout":
+        if case in {"legacy", "optout"}:
             assert path.read_bytes() == original
+        if case == "legacy":
+            seeded = next(
+                record.sync
+                for record in result.helper.tracks
+                if record.sync is not None
+            )
+            assert (seeded.host_rating, seeded.ipod_rating) == (60, 80)
+        if case == "preview_helper":
+            upgraded = _decode_helper(
+                (device.root / str(LIBRARY_SYNC_HELPER_PATH)).read_bytes()
+            )
+            assert not upgraded.inline_ratings
+            assert (device.root / str(RATING_SYNC_PATH)).is_file()
         if case not in {"legacy", "optout"}:
             final_track = next(
                 t for t in result.active.library.tracks if t.track_id == track.track_id
@@ -388,13 +538,16 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 100
                 if case in {"host_only", "conflict"}
                 else 60
-                if case == "conflict_average"
+                if case == "conflict_average" or average_retry
                 else 0
                 if case == "zero"
+                else 75
+                if case == "partial_star"
                 else 80
             )
             assert final_track.rating == expected
         after = path.read_bytes()
+        scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
         plan = prepare_sync_plan(
             scan(), result.helper, result.active.library, sync_ratings=True
         )
@@ -421,6 +574,7 @@ def test_v14_mp4_cache_refreshes_previously_unread_rating(tmp_path: Path) -> Non
     HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
     document = json.loads(cache.path.read_bytes())
     document["version"] = 14
+    document["entries"][0]["metadata"].pop("file_identity")
     # Simulate the genuine old reader's cached tag projection, with no RATING.
     document["entries"][0]["metadata"]["tag_values"] = [
         tag
@@ -500,7 +654,10 @@ def test_rating_resolution(
     assert resolved_rating(host, ipod, bh, bi, policy) == expected
 
 
-@pytest.mark.parametrize("suffix,codec", [("ogg", "vorbis"), ("opus", "libopus")])
+@pytest.mark.parametrize(
+    "suffix,codec",
+    [("ogg", "vorbis"), ("oga", "vorbis"), ("opus", "libopus"), ("ogg", "libopus")],
+)
 def test_ogg_rating_transform_round_trip(suffix: str, codec: str) -> None:
     import shutil
     import subprocess
@@ -536,7 +693,7 @@ def test_ogg_rating_transform_round_trip(suffix: str, codec: str) -> None:
     from mutagen.oggvorbis import OggVorbis
 
     stream.seek(0)
-    factory: Any = OggVorbis if suffix == "ogg" else OggOpus
+    factory: Any = OggVorbis if codec == "vorbis" else OggOpus
     assert {t.name: t.value for t in read_tag_values(factory(stream).tags)}[
         "rating"
     ] == "0"

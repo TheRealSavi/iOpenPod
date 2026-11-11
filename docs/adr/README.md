@@ -316,3 +316,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0249: Qualify Calendar occurrences and reminders by firmware](0249-qualify-calendar-occurrences-and-reminders-by-firmware.md)
 - [ADR-0250: Prefer device write policy over source signature markers](0250-prefer-device-write-policy-over-source-signature-markers.md)
 - [ADR-0251: Use shared Calendar behavior by model](0251-use-shared-calendar-behavior-by-model.md)
+- [ADR-0252: Persist retryable rating Back Sync state](0252-persist-retryable-rating-back-sync-state.md)

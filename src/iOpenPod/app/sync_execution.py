@@ -22,16 +22,22 @@ from iOpenPod.app.artwork_policy import (
     rockbox_artwork,
     rockbox_tag_policy,
 )
-from iOpenPod.app.back_sync import back_sync_ratings, resolved_rating
+from iOpenPod.app.back_sync import (
+    back_sync_ratings,
+    pending_rating_writes,
+    resolved_rating,
+)
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.genius_mixes import supports_mix_creation
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
 from iOpenPod.app.library_sync_helper import (
+    RATING_SYNC_PATH,
     SyncDetails,
     SyncedImage,
     SyncedTrack,
     read_sync_history,
+    stage_rating_writes,
 )
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
@@ -138,7 +144,7 @@ from iPodDB.library import (
     prepared_audio,
     prepared_video,
 )
-from storage import DeviceEntry, DeviceEntryKind, DevicePath, StorageError
+from storage import AccessMode, DeviceEntry, DeviceEntryKind, DevicePath, StorageError
 from storage.content_workspace import content_workspace
 from storage.device_capture import capture_device_file_with_fingerprint
 from storage.host_input import LocalHostFile
@@ -822,13 +828,34 @@ class SyncExecutor:
                         SyncExecutionStatus.FAILED, issues=tuple(issues)
                     )
 
+                pending = pending_rating_writes(request, draft.snapshot, completed)
+                staged_rating_revision = None
+
                 def validate_sources(session: FilesystemSession) -> None:
                     _validate_device_sources(request, session, checkpoint)
+                    if staged_rating_revision is not None and (
+                        session.fingerprint(RATING_SYNC_PATH) != staged_rating_revision
+                    ):
+                        raise ValueError(
+                            "Rating Sync state changed after Review. Rescan before retrying."
+                        )
                     for update in metadata_updates:
                         checkpoint()
                         _validate_host_source(
                             sources[host_path_identity(update.item.host_path or "")]
                         )
+
+                if pending:
+                    checkpoint()
+                    with self._coordinator.sync_session(
+                        request.source, access=AccessMode.READ_WRITE
+                    ) as session:
+                        validate_sources(session)
+                        request = replace(
+                            request,
+                            ipod=stage_rating_writes(session, request.ipod, pending),
+                        )
+                        staged_rating_revision = request.ipod.rating_revision
 
                 saved = self._coordinator.save_library(
                     review,
@@ -914,6 +941,13 @@ class SyncExecutor:
                             ),
                         )
                         with self._coordinator.sync_session(saved.active) as session:
+                            if staged_rating_revision is not None and (
+                                session.fingerprint(RATING_SYNC_PATH)
+                                != staged_rating_revision
+                            ):
+                                raise ValueError(
+                                    "Rating Sync state changed before the Host write. Rescan before retrying."
+                                )
 
                             def validate_rating_device() -> None:
                                 if cancelled.is_set():
@@ -954,7 +988,10 @@ class SyncExecutor:
                 except PreparationCancelledError:
                     raise
                 except Exception as error:
-                    if not review.file_changes:
+                    host_rating_written = any(
+                        issue.code == "sync.rating_written" for issue in issues
+                    )
+                    if not review.file_changes and not host_rating_written:
                         return SyncExecutionResult(
                             SyncExecutionStatus.FAILED,
                             active=saved.active,
@@ -971,9 +1008,11 @@ class SyncExecutor:
                     issues.append(
                         WriteIssue(
                             "sync.helper_failed",
-                            "Library changes were saved, but Sync history could not be updated. "
+                            "Sync changes were saved, but Sync history could not be updated. "
                             "Keep the iPod connected and rescan before another Sync.",
-                            severity=IssueSeverity.WARNING,
+                            severity=IssueSeverity.ERROR
+                            if host_rating_written
+                            else IssueSeverity.WARNING,
                             detail=exception_text(error),
                         )
                     )
@@ -2521,15 +2560,28 @@ def _draft(
         return artwork_ids[identity]
 
     rating_baselines = {record.track_id: record.sync for record in request.ipod.tracks}
+    readable_ratings = {
+        host_path_identity(str(source.path))
+        for source in request.host.sources
+        if source.metadata_complete
+    }
 
     def reconciled_rating(identity: int, host: Track, old: Track) -> int:
         if not (request.options.back_sync_ratings and request.plan.sync_ratings):
             return old.rating
         prior = rating_baselines.get(identity)
-        if prior is None or host_path_identity(
-            prior.host_path_hint
-        ) != host_path_identity(host.metadata.location):
+        key = host_path_identity(host.metadata.location)
+        if (
+            key not in readable_ratings
+            or not 0 <= old.rating <= 100
+            or prior is None
+            or host_path_identity(prior.host_path_hint) != key
+        ):
             return old.rating
+        if prior.pending_rating is not None and prior.pending_rating.matches(
+            host.rating, old.rating
+        ):
+            return prior.pending_rating.target_rating
         return resolved_rating(
             host.rating,
             old.rating,
@@ -3157,10 +3209,7 @@ def _validate_device_sources(
 
 def _validate_host_source(source: HostMediaSource) -> None:
     observed = LocalHostFile.observe(source.path)
-    if (observed.size_bytes, observed.modified_ns) != (
-        source.size_bytes,
-        source.modified_ns,
-    ):
+    if not source.matches(observed):
         raise ValueError(
             source_text(
                 "The Host source {name} changed after scanning. Rescan before Sync.",

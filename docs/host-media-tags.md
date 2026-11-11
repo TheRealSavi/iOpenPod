@@ -2,11 +2,10 @@
 
 The Application Layer's `media.tags` adapter interprets native Mutagen values and
 FFprobe metadata for Host Media Scan, music import, and Sync enrichment. Scanning
-is read-only. Normalized fields survive Host Media Scan Cache v17. Older caches migrate while
-reusing unchanged covered media. Pre-v17 Track metadata is reinspected once
-while retaining cached Acoustic Fingerprints; Photos and folder artwork stay reusable. Pre-v12 no-cover records
-are reinspected once because they did not distinguish absent artwork from an
-unreadable embedded image. Tags describe Library classification, not codec
+is read-only. Normalized fields survive Host Media Scan Cache v18. Older Track
+metadata is reinspected once to record file identity and recover previously
+unread native ratings. Cached Acoustic Fingerprints, Photos, and folder artwork
+remain reusable when their file facts match. Tags describe Library classification, not codec
 compatibility. See [ADR-0133](adr/0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md).
 Pre-v14 Playlist records are reparsed once to restore network filesystem
 references and valid POSIX names, including album folders ending in a period;
@@ -137,7 +136,12 @@ MP4 content advisory remains separate from star ratings.
 Settings > Sync > Sync star ratings to Host files is off by default. With it on,
 selected paired Tracks reconcile changed ratings against separate saved Host and
 iPod baselines. Concurrent differing changes use Host wins (default), iPod wins,
-or Average. Unknown baselines never authorize the first Host write. Deliberate
-clears propagate as zero. Supported writes are MP3, MP4, FLAC, Ogg Vorbis and Opus;
-other native formats remain readable. Exported ID3/MP4 copies receive their current
+or Average. A reviewed Sync first records any missing baselines for an established
+pair without changing its ratings. Failed Host writes can retry a recorded target
+once the iPod has committed it and the Host rating still matches the reviewed
+value. Incomplete Host metadata stays ineligible for reconciliation. Deliberate
+clears propagate as zero. Fractional iPod ratings round to whole stars in Host
+tags while the iPod retains its precise value. Supported writes are MP3, MP4, FLAC, Ogg Vorbis and Opus;
+other native formats remain readable. Back Sync leaves multiply linked files
+intact. Exported ID3/MP4 copies receive their current
 Library rating independently of Host Back Sync.
