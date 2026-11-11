@@ -6,6 +6,7 @@ from __future__ import annotations
 import ctypes
 import errno
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,7 @@ from storage.platform.macos import (
     _DarwinVolumeCapabilities,
     _decode_required_c_string,
     _diskutil_info,
+    _ioreg_hardware_index,
     _observation_from_kernel,
     _parse_volume_attributes,
     _read_statfs,
@@ -583,3 +585,215 @@ int main(int argc, char **argv) {
         bytes(snapshot.f_mntfromname),
         b"",
     ]
+
+
+def test_diskutil_fallback_trusts_kernel_uuid_over_diskutil_placeholder(
+    tmp_path: Path,
+) -> None:
+    """HFS+ Volumes written by older iTunes report an all-zero DiskArbitration UUID."""
+
+    snapshot = _snapshot(tmp_path)
+    info: dict[str, object] = {
+        "DeviceIdentifier": "disk4s2",
+        "DeviceNode": "/dev/disk4s2",
+        "ParentWholeDisk": "disk4",
+        "MountPoint": str(tmp_path),
+        "VolumeUUID": "00000000-0000-0000-0000-000000000000",
+    }
+
+    identity = _validate_diskutil_fallback(info, snapshot, kernel_uuid=_VOLUME_UUID)
+
+    assert identity == _VOLUME_UUID
+
+
+def test_diskutil_fallback_still_rejects_placeholder_without_kernel_evidence(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path)
+    info: dict[str, object] = {
+        "DeviceIdentifier": "disk4s2",
+        "DeviceNode": "/dev/disk4s2",
+        "ParentWholeDisk": "disk4",
+        "MountPoint": str(tmp_path),
+        "VolumeUUID": "00000000-0000-0000-0000-000000000000",
+    }
+
+    with pytest.raises(MountInspectionError):
+        _validate_diskutil_fallback(info, snapshot)
+
+
+def test_ioreg_index_uses_the_nearest_usb_ancestor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nano_media: dict[str, object] = {
+        "IOObjectClass": "IOMedia",
+        "BSD Name": "disk4",
+        "Whole": True,
+        "IORegistryEntryChildren": [
+            {"IOObjectClass": "IOMedia", "BSD Name": "disk4s2", "Whole": False},
+        ],
+    }
+    nano = {
+        "IOObjectClass": "IOUSBHostDevice",
+        "IORegistryEntryID": 100,
+        "IORegistryEntryLocation": "00100000",
+        "USB Serial Number": "000A270024360EA0",
+        "idVendor": 1452,
+        "idProduct": 4711,
+        "IORegistryEntryChildren": [
+            {
+                "IOObjectClass": "IOUSBMassStorageDriver",
+                "IORegistryEntryChildren": [nano_media],
+            }
+        ],
+    }
+    other_controller = {
+        "IOObjectClass": "IOUSBHostDevice",
+        "IORegistryEntryID": 101,
+        "USB Serial Number": "HUB-SERIAL",
+        "idVendor": 5678,
+        "idProduct": 1234,
+        "IORegistryEntryChildren": [
+            {
+                "IOObjectClass": "USBDeviceSubclass",
+                "IOObjectInheritance": [
+                    "IOService",
+                    "IOUSBHostDevice",
+                    "USBDeviceSubclass",
+                ],
+                "IORegistryEntryID": 102,
+                "IORegistryEntryLocation": "00100000",
+                "idVendor": 1234,
+                "idProduct": 5678,
+                "IORegistryEntryChildren": [
+                    {
+                        "IOObjectClass": "MediaSubclass",
+                        "IOObjectInheritance": [
+                            "IOService",
+                            "IOMedia",
+                            "MediaSubclass",
+                        ],
+                        "BSD Name": "disk5",
+                        "Whole": True,
+                    },
+                ],
+            },
+            {
+                "IOObjectClass": "IOUSBHostDevice",
+                "IORegistryEntryID": 103,
+                "IORegistryEntryChildren": [
+                    {"IOObjectClass": "IOMedia", "BSD Name": "disk6", "Whole": True},
+                ],
+            },
+        ],
+    }
+    payload = plistlib.dumps([nano, other_controller])
+
+    def run_ioreg(command: list[str]) -> bytes:
+        assert command == ["ioreg", "-a", "-i", "-l", "-r", "-c", "IOUSBHostDevice"]
+        return payload
+
+    monkeypatch.setattr("storage.platform.macos._run_ioreg", run_ioreg)
+
+    assert _ioreg_hardware_index() == {
+        "disk4": HardwareIdentifiers(
+            usb_vendor_id=1452,
+            usb_product_id=4711,
+            transport_serial="000A270024360EA0",
+        ),
+        "disk5": HardwareIdentifiers(usb_vendor_id=1234, usb_product_id=5678),
+    }
+
+
+@pytest.mark.parametrize("second_entry_id", [100, 101])
+def test_ioreg_index_only_accepts_a_single_usb_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    second_entry_id: int,
+) -> None:
+    nano = {
+        "IOObjectClass": "IOUSBHostDevice",
+        "IORegistryEntryID": 100,
+        "USB Serial Number": "000A270024360EA0",
+        "idVendor": 1452,
+        "idProduct": 4711,
+        "IORegistryEntryChildren": [
+            {"IOObjectClass": "IOMedia", "BSD Name": "disk4", "Whole": True},
+        ],
+    }
+    second = nano | {"IORegistryEntryID": second_entry_id}
+    payload = plistlib.dumps([nano, second])
+    monkeypatch.setattr("storage.platform.macos._run_ioreg", lambda _command: payload)
+
+    expected = (
+        {
+            "disk4": HardwareIdentifiers(
+                usb_vendor_id=1452,
+                usb_product_id=4711,
+                transport_serial="000A270024360EA0",
+            )
+        }
+        if second_entry_id == 100
+        else {}
+    )
+    assert _ioreg_hardware_index() == expected
+
+
+def test_ioreg_index_treats_truncated_archive_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "storage.platform.macos._run_ioreg",
+        lambda _command: b'<?xml version="1.0"?><plist><array>',
+    )
+
+    assert _ioreg_hardware_index() == {}
+
+
+def test_macos_discovery_continues_after_truncated_diskutil_plist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bad = tmp_path / "bad"
+    good = tmp_path / "good"
+    bad.mkdir()
+    good.mkdir()
+    snapshots = {
+        bad: _snapshot(bad, source=b"/dev/disk4s2"),
+        good: _snapshot(good, source=b"/dev/disk5s2"),
+    }
+    good_plist = plistlib.dumps(
+        {
+            "DeviceIdentifier": "disk5s2",
+            "ParentWholeDisk": "disk5",
+            "MountPoint": str(good),
+            "VolumeUUID": _VOLUME_UUID,
+            "RemovableMedia": True,
+        }
+    )
+
+    def run(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        assert command[:3] == ["diskutil", "info", "-plist"]
+        target = Path(command[-1]).name
+        if target == "disk4s2":
+            stdout = b'<?xml version="1.0"?><plist><dict>'
+        else:
+            assert target == "disk5s2"
+            stdout = good_plist
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr("storage.platform.macos._VOLUMES_DIRECTORY", tmp_path)
+    monkeypatch.setattr("storage.platform.macos._ioreg_hardware_index", dict)
+    monkeypatch.setattr("storage.platform.macos._read_statfs", snapshots.__getitem__)
+    monkeypatch.setattr(
+        "storage.platform.macos._read_volume_attributes", lambda _path: (None, None)
+    )
+    monkeypatch.setattr("storage.platform.macos.subprocess.run", run)
+
+    result = MacOSPlatformAdapter().discover()
+
+    assert [volume.mount_point.path for volume in result.observations] == [good]
+    (issue,) = result.issues
+    assert issue.source == str(bad)
+    assert issue.detail.startswith("Could not parse diskutil output")
