@@ -26,7 +26,14 @@ from iOpenPod.app.sync_execution import (
     SyncExecutor,
     SyncOptions,
 )
-from iPodDB.library import LibrarySnapshot, MediaKind, MediaType, Track, TrackMetadata
+from iPodDB.library import (
+    IssueSeverity,
+    LibrarySnapshot,
+    MediaKind,
+    MediaType,
+    Track,
+    TrackMetadata,
+)
 from storage import HostPath
 from storage.host_input import LocalHostFile
 
@@ -145,3 +152,106 @@ def test_music_sync_preserves_podcasts_when_a_feed_repeats_episode_ids(
         assert "Episode IDs" in issue.detail
     finally:
         device.coordinator.close()
+
+
+def test_refresh_only_sync_reports_partial_when_the_feed_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path, model="MA978")
+    feed_url = "https://publisher.example/dead-feed"
+    payload = b"""<rss version="2.0"><channel><title>Show</title>
+    <item><guid>first</guid><title>First</title>
+    <enclosure url="https://publisher.example/shared.mp3" type="audio/mpeg" />
+    </item>
+    <item><guid>second</guid><title>Second</title>
+    <enclosure url="https://publisher.example/shared.mp3" type="audio/mpeg" />
+    </item></channel></rss>"""
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        assert url == feed_url
+        return payload, url
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+    try:
+        original = device.active.library.tracks[0]
+        podcast = replace(
+            original,
+            title="Retained Episode",
+            album="Show",
+            episode="retained-guid",
+            media_types=(MediaType.PODCAST,),
+            metadata=replace(
+                original.metadata,
+                podcast=True,
+                podcast_rss_url=feed_url,
+                podcast_guid="retained-guid",
+            ),
+        )
+        review = device.prepare(
+            replace(
+                device.active.library,
+                tracks=(podcast, *device.active.library.tracks[1:]),
+            )
+        )
+        saved = device.coordinator.save_library(
+            review, device.active, lambda _: None, Event()
+        )
+        assert saved.active is not None, saved.issues
+        state = device.coordinator.load_podcast_state(device.active)
+
+        # No Host media: the Draft cannot change, so the refresh outcome is the
+        # only thing the result can report.
+        host = HostMediaLibrary(
+            LibrarySnapshot(tracks=()), (), (), HostMediaCacheStats()
+        )
+
+        def execute_once(active: object) -> object:
+            request = replace(
+                _request(device, host),
+                podcasts=PodcastSyncRequest(
+                    device.coordinator.load_podcast_state(active).snapshot
+                ),
+                options=SyncOptions(analyze_for_genius=False, scrobble=False),
+            )
+            return SyncExecutor(device.coordinator).execute(
+                request, lambda _: None, Event()
+            )
+
+        # The first pass settles the Podcast annotations, so the second pass
+        # leaves the Draft unchanged and returns before publication.
+        execute_once(saved.active)
+        assert device.active is not None
+        result = execute_once(device.active)
+
+        assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+        assert result.active is not None
+        assert result.completed == ()
+        assert any(i.code == "podcast.refresh_failed" for i in result.issues)
+    finally:
+        device.coordinator.close()
+
+
+def test_unchanged_draft_reports_a_refresh_failure_as_partial() -> None:
+    """A Sync that changes nothing still reports the requested Podcast state."""
+
+    from iOpenPod.app.sync_execution import _unchanged_sync_status
+    from iPodDB.library import WriteIssue
+
+    refresh = WriteIssue(
+        "podcast.refresh_failed",
+        "Could not refresh Show.",
+        severity=IssueSeverity.WARNING,
+    )
+
+    assert (
+        _unchanged_sync_status(requested_changes=False, issues=(refresh,))
+        is SyncExecutionStatus.PARTIAL
+    )
+    assert (
+        _unchanged_sync_status(requested_changes=False, issues=())
+        is SyncExecutionStatus.SUCCESS
+    )
+    assert (
+        _unchanged_sync_status(requested_changes=True, issues=(refresh,))
+        is SyncExecutionStatus.FAILED
+    )

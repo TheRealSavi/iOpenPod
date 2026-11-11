@@ -181,6 +181,23 @@ class SyncExecutionStatus(StrEnum):
     RECOVERY_REQUIRED = "recovery_required"
 
 
+def _unchanged_sync_status(
+    *, requested_changes: bool, issues: tuple[WriteIssue, ...]
+) -> SyncExecutionStatus:
+    """Outcome for a Sync that leaves the Draft unchanged.
+
+    A refresh-only Sync reports the requested Podcast state here, because no
+    change travels through the publication path: nothing failed, but nothing
+    was refreshed either.
+    """
+
+    if requested_changes:
+        return SyncExecutionStatus.FAILED
+    if any(issue.code == "podcast.refresh_failed" for issue in issues):
+        return SyncExecutionStatus.PARTIAL
+    return SyncExecutionStatus.SUCCESS
+
+
 @dataclass(frozen=True, slots=True)
 class SyncOptions:
     analyze_for_genius: bool = True
@@ -686,9 +703,10 @@ class SyncExecutor:
                         )
                     ):
                         return SyncExecutionResult(
-                            SyncExecutionStatus.FAILED
-                            if requested_changes
-                            else SyncExecutionStatus.SUCCESS,
+                            _unchanged_sync_status(
+                                requested_changes=requested_changes,
+                                issues=tuple(issues),
+                            ),
                             active=request.source if not requested_changes else None,
                             issues=tuple(issues),
                         )
