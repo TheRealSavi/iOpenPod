@@ -143,10 +143,13 @@ than the Original iOpenPod or libgpod definitions.
 
 ## Interfaces
 
-- `iPodDB.genius` provides typed version-2 configuration instructions, metadata
-  keys, and uncompressed candidate IDs with parse/serialize functions. Unsupported
-  payloads remain `OpaqueGeniusPayload`; malformed known framing raises
-  `GeniusFormatError`. Individual payloads are bounded to 16 MiB.
+- `iPodDB.genius` provides typed version-2 configuration instructions and
+  version-1 and version-2 metadata and candidate rows. Similarities can be
+  uncompressed or zlib-compressed. Edits retain the row version, compression flag,
+  and framing suffixes. An unchanged compressed row retains its original stream.
+  Unsupported payloads remain `OpaqueGeniusPayload`. Malformed known framing
+  raises `GeniusFormatError`. Stored and inflated payloads are bounded to 16 MiB.
+  See the [firmware reader evidence](research/genius-similarity-firmware-2026-11-11.md).
 - `iPodDB.library.genius` exports `GeniusData`, row types, `GeniusDatabase`, and
   `parse_genius_database`/`serialize_genius_database`. Documents retain full SQLite
   source bytes; unchanged writes are byte-exact. Classic root `Extras.itdb` and
