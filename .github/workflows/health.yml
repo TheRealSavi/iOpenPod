@@ -56,7 +56,23 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libpulse0 libasound2t64 udev btrfs-progs
+          sudo apt-get install -y ffmpeg libegl1 libgl1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1 libpulse0 libasound2t64 udev btrfs-progs
+
+      - name: Install Windows media tools
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
+
+      - name: Install macOS media tools
+        if: runner.os == 'macOS'
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            brew install ffmpeg
+          fi
+
+      - name: Verify media tools
+        run: |
+          ffmpeg -version
+          ffprobe -version
 
       - name: Install project and dev dependencies
         if: runner.os != 'macOS'

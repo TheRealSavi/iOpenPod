@@ -46,8 +46,8 @@ Brief Summary:
 - **iOpenPod** is the application. Its Application Layer coordinates Device Registry,
   iPodDB, Storage, application state, and the GUI.
 
-Extras follows the same boundaries: Device Registry separates native Calendar,
-To Do, Alarm and Sleep Timer availability from exact-firmware writer qualification;
+Device Registry describes Extras availability and qualifies Clock Alarm layouts
+using firmware evidence.
 `iPodDB.calendar` retains and edits Calendar bytes, and `iPodDB.alarms` patches
 proven fields of existing records. The Application Layer owns background capture,
 connection/revision checks and Storage Transactions. GUI pages only submit typed
@@ -57,17 +57,15 @@ Video's Preferences alarm word is a read-only Clock Alarm Projection; the
 separate per-city `Device/clock` artifact does not yet have a qualified editor.
 This distinction does not restrict Video Calendar editing or Library workflows.
 
-Calendar occurrence projection and saved-reminder authoring use independently
-qualified byte-only profiles composed from exact Registry firmware evidence.
-The bounded daily/weekly floating occurrence subset and single start-relative
-reminder writer are qualified independently for each target in the
+Calendar uses model-level availability and one format implementation in iPodDB.
+The codec owns the supported recurrence selectors, exception lists, Calendar
+zone binding and saved reminder evaluation. The GUI displays projected day spans
+and submits edits to the source series. A Calendar write uses the current
+Filesystem Session and source fingerprints. Clock Alarm writes still recheck
+their own firmware evidence. Nano 2 follows the shared Calendar policy by user
+direction, and Nano 6/7 remain unavailable. See
+[ADR-0251](adr/0251-use-shared-calendar-behavior-by-model.md) and the
 [lab-wide Calendar matrix](research/calendar-firmware-coverage-2026-11-08.md).
-Calendar qualification never grants Clock Alarm editing. Nano 6/7's explicit
-negative capability and Nano 2's encrypted-evidence gap remain distinct. The GUI retains
-source-series identity for every occurrence; it does not implement recurrence,
-timezone or scheduler rules. Unsupported patterns remain preserved observations.
-See [ADR-0249](adr/0249-qualify-calendar-occurrences-and-reminders-by-firmware.md)
-for the target matrix, bounds and native receipts.
 
 Firmware Preferences uses a separate capture and explicit Apply/Revert workflow.
 Device Registry qualifies the exact firmware target through one shared resolver

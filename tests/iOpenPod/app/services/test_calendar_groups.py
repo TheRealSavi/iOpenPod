@@ -1,12 +1,11 @@
 """Named calendars retain source identity through grouped publication."""
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from whenever import Date
 
-from device_registry import ExtrasSupport, FirmwareTarget
+from device_registry import ExtrasSupport
 from iOpenPod.app.models.extras import (
     CreateCalendar,
     ImportCalendar,
@@ -15,7 +14,6 @@ from iOpenPod.app.models.extras import (
 )
 from iOpenPod.app.services.extras import prepare_change, read_extras
 from iPodDB.calendar import (
-    CalendarEditError,
     CalendarEntryDraft,
     CalendarFrequency,
     CalendarRecurrenceRule,
@@ -47,9 +45,7 @@ def test_capture_uses_native_status_instead_of_host_completion_timestamp(
     )
     (folder / "task.ics").write_bytes(raw)
     storage = _storage(tmp_path)
-    support = ExtrasSupport(
-        calendar_write=True, calendar_firmware=FirmwareTarget.NANO_5_1_0_2
-    )
+    support = ExtrasSupport(calendar_write=True)
     with storage.open_session(
         storage.discover().volumes[0], access=AccessMode.READ_WRITE
     ) as session:
@@ -160,29 +156,11 @@ def test_named_import_and_new_calendar_preserve_empty_containers(
             prepare_change(catalog, CreateCalendar("Personal"), checkpoint=lambda: None)
 
 
-@pytest.mark.parametrize(
-    "firmware",
-    (
-        FirmwareTarget.MINI_1_1_4_1,
-        FirmwareTarget.MINI_2_1_4_1,
-        FirmwareTarget.NANO_1_1_3_1,
-        FirmwareTarget.NANO_3_1_1_3,
-        FirmwareTarget.NANO_4_1_0_4,
-        FirmwareTarget.NANO_5_1_0_2,
-        FirmwareTarget.VIDEO_1_3,
-        FirmwareTarget.CLASSIC_6_1_1_2,
-        FirmwareTarget.CLASSIC_120GB_2_0_1,
-        FirmwareTarget.CLASSIC_UPDATER_35_2_0_4,
-        FirmwareTarget.CLASSIC_UPDATER_38_2_0_5,
-    ),
-)
-def test_publication_composes_only_the_qualified_target_writer(
-    tmp_path: Path, firmware: FirmwareTarget
-) -> None:
+def test_publication_uses_shared_calendar_writer(tmp_path: Path) -> None:
     storage = _storage(tmp_path)
-    support = ExtrasSupport(calendar_write=True, calendar_firmware=firmware)
+    support = ExtrasSupport(calendar_write=True)
     repeat = CalendarRecurrenceRule(CalendarFrequency.DAILY, count=3)
-    reminder = CalendarReminderDraft(15)
+    reminder = CalendarReminderDraft(-900)
     with storage.open_session(
         storage.discover().volumes[0], access=AccessMode.READ_WRITE
     ) as session:
@@ -206,12 +184,3 @@ def test_publication_composes_only_the_qualified_target_writer(
         entry = updated.calendar[0].entry
         assert entry.has_recurrence
         assert entry.reminders
-        wrong = CalendarEntryDraft(
-            start=draft.start,
-            end=draft.end,
-            recurrence=repeat,
-            reminder=reminder,
-        )
-        unknown = replace(updated, support=ExtrasSupport(calendar_write=True))
-        with pytest.raises(CalendarEditError):
-            prepare_change(unknown, SaveCalendar(wrong), checkpoint=lambda: None)

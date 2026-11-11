@@ -4,7 +4,17 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QDate, QLocale, QObject, Qt, QTime, QTranslator
+from PySide6.QtCore import (
+    QDate,
+    QLocale,
+    QObject,
+    QPoint,
+    Qt,
+    QTime,
+    QTimer,
+    QTranslator,
+)
+from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -13,8 +23,11 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QSpinBox,
+    QTableView,
     QTabWidget,
     QTimeEdit,
     QToolButton,
@@ -28,7 +41,6 @@ from device_registry import (
     AlarmFormat,
     ExtrasSupport,
     FeatureSupport,
-    FirmwareTarget,
     IdentificationStatus,
 )
 from iOpenPod.app import developer_flags
@@ -59,14 +71,17 @@ from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iPodDB.calendar import (
     UNCHANGED,
+    CalendarDayRule,
     CalendarEntryChanges,
     CalendarEntryDraft,
     CalendarEntryKind,
     CalendarFrequency,
-    CalendarProfile,
     CalendarRecurrenceRule,
     CalendarReminderDraft,
+    CalendarTodoStatus,
+    CalendarWeekday,
     parse_calendar,
+    update_entry,
 )
 from iPodDB.library import LibrarySnapshot
 from storage import FileFingerprint
@@ -117,6 +132,8 @@ class _Controller(ExtrasController):
         self.destinations: list[CalendarGroup | None] = []
         self.names: list[tuple[CalendarGroup | None, str]] = []
         self.imports: list[tuple[str, str | None]] = []
+        self.skipped: list[tuple[CalendarItem, Date, Date]] = []
+        self.removed: list[CalendarItem] = []
 
     @property
     def active_ipod(self) -> ActiveIPod | None:
@@ -155,6 +172,16 @@ class _Controller(ExtrasController):
         self.names.append((None, name))
         return True
 
+    def skip_calendar_occurrence(
+        self, item: CalendarItem, day: Date, start_day: Date
+    ) -> bool:
+        self.skipped.append((item, day, start_day))
+        return True
+
+    def remove_calendar(self, item: CalendarItem) -> bool:
+        self.removed.append(item)
+        return True
+
     def rename_calendar(self, calendar: CalendarGroup, name: str) -> bool:
         self.names.append((calendar, name))
         return True
@@ -174,6 +201,48 @@ def _find[T: QObject](parent: QObject, cls: type[T], name: str) -> T:
     found = parent.findChild(cls, name)
     assert isinstance(found, cls)
     return found
+
+
+def _open_entry_menu(
+    tree: QTreeWidget, *, row_index: int = 0, keyboard: bool = False
+) -> QMenu:
+    row = tree.currentItem() if keyboard else tree.topLevelItem(row_index)
+    assert row is not None
+    point = QPoint() if keyboard else tree.visualItemRect(row).center()
+    APPLICATION.sendEvent(
+        tree.viewport(),
+        QContextMenuEvent(
+            QContextMenuEvent.Reason.Keyboard
+            if keyboard
+            else QContextMenuEvent.Reason.Mouse,
+            point,
+            tree.viewport().mapToGlobal(point),
+        ),
+    )
+    return next(
+        menu
+        for menu in tree.window().findChildren(QMenu, "calendarEntryMenu")
+        if menu.isVisible()
+    )
+
+
+def _entry_menu(
+    tree: QTreeWidget, choose: str | None = None, *, keyboard: bool = False
+) -> dict[str, bool]:
+    menu = _open_entry_menu(tree, keyboard=keyboard)
+    actions = {
+        action.text(): action.isEnabled()
+        for action in menu.actions()
+        if not action.isSeparator()
+    }
+    if choose is not None:
+        action = next(action for action in menu.actions() if action.text() == choose)
+        assert action.isEnabled()
+        QTest.mouseClick(
+            menu, Qt.MouseButton.LeftButton, pos=menu.actionGeometry(action).center()
+        )
+    menu.close()
+    return actions
 
 
 def _calendar(properties: str, *, kind: str = "VEVENT") -> CalendarItem:
@@ -240,7 +309,7 @@ def test_video_alarm_snapshot_stays_visible_without_offering_an_editor(
     [
         "DTSTART;TZID=America/New_York:20261101T013000\r\nRRULE:FREQ=DAILY",
         "DTSTART:20261399T256199",
-        "DTSTART:20261101T013000\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM",
+        "DTSTART:20261101T013000\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-P1W\r\nEND:VALARM",
     ],
 )
 def test_text_edit_preserves_unresolved_dates_and_recurrence(properties: str) -> None:
@@ -295,10 +364,11 @@ def test_todo_completion_preserves_existing_due_date() -> None:
         _calendar("DUE;TZID=Unknown/Zone:20261101T013000", kind="VTODO"),
     )
     try:
-        _find(editor, QCheckBox, "calendarCompleted").setChecked(True)
+        _find(editor, AppComboBox, "calendarTodoStatus").setCurrentIndex(2)
         edit = editor.selected_edit()
         assert isinstance(edit, CalendarEntryChanges)
-        assert edit.completed is True and edit.completed_at is UNCHANGED
+        assert edit.todo_status is CalendarTodoStatus.COMPLETED
+        assert edit.completed_at is UNCHANGED
         assert edit.due is UNCHANGED
     finally:
         editor.close()
@@ -408,7 +478,7 @@ def test_new_alarm_sentinel_is_rejected_but_retained_sentinel_can_stay() -> None
 @pytest.mark.parametrize(
     "page_type,tree_name,button_name,editor_type",
     [
-        (CalendarPage, "calendarEvents", "calendarEdit", CalendarEditor),
+        (CalendarPage, "calendarEvents", None, CalendarEditor),
         (AlarmsPage, "alarmsList", "alarmEdit", AlarmEditor),
     ],
 )
@@ -416,7 +486,7 @@ def test_new_alarm_sentinel_is_rejected_but_retained_sentinel_can_stay() -> None
 def test_device_switch_closes_captured_editor(
     page_type: type[CalendarPage] | type[AlarmsPage],
     tree_name: str,
-    button_name: str,
+    button_name: str | None,
     editor_type: type[CalendarEditor] | type[AlarmEditor],
     activate_item: bool,
 ) -> None:
@@ -440,6 +510,8 @@ def test_device_switch_closes_captured_editor(
         tree.setCurrentItem(first)
         if activate_item:
             tree.itemActivated.emit(first, 0)
+        elif button_name is None:
+            assert _entry_menu(tree, "Edit")["Edit"]
         else:
             _find(page, QPushButton, button_name).click()
         editor = page.findChild(editor_type)
@@ -532,7 +604,7 @@ def test_extras_retranslate_without_resetting_editor_values(
 
 
 @pytest.mark.parametrize("firmware", ["", "9.9.9"])
-def test_unqualified_firmware_explains_read_only_pages_without_claiming_no_alarms(
+def test_calendar_and_alarm_read_only_messages_follow_their_own_support(
     firmware: str,
 ) -> None:
     controller = _Controller(ExtrasCatalog(support=ExtrasSupport()))
@@ -544,11 +616,11 @@ def test_unqualified_firmware_explains_read_only_pages_without_claiming_no_alarm
         for label in (calendar_status, alarm_status):
             assert controller.current.profile.display_name in label.text()
             assert label.textFormat() is Qt.TextFormat.PlainText
-            if firmware:
-                assert "Firmware 9.9.9" in label.text()
-            else:
-                assert "firmware version could not be confirmed" in label.text()
-        assert "read-only" in calendar_status.text()
+        if firmware:
+            assert "Firmware 9.9.9" in alarm_status.text()
+        else:
+            assert "firmware version could not be confirmed" in alarm_status.text()
+        assert "Calendar editing is unavailable" in calendar_status.text()
         assert "editing is unavailable" in alarm_status.text()
         assert not _find(calendar, QPushButton, "calendarNew").isEnabled()
         assert not _find(calendar, QPushButton, "calendarImport").isEnabled()
@@ -660,7 +732,9 @@ def test_todo_completion_preserves_unknown_due_and_uses_explicit_controller_inte
     page = CalendarPage(controller)
     try:
         _find(page, QTabWidget, "calendarTabs").setCurrentIndex(1)
-        _find(page, QPushButton, "calendarComplete").click()
+        tree = _find(page, QTreeWidget, "calendarTodos")
+        action = "Mark incomplete" if completed else "Mark complete"
+        assert _entry_menu(tree, action)[action]
         edit, existing = controller.calendar_edits[0]
         assert isinstance(edit, CalendarEntryChanges)
         assert existing is item
@@ -669,12 +743,12 @@ def test_todo_completion_preserves_unknown_due_and_uses_explicit_controller_inte
         assert edit.completed_at is UNCHANGED
         controller.working = True
         controller.changed.emit()
-        assert not _find(page, QPushButton, "calendarComplete").isEnabled()
+        assert not _entry_menu(tree)[action]
     finally:
         page.close()
 
 
-def test_calendar_keyboard_day_navigation_and_disconnect_clear_details() -> None:
+def test_calendar_keyboard_day_navigation_and_disconnect_clear_events() -> None:
     item = _calendar("DTSTART:20261101T090000")
     controller = _Controller(ExtrasCatalog(calendar=(item,)))
     page = CalendarPage(controller)
@@ -693,7 +767,98 @@ def test_calendar_keyboard_day_navigation_and_disconnect_clear_details() -> None
         controller.changed.emit()
         assert _find(page, QTreeWidget, "calendarEvents").topLevelItemCount() == 0
         assert not _find(page, QPushButton, "calendarNew").isEnabled()
-        assert not _find(page, QLabel, "calendarDetails").text()
+    finally:
+        page.close()
+
+
+def test_calendar_weekday_header_stays_slim_when_the_date_grid_grows() -> None:
+    grid = MonthGrid(today=QDate(2026, 11, 10))
+    try:
+        grid.resize(720, 340)
+        grid.show()
+        APPLICATION.processEvents()
+        view = _find(grid, QTableView, "qt_calendar_calendarview")
+        rows = view.verticalHeader()
+        weekday_height = rows.sectionSize(0)
+        week_height = rows.sectionSize(1)
+        assert 0 < weekday_height < week_height
+
+        grid.resize(1024, 720)
+        grid.showNextMonth()
+        APPLICATION.processEvents()
+        assert rows.sectionSize(0) == weekday_height
+        assert rows.sectionSize(1) > week_height
+        assert rows.length() == view.viewport().height()
+    finally:
+        grid.close()
+
+
+@pytest.mark.parametrize("switch_device", [False, True])
+def test_calendar_menu_removes_the_clicked_series_with_confirmation(
+    switch_device: bool,
+) -> None:
+    first = _calendar("DTSTART:20261101T080000")
+    series = replace(
+        _calendar(
+            "DTSTART:20261101T090000\r\nDTEND:20261101T100000\r\nRRULE:FREQ=WEEKLY;COUNT=3"
+        ),
+        document_key="series.ics",
+    )
+    controller = _Controller(
+        ExtrasCatalog(
+            calendar=(first, series), support=ExtrasSupport(calendar_write=True)
+        )
+    )
+    page = CalendarPage(controller)
+    try:
+        _find(page, MonthGrid, "calendarMonthGrid").setSelectedDate(QDate(2026, 11, 1))
+        page.resize(1000, 700)
+        page.show()
+        tree = _find(page, QTreeWidget, "calendarEvents")
+        selected, clicked = tree.topLevelItem(0), tree.topLevelItem(1)
+        assert selected is not None and clicked is not None
+        tree.setCurrentItem(selected)
+        confirmations: list[str] = []
+        point = tree.viewport().rect().bottomRight() - QPoint(4, 4)
+        APPLICATION.sendEvent(
+            tree.viewport(),
+            QContextMenuEvent(
+                QContextMenuEvent.Reason.Mouse,
+                point,
+                tree.viewport().mapToGlobal(point),
+            ),
+        )
+        assert page.findChild(QMenu, "calendarEntryMenu") is None
+
+        def confirm() -> None:
+            question = APPLICATION.activeModalWidget()
+            if isinstance(question, QMessageBox):
+                confirmations.append(question.windowTitle())
+                if question.standardButtons() & QMessageBox.StandardButton.Yes:
+                    question.button(QMessageBox.StandardButton.Yes).click()
+                else:
+                    question.reject()
+
+        menu = _open_entry_menu(tree, row_index=1)
+        assert tree.currentItem() is clicked
+        tree.setCurrentItem(selected)
+        if switch_device:
+            controller.current = _active()
+            controller.changed.emit()
+        action = next(
+            action for action in menu.actions() if action.text() == "Remove series"
+        )
+        QTimer.singleShot(0, confirm)
+        QTest.mouseClick(
+            menu, Qt.MouseButton.LeftButton, pos=menu.actionGeometry(action).center()
+        )
+        assert confirmations == (
+            [] if switch_device else ["Remove entire repeating series?"]
+        )
+        assert controller.removed == ([] if switch_device else [series])
+        assert page.findChild(QLabel, "calendarDetails") is None
+        assert page.findChild(QPushButton, "calendarEdit") is None
+        assert page.findChild(QPushButton, "calendarRemove") is None
     finally:
         page.close()
 
@@ -748,7 +913,7 @@ def test_extras_are_direct_sidebar_routes_and_a_compact_dropdown() -> None:
         compact.close()
 
 
-def test_extras_flag_disables_both_navigation_styles_and_routes(
+def test_alarm_development_flag_leaves_calendar_navigation_and_route_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(developer_flags, "ENABLE_EXTRAS_PAGES", False)
@@ -763,17 +928,19 @@ def test_extras_flag_disables_both_navigation_styles_and_routes(
         sidebar = window.findChild(Sidebar)
         compact = window.findChild(CompactTopBar)
         assert sidebar is not None and compact is not None
-        assert _find(compact, QPushButton, "compactExtras").isHidden()
+        assert not _find(compact, QPushButton, "compactExtras").isHidden()
         direct = {
             button.property("pageId"): button
             for button in sidebar.findChildren(QPushButton)
         }
-        for page in (PageId.CALENDAR, PageId.ALARMS):
-            assert direct[page.value].isHidden()
-            sidebar.pageRequested.emit(page.value)
-        assert window.findChild(CalendarPage) is None
-        assert window.findChild(AlarmsPage) is None
+        assert not direct[PageId.CALENDAR.value].isHidden()
+        assert direct[PageId.ALARMS.value].isHidden()
+        sidebar.pageRequested.emit(PageId.ALARMS.value)
         assert not refreshes
+        sidebar.pageRequested.emit(PageId.CALENDAR.value)
+        assert window.findChild(CalendarPage) is not None
+        assert window.findChild(AlarmsPage) is None
+        assert refreshes == [True]
     finally:
         window.close()
         context.shutdown()
@@ -930,9 +1097,7 @@ def test_mini_recurring_occurrence_appears_on_future_day_but_edits_source_series
     source = _calendar(
         "DTSTART:20261101T090000\r\nDTEND:20261101T100000\r\nRRULE:FREQ=WEEKLY;COUNT=3"
     )
-    support = ExtrasSupport(
-        calendar_write=True, calendar_firmware=FirmwareTarget.MINI_2_1_4_1
-    )
+    support = ExtrasSupport(calendar_write=True)
     controller = _Controller(ExtrasCatalog(calendar=(source,), support=support))
     page = CalendarPage(controller)
     try:
@@ -945,8 +1110,12 @@ def test_mini_recurring_occurrence_appears_on_future_day_but_edits_source_series
             QDate(2026, 11, 8), QLocale.FormatType.ShortFormat
         ) in row.text(1)
         events.setCurrentItem(row)
-        assert _find(page, QPushButton, "calendarEdit").text() == "Edit series"
-        _find(page, QPushButton, "calendarEdit").click()
+        actions = _entry_menu(events, "Edit series", keyboard=True)
+        assert actions == {
+            "Edit series": True,
+            "Skip this occurrence": True,
+            "Remove series": True,
+        }
         editor = page.findChild(CalendarEditor)
         assert editor is not None
         _find(editor, QLineEdit, "calendarSummary").setText("Series changed")
@@ -959,40 +1128,11 @@ def test_mini_recurring_occurrence_appears_on_future_day_but_edits_source_series
         APPLICATION.processEvents()
 
 
-def test_unknown_firmware_does_not_borrow_qualified_recurrence_expansion() -> None:
-    source = _calendar(
-        "DTSTART:20261101T090000\r\nDTEND:20261101T100000\r\nRRULE:FREQ=WEEKLY;COUNT=3"
-    )
-    controller = _Controller(
-        ExtrasCatalog(
-            calendar=(source,),
-            support=ExtrasSupport(
-                calendar_write=True,
-                calendar_firmware=None,
-            ),
-        )
-    )
-    page = CalendarPage(controller)
-    try:
-        _find(page, MonthGrid, "calendarMonthGrid").setSelectedDate(QDate(2026, 11, 8))
-        assert _find(page, QTreeWidget, "calendarEvents").topLevelItemCount() == 0
-        assert "not qualified" in _find(
-            page, QLabel, "calendarEmpty"
-        ).text() or "not qualified" in next(
-            label.text()
-            for label in page.findChildren(QLabel)
-            if "not qualified" in label.text()
-        )
-    finally:
-        page.close()
-
-
 def test_mini_editor_offers_qualified_repeat_and_reminder() -> None:
     editor = CalendarEditor(
         CalendarEntryKind.EVENT,
         None,
         initial_date=Date(2026, 11, 1),
-        profile=CalendarProfile.MINI_2_1_4_1,
     )
     try:
         _find(editor, AppComboBox, "calendarRepeat").setCurrentIndex(2)
@@ -1015,14 +1155,13 @@ def test_classic_editor_offers_saved_reminder_and_qualified_repeat() -> None:
         CalendarEntryKind.EVENT,
         None,
         initial_date=Date(2026, 11, 1),
-        profile=CalendarProfile.CLASSIC_120GB_2_0_1,
     )
     try:
         _find(editor, QCheckBox, "calendarReminder").setChecked(True)
         _find(editor, QSpinBox, "calendarReminderMinutes").setValue(30)
         draft = editor.selected_edit()
         assert isinstance(draft, CalendarEntryDraft)
-        assert draft.reminder == CalendarReminderDraft(30)
+        assert draft.reminder == CalendarReminderDraft(-1800)
         assert draft.recurrence is None
         assert _find(editor, AppComboBox, "calendarRepeat").isVisibleTo(editor)
     finally:
@@ -1030,14 +1169,11 @@ def test_classic_editor_offers_saved_reminder_and_qualified_repeat() -> None:
 
 
 @pytest.mark.parametrize("language", ("de", "es"))
-@pytest.mark.parametrize(
-    "profile", (CalendarProfile.MINI_2_1_4_1, CalendarProfile.CLASSIC_120GB_2_0_1)
-)
 def test_calendar_option_translation_preserves_unsaved_native_choices(
-    language: str, profile: CalendarProfile
+    language: str,
 ) -> None:
     editor = CalendarEditor(
-        CalendarEntryKind.EVENT, None, initial_date=Date(2026, 11, 1), profile=profile
+        CalendarEntryKind.EVENT, None, initial_date=Date(2026, 11, 1)
     )
     translator = QTranslator()
     catalog = (
@@ -1047,48 +1183,31 @@ def test_calendar_option_translation_preserves_unsaved_native_choices(
     )
     assert translator.load(str(catalog))
     try:
-        if profile is CalendarProfile.MINI_2_1_4_1:
-            _find(editor, AppComboBox, "calendarRepeat").setCurrentIndex(2)
-            _find(editor, QSpinBox, "calendarRepeatInterval").setValue(2)
-        else:
-            _find(editor, QCheckBox, "calendarReminder").setChecked(True)
-            _find(editor, QSpinBox, "calendarReminderMinutes").setValue(25)
+        _find(editor, AppComboBox, "calendarRepeat").setCurrentIndex(2)
+        _find(editor, QSpinBox, "calendarRepeatInterval").setValue(2)
+        _find(editor, QCheckBox, "calendarAdvancedRepeat").setChecked(True)
+        _find(editor, QPushButton, "calendarAddedDatesAdd").click()
+        _find(editor, QPushButton, "calendarRepeatWeekdaysAdd").click()
+        _find(editor, QCheckBox, "calendarReminder").setChecked(True)
+        _find(editor, QSpinBox, "calendarReminderMinutes").setValue(25)
         before = editor.selected_edit()
-        original_note = _find(editor, QLabel, "calendarFirmwareNote").text()
+        original_title = editor.windowTitle()
         assert APPLICATION.installTranslator(translator)
         APPLICATION.processEvents()
         editor.retranslate_ui()
         assert editor.selected_edit() == before
-        assert _find(editor, QLabel, "calendarFirmwareNote").text() != original_note
+        assert editor.windowTitle() != original_title
+        add = "Hinzufügen" if language == "de" else "Añadir"
+        assert _find(editor, QPushButton, "calendarAddedDatesAdd").text() == add
+        assert _find(editor, QPushButton, "calendarRepeatWeekdaysAdd").text() == add
     finally:
         APPLICATION.removeTranslator(translator)
         editor.close()
 
 
-def test_classic_firmware_explanation_is_not_clipped() -> None:
+def test_editor_can_author_repeat_and_reminder_together() -> None:
     editor = CalendarEditor(
-        CalendarEntryKind.EVENT,
-        None,
-        initial_date=Date(2026, 11, 1),
-        profile=CalendarProfile.CLASSIC_120GB_2_0_1,
-    )
-    try:
-        editor.show()
-        APPLICATION.processEvents()
-        note = _find(editor, QLabel, "calendarFirmwareNote")
-        assert note.height() >= note.heightForWidth(note.width())
-    finally:
-        editor.close()
-
-
-@pytest.mark.parametrize(
-    "profile", (CalendarProfile.MINI_2_1_4_1, CalendarProfile.CLASSIC_120GB_2_0_1)
-)
-def test_editor_can_author_repeat_and_reminder_together(
-    profile: CalendarProfile,
-) -> None:
-    editor = CalendarEditor(
-        CalendarEntryKind.EVENT, None, initial_date=Date(2026, 11, 1), profile=profile
+        CalendarEntryKind.EVENT, None, initial_date=Date(2026, 11, 1)
     )
     try:
         _find(editor, AppComboBox, "calendarRepeat").setCurrentIndex(1)
@@ -1097,8 +1216,192 @@ def test_editor_can_author_repeat_and_reminder_together(
         draft = editor.selected_edit()
         assert isinstance(draft, CalendarEntryDraft)
         assert draft.recurrence == CalendarRecurrenceRule(CalendarFrequency.DAILY)
-        assert draft.reminder == CalendarReminderDraft(15)
-        note = _find(editor, QLabel, "calendarFirmwareNote").text()
-        assert "Daily/weekly" in note and "saved reminder" in note
+        assert draft.reminder == CalendarReminderDraft(-900)
     finally:
         editor.close()
+
+
+def test_editor_authors_monthly_exceptions_and_end_relative_reminder() -> None:
+    editor = CalendarEditor(
+        CalendarEntryKind.EVENT, None, initial_date=Date(2026, 11, 1)
+    )
+    try:
+        _find(editor, AppComboBox, "calendarRepeat").setCurrentIndex(3)
+        _find(editor, QCheckBox, "calendarAdvancedRepeat").setChecked(True)
+        _find(editor, AppComboBox, "calendarRepeatWeekdaysPicker").setCurrentIndex(4)
+        _find(editor, AppComboBox, "calendarRepeatWeekdaysOrdinal").setCurrentIndex(6)
+        _find(editor, QPushButton, "calendarRepeatWeekdaysAdd").click()
+        _find(editor, QDateEdit, "calendarAddedDatesPicker").setDate(QDate(2026, 11, 8))
+        _find(editor, QPushButton, "calendarAddedDatesAdd").click()
+        _find(editor, QDateEdit, "calendarExcludedDatesPicker").setDate(
+            QDate(2026, 11, 27)
+        )
+        _find(editor, QPushButton, "calendarExcludedDatesAdd").click()
+        _find(editor, QPushButton, "calendarExcludedDatesRemove").click()
+        _find(editor, QDateEdit, "calendarExcludedDatesPicker").setDate(
+            QDate(2026, 11, 28)
+        )
+        _find(editor, QPushButton, "calendarExcludedDatesAdd").click()
+        _find(editor, AppComboBox, "calendarExclusionRule").setCurrentIndex(2)
+        _find(
+            editor, AppComboBox, "calendarExclusionRuleWeekdaysPicker"
+        ).setCurrentIndex(6)
+        _find(editor, QPushButton, "calendarExclusionRuleWeekdaysAdd").click()
+        _find(editor, QCheckBox, "calendarReminder").setChecked(True)
+        _find(editor, AppComboBox, "calendarReminderMode").setCurrentIndex(3)
+        _find(editor, QSpinBox, "calendarReminderMinutes").setValue(10)
+        _find(editor, QSpinBox, "calendarReminderSeconds").setValue(5)
+        draft = editor.selected_edit()
+        assert isinstance(draft, CalendarEntryDraft)
+        assert draft.recurrence is not None
+        assert draft.recurrence.frequency is CalendarFrequency.MONTHLY
+        assert draft.recurrence.weekdays == (
+            CalendarDayRule(CalendarWeekday.FRIDAY, -1),
+        )
+        assert draft.exceptions is not None
+        assert draft.exceptions.added == (Date(2026, 11, 8),)
+        assert draft.exceptions.excluded == (Date(2026, 11, 28),)
+        assert draft.exceptions.exclusion_rule == CalendarRecurrenceRule(
+            CalendarFrequency.WEEKLY,
+            weekdays=(CalendarDayRule(CalendarWeekday.SUNDAY),),
+        )
+        assert draft.reminder == CalendarReminderDraft(605, related_to_end=True)
+    finally:
+        editor.close()
+
+
+def test_editor_preserves_saved_repeat_cutoff_and_edits_it_to_the_second() -> None:
+    item = _calendar(
+        "DTSTART:20261101T090000\r\nDTEND:20261101T100000\r\n"
+        "RRULE:FREQ=WEEKLY;UNTIL=20261115T085959"
+    )
+    editor = CalendarEditor(CalendarEntryKind.EVENT, item)
+    try:
+        edit = editor.selected_edit()
+        assert isinstance(edit, CalendarEntryChanges)
+        assert edit.recurrence is UNCHANGED
+        cutoff = _find(editor, QTimeEdit, "calendarRepeatUntilTime")
+        assert any(
+            label.buddy() is cutoff and label.text() == "Through time"
+            for label in editor.findChildren(QLabel)
+        )
+        assert cutoff.time() == QTime(8, 59, 59)
+        cutoff.setTime(QTime(9, 0))
+        _find(editor, QPushButton, "calendarEditorSave").click()
+        assert editor.result() == CalendarEditor.DialogCode.Accepted
+        edit = editor.selected_edit()
+        assert isinstance(edit, CalendarEntryChanges)
+        assert isinstance(edit.recurrence, CalendarRecurrenceRule)
+        assert edit.recurrence.until == PlainDateTime(2026, 11, 15, 9)
+    finally:
+        editor.close()
+
+
+def test_editor_maps_yearly_month_dates_and_weekly_week_start() -> None:
+    editor = CalendarEditor(
+        CalendarEntryKind.EVENT, None, initial_date=Date(2026, 11, 1)
+    )
+    try:
+        frequency = _find(editor, AppComboBox, "calendarRepeat")
+        frequency.setCurrentIndex(4)
+        _find(editor, QCheckBox, "calendarAdvancedRepeat").setChecked(True)
+        _find(editor, AppComboBox, "calendarRepeatMonthsPicker").setCurrentIndex(10)
+        _find(editor, QPushButton, "calendarRepeatMonthsAdd").click()
+        _find(editor, AppComboBox, "calendarRepeatMonthDaysPicker").setCurrentIndex(31)
+        _find(editor, QPushButton, "calendarRepeatMonthDaysAdd").click()
+        edit = editor.selected_edit()
+        assert isinstance(edit, CalendarEntryDraft)
+        assert edit.recurrence == CalendarRecurrenceRule(
+            CalendarFrequency.YEARLY, month_days=(-1,), months=(11,)
+        )
+        frequency.setCurrentIndex(2)
+        _find(editor, AppComboBox, "calendarRepeatWeekStart").setCurrentIndex(7)
+        edit = editor.selected_edit()
+        assert isinstance(edit, CalendarEntryDraft)
+        assert edit.recurrence == CalendarRecurrenceRule(
+            CalendarFrequency.WEEKLY, week_start=CalendarWeekday.SUNDAY
+        )
+    finally:
+        editor.close()
+
+
+def test_agenda_skips_selected_span_from_its_start_and_hides_skip_for_seed() -> None:
+    source = _calendar(
+        "DTSTART:20261101T090000\r\nDTEND:20261102T100000\r\nRRULE:FREQ=WEEKLY;COUNT=3"
+    )
+    controller = _Controller(
+        ExtrasCatalog(calendar=(source,), support=ExtrasSupport(calendar_write=True))
+    )
+    page = CalendarPage(controller)
+    try:
+        grid = _find(page, MonthGrid, "calendarMonthGrid")
+        tree = _find(page, QTreeWidget, "calendarEvents")
+        grid.setSelectedDate(QDate(2026, 11, 2))
+        assert "Skip this occurrence" not in _entry_menu(tree)
+        grid.setSelectedDate(QDate(2026, 11, 9))
+        assert _entry_menu(tree, "Skip this occurrence")["Skip this occurrence"]
+        assert controller.skipped == [(source, Date(2026, 11, 9), Date(2026, 11, 8))]
+        _find(page, AppComboBox, "calendarScope").setCurrentIndex(1)
+        assert "Skip this occurrence" not in _entry_menu(tree)
+    finally:
+        page.close()
+
+
+def test_existing_timezone_picker_uses_the_entries_own_file_and_keeps_clock_time() -> (
+    None
+):
+    zone = (
+        b"BEGIN:VTIMEZONE\r\nTZID:Home/West\r\nBEGIN:STANDARD\r\n"
+        b"TZOFFSETTO:-0500\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n"
+    )
+    data = (
+        b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        + zone
+        + b"BEGIN:VEVENT\r\nSUMMARY:Event\r\nDTSTART:20261101T091530Z\r\n"
+        b"END:VEVENT\r\n"
+        + zone.replace(b"Home/West", b"Late/Zone")
+        + b"END:VCALENDAR\r\n"
+    )
+    document = parse_calendar(data)
+    item = CalendarItem(
+        "second.ics",
+        document.entries[0],
+        "Shared",
+        source_calendar=document.components[0],
+    )
+    controller = _Controller(
+        ExtrasCatalog(
+            calendar=(item,),
+            support=ExtrasSupport(calendar_write=True),
+            calendars=(
+                CalendarGroup(
+                    "Shared", ("first.ics", item.document_key), True, ("First/File",)
+                ),
+            ),
+        )
+    )
+    page = CalendarPage(controller)
+    try:
+        _find(page, MonthGrid, "calendarMonthGrid").setSelectedDate(QDate(2026, 11, 1))
+        assert _entry_menu(_find(page, QTreeWidget, "calendarEvents"), "Edit")["Edit"]
+        editor = page.findChild(CalendarEditor)
+        assert editor is not None
+        basis = _find(editor, AppComboBox, "calendarTimeBasis")
+        assert basis.currentText() == "UTC"
+        assert [basis.itemText(index) for index in range(basis.count())] == [
+            "iPod local time",
+            "UTC",
+            "Home/West",
+        ]
+        basis.setCurrentIndex(2)
+        _find(editor, QPushButton, "calendarEditorSave").click()
+        change, source = controller.calendar_edits[0]
+        assert source == item and isinstance(change, CalendarEntryChanges)
+        assert change.tzid == "Home/West"
+        updated = update_entry(document, item.index, change)
+        assert updated.raw_bytes == data.replace(
+            b"DTSTART:20261101T091530Z", b"DTSTART;TZID=Home/West:20261101T091530"
+        )
+    finally:
+        page.close()
+        APPLICATION.processEvents()

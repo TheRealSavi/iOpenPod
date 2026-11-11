@@ -1,6 +1,6 @@
 # ADR-0249: Qualify Calendar occurrences and reminders by firmware
 
-- Status: Accepted
+- Status: Superseded by ADR-0251
 - Date: 2026-11-08
 - Extends: ADR-0247 and ADR-0243
 

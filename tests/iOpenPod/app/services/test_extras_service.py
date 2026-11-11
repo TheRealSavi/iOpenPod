@@ -25,13 +25,19 @@ from iOpenPod.app.models.extras import (
     RemoveCalendar,
     SaveAlarm,
     SaveCalendar,
+    SkipCalendarOccurrence,
 )
 from iOpenPod.app.services.device_coordinator import (
     DeviceChangedError,
     DeviceCoordinator,
 )
 from iOpenPod.app.services.extras import prepare_change, read_extras
-from iPodDB.calendar import CalendarEntryChanges, CalendarEntryDraft, CalendarEntryKind
+from iPodDB.calendar import (
+    CalendarEntryChanges,
+    CalendarEntryDraft,
+    CalendarEntryKind,
+    project_occurrences,
+)
 from storage import AccessMode, FilePreconditionError, Storage, StorageError
 from storage.testing import VirtualStoragePlatform
 
@@ -136,6 +142,52 @@ def test_external_calendar_change_rejects_stale_edit(tmp_path: Path) -> None:
         with pytest.raises((FilePreconditionError, StorageError)):
             session.execute_transaction(transaction)
         assert path.read_bytes() == SOURCE + b"external change"
+
+
+def test_skip_occurrence_publishes_only_its_exdate_with_source_precondition(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "Calendars"
+    folder.mkdir()
+    path = folder / "repeats.ics"
+    raw = (
+        b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:series\r\n"
+        b"DTSTART:20261101T090000\r\nDTEND:20261101T100000\r\n"
+        b"RRULE:FREQ=WEEKLY;COUNT=3\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    )
+    path.write_bytes(raw)
+    platform = VirtualStoragePlatform()
+    platform.add_volume(tmp_path)
+    storage = Storage(platform)
+    date = Date(2026, 11, 8)
+    with storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_WRITE
+    ) as session:
+        catalog = read_extras(session, SUPPORT, lambda: None)
+        transaction = prepare_change(
+            catalog,
+            SkipCalendarOccurrence(catalog.calendar[0], date, date),
+            checkpoint=lambda: None,
+        )
+        assert transaction is not None
+        path.write_bytes(raw + b"external change")
+        with pytest.raises((FilePreconditionError, StorageError)):
+            session.execute_transaction(transaction)
+        path.write_bytes(raw)
+        catalog = read_extras(session, SUPPORT, lambda: None)
+        transaction = prepare_change(
+            catalog,
+            SkipCalendarOccurrence(catalog.calendar[0], date, date),
+            checkpoint=lambda: None,
+        )
+        assert transaction is not None
+        result = session.execute_transaction(transaction)
+        session.finalize_transaction(result.recovery)
+        assert path.read_bytes() == raw.replace(
+            b"END:VEVENT", b"EXDATE:20261108\r\nEND:VEVENT"
+        )
+        updated = read_extras(session, SUPPORT, lambda: None).calendar[0].entry
+        assert not project_occurrences(updated, date, date).occurrences
 
 
 def test_mini_alarm_changes_only_minute_word(tmp_path: Path) -> None:
@@ -252,6 +304,10 @@ def test_coordinator_issues_catalog_and_rejects_old_revision(tmp_path: Path) -> 
         change = SaveCalendar(
             CalendarEntryDraft(summary="Fold", start=PlainDateTime(2026, 11, 1, 1, 30))
         )
+        # Calendar is independent of changing or contradictory alarm evidence.
+        (device / "SysInfoExtended").write_bytes(
+            plistlib.dumps({"VisibleBuildID": "9.9.9", "UpdaterFamilyID": 999})
+        )
         updated = coordinator.save_extras(active, catalog, change, Event())
         assert updated.calendar[0].entry.summary == "Fold"
         with pytest.raises(DeviceChangedError, match="Reload"):
@@ -261,13 +317,13 @@ def test_coordinator_issues_catalog_and_rejects_old_revision(tmp_path: Path) -> 
         coordinator.close()
 
 
-def test_unqualified_firmware_and_cancelled_read_do_not_write(tmp_path: Path) -> None:
+def test_unsupported_model_and_cancelled_read_do_not_write(tmp_path: Path) -> None:
     platform = VirtualStoragePlatform()
     platform.add_volume(tmp_path)
     storage = Storage(platform)
     with storage.open_session(storage.discover().volumes[0]) as session:
         catalog = read_extras(session, ExtrasSupport(), lambda: None)
-        with pytest.raises(ValueError, match="not qualified"):
+        with pytest.raises(ValueError, match="unavailable"):
             prepare_change(
                 catalog,
                 SaveCalendar(CalendarEntryDraft(summary="No", start=Date(2026, 11, 7))),

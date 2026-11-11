@@ -600,12 +600,12 @@ class MainWindow(QMainWindow):
             self._pages.addWidget(page)
         self._pages.addWidget(self._photo_page)
         self._pages.addWidget(self._games_page)
+        calendar_page = CalendarPage(context.extras_controller, self._pages)
+        self._page_widgets[PageId.CALENDAR] = calendar_page
+        self._pages.addWidget(calendar_page)
         if developer_flags.ENABLE_EXTRAS_PAGES:
-            calendar_page = CalendarPage(context.extras_controller, self._pages)
             alarms_page = AlarmsPage(context.extras_controller, self._pages)
-            self._page_widgets[PageId.CALENDAR] = calendar_page
             self._page_widgets[PageId.ALARMS] = alarms_page
-            self._pages.addWidget(calendar_page)
             self._pages.addWidget(alarms_page)
         self._pages.addWidget(self._backup_page)
         self._pages.addWidget(self._synesthesia_page)
@@ -1754,7 +1754,7 @@ class MainWindow(QMainWindow):
     def _show_page(self, page_value: str) -> None:
         page_id = PageId(page_value)
         if page_id in (PageId.CALENDAR, PageId.ALARMS):
-            if not developer_flags.ENABLE_EXTRAS_PAGES:
+            if page_id not in self._page_widgets:
                 return
             self._context.extras_controller.refresh()
         if (

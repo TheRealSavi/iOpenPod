@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -26,22 +26,40 @@ from iPodDB.calendar.models import (
     CalendarEntryChanges,
     CalendarEntryDraft,
     CalendarEntryKind,
+    CalendarExceptions,
     CalendarLimits,
     CalendarParameter,
-    CalendarProfile,
     CalendarProperty,
     CalendarRecurrence,
     CalendarRecurrenceRule,
     CalendarReminder,
     CalendarReminderDraft,
+    CalendarTodoStatus,
     CalendarValue,
+    CalendarZone,
     Unchanged,
 )
-from iPodDB.calendar.recurrence import recurrence_rule, validate_recurrence
+from iPodDB.calendar.recurrence import (
+    format_recurrence_rule,
+    project_occurrences,
+    recurrence_exceptions,
+    recurrence_rule,
+    skippable_occurrence_start,
+    validate_exceptions,
+    validate_recurrence,
+)
 from iPodDB.calendar.reminders import (
     editable_reminder,
-    supports_reminders,
     validate_reminder,
+)
+from iPodDB.calendar.zones import (
+    UTC_ZONE,
+    adopt_zone,
+    calendar_zone_names,
+    event_zone,
+    read_zone,
+    writable_zone_name,
+    zone_key,
 )
 
 if TYPE_CHECKING:
@@ -171,14 +189,12 @@ def parse_calendar(
     data: bytes,
     *,
     limits: CalendarLimits = _DEFAULT_LIMITS,
-    profile: CalendarProfile = CalendarProfile.UNKNOWN,
 ) -> CalendarDocument:
     """Inspect bounded bytes, returning an opaque retained document on bad framing.
 
     Optional malformed dates project as INVALID values. A legacy or unknown file
     remains importable/preservable even when the supported writer is unavailable.
-    Qualified firmware profiles use native To Do status; a retained COMPLETED
-    timestamp alone does not mark the native task complete.
+    STATUS controls native To Do completion.
     """
     if (
         min(
@@ -274,9 +290,23 @@ def parse_calendar(
         issues.append("This Calendar version is retained without field editing.")
     entries: list[CalendarEntry] = []
     for calendar in calendars:
+        versions_in_calendar = [
+            prop.value for prop in calendar.properties if prop.name == "VERSION"
+        ]
+        calendar_version = (
+            versions_in_calendar[0] if len(versions_in_calendar) == 1 else None
+        )
+        zones: dict[str, CalendarZone | None] = {"z": UTC_ZONE}
         for component in calendar.children:
-            if component.name in (CalendarEntryKind.EVENT, CalendarEntryKind.TODO):
-                entries.append(_entry(len(entries), component, editable, profile))
+            if (
+                component.name == "VTIMEZONE"
+                and (zone := read_zone(component)) is not None
+            ):
+                adopt_zone(zones, zone)
+            elif component.name in (CalendarEntryKind.EVENT, CalendarEntryKind.TODO):
+                entries.append(
+                    _entry(len(entries), component, editable, calendar_version, zones)
+                )
     return CalendarDocument(
         data,
         tuple(roots),
@@ -346,7 +376,8 @@ def _entry(
     index: int,
     component: CalendarComponent,
     editable: bool,
-    profile: CalendarProfile,
+    calendar_version: str | None,
+    zones: dict[str, CalendarZone | None],
 ) -> CalendarEntry:
     properties = {prop.name: prop for prop in reversed(component.properties)}
     counts = Counter(prop.name for prop in component.properties)
@@ -369,12 +400,23 @@ def _entry(
         if date_value and date_value.issue:
             issues.append(f"{name}: {date_value.issue}")
     recurring = bool(_RECURRENCE.intersection(properties))
+    zone = event_zone(component, zones) if component.name == "VEVENT" else None
     timing_editable = (
         editable
-        and not recurring
         and "DURATION" not in properties
-        and not component.children
-        and not any(value and value.tzid for value in dates)
+        and "RECURRENCE-ID" not in properties
+        and all(child.name == "VALARM" for child in component.children)
+        and not (
+            dates[1] and dates[1].tzid and (dates[0] is None or dates[0].tzid is None)
+        )
+        and all(
+            zone is not None
+            and zone.standard_offset is not None
+            and zone_key(value.tzid) == zone_key(zone.name)
+            and writable_zone_name(value.tzid)
+            for value in dates
+            if value is not None and value.tzid is not None
+        )
         and not any(
             parameter.name not in ("VALUE", "TZID")
             for prop in component.properties
@@ -383,11 +425,23 @@ def _entry(
         )
     )
     status = properties.get("STATUS")
+    todo_status = (
+        next(
+            (
+                known
+                for known in CalendarTodoStatus
+                if status and status.value.upper() == known.value
+            ),
+            None,
+        )
+        if component.name == "VTODO"
+        else None
+    )
 
     def text(name: str) -> str:
         return _unescape(properties[name].value) if name in properties else ""
 
-    return CalendarEntry(
+    entry = CalendarEntry(
         index,
         CalendarEntryKind(component.name),
         text("UID") or None,
@@ -398,12 +452,7 @@ def _entry(
         dates[1],
         dates[2],
         dates[3],
-        bool(status and status.value.upper() == "COMPLETED")
-        or (
-            profile is CalendarProfile.UNKNOWN
-            and status is None
-            and "COMPLETED" in properties
-        ),
+        todo_status is CalendarTodoStatus.COMPLETED,
         editable,
         timing_editable,
         recurring,
@@ -411,7 +460,25 @@ def _entry(
         component,
         _recurrence(component),
         _reminders(component),
+        calendar_version,
+        zone,
+        todo_status,
     )
+    if timing_editable and (recurring or entry.reminders):
+        try:
+            if "RRULE" in properties and recurrence_rule(entry) is None:
+                raise CalendarEditError("Unknown repeat rule.")
+            if recurring:
+                validate_exceptions(
+                    recurrence_exceptions(entry),
+                    dates[0] and dates[0].value,
+                    dates[1] and dates[1].value,
+                )
+            if entry.reminders and editable_reminder(entry) is None:
+                raise CalendarEditError("Unknown reminder.")
+        except ValueError:
+            return replace(entry, timing_editable=False)
+    return entry
 
 
 def serialize_calendar(document: CalendarDocument) -> bytes:
@@ -445,7 +512,15 @@ def _fold(value: str, newline: bytes = b"\r\n") -> bytes:
     return newline.join(chunks) + newline
 
 
-def _date_line(name: str, value: object, newline: bytes) -> bytes:
+def _date_line(
+    name: str, value: object, newline: bytes, *, tzid: str | None = None
+) -> bytes:
+    if tzid is not None:
+        if not isinstance(value, PlainDateTime) or not writable_zone_name(tzid):
+            raise CalendarEditError(
+                "A named Calendar timezone needs a local date and time."
+            )
+        name += f";TZID={tzid}"
     if isinstance(value, Date):
         return _fold(f"{name};VALUE=DATE:{value.format_iso(basic=True)}", newline)
     if isinstance(value, (PlainDateTime, Instant)):
@@ -478,17 +553,32 @@ def _draft_bytes(
     *,
     stamp: Instant,
     newline: bytes,
-    profile: CalendarProfile = CalendarProfile.UNKNOWN,
+    zone_names: tuple[str, ...] = (),
 ) -> bytes:
+    status = draft.todo_status
+    if draft.completed:
+        if status not in (None, CalendarTodoStatus.COMPLETED):
+            raise CalendarEditError("The To Do has conflicting completion states.")
+        status = CalendarTodoStatus.COMPLETED
+    if draft.tzid is not None and (
+        draft.kind is not CalendarEntryKind.EVENT or draft.tzid not in zone_names
+    ):
+        raise CalendarEditError(
+            "Choose a timezone defined in the destination Calendar."
+        )
     if draft.kind is CalendarEntryKind.EVENT:
         if draft.start is None:
             raise CalendarEditError("An event needs a start date.")
-        if draft.due is not None or draft.completed or draft.completed_at is not None:
+        if (
+            draft.due is not None
+            or status is not None
+            or draft.completed_at is not None
+        ):
             raise CalendarEditError("Due dates and completion belong to To Dos.")
         _validate_pair(draft.start, draft.end)
     elif draft.end is not None:
         raise CalendarEditError("Use a due date for a To Do.")
-    elif draft.completed_at is not None and not draft.completed:
+    elif draft.completed_at is not None and status is not CalendarTodoStatus.COMPLETED:
         raise CalendarEditError("A completion date requires a completed To Do.")
     if draft.kind is CalendarEntryKind.TODO:
         _validate_pair(draft.start, draft.due)
@@ -511,27 +601,30 @@ def _draft_bytes(
         ("DUE", draft.due),
     ):
         if value is not None:
-            rows.append(_date_line(name, value, newline))
-    if draft.kind is CalendarEntryKind.TODO and draft.completed:
-        rows.append(_fold("STATUS:COMPLETED", newline))
-        if draft.completed_at is not None or profile is CalendarProfile.UNKNOWN:
-            rows.append(_date_line("COMPLETED", draft.completed_at or stamp, newline))
+            rows.append(
+                _date_line(
+                    name, value, newline, tzid=draft.tzid if name != "DUE" else None
+                )
+            )
+    if status is not None:
+        rows.append(_fold(f"STATUS:{status.value}", newline))
+        if draft.completed_at is not None:
+            rows.append(_date_line("COMPLETED", draft.completed_at, newline))
     if draft.recurrence is not None:
         if draft.kind is not CalendarEntryKind.EVENT:
             raise CalendarEditError("Qualified recurrence belongs to events.")
-        validate_recurrence(draft.recurrence, profile, draft.start, draft.end)
+        validate_recurrence(draft.recurrence, draft.start, draft.end)
         rows.append(_recurrence_bytes(draft.recurrence, newline))
+    if draft.exceptions is not None:
+        if draft.kind is not CalendarEntryKind.EVENT:
+            raise CalendarEditError("Repeat dates belong to events.")
+        validate_exceptions(draft.exceptions, draft.start, draft.end)
+        rows.append(_exception_bytes(draft.exceptions, newline))
     if draft.reminder is not None:
-        if draft.kind is not CalendarEntryKind.EVENT or not isinstance(
-            draft.start, PlainDateTime
-        ):
-            raise CalendarEditError(
-                "Qualified Calendar Reminders require a floating event start."
-            )
+        if draft.kind is not CalendarEntryKind.EVENT:
+            raise CalendarEditError("Calendar Reminders belong to events.")
         rows.append(
-            _reminder_bytes(
-                draft.reminder, profile, newline, has_end=draft.end is not None
-            )
+            _reminder_bytes(draft.reminder, newline, has_end=draft.end is not None)
         )
     rows.append(_fold(f"END:{draft.kind.value}", newline))
     return b"".join(rows)
@@ -542,7 +635,6 @@ def create_calendar(
     *,
     stamp: Instant | None = None,
     name: str | None = None,
-    profile: CalendarProfile = CalendarProfile.UNKNOWN,
 ) -> CalendarDocument:
     """Author iCalendar 2.0; stamp is an explicit UTC metadata clock, never a zone.
 
@@ -551,8 +643,7 @@ def create_calendar(
     """
     current = stamp or Instant.now()
     body = b"".join(
-        _draft_bytes(entry, stamp=current, newline=b"\r\n", profile=profile)
-        for entry in entries
+        _draft_bytes(entry, stamp=current, newline=b"\r\n") for entry in entries
     )
     return _authored(
         b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//iOpenPod//Calendar//EN\r\n"
@@ -563,14 +654,11 @@ def create_calendar(
         )
         + body
         + b"END:VCALENDAR\r\n",
-        profile=profile,
     )
 
 
-def _authored(
-    data: bytes, *, profile: CalendarProfile = CalendarProfile.UNKNOWN
-) -> CalendarDocument:
-    document = parse_calendar(data, profile=profile)
+def _authored(data: bytes) -> CalendarDocument:
+    document = parse_calendar(data)
     if not document.editable:
         raise CalendarEditError(
             "The edited Calendar exceeds the supported format or size limits."
@@ -595,16 +683,17 @@ def add_entry(
     draft: CalendarEntryDraft,
     *,
     stamp: Instant | None = None,
-    profile: CalendarProfile = CalendarProfile.UNKNOWN,
 ) -> CalendarDocument:
     calendar = _calendar(document)
     content = _draft_bytes(
-        draft, stamp=stamp or Instant.now(), newline=_newline(document), profile=profile
+        draft,
+        stamp=stamp or Instant.now(),
+        newline=_newline(document),
+        zone_names=calendar_zone_names(calendar),
     )
     offset = calendar.end_line_start
     return _authored(
         document.raw_bytes[:offset] + content + document.raw_bytes[offset:],
-        profile=profile,
     )
 
 
@@ -613,6 +702,22 @@ def _find_entry(document: CalendarDocument, entry_id: int) -> CalendarEntry:
         if entry.entry_id == entry_id:
             return entry
     raise CalendarEditError("The Calendar entry is no longer present.")
+
+
+def skip_occurrence(
+    document: CalendarDocument, entry_id: int, day: Date, start_day: Date
+) -> CalendarDocument:
+    _calendar(document)
+    entry = _find_entry(document, entry_id)
+    result = project_occurrences(entry, day, day)
+    if not any(
+        skippable_occurrence_start(entry, occurrence) == start_day
+        for occurrence in result.occurrences
+    ):
+        raise CalendarEditError("This occurrence can no longer be skipped.")
+    offset = entry.component.end_line_start
+    row = _fold("EXDATE:" + start_day.format_iso(basic=True), _newline(document))
+    return _authored(document.raw_bytes[:offset] + row + document.raw_bytes[offset:])
 
 
 def remove_entry(document: CalendarDocument, entry_id: int) -> CalendarDocument:
@@ -628,13 +733,9 @@ def update_entry(
     document: CalendarDocument,
     entry_id: int,
     changes: CalendarEntryChanges,
-    *,
-    stamp: Instant | None = None,
-    profile: CalendarProfile = CalendarProfile.UNKNOWN,
 ) -> CalendarDocument:
-    _calendar(document)
+    calendar = _calendar(document)
     entry = _find_entry(document, entry_id)
-    entry = _entry(entry.entry_id, entry.component, document.editable, profile)
     if not entry.editable:
         raise CalendarEditError(
             "This entry's field encoding or repeated properties cannot be edited safely."
@@ -644,28 +745,58 @@ def update_entry(
         ("DTEND", changes.end),
         ("DUE", changes.due),
     )
-    timing_changed = any(not isinstance(value, Unchanged) for _, value in temporal)
+    zone_changed = changes.tzid is not UNCHANGED
+    timing_changed = zone_changed or any(
+        not isinstance(value, Unchanged) for _, value in temporal
+    )
     if timing_changed and not entry.timing_editable:
         raise CalendarEditError(
-            "Timing for this recurring, zoned, or alarm-bearing entry is preserved. Edit its text or create a separate entry."
+            "Timing for this imported entry cannot be edited safely."
         )
     if entry.kind is CalendarEntryKind.EVENT and (
         changes.due is not UNCHANGED
         or changes.completed is not None
         or changes.completed_at is not UNCHANGED
+        or changes.todo_status is not UNCHANGED
     ):
         raise CalendarEditError("Due dates and completion belong to To Dos.")
     if entry.kind is CalendarEntryKind.TODO and changes.end is not UNCHANGED:
         raise CalendarEditError("Use a due date for a To Do.")
-    if changes.completed is False and isinstance(changes.completed_at, Instant):
-        raise CalendarEditError("A completion date conflicts with an incomplete To Do.")
+    status = changes.todo_status
+    if changes.completed is not None:
+        if status is not UNCHANGED:
+            raise CalendarEditError("The To Do has conflicting completion states.")
+        status = CalendarTodoStatus.COMPLETED if changes.completed else None
+    if isinstance(changes.completed_at, Instant):
+        if status not in (UNCHANGED, CalendarTodoStatus.COMPLETED):
+            raise CalendarEditError(
+                "A completion date conflicts with an incomplete To Do."
+            )
+        status = CalendarTodoStatus.COMPLETED
+    start = entry.start.value if entry.start else None
+    end = entry.end.value if entry.end else None
+    if changes.start is not UNCHANGED:
+        start = changes.start
+    if changes.end is not UNCHANGED:
+        end = changes.end
+    if zone_changed:
+        if entry.kind is not CalendarEntryKind.EVENT or not isinstance(
+            start, (PlainDateTime, Instant)
+        ):
+            raise CalendarEditError("A timezone change needs a timed event.")
+        if isinstance(changes.tzid, str) and (
+            not isinstance(start, PlainDateTime)
+            or zone_key(changes.tzid)
+            not in {
+                zone_key(name)
+                for name in calendar_zone_names(
+                    calendar, before_offset=entry.component.start_offset
+                )
+            }
+        ):
+            raise CalendarEditError("Choose a timezone defined before this event.")
+        temporal = (("DTSTART", start), ("DTEND", end), ("DUE", changes.due))
     if timing_changed:
-        start = entry.start.value if entry.start else None
-        end = entry.end.value if entry.end else None
-        if not isinstance(changes.start, Unchanged):
-            start = changes.start
-        if not isinstance(changes.end, Unchanged):
-            end = changes.end
         if entry.kind is CalendarEntryKind.EVENT:
             if start is None:
                 raise CalendarEditError(
@@ -688,115 +819,113 @@ def update_entry(
             replacements[name] = (
                 _fold(f"{name}:{_escape(text)}", newline) if text else b""
             )
+    saved_zones = {
+        "DTSTART": entry.start.tzid if entry.start else None,
+        "DTEND": entry.end.tzid if entry.end else None,
+    }
+    if zone_changed:
+        tzid = changes.tzid if isinstance(changes.tzid, str) else None
+        saved_zones = {"DTSTART": tzid, "DTEND": tzid}
     for name, value in (*temporal, ("COMPLETED", changes.completed_at)):
         if not isinstance(value, Unchanged):
             replacements[name] = (
-                _date_line(name, value, newline) if value is not None else b""
+                _date_line(name, value, newline, tzid=saved_zones.get(name))
+                if value is not None
+                else b""
             )
-    if changes.completed is not None:
-        replacements["STATUS"] = _fold(
-            "STATUS:COMPLETED" if changes.completed else "STATUS:NEEDS-ACTION", newline
+    if status is not UNCHANGED:
+        replacements["STATUS"] = (
+            _fold(f"STATUS:{status.value}", newline) if status else b""
         )
-        if changes.completed is False and profile is not CalendarProfile.UNKNOWN:
-            replacements["STATUS"] = b""
-        if not changes.completed:
+        if status is not CalendarTodoStatus.COMPLETED:
             replacements["COMPLETED"] = b""
-        elif (
-            changes.completed_at is UNCHANGED
-            and not entry.completed
-            and profile is CalendarProfile.UNKNOWN
-        ):
-            replacements["COMPLETED"] = _date_line(
-                "COMPLETED", stamp or Instant.now(), newline
-            )
-    elif isinstance(changes.completed_at, Instant):
-        replacements["STATUS"] = _fold("STATUS:COMPLETED", newline)
-    if profile is CalendarProfile.UNKNOWN and (
-        changes.completed is not None or isinstance(changes.completed_at, Instant)
-    ):
-        # RFC 5545 completion consistency, not a claim about firmware handling.
-        # Reopening does not imply zero progress; omit the optional percentage.
-        # Unrelated edits retain its original bytes, including unknown parameters.
-        for prop in entry.component.properties:
-            if prop.name == "PERCENT-COMPLETE":
-                if changes.completed is False:
-                    replacements[prop.name] = b""
-                else:
-                    header, _ = _partition_property(
-                        _lines(prop.raw_bytes, _DEFAULT_LIMITS)[0].payload.decode(
-                            "utf-8"
-                        )
-                    )
-                    replacements[prop.name] = _fold(f"{header}:100", newline)
-    new_reminder = b""
+    inserted = b""
     extra_patches: list[tuple[int, int, bytes]] = []
-    if changes.recurrence is not UNCHANGED:
-        if any(
-            prop.name in {"DURATION", "EXRULE", "EXDATE", "RDATE", "RECURRENCE-ID"}
-            or (prop.name in {"DTSTART", "DTEND"} and prop.parameters)
+    if (
+        changes.recurrence is not UNCHANGED or changes.exceptions is not UNCHANGED
+    ) and (
+        entry.kind is not CalendarEntryKind.EVENT
+        or any(
+            prop.name in {"DURATION", "RECURRENCE-ID"}
             for prop in entry.component.properties
-        ):
-            raise CalendarEditError(
-                "Unsupported source recurrence or timing is preserved without editing."
-            )
-        if entry.kind is not CalendarEntryKind.EVENT:
-            raise CalendarEditError("Qualified recurrence belongs to events.")
-        if entry.has_recurrence and recurrence_rule(entry, profile) is None:
-            raise CalendarEditError("This recurrence is preserved without editing.")
+        )
+    ):
+        raise CalendarEditError(
+            "Repeat editing needs an event with explicit start and end."
+        )
+
+    saved_rule = (
+        recurrence_rule(entry)
+        if timing_changed or changes.recurrence is not UNCHANGED
+        else None
+    )
+    if changes.recurrence is not UNCHANGED:
+        if entry.recurrence is not None and saved_rule is None:
+            raise CalendarEditError("This imported repeat rule is preserved.")
         if changes.recurrence is None:
-            if not entry.has_recurrence:
-                pass
-            else:
+            if entry.recurrence is not None:
                 replacements["RRULE"] = b""
         else:
-            assert isinstance(changes.recurrence, CalendarRecurrenceRule)
-            start = entry.start.value if entry.start else None
-            end = entry.end.value if entry.end else None
-            if not isinstance(changes.start, Unchanged):
-                start = changes.start
-            if not isinstance(changes.end, Unchanged):
-                end = changes.end
-            validate_recurrence(changes.recurrence, profile, start, end)
+            validate_recurrence(changes.recurrence, start, end)
             replacements["RRULE"] = _recurrence_bytes(changes.recurrence, newline)
-    if changes.reminder is not UNCHANGED:
-        effective_start = entry.start.value if entry.start else None
-        if not isinstance(changes.start, Unchanged):
-            effective_start = changes.start
-        if not isinstance(effective_start, PlainDateTime):
-            raise CalendarEditError(
-                "Qualified Calendar Reminders require a floating event start."
+    elif timing_changed and saved_rule is not None:
+        validate_recurrence(saved_rule, start, end)
+
+    exception_properties = [
+        prop
+        for prop in entry.component.properties
+        if prop.name in {"RDATE", "EXDATE", "EXRULE"}
+    ]
+    if changes.exceptions is not UNCHANGED:
+        original = recurrence_exceptions(entry)
+        exceptions = changes.exceptions or CalendarExceptions()
+        if changes.exceptions is not None:
+            validate_exceptions(exceptions, start, end)
+        changed_lists = {
+            name
+            for name, old, new in (
+                ("RDATE", original.added, exceptions.added),
+                ("EXDATE", original.excluded, exceptions.excluded),
             )
-        if (
-            not supports_reminders(profile)
-            or entry.kind is not CalendarEntryKind.EVENT
-            or entry.start is None
-            or entry.start.form is not CalendarDateForm.FLOATING
-        ):
-            raise CalendarEditError(
-                "Calendar Reminder edits are not qualified for this target or event."
-            )
-        if entry.reminders and editable_reminder(entry, profile) is None:
-            raise CalendarEditError(
-                "This imported reminder is preserved without editing."
-            )
-        content = (
-            b""
-            if changes.reminder is None
-            else _reminder_bytes(
-                changes.reminder,
-                profile,
-                newline,
-                has_end=entry.end is not None and entry.end.value is not None,
+            if set(old) != set(new)
+        }
+        rule_changed = original.exclusion_rule != exceptions.exclusion_rule
+        inserted += _exception_bytes(
+            CalendarExceptions(
+                exceptions.added if "RDATE" in changed_lists else (),
+                exceptions.excluded if "EXDATE" in changed_lists else (),
+                exceptions.exclusion_rule if rule_changed else None,
+            ),
+            newline,
+        )
+        extra_patches.extend(
+            (prop.start_offset, prop.end_offset, b"")
+            for prop in exception_properties
+            if (rule_changed and prop.name == "EXRULE")
+            or (
+                prop.name in changed_lists
+                and tuple(value.upper() for value in prop.parameter_values("VALUE"))
+                not in (("DATE",), ("PERIOD",))
             )
         )
+    elif timing_changed and exception_properties:
+        validate_exceptions(recurrence_exceptions(entry), start, end)
+
+    if changes.reminder is not UNCHANGED:
+        if entry.kind is not CalendarEntryKind.EVENT or start is None:
+            raise CalendarEditError("Calendar Reminders need an event start.")
+        if entry.reminders and editable_reminder(entry) is None:
+            raise CalendarEditError("This imported reminder is preserved.")
+        reminder = changes.reminder
+        if reminder is not None:
+            validate_reminder(reminder, has_end=end is not None)
         if entry.reminders:
             component = entry.reminders[0].component
-            if changes.reminder is None:
+            if reminder is None:
                 extra_patches.append(
                     (component.start_offset, component.end_offset, b"")
                 )
             else:
-                assert isinstance(changes.reminder, CalendarReminderDraft)
                 trigger = next(
                     prop for prop in component.properties if prop.name == "TRIGGER"
                 )
@@ -804,14 +933,17 @@ def update_entry(
                     (
                         trigger.start_offset,
                         trigger.end_offset,
-                        _fold(
-                            f"TRIGGER:-PT{changes.reminder.minutes_before}M", newline
-                        ),
+                        _trigger_bytes(reminder, newline),
                     )
                 )
-        elif content:
-            new_reminder = content
-    if not replacements and not extra_patches and not new_reminder:
+        elif reminder is not None:
+            inserted += _reminder_bytes(reminder, newline, has_end=end is not None)
+    elif timing_changed and entry.reminders:
+        saved_reminder = editable_reminder(entry)
+        if saved_reminder is not None:
+            validate_reminder(saved_reminder, has_end=end is not None)
+
+    if not replacements and not extra_patches and not inserted:
         return document
     # Retain unknown parameters such as LANGUAGE/ALTREP when changing text.
     text_changes = {
@@ -831,18 +963,18 @@ def update_entry(
         for prop in entry.component.properties
         if prop.name in replacements
     ]
-    if replacements or new_reminder:
+    if replacements or inserted:
         patches.append(
             (
                 entry.component.end_line_start,
                 entry.component.end_line_start,
-                b"".join(replacements.values()) + new_reminder,
+                b"".join(replacements.values()) + inserted,
             )
         )
     data = document.raw_bytes
     for start_offset, end_offset, replacement in sorted(patches, reverse=True):
         data = data[:start_offset] + replacement + data[end_offset:]
-    return _authored(data, profile=profile)
+    return _authored(data)
 
 
 def _calendar_name(name: str) -> str:
@@ -1006,24 +1138,55 @@ def _reminders(component: CalendarComponent) -> tuple[CalendarReminder, ...]:
 
 
 def _recurrence_bytes(rule: CalendarRecurrenceRule, newline: bytes) -> bytes:
-    value = f"RRULE:FREQ={rule.frequency.value};INTERVAL={rule.interval}"
-    if rule.count is not None:
-        value += f";COUNT={rule.count}"
-    if rule.until is not None:
-        value += ";UNTIL=" + rule.until.format_iso(basic=True)
-    return _fold(value, newline)
+    return _fold("RRULE:" + format_recurrence_rule(rule), newline)
+
+
+def _exception_bytes(exceptions: CalendarExceptions, newline: bytes) -> bytes:
+    rows = [
+        _fold(
+            name
+            + ":"
+            + ";".join(day.format_iso(basic=True) for day in sorted(set(days))),
+            newline,
+        )
+        for name, days in (("RDATE", exceptions.added), ("EXDATE", exceptions.excluded))
+        if days
+    ]
+    if exceptions.exclusion_rule is not None:
+        rows.append(
+            _fold(
+                "EXRULE:" + format_recurrence_rule(exceptions.exclusion_rule), newline
+            )
+        )
+    return b"".join(rows)
+
+
+def _trigger_bytes(reminder: CalendarReminderDraft, newline: bytes) -> bytes:
+    if reminder.absolute_trigger is not None:
+        return _date_line("TRIGGER;VALUE=DATE-TIME", reminder.absolute_trigger, newline)
+    seconds = reminder.relative_seconds
+    assert seconds is not None
+    days, remainder = divmod(abs(seconds), 86400)
+    minutes, remainder = divmod(remainder, 60)
+    duration = ("-" if seconds < 0 else "") + "P"
+    if days:
+        duration += f"{days}D"
+    if minutes or remainder or not days:
+        duration += "T"
+        if minutes or not remainder:
+            duration += f"{minutes}M"
+        if remainder:
+            duration += f"{remainder}S"
+    anchor = ";RELATED=END" if reminder.related_to_end else ""
+    return _fold(f"TRIGGER{anchor}:{duration}", newline)
 
 
 def _reminder_bytes(
-    reminder: CalendarReminderDraft,
-    profile: CalendarProfile,
-    newline: bytes,
-    *,
-    has_end: bool,
+    reminder: CalendarReminderDraft, newline: bytes, *, has_end: bool
 ) -> bytes:
-    validate_reminder(reminder, profile, has_end=has_end)
+    validate_reminder(reminder, has_end=has_end)
     return (
         _fold("BEGIN:VALARM", newline)
-        + _fold(f"TRIGGER:-PT{reminder.minutes_before}M", newline)
+        + _trigger_bytes(reminder, newline)
         + _fold("END:VALARM", newline)
     )

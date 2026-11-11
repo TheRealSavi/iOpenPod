@@ -21,24 +21,18 @@ from iOpenPod.app.models.extras import (
     RenameCalendar,
     SaveAlarm,
     SaveCalendar,
-)
-from iOpenPod.app.services.calendar_support import (
-    calendar_profile as resolve_calendar_profile,
+    SkipCalendarOccurrence,
 )
 from iOpenPod.app.services.device_coordinator import SyncRecoveryRequiredError
 
 if TYPE_CHECKING:
-    from whenever import PlainDateTime, Time
+    from whenever import Date, PlainDateTime, Time
 
     from iOpenPod.app.core.status import ApplicationStatus
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
-    from iPodDB.calendar import (
-        CalendarEntryChanges,
-        CalendarEntryDraft,
-        CalendarProfile,
-    )
+    from iPodDB.calendar import CalendarEntryChanges, CalendarEntryDraft
 
 _LOGGER = logging.getLogger(__name__)
 _STATUS = "extras.write"
@@ -115,10 +109,6 @@ class ExtrasController(QObject):
         return self._catalog
 
     @property
-    def calendar_profile(self) -> CalendarProfile:
-        return resolve_calendar_profile(self.catalog.support)
-
-    @property
     def busy(self) -> bool:
         return self._job is not None
 
@@ -172,6 +162,17 @@ class ExtrasController(QObject):
         ):
             return False
         return self._write(RemoveCalendar(item))
+
+    def skip_calendar_occurrence(
+        self, item: CalendarItem, day: Date, start_day: Date
+    ) -> bool:
+        support = self._catalog.support
+        return bool(
+            support
+            and support.calendar_write
+            and item in self._catalog.calendar
+            and self._write(SkipCalendarOccurrence(item, day, start_day))
+        )
 
     def create_calendar(self, name: str) -> bool:
         support = self._catalog.support

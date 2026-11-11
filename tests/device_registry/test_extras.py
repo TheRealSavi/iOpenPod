@@ -69,7 +69,7 @@ def test_each_latest_target_qualifies_independently_without_enabling_sleep_contr
     )
 
 
-def test_missing_versions_do_not_turn_native_support_into_write_permission() -> None:
+def test_missing_versions_only_gate_alarm_writes() -> None:
     profile = _profile("iPod Classic", "6.5th Gen")
     support = resolve_extras_support(
         profile,
@@ -77,7 +77,7 @@ def test_missing_versions_do_not_turn_native_support_into_write_permission() -> 
             transport_revisions=(_id("2.0.1"),), updater_family_ids=(_id(33),)
         ),
     )
-    assert not support.calendar_write and not support.alarm_write
+    assert support.calendar_write and not support.alarm_write
     assert support.alarm_format is AlarmFormat.NONE
     assert profile.capabilities.extras.alarms is FeatureSupport.SUPPORTED
 
@@ -113,21 +113,13 @@ def test_wrong_family_or_historical_release_does_not_qualify() -> None:
         ).alarm_write
 
 
-def test_unstudied_generation_remains_unknown_and_unidentified_device_cannot_write() -> (
-    None
-):
-    profile = _profile("iPod Nano", "2nd Gen")
-    assert profile.capabilities.extras.calendar is FeatureSupport.UNKNOWN
-    assert not resolve_extras_support(
-        profile, DeviceEvidence(firmware_versions=(_id("1.3"),))
-    ).calendar_write
-    assert not resolve_extras_support(None, DeviceEvidence()).alarm_write
+def test_unidentified_device_cannot_write_extras() -> None:
+    support = resolve_extras_support(None, DeviceEvidence())
+    assert not support.calendar_write and not support.alarm_write
 
 
 @pytest.mark.parametrize("updater", (19, 29))
-def test_encrypted_only_nano_2_does_not_obtain_calendar_qualification(
-    updater: int,
-) -> None:
+def test_nano_2_uses_shared_calendar_policy(updater: int) -> None:
     profile = _profile("iPod Nano", "2nd Gen")
     support = resolve_extras_support(
         profile,
@@ -135,8 +127,8 @@ def test_encrypted_only_nano_2_does_not_obtain_calendar_qualification(
             firmware_versions=(_id("1.1.3"),), updater_family_ids=(_id(updater),)
         ),
     )
-    assert profile.capabilities.extras.calendar is FeatureSupport.UNKNOWN
-    assert not support.calendar_write and support.calendar_firmware is None
+    assert profile.capabilities.extras.calendar is FeatureSupport.SUPPORTED
+    assert support.calendar_write and not support.alarm_write
 
 
 @pytest.mark.parametrize(
@@ -154,39 +146,37 @@ def test_native_calendar_exclusion_does_not_grant_any_writer(
     )
     assert not support.calendar_write
     assert not support.alarm_write
-    assert support.calendar_firmware is not None
-    assert "no Calendar support" in support.reason
 
 
 @pytest.mark.parametrize(
-    "family,generation,firmware,updater,expected",
+    "family,generation",
     (
-        ("iPod Mini", "1st Gen", "1.4.1", 3, "mini_1_1_4_1"),
-        ("iPod Mini", "1st Gen", "1.4.1", 6, "mini_1_1_4_1"),
-        ("iPod Nano", "1st Gen", "1.3.1", 14, "nano_1_1_3_1"),
-        ("iPod Nano", "1st Gen", "1.3.1", 17, "nano_1_1_3_1"),
-        ("iPod Nano", "3rd Gen", "1.1.3", 26, "nano_3_1_1_3"),
-        ("iPod Nano", "4th Gen", "1.0.4", 31, "nano_4_1_0_4"),
-        ("iPod Nano", "5th Gen", "1.0.2", 34, "nano_5_1_0_2"),
+        ("iPod Mini", "1st Gen"),
+        ("iPod Mini", "2nd Gen"),
+        ("iPod Nano", "1st Gen"),
+        ("iPod Nano", "2nd Gen"),
+        ("iPod Nano", "3rd Gen"),
+        ("iPod Nano", "4th Gen"),
+        ("iPod Nano", "5th Gen"),
+        ("iPod", "5th Gen"),
+        ("iPod", "5.5th Gen"),
+        ("iPod Classic", "6th Gen"),
+        ("iPod Classic", "6.5th Gen"),
+        ("iPod Classic", "7th Gen"),
     ),
 )
-def test_nano_calendar_qualification_does_not_enable_clock_alarm_writer(
-    family: str, generation: str, firmware: str, updater: int, expected: str
+def test_calendar_availability_does_not_depend_on_firmware_evidence(
+    family: str, generation: str
 ) -> None:
     profile = _profile(family, generation)
-    assert profile.capabilities.extras.calendar is FeatureSupport.SUPPORTED
-    support = resolve_extras_support(
-        profile,
+    for evidence in (
+        DeviceEvidence(),
         DeviceEvidence(
-            firmware_versions=(_id(firmware),), updater_family_ids=(_id(updater),)
+            firmware_versions=(_id("1.0"), _id("2.0")),
+            updater_family_ids=(_id(24), _id(33)),
         ),
-    )
-    assert support.calendar_write and support.calendar_firmware is not None
-    assert support.calendar_firmware.value == expected
-    assert support.alarm_format is AlarmFormat.NONE
-    assert not support.alarm_write and not support.sleep_timer_write
-    conflict = DeviceEvidence(updater_family_ids=(_id(24),))
-    assert not resolve_extras_support(
-        profile,
-        DeviceEvidence(firmware_versions=(_id(firmware),)).merged_with(conflict),
-    ).calendar_write
+    ):
+        support = resolve_extras_support(profile, evidence)
+        assert support.calendar_write
+        assert support.alarm_format is AlarmFormat.NONE
+        assert not support.alarm_write and not support.sleep_timer_write

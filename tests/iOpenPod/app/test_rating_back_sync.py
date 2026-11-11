@@ -12,6 +12,7 @@ from mutagen.mp4 import MP4, MP4FreeForm
 
 from iOpenPod.app.media.ratings import rewrite_rating_stream
 from iOpenPod.app.media.tags import read_tag_values
+from storage.media_processing import find_media_tool
 
 FIXTURES = Path(__file__).parents[2] / "fixtures" / "media"
 
@@ -95,6 +96,10 @@ def test_rating_back_sync_requires_changed_known_baselines(
     assert rating_needs_back_sync(host, ipod, baseline_host, baseline_ipod) is expected
 
 
+@pytest.mark.skipif(
+    any(find_media_tool(tool) is None for tool in ("ffmpeg", "ffprobe")),
+    reason="Real Sync integration requires FFmpeg and FFprobe",
+)
 @pytest.mark.parametrize("suffix", ["mp3", "m4a"])
 @pytest.mark.parametrize(
     "case",

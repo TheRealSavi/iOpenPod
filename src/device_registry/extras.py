@@ -28,9 +28,10 @@ def native_extras_capabilities(family: str, generation: str) -> ExtrasCapabiliti
         )
     )
     support = FeatureSupport.SUPPORTED if known else FeatureSupport.UNKNOWN
+    # Nano 2 follows the shared Calendar policy by product decision.
     if (
         family == "iPod Nano"
-        and generation in {"1st Gen", "3rd Gen", "4th Gen", "5th Gen"}
+        and generation in {"1st Gen", "2nd Gen", "3rd Gen", "4th Gen", "5th Gen"}
     ) or (family == "iPod Mini" and generation == "1st Gen"):
         return ExtrasCapabilities(
             calendar=FeatureSupport.SUPPORTED, todos=FeatureSupport.SUPPORTED
@@ -45,37 +46,17 @@ def native_extras_capabilities(family: str, generation: str) -> ExtrasCapabiliti
 def resolve_extras_support(
     profile: DeviceProfile | None, evidence: DeviceEvidence
 ) -> ExtrasSupport:
-    """Qualify only studied latest releases, preserving strongest-level conflicts.
-
-    Transport revisions never substitute for RetailOS. Later MC293/MC297 SKUs
-    alone cannot distinguish updater 35 from 38 (ADR-0242). Unknown evidence
-    leaves optional Extras read-only and never blocks Library operations.
-    """
+    """Resolve Calendar from the model and Clock Alarms from ranked evidence."""
     if profile is None:
         return ExtrasSupport(reason="Select an identified iPod to manage Extras.")
-    sleep = profile.capabilities.extras.sleep_timer
-    versions = {value.strip() for value in strongest_values(evidence.firmware_versions)}
-    families = set(strongest_values(evidence.updater_family_ids))
-    if len(versions) != 1 or len(families) > 1:
-        return ExtrasSupport(
-            sleep_timer=sleep,
-            reason="Missing or conflicting firmware evidence leaves Extras read-only.",
-        )
+    capabilities = profile.capabilities.extras
+    calendar = capabilities.calendar is FeatureSupport.SUPPORTED
+    sleep = capabilities.sleep_timer
     firmware = resolve_firmware_target(
         profile,
         strongest_values(evidence.firmware_versions),
         strongest_values(evidence.updater_family_ids),
     )
-    if firmware in {
-        FirmwareTarget.NANO_6_1_2,
-        FirmwareTarget.NANO_7_1_0_4,
-        FirmwareTarget.NANO_UPDATER_39_1_1_2,
-    }:
-        return ExtrasSupport(
-            calendar_firmware=firmware,
-            sleep_timer=sleep,
-            reason="This firmware explicitly reports no Calendar support. Clock Alarm editing is not qualified.",
-        )
     # This explicit subset is independent of Preferences authoring support.
     formats = {
         FirmwareTarget.MINI_2_1_4_1: AlarmFormat.MINI,
@@ -85,33 +66,15 @@ def resolve_extras_support(
         FirmwareTarget.CLASSIC_UPDATER_35_2_0_4: AlarmFormat.CLASSIC,
         FirmwareTarget.CLASSIC_UPDATER_38_2_0_5: AlarmFormat.CLASSIC,
     }
-    calendar_targets = {
-        FirmwareTarget.MINI_1_1_4_1,
-        FirmwareTarget.NANO_1_1_3_1,
-        FirmwareTarget.NANO_3_1_1_3,
-        FirmwareTarget.NANO_4_1_0_4,
-        FirmwareTarget.NANO_5_1_0_2,
-        FirmwareTarget.MINI_2_1_4_1,
-        FirmwareTarget.VIDEO_1_3,
-        FirmwareTarget.CLASSIC_6_1_1_2,
-        FirmwareTarget.CLASSIC_120GB_2_0_1,
-        FirmwareTarget.CLASSIC_UPDATER_35_2_0_4,
-        FirmwareTarget.CLASSIC_UPDATER_38_2_0_5,
-    }
     target = (
         formats.get(firmware, AlarmFormat.NONE)
         if firmware is not None
         else AlarmFormat.NONE
     )
-    if firmware not in calendar_targets and target is AlarmFormat.NONE:
-        return ExtrasSupport(
-            sleep_timer=sleep,
-            reason="This model and firmware combination is not qualified for Extras editing.",
-        )
     return ExtrasSupport(
-        calendar_write=firmware in calendar_targets,
-        calendar_firmware=firmware if firmware in calendar_targets else None,
+        calendar_write=calendar,
         alarm_format=target,
+        alarm_firmware=firmware if target is not AlarmFormat.NONE else None,
         # Video projects its next alarm into Preferences from the separate
         # per-city Device/clock store. Patching that projection does not edit a
         # persistent Clock Alarm. See preferences-video-complete-2026-11-07.md.
@@ -120,7 +83,7 @@ def resolve_extras_support(
         reason=(
             "Saved clock alarms are managed on the iPod. The displayed time is a read-only snapshot and may be disabled or out of date."
             if target is AlarmFormat.VIDEO
-            else "Calendar editing is qualified independently of Clock Alarm editing."
+            else "Clock Alarm editing is unavailable for this iPod."
             if target is AlarmFormat.NONE
             else "Existing alarm time fields are editable; new alarms, sound, enable state and remote sleep-timer control are not qualified."
         ),
