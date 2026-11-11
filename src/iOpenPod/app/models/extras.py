@@ -1,15 +1,17 @@
 """Captured Calendar and Alarm views and explicit, connection-bound edits."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from whenever import PlainDateTime, Time
+from whenever import Date, PlainDateTime, Time
 
 from device_registry import ExtrasSupport
 from iPodDB.calendar import (
+    CalendarComponent,
     CalendarEntry,
     CalendarEntryChanges,
     CalendarEntryDraft,
     CalendarOccurrence,
+    calendar_zone_names,
 )
 from storage import FileFingerprint
 
@@ -20,10 +22,19 @@ class CalendarItem:
     entry: CalendarEntry
     calendar_name: str | None = None
     occurrence: CalendarOccurrence | None = None
+    source_calendar: CalendarComponent | None = field(default=None, repr=False)
 
     @property
     def index(self) -> int:
         return self.entry.entry_id
+
+    @property
+    def zone_names(self) -> tuple[str, ...]:
+        if self.source_calendar is None:
+            return ()
+        return calendar_zone_names(
+            self.source_calendar, before_offset=self.entry.component.start_offset
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +64,7 @@ class CalendarGroup:
     name: str | None
     document_keys: tuple[str, ...]
     editable: bool
+    zones: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +87,13 @@ class SaveCalendar:
 @dataclass(frozen=True, slots=True)
 class RemoveCalendar:
     item: CalendarItem
+
+
+@dataclass(frozen=True, slots=True)
+class SkipCalendarOccurrence:
+    item: CalendarItem
+    day: Date
+    start_day: Date
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +125,7 @@ class SaveAlarm:
 type ExtrasChange = (
     SaveCalendar
     | RemoveCalendar
+    | SkipCalendarOccurrence
     | ImportCalendar
     | SaveAlarm
     | CreateCalendar

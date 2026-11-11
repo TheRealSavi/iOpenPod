@@ -62,10 +62,7 @@ def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
 
     if page_id is PageId.START:
         return profile is None
-    if (
-        page_id in (PageId.CALENDAR, PageId.ALARMS)
-        and not developer_flags.ENABLE_EXTRAS_PAGES
-    ):
+    if page_id is PageId.ALARMS and not developer_flags.ENABLE_EXTRAS_PAGES:
         return False
     if page_id in _LIBRARY_PAGES and profile is None:
         return False

@@ -9,7 +9,9 @@ from PySide6.QtWidgets import (
     QApplication,
     QCalendarWidget,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
@@ -37,6 +39,7 @@ class MonthGrid(QCalendarWidget):
 
     def __init__(self, parent: QWidget | None = None, *, today: QDate) -> None:
         super().__init__(parent)
+        self._calendar_view = self.findChild(QTableView, "qt_calendar_calendarview")
         self.setObjectName("calendarMonthGrid")
         self.setNavigationBarVisible(False)
         self.setVerticalHeaderFormat(
@@ -45,6 +48,12 @@ class MonthGrid(QCalendarWidget):
         self.setHorizontalHeaderFormat(
             QCalendarWidget.HorizontalHeaderFormat.ShortDayNames
         )
+        if self._calendar_view is not None:
+            # Qt models the weekday headings as the first row of the date table.
+            self._calendar_view.verticalHeader().setSectionResizeMode(
+                0, QHeaderView.ResizeMode.Fixed
+            )
+            self._resize_weekday_row()
         self.setFirstDayOfWeek(QLocale().firstDayOfWeek())
         self.setDateRange(QDate(100, 1, 1), QDate(9999, 12, 31))
         self._markers: tuple[CalendarMarker, ...] = ()
@@ -85,17 +94,25 @@ class MonthGrid(QCalendarWidget):
 
     def _refresh_header(self) -> None:
         header = QTextCharFormat()
-        header.setForeground(self.palette().brush(QPalette.ColorRole.PlaceholderText))
+        header.setForeground(self.palette().brush(QPalette.ColorRole.Text))
         header.setBackground(self.palette().brush(QPalette.ColorRole.Base))
         self.setHeaderTextFormat(header)
         self.setWeekdayTextFormat(Qt.DayOfWeek.Saturday, header)
         self.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, header)
+
+    def _resize_weekday_row(self) -> None:
+        if self._calendar_view is not None:
+            self._calendar_view.verticalHeader().resizeSection(
+                0, self.fontMetrics().height() + 2 * LAYOUT.space_2xs
+            )
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if event.type() in (QEvent.Type.PaletteChange, QEvent.Type.LanguageChange):
             self._refresh_header()
             self.updateCells()
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._resize_weekday_row()
 
     def paintCell(self, painter: QPainter, rect: QRect, date: QDate) -> None:
         painter.save()

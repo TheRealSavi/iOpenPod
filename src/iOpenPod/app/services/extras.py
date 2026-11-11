@@ -29,8 +29,8 @@ from iOpenPod.app.models.extras import (
     RenameCalendar,
     SaveAlarm,
     SaveCalendar,
+    SkipCalendarOccurrence,
 )
-from iOpenPod.app.services.calendar_support import calendar_profile
 from iPodDB.alarms import (
     parse_alarms,
     parse_preferences_alarm,
@@ -42,11 +42,13 @@ from iPodDB.calendar import (
     CalendarEntryChanges,
     CalendarEntryDraft,
     add_entry,
+    calendar_zone_names,
     create_calendar,
     parse_calendar,
     remove_entry,
     rename_calendar,
     serialize_calendar,
+    skip_occurrence,
     update_entry,
 )
 from storage import (
@@ -112,9 +114,7 @@ def read_extras(
                     break
                 key = str(entry.path)
                 files.append(ExtrasFile(key, captured.data, captured.fingerprint))
-                document = parse_calendar(
-                    captured.data, profile=calendar_profile(support)
-                )
+                document = parse_calendar(captured.data)
                 for component in document.components:
                     if component.name != "VCALENDAR":
                         continue
@@ -139,9 +139,10 @@ def read_extras(
                         name,
                         keys,
                         editable and (previous.editable if previous else True),
+                        previous.zones if previous else calendar_zone_names(component),
                     )
                     calendar.extend(
-                        CalendarItem(key, item, name)
+                        CalendarItem(key, item, name, source_calendar=component)
                         for item in document.entries
                         if component.start_offset
                         < item.component.start_offset
@@ -296,9 +297,7 @@ def prepare_change(
             raise ValueError("The alarm format is not qualified for this iPod.")
     else:
         if not support.calendar_write:
-            raise ValueError(
-                "Calendar editing is not qualified for this iPod firmware."
-            )
+            raise ValueError("Calendar editing is unavailable for this iPod model.")
         if isinstance(change, RenameCalendar):
             _calendar_source(catalog, change.calendar)
             if any(
@@ -346,19 +345,17 @@ def prepare_change(
             )
             if destination is not None:
                 source = _calendar_source(catalog, destination)
-                document = parse_calendar(
-                    source.data, profile=calendar_profile(support)
-                )
+                document = parse_calendar(source.data)
                 path = DevicePath(source.key)
             else:
                 document = create_calendar(name="iOpenPod")
                 path = DevicePath(f"Calendars/iopenpod-{uuid4().hex}.ics")
-            data = serialize_calendar(
-                add_entry(document, change.edit, profile=calendar_profile(support))
-            )
+            data = serialize_calendar(add_entry(document, change.edit))
         else:
             item = (
-                change.item if isinstance(change, RemoveCalendar) else change.existing
+                change.item
+                if isinstance(change, (RemoveCalendar, SkipCalendarOccurrence))
+                else change.existing
             )
             if item is None or item not in catalog.calendar:
                 raise ValueError("This Calendar entry changed. Reload before editing.")
@@ -368,17 +365,19 @@ def prepare_change(
                 raise ValueError(
                     "Calendar edits must stay inside the Calendars folder."
                 )
-            document = parse_calendar(source.data, profile=calendar_profile(support))
+            document = parse_calendar(source.data)
             if isinstance(change, RemoveCalendar):
                 document = remove_entry(document, item.index)
+            elif isinstance(change, SkipCalendarOccurrence):
+                document = skip_occurrence(
+                    document, item.index, change.day, change.start_day
+                )
             else:
                 if not isinstance(change.edit, CalendarEntryChanges):
                     raise ValueError(
                         "An existing Calendar entry needs explicit changes."
                     )
-                document = update_entry(
-                    document, item.index, change.edit, profile=calendar_profile(support)
-                )
+                document = update_entry(document, item.index, change.edit)
             data = serialize_calendar(document)
     if len(data) > MAX_FILE_BYTES:
         raise ValueError("The Calendar or Alarm file exceeds the supported size.")

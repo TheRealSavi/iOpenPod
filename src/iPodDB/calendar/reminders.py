@@ -1,84 +1,95 @@
-"""Qualified single relative Calendar Reminders, with exact firmware profiles."""
+"""Saved Calendar Reminder validation and evaluation in civil time."""
+
+from typing import cast
+
+from whenever import Date, Instant, PlainDateTime, Time
 
 from iPodDB.calendar.models import (
-    CalendarDateForm,
     CalendarEditError,
     CalendarEntry,
     CalendarEntryKind,
-    CalendarProfile,
+    CalendarOccurrence,
+    CalendarReminder,
     CalendarReminderDraft,
 )
 
-_TARGETS = frozenset(
-    (
-        CalendarProfile.MINI_1_1_4_1,
-        CalendarProfile.MINI_2_1_4_1,
-        CalendarProfile.NANO_1_1_3_1,
-        CalendarProfile.NANO_3_1_1_3,
-        CalendarProfile.NANO_4_1_0_4,
-        CalendarProfile.NANO_5_1_0_2,
-        CalendarProfile.VIDEO_1_3,
-        CalendarProfile.CLASSIC_6_1_1_2,
-        CalendarProfile.CLASSIC_120GB_2_0_1,
-        CalendarProfile.CLASSIC_UPDATER_35_2_0_4,
-        CalendarProfile.CLASSIC_UPDATER_38_2_0_5,
-    )
-)
+
+def validate_reminder(reminder: CalendarReminderDraft, *, has_end: bool) -> None:
+    relative = reminder.relative_seconds
+    absolute = reminder.absolute_trigger
+    if absolute is not None:
+        if (
+            not isinstance(cast("object", absolute), (PlainDateTime, Instant))
+            or relative is not None
+            or reminder.related_to_end
+            or (
+                absolute.to_tz("UTC").nanosecond
+                if isinstance(absolute, Instant)
+                else absolute.nanosecond
+            )
+            != 0
+        ):
+            raise CalendarEditError(
+                "Choose a single absolute reminder at a whole second."
+            )
+    elif type(relative) is not int or not -(1 << 31) <= relative < (1 << 31):
+        raise CalendarEditError("The reminder offset exceeds the supported range.")
+    elif reminder.related_to_end and not has_end:
+        raise CalendarEditError("A reminder relative to the end needs an event end.")
 
 
-def supports_reminders(profile: CalendarProfile) -> bool:
-    return type(profile) is CalendarProfile and profile in _TARGETS
-
-
-def validate_reminder(
-    reminder: CalendarReminderDraft, profile: CalendarProfile, *, has_end: bool
-) -> None:
-    if not supports_reminders(profile):
-        raise CalendarEditError(
-            "Calendar Reminder edits are not qualified for this firmware."
-        )
-    if (
-        type(reminder.minutes_before) is not int
-        or not 0 <= reminder.minutes_before <= 10080
-    ):
-        raise CalendarEditError(
-            "Choose a reminder from zero to 10,080 minutes before the event."
-        )
-    if reminder.related_to_end is not False:
-        raise CalendarEditError(
-            "End-relative reminders remain read-only in this qualified subset."
-        )
-
-
-def editable_reminder(
-    entry: CalendarEntry, profile: CalendarProfile
-) -> CalendarReminderDraft | None:
+def editable_reminder(entry: CalendarEntry) -> CalendarReminderDraft | None:
     if (
         not entry.editable
         or entry.kind is not CalendarEntryKind.EVENT
         or entry.start is None
-        or entry.start.form is not CalendarDateForm.FLOATING
-        or not supports_reminders(profile)
+        or entry.start.value is None
         or len(entry.reminders) != 1
     ):
         return None
     saved = entry.reminders[0]
-    value = saved.relative_seconds
-    if (
-        saved.issues
-        or saved.component.children
-        or value is None
-        or value > 0
-        or value % 60
+    if saved.issues or saved.component.children:
+        return None
+    absolute = saved.absolute_trigger.value if saved.absolute_trigger else None
+    if saved.absolute_trigger is not None and not isinstance(
+        absolute, (PlainDateTime, Instant)
     ):
         return None
-    draft = CalendarReminderDraft(-value // 60, saved.related_to_end)
+    draft = CalendarReminderDraft(
+        saved.relative_seconds,
+        saved.related_to_end,
+        absolute if isinstance(absolute, (PlainDateTime, Instant)) else None,
+    )
     try:
         validate_reminder(
-            draft,
-            profile,
-            has_end=entry.end is not None and entry.end.value is not None,
+            draft, has_end=entry.end is not None and entry.end.value is not None
         )
     except CalendarEditError:
         return None
     return draft
+
+
+def reminder_civil_time(
+    reminder: CalendarReminder, occurrence: CalendarOccurrence
+) -> PlainDateTime | None:
+    """Evaluate a stored trigger against the given source or occurrence span."""
+    if reminder.issues:
+        return None
+    anchor = reminder.absolute_trigger or (
+        occurrence.end if reminder.related_to_end else occurrence.start
+    )
+    if anchor is None or anchor.value is None:
+        return None
+    value = anchor.value
+    if isinstance(value, Instant):
+        value = value.to_tz("UTC").to_plain()
+    elif isinstance(value, Date):
+        value = value.at(Time(0))
+    if reminder.absolute_trigger is not None:
+        return value
+    if reminder.relative_seconds is None:
+        return None
+    try:
+        return value.add(seconds=reminder.relative_seconds, naive_arithmetic_ok=True)
+    except (ValueError, OverflowError):
+        return None

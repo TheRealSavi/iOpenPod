@@ -513,10 +513,10 @@ def test_shell_contains_persistent_player_sidebar_and_all_routes(
         assert player is not None
         assert player.height() == LAYOUT.player_idle_height
         assert pages is not None
-        # Normalize Tags is a dialog; disabled Extras do not construct pages.
-        assert pages.count() == len(PageId) - 1 - (0 if extras_enabled else 2)
-        for name in ("calendarPage", "alarmsPage"):
-            assert (window.findChild(QWidget, name) is not None) is extras_enabled
+        # Normalize Tags is a dialog and Alarms remains a development page.
+        assert pages.count() == len(PageId) - 1 - (0 if extras_enabled else 1)
+        assert window.findChild(QWidget, "calendarPage") is not None
+        assert (window.findChild(QWidget, "alarmsPage") is not None) is extras_enabled
         assert splitter is not None
         assert splitter.count() == 2
         assert splitter.handleWidth() == LAYOUT.track_list_handle_height

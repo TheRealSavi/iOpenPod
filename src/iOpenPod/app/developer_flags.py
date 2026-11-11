@@ -2,5 +2,5 @@
 
 from typing import Final
 
-ENABLE_EXTRAS_PAGES: Final[bool] = False
+ENABLE_EXTRAS_PAGES: Final[bool] = True
 ENABLE_IPOD_PREFERENCES_WRITES: Final[bool] = False

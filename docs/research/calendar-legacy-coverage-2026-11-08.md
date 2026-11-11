@@ -50,6 +50,46 @@ Original disassembly and automatic pseudocode remain under each workspace's
 `evidence/corpus/functions`; some real native entry points are inside Ghidra's
 larger function ranges. The probes execute the original addresses directly.
 
+## Complete Calendar streams, 2026-11-11
+
+Mini 1 and Nano 1 each match the 27 complete Calendar streams previously
+executed on Mini 2. The new runs verify **54 streams and 432 day queries**.
+They exercise the original Calendar collection, root and event constructors,
+VERSION transfer, parsing, event finalization and adoption. Each firmware
+consumes all fixture characters, and each matched day returns the expected
+09:00–10:00 span. [Mini 1 index][mini1-stream], [Nano 1 index][nano1-stream],
+[Mini 2 fixtures][mini2-stream], [source and receipt verification][stream-sources]
+
+VERSION:1.0 uses comma-separated date lists in these fixtures. VERSION:2.0
+uses semicolons. The other separator leaves only the first date effective.
+Repeated additions and exclusions merge, line folding preserves both dates,
+and an empty second RDATE leaves the first effective. Bare dates contribute,
+whereas explicit `VALUE=DATE` or `VALUE=PERIOD` leaves membership unchanged.
+The tested date-list TZID parameters preserve the same membership and spans.
+[Mini 1 index][mini1-stream], [Nano 1 index][nano1-stream]
+
+| Image | Collection constructor | Root constructor / parser | VEVENT adoption | Day query |
+| --- | --- | --- | --- | --- |
+| Mini 1 | `0x000e2de4` | `0x000e743c` / `0x000a0828` | `0x00030e68` | `0x0009a918` |
+| Nano 1 | `0x000b09c0` | `0x000eaee0` / `0x000eaecc` | `0x0018fc10` | `0x001a5d08` |
+
+The probes use an ASCII character provider and synthetic allocation. Mini 1
+uses relative source vtable entries and Nano 1 uses absolute entries at
+different slots. Both supply the requested unread character back to the
+original lexer. Nano 1 also receives a synthetic file object so the original
+interface check and metadata getter can run. The metadata field starts at zero.
+The experiments begin at the character-stream boundary. Filesystem opening,
+byte decoding and live adoption remain separate. [Mini 1 probe][mini1-stream-probe],
+[Nano 1 probe][nano1-stream-probe], [Nano 1 native file route][nano1-file-route]
+
+[mini1-stream]: ../../.scratch/calendar-mini1-root-stream-20261111/index.json
+[nano1-stream]: ../../.scratch/calendar-nano1-root-stream-20261111/index.json
+[mini2-stream]: ../../.scratch/calendar-mini2-root-stream-20261110/index.json
+[stream-sources]: ../../.scratch/calendar-legacy-stream-sources-20261111/manifest.json
+[mini1-stream-probe]: ../../.scratch/probe_mini1_root_stream_20261111.py
+[nano1-stream-probe]: ../../.scratch/probe_nano1_root_stream_20261111.py
+[nano1-file-route]: ../../../ipod-firmware-lab/Nano1FW/evidence/corpus/functions/0006c578.asm.txt
+
 ## Recurrence
 
 Mini 1 independently passed the same 720 DAILY/WEEKLY candidate-membership
