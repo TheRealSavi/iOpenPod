@@ -184,11 +184,11 @@ def retained_browse_memberships(
                             {
                                 _album_description(albums[i][0])
                                 for i in candidates
-                                if len(albums.get(i, ())) == 1
+                                if len(albums.get(i, [])) == 1
                             }
                         )
                         == 1
-                        and all(len(albums.get(i, ())) == 1 for i in candidates)
+                        and all(len(albums.get(i, [])) == 1 for i in candidates)
                         and all(
                             group_text(albums[i][0], MhodType.ALBUM_ITEM_ALBUM)
                             == t.album
@@ -206,7 +206,7 @@ def retained_browse_memberships(
                         for m in album_members[i]
                         if m.ipod and m.ipod.store_album_id
                     }
-                    options = (
+                    options: set[int] = (
                         candidates if compatible and len(release_ids) <= 1 else set()
                     )
                     if not options:

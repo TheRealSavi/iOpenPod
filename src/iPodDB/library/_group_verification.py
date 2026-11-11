@@ -189,7 +189,7 @@ def verify_browse_groups(
                             source_rows.get(actual_id, []),
                             rows.get(actual_id, []),
                         )
-                        expected_rows = []
+                        expected_rows: list[tuple[bytes, bytes]] = []
                         for original_row in source_matches:
                             header = bytearray(original_row.raw_header)
                             native_header = original_row.header

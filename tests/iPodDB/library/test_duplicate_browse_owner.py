@@ -61,7 +61,7 @@ def duplicate_source(kind: str, *, three_tracks: bool = False) -> IPodLibrary:
 
 def native_links(library: IPodLibrary | PreparedLibrary, kind: str) -> tuple[int, ...]:
     field = "artist_id_ref" if kind == "artist" else "album_id"
-    result = []
+    result: list[int] = []
     for track in library.snapshot.tracks:
         assert track.ipod is not None
         result.append(
