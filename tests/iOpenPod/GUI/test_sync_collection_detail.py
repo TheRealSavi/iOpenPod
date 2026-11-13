@@ -119,8 +119,8 @@ def browser(stream_requests: list[int]) -> Iterator[SyncBrowser]:
         choose_streams=stream_requests.append,
     )
     host.load(library)
-    for page in host.pages:
-        parent.addWidget(page)
+    for page_id in host.page_ids:
+        parent.addWidget(host.page(page_id))
     parent.resize(1000, 760)
     parent.show()
     APPLICATION.processEvents()
@@ -168,7 +168,7 @@ def test_stream_button_opens_chooser_from_collection(
     browser: SyncBrowser, stream_requests: list[int], page_id: PageId, title: str
 ) -> None:
     host, selection, parent, _theme = browser
-    page = host.page_widgets[page_id]
+    page = host.page(page_id)
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     grid = page.findChild(
@@ -201,7 +201,7 @@ def test_card_opens_full_page_with_search_and_stable_sync_selection(
     browser: SyncBrowser, page_id: PageId, title: str, ids: set[int]
 ) -> None:
     host, selection, parent, _theme = browser
-    page = host.page_widgets[page_id]
+    page = host.page(page_id)
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     grid = page.findChild(
@@ -289,7 +289,7 @@ def test_card_opens_full_page_with_search_and_stable_sync_selection(
 
 def test_grid_checkbox_and_modified_click_do_not_navigate(browser: SyncBrowser) -> None:
     host, selection, parent, theme = browser
-    page = host.page_widgets[PageId.ALBUMS]
+    page = host.page(PageId.ALBUMS)
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     grid = page.findChild(AlbumGridView)
@@ -323,7 +323,7 @@ def test_back_retains_grid_query_and_new_scan_closes_detail(
     browser: SyncBrowser,
 ) -> None:
     host, _selection, parent, _theme = browser
-    page = host.page_widgets[PageId.ALBUMS]
+    page = host.page(PageId.ALBUMS)
     parent.setCurrentWidget(page)
     toolbar = page.findChild(LibraryToolbar)
     grid = page.findChild(AlbumGridView)
@@ -366,8 +366,8 @@ def test_grouped_album_checkbox_preserves_scroll_position(
     if checked:
         selection.set_tracks_checked(tuple(range(album_count)), True)
     host.load(library)
-    parent.setCurrentWidget(host.page_widgets[PageId.ALBUMS])
-    grid = host.page_widgets[PageId.ALBUMS].findChild(AlbumGridView)
+    parent.setCurrentWidget(host.page(PageId.ALBUMS))
+    grid = host.page(PageId.ALBUMS).findChild(AlbumGridView)
     assert grid is not None and grid.sectioned_layout
     QTest.qWait(100)
     index = _card(grid, f"Album {target:03}")
@@ -405,7 +405,7 @@ def test_list_browser_album_opens_detail_and_returns_to_list(
     browser: SyncBrowser, page_id: PageId
 ) -> None:
     host, _selection, parent, _theme = browser
-    page = host.page_widgets[page_id]
+    page = host.page(page_id)
     assert isinstance(page, CollectionPage)
     parent.setCurrentWidget(page)
     page.set_view_mode("list")
@@ -442,7 +442,7 @@ def test_genre_album_bulk_selection_respects_its_scoped_tracks(
     )
     selection.reset(library, SyncPlan(()))
     host.load(library)
-    page = host.page_widgets[PageId.GENRES]
+    page = host.page(PageId.GENRES)
     assert isinstance(page, CollectionPage)
     parent.setCurrentWidget(page)
     page.set_view_mode("list")
@@ -475,7 +475,7 @@ def test_fade_starts_with_the_complete_outgoing_page(
     host, _selection, parent, _theme = browser
     parent.setObjectName("fadeTestWindow")
     parent.setStyleSheet("#fadeTestWindow { background: #f8fafc; }")
-    page = host.page_widgets[PageId.ALBUMS]
+    page = host.page(PageId.ALBUMS)
     parent.setCurrentWidget(page)
     grid = page.findChild(AlbumGridView)
     detail = page.findChild(CollectionDetailPage)
@@ -566,7 +566,7 @@ def test_opened_collection_preserves_all_four_artwork_tiles(
     )
     selection.reset(library, SyncPlan(()))
     host.load(library)
-    page = host.page_widgets[page_id]
+    page = host.page(page_id)
     assert isinstance(page, CollectionPage)
     parent.setCurrentWidget(page)
     grid = page.findChild(CollectionGridView)
@@ -620,7 +620,7 @@ def test_detail_header_uses_shared_edges_and_one_track_toolbar(
     browser: SyncBrowser, direction: Qt.LayoutDirection
 ) -> None:
     host, _selection, parent, _theme = browser
-    page = host.page_widgets[PageId.ALBUMS]
+    page = host.page(PageId.ALBUMS)
     parent.setCurrentWidget(page)
     page.setLayoutDirection(direction)
     grid = page.findChild(AlbumGridView)
@@ -666,7 +666,7 @@ def test_detail_header_reflows_long_text_without_clipping(
     browser: SyncBrowser, width: int
 ) -> None:
     host, _selection, parent, _theme = browser
-    page = host.page_widgets[PageId.ALBUMS]
+    page = host.page(PageId.ALBUMS)
     parent.setCurrentWidget(page)
     grid = page.findChild(AlbumGridView)
     detail = page.findChild(CollectionDetailPage)

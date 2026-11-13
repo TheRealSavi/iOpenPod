@@ -1,7 +1,7 @@
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from threading import Event, get_ident
 
 import pytest
 from PySide6.QtCore import QEvent, Qt, QTimer
@@ -20,9 +20,11 @@ from PySide6.QtWidgets import (
     QTreeView,
     QWidget,
 )
+from tests.iOpenPod.app.test_library_write_controller import wait_for
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
+from iOpenPod.app import sync_comparison_controller, sync_execution
 from iOpenPod.app.core.settings.definitions import RETRANSCODE_LOSSY
 from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
@@ -53,6 +55,7 @@ from iOpenPod.app.sync_plan import (
     SyncPlanBasis,
     SyncPlanItem,
     SyncPlanMediaKind,
+    prepare_sync_plan,
 )
 from iOpenPod.app.sync_track_details import track_tag_sha256
 from iOpenPod.GUI import main_window as main_window_module
@@ -523,6 +526,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         property(lambda _controller: fake_active),
     )
     monkeypatch.setattr(context.ipod_media_controller, "start", lambda: True)
+    context.device_controller.activeIPodChanged.emit(fake_active)
 
     class FakeMediaFoldersDialog:
         folders = ()
@@ -547,6 +551,25 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
 
     monkeypatch.setattr(context.host_media_controller, "start", start_host_scan)
 
+    comparisons: list[int] = []
+    gui_thread = get_ident()
+
+    def compare(
+        host: HostMediaLibrary,
+        ipod: IPodMediaLibrary,
+        library: LibrarySnapshot,
+        *,
+        file_tag_policy: str | None = None,
+    ) -> SyncPlan:
+        comparisons.append(get_ident())
+        return prepare_sync_plan(host, ipod, library, file_tag_policy=file_tag_policy)
+
+    def unexpected_comparison(*_args: object, **_kwargs: object) -> SyncPlan:
+        pytest.fail("Playlist Review must reuse the current comparison")
+
+    monkeypatch.setattr(sync_comparison_controller, "prepare_sync_plan", compare)
+    monkeypatch.setattr(sync_execution, "prepare_sync_plan", unexpected_comparison)
+
     def fail_information(*_args: object) -> None:
         pytest.fail("A completed comparison should open Sync Plan without a modal")
 
@@ -567,11 +590,13 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         context.host_media_controller.finished.emit(host)
         assert not notice_timer.isActive() and notice.isHidden()
         context.ipod_media_controller.finished.emit(ipod)
-        APPLICATION.processEvents()
-
-        workspace = window.findChild(SyncWorkspace, "syncWorkspace")
-        assert workspace is not None
-        assert workspace.stage is SyncStage.SELECT
+        assert workspace.browser is None
+        wait_for(lambda: workspace.stage is SyncStage.SELECT)
+        assert len(comparisons) == 1 and comparisons[0] != gui_thread
+        assert all(
+            table.property("tableId") != "host-podcasts"
+            for table in workspace.findChildren(TrackTable)
+        )
         assert window.windowTitle() == "Sync with Host — iOpenPod"
         assert window.statusBar().currentMessage() == "Host items selected for Sync: 1"
         assert workspace.selection.track_check_state(1) is Qt.CheckState.Checked
@@ -661,6 +686,24 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
             "Song": Qt.CheckState.Checked,
             "New Song": Qt.CheckState.Unchecked,
         }
+        preview = workspace.findChild(QTableView, "syncPlaylistReviewChanges")
+        assert preview is not None and preview.model().rowCount() == 0
+        notifications = QSignalSpy(model.dataChanged)
+        new_row = next(
+            row
+            for row in range(model.rowCount())
+            if model.index(row, TrackColumn.TITLE).data() == "New Song"
+        )
+        assert model.setData(
+            model.index(new_row, TrackColumn.SYNC_SELECTION),
+            Qt.CheckState.Checked,
+            Qt.ItemDataRole.CheckStateRole,
+        )
+        assert notifications.count() == 1
+        first, last, _roles = notifications.at(0)
+        assert first.row() == last.row() == new_row
+        assert preview.model().rowCount() == 0
+        assert workspace.selection.set_tracks_checked((2,), False)
 
         bar = workspace.findChild(SyncStorageBar, "syncStorageBar")
         assert bar is not None and not bar.isHidden()
@@ -744,11 +787,11 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
 
 
-@pytest.mark.parametrize("disconnect_before_refresh", [False, True])
+@pytest.mark.parametrize("interrupt", ["none", "disconnect", "cancel"])
 def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    disconnect_before_refresh: bool,
+    interrupt: str,
 ) -> None:
     host_path = HostPath(tmp_path / "song.mp3")
     host = HostMediaLibrary(
@@ -846,7 +889,28 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         property(lambda _controller: current_active[0]),
     )
     refresh_calls: list[tuple[HostMediaLibrary, frozenset[HostPath]]] = []
-    presented: list[tuple[HostMediaLibrary, IPodMediaLibrary | None]] = []
+    entered = Event()
+    release = Event()
+    completed = Event()
+
+    def compare(
+        host: HostMediaLibrary,
+        ipod: IPodMediaLibrary,
+        library: LibrarySnapshot,
+        *,
+        file_tag_policy: str | None = None,
+    ) -> SyncPlan:
+        entered.set()
+        try:
+            assert release.wait(5)
+            return prepare_sync_plan(
+                host, ipod, library, file_tag_policy=file_tag_policy
+            )
+        finally:
+            completed.set()
+
+    if interrupt == "cancel":
+        monkeypatch.setattr(sync_comparison_controller, "prepare_sync_plan", compare)
 
     def refresh(library: HostMediaLibrary, paths: frozenset[HostPath]) -> bool:
         refresh_calls.append((library, paths))
@@ -854,33 +918,81 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
 
     monkeypatch.setattr(context.host_media_controller, "refresh_tracks", refresh)
 
-    def finish_media_scan(library: HostMediaLibrary, media: IPodMediaLibrary) -> None:
-        presented.append((library, media))
-
     def start_host_scan(_folders: object) -> bool:
         return True
 
-    monkeypatch.setattr(window, "_finish_media_scan", finish_media_scan)
     try:
         monkeypatch.setattr(context.host_media_controller, "start", start_host_scan)
         window._start_host_sync(())  # pyright: ignore[reportPrivateUsage]
         window._pending_host_media_library = host  # pyright: ignore[reportPrivateUsage]
-        ipod_media_scan_finished = cast(
-            "Callable[[object], None]",
-            window._ipod_media_scan_finished,  # pyright: ignore[reportPrivateUsage]
-        )
-        ipod_media_scan_finished(ipod)
+        context.ipod_media_controller.finished.emit(ipod)
+        workspace = window.findChild(SyncWorkspace)
+        assert workspace is not None
+        if interrupt == "cancel":
+            wait_for(entered.is_set)
+            workspace.scanCancelRequested.emit()
+            release.set()
+            wait_for(completed.is_set)
+            APPLICATION.processEvents()
+            assert not refresh_calls
+            assert workspace.stage is SyncStage.SCANNING and workspace.browser is None
+            return
+        wait_for(lambda: bool(refresh_calls))
         assert refresh_calls == [(host, frozenset({host_path}))]
-        assert not presented
+        assert workspace.stage is SyncStage.SCANNING
 
-        if disconnect_before_refresh:
+        if interrupt == "disconnect":
             current_active[0] = None
             context.device_controller.activeIPodChanged.emit(None)
 
         context.host_media_controller.refreshFinished.emit(host)
-        assert presented == ([] if disconnect_before_refresh else [(host, ipod)])
+        if interrupt == "disconnect":
+            APPLICATION.processEvents()
+            assert workspace.stage is SyncStage.SCANNING
+        else:
+            wait_for(lambda: workspace.stage is SyncStage.SELECT)
+            assert workspace.browser is not None and workspace.browser.library is host
     finally:
+        release.set()
         window.close()
         context.shutdown()
         window.deleteLater()
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
+
+
+def test_sync_selection_caches_selected_plan() -> None:
+    plan = _plan()
+    selection = _selection(plan)
+
+    first = selection.selected_plan
+    assert selection.selected_plan is first
+
+    assert selection.set_tracks_checked((1,), False)
+    second = selection.selected_plan
+    assert second is not first
+    assert selection.selected_plan is second
+
+    update_item = next(
+        item
+        for item in selection.review_plan.items
+        if item.action is SyncPlanAction.UPDATE
+    )
+    assert selection.set_review_items_checked((update_item,), False)
+    third = selection.selected_plan
+    assert third is not second
+    assert selection.selected_plan is third
+
+
+def test_sync_plan_page_defers_refresh_while_inactive() -> None:
+    plan = _plan()
+    selection = _selection(plan)
+    page = SyncPlanPage()
+    page.load_review(selection)
+    initial_plan = page._plan  # pyright: ignore[reportPrivateUsage]
+
+    page.set_deferred(True)
+    assert selection.set_tracks_checked((1,), False)
+    assert page._plan is initial_plan  # pyright: ignore[reportPrivateUsage]
+
+    page.set_deferred(False)
+    assert page._plan is selection.selected_plan  # pyright: ignore[reportPrivateUsage]

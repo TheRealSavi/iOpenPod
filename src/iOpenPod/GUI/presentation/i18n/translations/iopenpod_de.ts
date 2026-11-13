@@ -12108,6 +12108,10 @@ Playlists: %3</translation>
         <translation>Gespeicherte Mediathek-Dateien: {completed} von {total}</translation>
     </message>
     <message>
+        <source>Comparing Host and iPod media…</source>
+        <translation>Medien des Computers und des iPods werden verglichen…</translation>
+    </message>
+    <message>
         <source>Comparing the iPod media with its Sync helper…</source>
         <translation>iPod-Medien werden mit den gespeicherten Synchronisierungsinformationen verglichen…</translation>
     </message>

@@ -437,7 +437,7 @@ def test_workspace_stages_dialog_choices_in_review(
         timer.timeout.connect(choose)
         timer.start(10)
         assert workspace.browser is not None
-        page = workspace.browser.page_widgets[PageId.TRACKS]
+        page = workspace.browser.page(PageId.TRACKS)
         table = page.findChild(TrackTable)
         assert table is not None
         page.show()

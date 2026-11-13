@@ -12108,6 +12108,10 @@ Playlists: %3</translation>
         <translation>Archivos de biblioteca guardados: {completed} de {total}</translation>
     </message>
     <message>
+        <source>Comparing Host and iPod media…</source>
+        <translation>Comparando los medios del equipo y del iPod…</translation>
+    </message>
+    <message>
         <source>Comparing the iPod media with its Sync helper…</source>
         <translation>Comparando los medios del iPod con su índice auxiliar de sincronización…</translation>
     </message>

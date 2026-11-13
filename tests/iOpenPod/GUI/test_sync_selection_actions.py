@@ -129,8 +129,8 @@ def sync_browser() -> Iterator[
     )
     browser.load(library)
     browser.playlist_page.select_playlist(10)
-    for page in browser.pages:
-        parent.addWidget(page)
+    for page_id in browser.page_ids:
+        parent.addWidget(browser.page(page_id))
     parent.resize(1100, 850)
     parent.show()
     try:
@@ -220,7 +220,7 @@ def test_selecting_a_video_adds_it_to_the_sync_plan() -> None:
         settings, theme, provider, workspace, parent, selection
     )
     browser.load(library)
-    page = browser.page_widgets[PageId.VIDEOS]
+    page = browser.page(PageId.VIDEOS)
     table = page.findChild(TrackTable)
     assert table is not None
     model = table.model()
@@ -264,7 +264,7 @@ def test_choose_streams_targets_one_track_in_the_host_context_menu(
     sync_browser: tuple[HostLibraryBrowser, SyncSelection, QStackedWidget],
 ) -> None:
     browser, selection, parent = sync_browser
-    page = browser.page_widgets[PageId.TRACKS]
+    page = browser.page(PageId.TRACKS)
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     table = page.findChild(TrackTable)
@@ -296,7 +296,7 @@ def test_sync_context_menu_batches_highlighted_items_across_regrouping(
     view_type: type[QAbstractItemView],
 ) -> None:
     browser, selection, parent = sync_browser
-    page = browser.page_widgets[page_id]
+    page = browser.page(page_id)
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     view = page.findChild(view_type)
@@ -369,7 +369,7 @@ def test_sync_context_menu_retargets_unhighlighted_item_and_ignores_empty_space(
     view_type: type[QAbstractItemView],
 ) -> None:
     browser, selection, parent = sync_browser
-    page = browser.page_widgets[page_id]
+    page = browser.page(page_id)
     parent.setCurrentWidget(page)
     APPLICATION.processEvents()
     view = page.findChild(view_type)
@@ -416,7 +416,7 @@ def test_sync_track_checkbox_toggles_the_sorted_filtered_track(
     page_id: PageId,
 ) -> None:
     browser, selection, parent = sync_browser
-    page = browser.page_widgets[page_id]
+    page = browser.page(page_id)
     parent.setCurrentWidget(page)
     if page_id in (PageId.ALBUMS, PageId.ARTISTS, PageId.GENRES):
         grid = page.findChild(
@@ -462,7 +462,7 @@ def test_filtered_track_menu_leaves_hidden_tracks_unchanged(
     sync_browser: tuple[HostLibraryBrowser, SyncSelection, QStackedWidget],
 ) -> None:
     browser, selection, parent = sync_browser
-    page = browser.page_widgets[PageId.TRACKS]
+    page = browser.page(PageId.TRACKS)
     parent.setCurrentWidget(page)
     view = page.findChild(TrackTable)
     actions = parent.findChild(SyncSelectionActions)
