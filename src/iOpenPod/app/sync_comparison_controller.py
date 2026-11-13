@@ -51,6 +51,7 @@ class SyncComparisonController(QObject):
         ipod: IPodMediaLibrary,
         active: ActiveIPod,
         *,
+        sync_ratings: bool,
         file_tag_policy: str | None,
         check_host_details: bool,
     ) -> None:
@@ -61,7 +62,11 @@ class SyncComparisonController(QObject):
         def compare() -> None:
             try:
                 plan = prepare_sync_plan(
-                    host, ipod, active.library, file_tag_policy=file_tag_policy
+                    host,
+                    ipod,
+                    active.library,
+                    sync_ratings=sync_ratings,
+                    file_tag_policy=file_tag_policy,
                 )
                 refresh_paths = (
                     frozenset(

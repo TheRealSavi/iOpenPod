@@ -22,6 +22,7 @@ from iOpenPod.app.artwork_policy import (
     rockbox_artwork,
     rockbox_tag_policy,
 )
+from iOpenPod.app.back_sync import back_sync_ratings, resolved_rating
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.genius_mixes import supports_mix_creation
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
@@ -191,6 +192,8 @@ class SyncOptions:
     rockbox_metadata: bool = False
     scrobble: bool = True
     compute_missing_bpm: bool = False
+    back_sync_ratings: bool = False
+    rating_conflict_policy: str = "host"
 
 
 @dataclass(frozen=True, slots=True)
@@ -719,7 +722,9 @@ class SyncExecutor:
                     is None
                 )
                 has_user_match = any(
-                    item.basis is SyncPlanBasis.USER_MATCH for item in completed
+                    item.basis
+                    in (SyncPlanBasis.USER_MATCH, SyncPlanBasis.RATING_BACK_SYNC)
+                    for item in completed
                 )
                 # Optional frame failure can leave an artwork-only Update with
                 # the exact current Library. Still verify it and retain the
@@ -885,6 +890,46 @@ class SyncExecutor:
                         or association_changes
                         or retained_updates
                     ):
+                        synced_tracks = (
+                            *retained_updates,
+                            *(
+                                _pending_cover_provenance(request, item)
+                                if artwork_deferred
+                                else item.provenance
+                                for item in prepared
+                            ),
+                            *(
+                                _pending_cover_provenance(request, item)
+                                if artwork_deferred
+                                else item.provenance
+                                for item in metadata_updates
+                            ),
+                            *(
+                                SyncedTrack(
+                                    DevicePath(item.song.track.metadata.location),
+                                    item.acoustic_fingerprint,
+                                )
+                                for item in podcast_tracks
+                                if item.acoustic_fingerprint
+                            ),
+                        )
+                        with self._coordinator.sync_session(saved.active) as session:
+
+                            def validate_rating_device() -> None:
+                                if cancelled.is_set():
+                                    raise OSError(
+                                        "Rating Back Sync was cancelled after device publication."
+                                    )
+                                session.stat(DevicePath("iPod_Control"))
+
+                            synced_tracks, rating_issues = back_sync_ratings(
+                                request,
+                                saved.active,
+                                completed,
+                                synced_tracks,
+                                validate_device=validate_rating_device,
+                            )
+                        issues.extend(rating_issues)
                         helper = self._coordinator.publish_sync_success(
                             saved.active,
                             request.ipod
@@ -892,29 +937,7 @@ class SyncExecutor:
                             or request.plan.items
                             or request.ipod.persisted
                             else None,
-                            (
-                                *retained_updates,
-                                *(
-                                    _pending_cover_provenance(request, item)
-                                    if artwork_deferred
-                                    else item.provenance
-                                    for item in prepared
-                                ),
-                                *(
-                                    _pending_cover_provenance(request, item)
-                                    if artwork_deferred
-                                    else item.provenance
-                                    for item in metadata_updates
-                                ),
-                                *(
-                                    SyncedTrack(
-                                        DevicePath(item.song.track.metadata.location),
-                                        item.acoustic_fingerprint,
-                                    )
-                                    for item in podcast_tracks
-                                    if item.acoustic_fingerprint
-                                ),
-                            ),
+                            synced_tracks,
                             tuple(item.provenance for item in photos),
                             playlists=_committed_playlist_associations(
                                 tuple(playlist_associations), review
@@ -2259,6 +2282,7 @@ def _validate_plan(request: SyncExecutionRequest) -> SyncPlan:
             request.ipod,
             request.source.library,
             file_tag_policy=request.plan.file_tag_policy,
+            sync_ratings=request.plan.sync_ratings,
         ),
         request.plan.duplicate_resolutions,
     )
@@ -2496,6 +2520,24 @@ def _draft(
             artwork.append(ArtworkAsset(artwork_ids[identity], pixels))
         return artwork_ids[identity]
 
+    rating_baselines = {record.track_id: record.sync for record in request.ipod.tracks}
+
+    def reconciled_rating(identity: int, host: Track, old: Track) -> int:
+        if not (request.options.back_sync_ratings and request.plan.sync_ratings):
+            return old.rating
+        prior = rating_baselines.get(identity)
+        if prior is None or host_path_identity(
+            prior.host_path_hint
+        ) != host_path_identity(host.metadata.location):
+            return old.rating
+        return resolved_rating(
+            host.rating,
+            old.rating,
+            prior.host_rating,
+            prior.ipod_rating,
+            request.options.rating_conflict_policy,
+        )
+
     completed: list[SyncPlanItem] = []
     removed_photos: set[int] = set()
     next_track_id = min((0, *tracks)) - 1
@@ -2515,7 +2557,7 @@ def _draft(
                 song.track,
                 track_id=identity,
                 ipod=old.ipod,
-                rating=old.rating,
+                rating=reconciled_rating(identity, host_track, old),
                 play_count=old.play_count,
                 artwork_id=(
                     (
@@ -2588,8 +2630,12 @@ def _draft(
                     normalization_gain_db=host_track.metadata.normalization_gain_db,
                 ),
             )
+        track = replace(track, rating=reconciled_rating(identity, host_track, old))
         tracks[identity] = track
-        if request.options.rockbox_metadata:
+        if (
+            request.options.rockbox_metadata
+            and item.basis is not SyncPlanBasis.RATING_BACK_SYNC
+        ):
             embedded_artwork = (
                 None
                 if update.artwork is None
@@ -2859,6 +2905,7 @@ def _retained_playlist_mapping(
                 request.ipod,
                 request.source.library,
                 file_tag_policy=request.plan.file_tag_policy,
+                sync_ratings=request.plan.sync_ratings,
             ),
             request.plan.duplicate_resolutions,
         )

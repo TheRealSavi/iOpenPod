@@ -81,7 +81,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 16
+_CACHE_VERSION = 17
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
 _MAX_INSPECTION_WORKERS = 8
@@ -3199,7 +3199,7 @@ def _decode_cache_contents(
     version = _integer(document.get("version"), "version")
     if version == 9:
         expected = {"version", "entries", "catalog_sha256"}
-    elif version in (10, 11, 12, 13, 14, 15, _CACHE_VERSION):
+    elif version in (10, 11, 12, 13, 14, 15, 16, _CACHE_VERSION):
         expected = {
             "version",
             "entries",
@@ -3416,6 +3416,10 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             # Reobserve old coverless records once rather than reuse that claim.
             embedded_artwork_available = bool(artwork_kind_value)
             metadata_complete = metadata_complete and embedded_artwork_available
+        if version <= 16:
+            # Earlier parsers omitted native ratings while marking Tracks complete.
+            # Reinspect each unchanged Track once; retain its Acoustic Fingerprint.
+            metadata_complete = False
         artwork_path_value = _text(metadata["artwork_path"], "artwork_path")
         artwork_digest_value = _text(
             metadata["artwork_content_sha256"],

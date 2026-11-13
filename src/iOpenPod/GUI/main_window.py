@@ -30,6 +30,7 @@ from iOpenPod.app.backups import BackupProgress
 from iOpenPod.app.chaptered_conversion_controller import ChapteredConversionController
 from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.settings.definitions import (
+    BACK_SYNC_RATINGS,
     NAVIGATION_STYLE,
     PLAYER_AUTO_MINIMIZE,
     PLAYER_POSITION,
@@ -2128,6 +2129,7 @@ class MainWindow(QMainWindow):
             host,
             ipod,
             active,
+            sync_ratings=self._context.settings.get(BACK_SYNC_RATINGS),
             file_tag_policy=rockbox_tag_policy(active.profile)
             if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
             else None,

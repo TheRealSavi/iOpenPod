@@ -169,3 +169,29 @@ def test_policy_precedence_is_visible_and_optional_sync_settings_save() -> None:
     assert settings.get(ROCKBOX_METADATA_SUPPORT) is True
     parent.close()
     application.processEvents()
+
+
+def test_rating_back_sync_defaults_off_and_conflict_choice_persists() -> None:
+    from iOpenPod.app.core.settings.definitions import (
+        BACK_SYNC_RATINGS,
+        RATING_CONFLICT_POLICY,
+    )
+
+    _app()
+    parent = QWidget()
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    settings.set_global(BACK_SYNC_RATINGS, False)
+    settings.set_global(RATING_CONFLICT_POLICY, "host")
+    widget = SyncSettings(settings, parent)
+    toggle = widget.findChild(AppComboBox, "backSyncRatings")
+    policy = widget.findChild(AppComboBox, "ratingConflictPolicy")
+    assert toggle is not None and policy is not None
+    assert toggle.currentData() is False
+    assert policy.currentData() == "host"
+    toggle.setCurrentIndex(toggle.findData(True))
+    policy.setCurrentIndex(policy.findData("average"))
+    assert settings.get(BACK_SYNC_RATINGS) is True
+    assert settings.get(RATING_CONFLICT_POLICY) == "average"
+    settings.set_global(BACK_SYNC_RATINGS, False)
+    settings.set_global(RATING_CONFLICT_POLICY, "host")
+    parent.close()

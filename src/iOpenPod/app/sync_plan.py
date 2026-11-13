@@ -54,6 +54,7 @@ class SyncPlanBasis(StrEnum):
     HOST_FACTS_CHANGED = "host_facts_changed"
     HOST_FACTS_MATCH = "host_facts_match"
     TRACK_DETAILS_CHANGED = "track_details_changed"
+    RATING_BACK_SYNC = "rating_back_sync"
     AUDIO_PAYLOAD_CHANGED = "audio_payload_changed"
     MEDIA_SOURCE_CHANGED = "media_source_changed"
     TRACK_DETAILS_MATCH = "track_details_match"
@@ -146,6 +147,7 @@ class SyncPlan:
     """One immutable, review-only account of a completed scan comparison."""
 
     items: tuple[SyncPlanItem, ...]
+    sync_ratings: bool = field(default=False, kw_only=True)
     file_tag_policy: str | None = field(default=None, kw_only=True)
     duplicate_groups: tuple[SyncDuplicateGroup, ...] = field(default=(), kw_only=True)
     duplicate_resolutions: tuple[SyncDuplicateResolution, ...] = field(
@@ -352,6 +354,7 @@ def prepare_sync_plan(
     ipod_library: LibrarySnapshot,
     *,
     file_tag_policy: str | None = None,
+    sync_ratings: bool = False,
 ) -> SyncPlan:
     """Correlate completed Host and iPod scans without mutating either source.
 
@@ -399,7 +402,10 @@ def prepare_sync_plan(
 
     items = [
         _paired_item(
-            host_candidates[host_index], ipod_candidates[ipod_index], file_tag_policy
+            host_candidates[host_index],
+            ipod_candidates[ipod_index],
+            file_tag_policy,
+            sync_ratings=sync_ratings,
         )
         for host_index, ipod_index in pairs
     ]
@@ -408,6 +414,7 @@ def prepare_sync_plan(
     items.extend(attention)
     return SyncPlan(
         tuple(sorted(items, key=_item_sort_key)),
+        sync_ratings=sync_ratings,
         file_tag_policy=file_tag_policy,
         duplicate_groups=_duplicate_groups(
             host_candidates, ipod_candidates, pairs, attention, ipod_library
@@ -487,6 +494,7 @@ def select_sync_plan(
 
     return SyncPlan(
         tuple(sorted(items, key=_item_sort_key)),
+        sync_ratings=comparison.sync_ratings,
         file_tag_policy=comparison.file_tag_policy,
         duplicate_groups=comparison.duplicate_groups,
         duplicate_resolutions=comparison.duplicate_resolutions,
@@ -582,6 +590,7 @@ def resolve_sync_duplicates(
     items.extend(replacements)
     return SyncPlan(
         tuple(sorted(items, key=_item_sort_key)),
+        sync_ratings=comparison.sync_ratings,
         file_tag_policy=comparison.file_tag_policy,
         duplicate_groups=comparison.duplicate_groups,
         duplicate_resolutions=resolutions,
@@ -876,7 +885,11 @@ def _pair_unique_groups[Key](
 
 
 def _paired_item(
-    host: _Candidate, ipod: _Candidate, file_tag_policy: str | None
+    host: _Candidate,
+    ipod: _Candidate,
+    file_tag_policy: str | None,
+    *,
+    sync_ratings: bool = False,
 ) -> SyncPlanItem:
     sync = ipod.sync
     if sync is None:
@@ -959,8 +972,20 @@ def _paired_item(
         file_tags_changed = (
             file_tag_policy is not None and sync.file_tag_policy != file_tag_policy
         )
+        rating_changed = (
+            sync_ratings
+            and host.track is not None
+            and ipod.track is not None
+            and sync.host_rating is not None
+            and sync.ipod_rating is not None
+            and (
+                host.track.rating != sync.host_rating
+                or ipod.track.rating != sync.ipod_rating
+            )
+        )
         if (
-            audio_payload_changed
+            rating_changed
+            or audio_payload_changed
             or metadata_changed
             or artwork_changed
             or file_tags_changed
@@ -973,6 +998,8 @@ def _paired_item(
                     else SyncPlanBasis.AUDIO_PAYLOAD_CHANGED
                     if audio_payload_changed
                     else SyncPlanBasis.TRACK_DETAILS_CHANGED
+                    if metadata_changed or artwork_changed or file_tags_changed
+                    else SyncPlanBasis.RATING_BACK_SYNC
                 ),
                 host,
                 ipod,

@@ -559,10 +559,17 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         ipod: IPodMediaLibrary,
         library: LibrarySnapshot,
         *,
+        sync_ratings: bool = False,
         file_tag_policy: str | None = None,
     ) -> SyncPlan:
         comparisons.append(get_ident())
-        return prepare_sync_plan(host, ipod, library, file_tag_policy=file_tag_policy)
+        return prepare_sync_plan(
+            host,
+            ipod,
+            library,
+            sync_ratings=sync_ratings,
+            file_tag_policy=file_tag_policy,
+        )
 
     def unexpected_comparison(*_args: object, **_kwargs: object) -> SyncPlan:
         pytest.fail("Playlist Review must reuse the current comparison")
@@ -898,13 +905,18 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         ipod: IPodMediaLibrary,
         library: LibrarySnapshot,
         *,
+        sync_ratings: bool = False,
         file_tag_policy: str | None = None,
     ) -> SyncPlan:
         entered.set()
         try:
             assert release.wait(5)
             return prepare_sync_plan(
-                host, ipod, library, file_tag_policy=file_tag_policy
+                host,
+                ipod,
+                library,
+                sync_ratings=sync_ratings,
+                file_tag_policy=file_tag_policy,
             )
         finally:
             completed.set()

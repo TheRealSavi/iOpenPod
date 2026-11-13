@@ -299,6 +299,10 @@ def _media_label(kind: SyncPlanMediaKind) -> str:
 
 
 def _basis_label(item: SyncPlanItem) -> str:
+    if item.basis is SyncPlanBasis.RATING_BACK_SYNC:
+        return QCoreApplication.translate(
+            "SyncPlanTableModel", "Reconcile changed star ratings"
+        )
     if item.stream_selection_changed and item.stream_selection is None:
         return QCoreApplication.translate(
             "SyncPlanTableModel", "Restore automatic stream selection"

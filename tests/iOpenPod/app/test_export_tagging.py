@@ -245,3 +245,24 @@ def test_retagging_reuses_existing_padding_without_growing_file(
     # Repeated normalization keeps the same allocation instead of stripping the
     # existing tag space and shifting the media payload on every edit.
     assert len(ExportMediaTagger().prepare_bytes(output, name, _track())) == len(data)
+
+
+@pytest.mark.parametrize("name", ["tone.mp3", "tone.m4a"])
+@pytest.mark.parametrize("rating", [0, 20, 80, 100])
+def test_exported_rating_uses_current_library_value(
+    tmp_path: Path, name: str, rating: int
+) -> None:
+    from dataclasses import replace
+
+    import mutagen
+
+    from iOpenPod.app.media.tags import read_tag_values
+
+    path = _fixture(tmp_path, name)
+    tagger = ExportMediaTagger()
+    tagger.prepare(HostPath(path), replace(_track(), rating=100 - rating), None)
+    tagger.prepare(HostPath(path), replace(_track(), rating=rating), None)
+    audio = cast("Any", mutagen.File)(path)
+    assert {t.name: t.value for t in read_tag_values(audio.tags)}["rating"] == str(
+        rating
+    )

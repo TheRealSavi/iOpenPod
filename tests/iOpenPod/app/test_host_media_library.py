@@ -210,9 +210,7 @@ def test_appledouble_directories_are_not_scanned_as_media(
         assert not library.issues
 
 
-def test_v13_cache_reparses_rejected_playlist_references_without_rereading_media(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_v13_cache_reparses_playlist_and_track(tmp_path: Path) -> None:
     song = tmp_path / "Song.wav"
     _write_wav(song)
     (tmp_path / "Favorites.m3u8").write_text("Song.wav\n", encoding="utf-8")
@@ -239,25 +237,12 @@ def test_v13_cache_reparses_rejected_playlist_references_without_rereading_media
         ).encode()
     ).hexdigest()
     cache.replace_bytes(json.dumps(document).encode())
-    native_open = LocalHostFile.open_read
-
-    def reject_media_read(
-        self: LocalHostFile,
-        *,
-        checkpoint: Callable[[], None] | None = None,
-        max_bytes: int | None = None,
-    ) -> object:
-        if self.path == HostPath(song):
-            pytest.fail("Playlist migration reread unchanged media")
-        return native_open(self, checkpoint=checkpoint, max_bytes=max_bytes)
-
-    monkeypatch.setattr(LocalHostFile, "open_read", reject_media_read)
     scanner = HostMediaScanner(cache)
     pending = scanner.scan((folder,), checkpoint=lambda: None)
     library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(library.snapshot.playlists[0].entries) == 1
     assert not library.issues
-    assert pending.cache == HostMediaCacheStats(reused=1, inspected=1)
+    assert pending.cache == HostMediaCacheStats(inspected=2)
     repeated = HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
     assert repeated.cache == HostMediaCacheStats(reused=2)
 
@@ -323,7 +308,7 @@ def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) 
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.cache.reused == 0
-    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 16
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 17
 
 
 @pytest.mark.parametrize("damage", ["zero_size", "different_source"])
@@ -486,7 +471,7 @@ def test_in_memory_cache_notices_external_invalidation(
         cache.path.write_bytes(b"invalid")
     changed = scanner.scan((folder,), checkpoint=lambda: None)
     assert changed.cache == HostMediaCacheStats(inspected=1)
-    assert json.loads(cache.path.read_bytes())["version"] == 16
+    assert json.loads(cache.path.read_bytes())["version"] == 17
 
 
 def test_cache_save_failure_retains_work_in_memory_and_retries_persistence(
@@ -1717,8 +1702,82 @@ def test_folder_cover_bytes_are_not_reread_until_file_facts_change(
     assert changed.snapshot.tracks[0].artwork_id != first.snapshot.tracks[0].artwork_id
 
 
-@pytest.mark.parametrize("version", [9, 10, 11, 12, 13, 14, 15])
-def test_prior_host_cache_reuses_unchanged_media_and_cover(
+def test_v16_track_cache_recovers_rating_missing_from_old_parser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    song = tmp_path / "Rated.flac"
+    fixture = Path(__file__).resolve().parents[2] / "fixtures/media/surround.flac.b64"
+    song.write_bytes(base64.decodebytes(fixture.read_bytes()))
+    parsed = mutagen.File(song)
+    assert parsed is not None and parsed.tags is not None
+    parsed.tags["RATING"] = ["4"]
+    parsed.save()
+    photo = tmp_path / "Photo.png"
+    Image.new("RGB", (2, 2)).save(photo)
+    (tmp_path / "Favorites.m3u8").write_text("Rated.flac\n", encoding="utf-8")
+    cache = AtomicHostFile(tmp_path / "cache.json")
+    folder = create_host_media_folder(tmp_path)
+    fingerprint_calls = 0
+
+    def fingerprint(*args: object, **kwargs: object) -> str:
+        nonlocal fingerprint_calls
+        fingerprint_calls += 1
+        return "1,2,3"
+
+    monkeypatch.setattr(FpcalcFingerprinter, "fingerprint", fingerprint)
+    initial_scanner = HostMediaScanner(cache)
+    initial = initial_scanner.scan((folder,), checkpoint=lambda: None)
+    assert (
+        initial_scanner.complete(initial, frozenset(), checkpoint=lambda: None)
+        .snapshot.tracks[0]
+        .rating
+        == 80
+    )
+    assert fingerprint_calls == 1
+    document = json.loads(cache.path.read_bytes())
+    document["version"] = 16
+    track_entry = next(row for row in document["entries"] if row["kind"] == "audio")
+    track_entry["metadata"]["tag_values"] = [
+        tag for tag in track_entry["metadata"]["tag_values"] if tag["name"] != "rating"
+    ]
+    assert track_entry["metadata"]["metadata_complete"] is True
+    document["catalog_sha256"] = hashlib.sha256(
+        json.dumps(
+            document["entries"],
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    cache.replace_bytes(json.dumps(document).encode())
+
+    recovered_scanner = HostMediaScanner(cache)
+    recovered = recovered_scanner.scan((folder,), checkpoint=lambda: None)
+    assert recovered.cache == HostMediaCacheStats(reused=2, inspected=1)
+    assert (
+        recovered_scanner.complete(recovered, frozenset(), checkpoint=lambda: None)
+        .snapshot.tracks[0]
+        .rating
+        == 80
+    )
+    assert (
+        next(
+            record.source.acoustic_fingerprint
+            for record in recovered.cached_records
+            if record.kind.value == "audio"
+        )
+        == "1,2,3"
+    )
+    assert fingerprint_calls == 1
+    assert HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None).cache == (
+        HostMediaCacheStats(reused=3)
+    )
+    assert json.loads(cache.path.read_bytes())["version"] == 17
+
+
+@pytest.mark.parametrize("version", [9, 10, 11, 12, 13, 14, 15, 16])
+def test_prior_host_cache_reinspects_track_and_reuses_cover(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
 ) -> None:
     selected = tmp_path / "Selected"
@@ -1775,8 +1834,8 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         checkpoint: Callable[[], None] | None = None,
         max_bytes: int | None = None,
     ) -> object:
-        if self.path in (HostPath(cover), HostPath(selected / "Track.wav")):
-            pytest.fail("Cache migration reread unchanged media or artwork")
+        if self.path == HostPath(cover):
+            pytest.fail("Cache migration reread unchanged cover artwork")
         return native_open_read(self, checkpoint=checkpoint, max_bytes=max_bytes)
 
     monkeypatch.setattr(LocalHostFile, "open_read", reject_cover_read)
@@ -1784,7 +1843,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         (folder,), checkpoint=lambda: None
     )
 
-    assert upgraded.cache == HostMediaCacheStats(reused=1)
+    assert upgraded.cache == HostMediaCacheStats(inspected=1)
     assert (
         scanner.complete(upgraded, frozenset(), checkpoint=lambda: None)
         .sources[0]
@@ -1792,7 +1851,7 @@ def test_prior_host_cache_reuses_unchanged_media_and_cover(
         == "1,2,3"
     )
     stored = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert stored["version"] == 16
+    assert stored["version"] == 17
     assert "payload_sha256" not in stored["entries"][0]["metadata"]
 
 
@@ -2247,7 +2306,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 16
+    assert document["version"] == 17
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {
@@ -2949,8 +3008,8 @@ def test_external_inspection_checkpoints_during_long_completion(
 
 @pytest.mark.parametrize("version", [14, 15])
 @pytest.mark.parametrize("state", ["complete", "warning", "failed"])
-def test_legacy_playlist_cache_retries_unproven_reads_and_keeps_healthy_media(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int, state: str
+def test_legacy_playlist_cache_retries_unproven_reads_and_reinspects_track(
+    tmp_path: Path, version: int, state: str
 ) -> None:
     song = tmp_path / "Song.wav"
     _write_wav(song)
@@ -2979,28 +3038,15 @@ def test_legacy_playlist_cache_retries_unproven_reads_and_keeps_healthy_media(
         ).encode()
     ).hexdigest()
     cache.replace_bytes(json.dumps(document).encode())
-    native_read = LocalHostFile.open_read
-
-    def reject_media_read(
-        self: LocalHostFile,
-        *,
-        checkpoint: Callable[[], None] | None = None,
-        max_bytes: int | None = None,
-    ) -> object:
-        if self.path == HostPath(song):
-            pytest.fail("Playlist recovery discarded healthy media analysis")
-        return native_read(self, checkpoint=checkpoint, max_bytes=max_bytes)
-
-    monkeypatch.setattr(LocalHostFile, "open_read", reject_media_read)
     scanner = HostMediaScanner(cache)
     pending = scanner.scan((folder,), checkpoint=lambda: None)
     library = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(library.snapshot.playlists[0].entries) == 1
     assert not library.issues
     assert library.cache == (
-        HostMediaCacheStats(reused=2)
+        HostMediaCacheStats(reused=1, inspected=1)
         if state == "complete"
-        else HostMediaCacheStats(reused=1, inspected=1)
+        else HostMediaCacheStats(inspected=2)
     )
     assert HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None).cache == (
         HostMediaCacheStats(reused=2)

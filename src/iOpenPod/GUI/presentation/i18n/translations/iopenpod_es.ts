@@ -9846,6 +9846,10 @@ Playlists: %3</translation>
         <source>iPod: %1</source>
         <translation>iPod: %1</translation>
     </message>
+    <message>
+        <source>Reconcile changed star ratings</source>
+        <translation>Conciliar las valoraciones modificadas</translation>
+    </message>
 </context>
 <context>
     <name>SyncReviewGroup</name>
@@ -10038,6 +10042,34 @@ Playlists: %3</translation>
     <message>
         <source>Fill missing BPM for new music and music already on the iPod during Sync. Existing BPM values and Host files stay unchanged. Works with Analyze for Genius off.</source>
         <translation>Completar los BPM faltantes de la música nueva y de la que ya está en el iPod durante la sincronización. Los valores de BPM existentes y los archivos del equipo no se modifican. Funciona con «Analizar para Genius» desactivado.</translation>
+    </message>
+    <message>
+        <source>Sync star ratings to Host files</source>
+        <translation>Sincronizar valoraciones con archivos del equipo</translation>
+    </message>
+    <message>
+        <source>Write changed ratings to paired Host files after verified Sync. Off by default.</source>
+        <translation>Escribe las valoraciones modificadas en los archivos vinculados del equipo tras verificar la sincronización. Desactivado por defecto.</translation>
+    </message>
+    <message>
+        <source>Host wins</source>
+        <translation>Priorizar el equipo</translation>
+    </message>
+    <message>
+        <source>iPod wins</source>
+        <translation>Priorizar el iPod</translation>
+    </message>
+    <message>
+        <source>Average</source>
+        <translation>Promedio</translation>
+    </message>
+    <message>
+        <source>When both ratings change</source>
+        <translation>Cuando cambian ambas valoraciones</translation>
+    </message>
+    <message>
+        <source>Choose which rating to use when the Host and iPod ratings both changed.</source>
+        <translation>Elige qué valoración usar cuando cambian tanto la del equipo como la del iPod.</translation>
     </message>
 </context>
 <context>
@@ -15468,6 +15500,18 @@ Firmware verificado para la familia de actualización {family}: {firmware}.</tra
     <message>
         <source>Some music analysis or cache work was unavailable. BPM remains unchanged where no tempo could be measured.</source>
         <translation>Parte del análisis de música o del trabajo de caché no estuvo disponible. Los BPM no cambian cuando no se puede medir el tempo.</translation>
+    </message>
+    <message>
+        <source>The iPod Sync completed, but its Host rating update could not finish. Rescan and retry Sync.</source>
+        <translation>La sincronización del iPod terminó, pero no se pudo actualizar la valoración en el equipo. Vuelve a analizar y sincronizar.</translation>
+    </message>
+    <message>
+        <source>The paired Host file was unavailable; its rating baseline was kept. Rescan before the next Sync.</source>
+        <translation>El archivo vinculado del equipo no estaba disponible; se conservó la valoración de referencia. Vuelve a analizar antes de sincronizar.</translation>
+    </message>
+    <message>
+        <source>Updated Host rating from {old} to {new} stars.</source>
+        <translation>Valoración del equipo actualizada de {old} a {new} estrellas.</translation>
     </message>
 </context>
 <context>

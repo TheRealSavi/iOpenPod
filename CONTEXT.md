@@ -14,6 +14,13 @@ then beyond it.
 
 ## Current stage
 
+Native star ratings in MP4, FLAC/Vorbis, APE and ASF now reach scanned Tracks.
+Settings > Sync offers default-off rating Back Sync to paired Host files, with
+Host/iPod/average conflict choices and separate rating baselines. Host tag writes
+follow verified device publication; failures preserve baselines for retry.
+Exports include the current rating. See
+[Host media tags](docs/host-media-tags.md#rating-reads-and-back-sync).
+
 Settings > iPod Preferences groups and searches saved observations. Explicit
 Apply/Revert editing is implemented behind the currently disabled development
 flag `ENABLE_IPOD_PREFERENCES_WRITES`, for verified fields in the latest studied Mini 1/2,

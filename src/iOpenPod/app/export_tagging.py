@@ -12,7 +12,7 @@ from mutagen import MutagenError, PaddingInfo
 from mutagen.aiff import AIFF
 from mutagen.id3 import ID3, ID3NoHeaderError
 from mutagen.mp3 import MP3
-from mutagen.mp4 import MP4, MP4Cover
+from mutagen.mp4 import MP4, MP4Cover, MP4FreeForm
 from mutagen.wave import WAVE
 from PIL import Image, ImageChops
 
@@ -255,6 +255,22 @@ def _apply_id3_tags(
         tags.delall(key)
     if not preserve_artwork:
         tags.delall("APIC")
+    owners = tags.getall("POPM")
+    if owners:
+        for owner in owners:
+            owner.rating = (0, 1, 64, 128, 196, 255)[
+                min(5, max(0, (track.rating + 10) // 20))
+            ]
+    else:
+        tags.add(
+            _ID3_FRAMES.POPM(
+                email="iOpenPod",
+                rating=(0, 1, 64, 128, 196, 255)[
+                    min(5, max(0, (track.rating + 10) // 20))
+                ],
+                count=0,
+            )
+        )
     metadata = track.metadata
     frame_values = (
         (_ID3_FRAMES.TIT2, track.title),
@@ -327,6 +343,9 @@ def _tag_mp4(
         raise ValueError("The exported MP4 file does not support metadata.")
     metadata = track.metadata
     values: dict[str, object | None] = {
+        "----:com.apple.iTunes:RATING": [
+            cast("Any", MP4FreeForm)(str(track.rating).encode("ascii"))
+        ],
         "\xa9nam": [track.title] if track.title else None,
         "\xa9ART": [track.artist] if track.artist else None,
         "\xa9alb": [track.album] if track.album else None,
