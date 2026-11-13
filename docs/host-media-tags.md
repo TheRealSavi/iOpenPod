@@ -2,10 +2,10 @@
 
 The Application Layer's `media.tags` adapter interprets native Mutagen values and
 FFprobe metadata for Host Media Scan, music import, and Sync enrichment. Scanning
-is read-only. Normalized fields survive Host Media Scan Cache v18. Older Track
-metadata is reinspected once to record file identity and recover previously
-unread native ratings. Cached Acoustic Fingerprints, Photos, and folder artwork
-remain reusable when their file facts match. Tags describe Library classification, not codec
+is read-only. Normalized fields survive Host Media Scan Cache v17. Older Track
+metadata is reinspected once to recover previously unread native ratings.
+Cached Acoustic Fingerprints, Photos, and folder artwork remain reusable when
+their file facts match. Tags describe Library classification, not codec
 compatibility. See [ADR-0133](adr/0133-recover-evidenced-artwork-without-clearing-unavailable-covers.md).
 Pre-v14 Playlist records are reparsed once to restore network filesystem
 references and valid POSIX names, including album folders ending in a period;

@@ -28,7 +28,8 @@ def replace_host_file(
 
     ``transform`` must verify its result before returning. A transformation or
     precondition failure leaves the original intact. Publication is atomic for
-    this file; it is independent of any removable-device transaction.
+    this file; it is independent of any removable-device transaction. The
+    replacement must change at least one of size and modification time.
     """
     path = Path(observed.path)
     with pin_host_directory(path.parent, allow_network=True) as parent:
@@ -36,12 +37,13 @@ def replace_host_file(
         checkpoint()
         name = f".{path.name}.{uuid4().hex}.tmp"
         staged = path.parent / name
-        directory = {"dir_fd": parent} if isinstance(parent, int) else {}
+        stage_path = name if isinstance(parent, int) else staged
+        parent_fd = parent if isinstance(parent, int) else None
         descriptor = os.open(
-            name if isinstance(parent, int) else staged,
+            stage_path,
             os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
             0o600,
-            **directory,
+            dir_fd=parent_fd,
         )
         try:
             with os.fdopen(descriptor, "w+b") as output:
@@ -52,10 +54,26 @@ def replace_host_file(
                     shutil.copyfileobj(source, output, length=1024 * 1024)
                 output.seek(0)
                 transform(output)
+                output.flush()
                 if sys.platform != "win32":
                     os.fchmod(output.fileno(), mode)
-                output.flush()
+                    _advance_colliding_mtime(
+                        output.fileno(), os.fstat(output.fileno()), observed
+                    )
                 os.fsync(output.fileno())
+            if sys.platform == "win32":
+                # Windows can defer the last write time until the writer closes.
+                _advance_colliding_mtime(staged, staged.lstat(), observed)
+            staged_metadata = os.stat(
+                stage_path, dir_fd=parent_fd, follow_symlinks=False
+            )
+            if (staged_metadata.st_size, staged_metadata.st_mtime_ns) == (
+                observed.size_bytes,
+                observed.modified_ns,
+            ):
+                raise OSError(
+                    "The Host filesystem did not advance the staged modification time."
+                )
             observed.validate()
             checkpoint()
             metadata = (
@@ -77,3 +95,15 @@ def replace_host_file(
             else:
                 staged.unlink(missing_ok=True)
     return LocalHostFile.observe(observed.path)
+
+
+def _advance_colliding_mtime(
+    stage: Path | int, metadata: os.stat_result, observed: LocalHostFile
+) -> None:
+    if (metadata.st_size, metadata.st_mtime_ns) == (
+        observed.size_bytes,
+        observed.modified_ns,
+    ):
+        # A full FAT timestamp tick covers filesystems with coarser resolution
+        # than the system clock. The caller verifies the stored value.
+        os.utime(stage, ns=(metadata.st_atime_ns, observed.modified_ns + 2_000_000_000))

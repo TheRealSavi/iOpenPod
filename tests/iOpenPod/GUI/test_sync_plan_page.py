@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
+from iOpenPod.app.back_sync import RatingDecision
 from iOpenPod.app.core.settings.definitions import RETRANSCODE_LOSSY
 from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
@@ -44,7 +45,7 @@ from iOpenPod.app.models.device import (
     DeviceCandidateId,
     DeviceReadiness,
 )
-from iOpenPod.app.models.sync_plan_table_model import SyncPlanColumn
+from iOpenPod.app.models.sync_plan_table_model import SyncPlanColumn, SyncPlanTableModel
 from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackColumn
 from iOpenPod.app.sync_plan import (
@@ -151,6 +152,20 @@ def _group(page: SyncPlanPage, action: SyncPlanAction) -> SyncReviewGroup:
         group
         for group in page.findChildren(SyncReviewGroup)
         if group.action is action and group.media in {None, SyncPlanMediaKind.TRACK}
+    )
+
+
+def test_review_shows_rating_targets_alongside_other_track_changes() -> None:
+    item = replace(
+        _item(SyncPlanAction.UPDATE, "track.mp3"),
+        basis=SyncPlanBasis.TRACK_DETAILS_CHANGED,
+        metadata_changed=True,
+        rating=RatingDecision(20, 80, 60, 60),
+    )
+    model = SyncPlanTableModel()
+    model.replace_plan(SyncPlan((item,), rating_conflict_policy="average"))
+    assert model.index(0, SyncPlanColumn.REASON).data() == (
+        "Host tags differ from the iPod · Set Host rating to 3 / 5 · Set iPod rating to 3 / 5"
     )
 
 

@@ -1,5 +1,6 @@
 """Host edits stage before replacement and reject changed reviewed files."""
 
+import os
 from pathlib import Path
 from typing import BinaryIO
 
@@ -78,3 +79,26 @@ def test_replacement_preserves_existing_hard_links(tmp_path: Path) -> None:
 
     assert path.samefile(alias)
     assert path.read_bytes() == b"original"
+
+
+def test_replacement_keeps_original_when_mtime_cannot_advance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "track"
+    path.write_bytes(b"original")
+    observed = LocalHostFile.observe(HostPath(path))
+    set_time = os.utime
+
+    def collide(staged: BinaryIO) -> None:
+        staged.write(b"verified")
+        staged.flush()
+        temp = next(tmp_path.glob(".track.*.tmp"))
+        set_time(temp, ns=(observed.modified_ns, observed.modified_ns))
+
+    monkeypatch.setattr(os, "utime", lambda *args, **kwargs: None)
+    with pytest.raises(OSError, match="did not advance"):
+        replace_host_file(observed, collide)
+
+    assert path.read_bytes() == b"original"
+    assert LocalHostFile.observe(HostPath(path)) == observed
+    assert list(tmp_path.iterdir()) == [path]

@@ -150,7 +150,6 @@ def test_legacy_cache_absence_is_rechecked_for_invalid_embedded_cover(
     document["version"] = 11
     for row in document["entries"]:
         row["metadata"].pop("no_audio", None)
-        row["metadata"].pop("file_identity", None)
     for entry in document["entries"]:
         entry["metadata"].pop("embedded_artwork_available", None)
         entry["metadata"]["metadata_complete"] = True

@@ -1543,10 +1543,6 @@ def _save_helper(
     playlists: tuple[PlaylistAssociation, ...] | None = None,
 ) -> tuple[FileFingerprint, FileFingerprint | None]:
     rating_revision = loaded.ratings.revision
-    if loaded.rating_issue is None:
-        rating_revision = _save_rating_catalog(
-            session, _rating_records(tracks), loaded.ratings
-        )
     if playlists is None:
         playlists = loaded.playlists
     unchanged = (
@@ -1561,6 +1557,13 @@ def _save_helper(
     if unchanged:
         assert loaded.revision is not None
         return loaded.revision, rating_revision
+    if loaded.inline_ratings and loaded.rating_issue is None:
+        # Preserve preview baselines before removing them from the v7 document.
+        rating_revision = _save_rating_catalog(
+            session,
+            loaded.ratings.records | _rating_records(loaded.tracks),
+            loaded.ratings,
+        )
     payload = _encode_helper(
         tracks,
         images,
@@ -1576,6 +1579,13 @@ def _save_helper(
         expected=loaded.revision,
         create_parents=True,
     )
+    if loaded.rating_issue is None:
+        # Pending Host work must survive a failed update of the v7 helper.
+        rating_revision = _save_rating_catalog(
+            session,
+            _rating_records(tracks),
+            replace(loaded.ratings, revision=rating_revision),
+        )
     return result.fingerprint, rating_revision
 
 

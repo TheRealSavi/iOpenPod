@@ -21,6 +21,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import build_context
 from device_registry import DEFAULT_DEVICE_REGISTRY
 from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
+    BACK_SYNC_RATINGS,
     COMPUTE_MISSING_BPM,
     COMPUTE_SOUND_CHECK,
 )
@@ -400,12 +401,9 @@ def test_podcast_sync_uses_shared_reservation_without_host_scans(
     assert active is not None
     workspace.load(active.library)
     service = SyncExecutionStub()
-    controller = SyncController(
-        service,
-        workspace,
-        devices,
-        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
-    )
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    settings.set_global(BACK_SYNC_RATINGS, True)
+    controller = SyncController(service, workspace, devices, settings)
     podcasts = PodcastSyncRequest(PodcastSnapshot(writable=True))
     try:
         assert controller.start_podcasts(podcasts, active)

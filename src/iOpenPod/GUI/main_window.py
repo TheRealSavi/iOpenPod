@@ -34,6 +34,7 @@ from iOpenPod.app.core.settings.definitions import (
     NAVIGATION_STYLE,
     PLAYER_AUTO_MINIMIZE,
     PLAYER_POSITION,
+    RATING_CONFLICT_POLICY,
     ROCKBOX_METADATA_SUPPORT,
     WINDOW_GEOMETRY,
     NavigationStyle,
@@ -2060,7 +2061,11 @@ class MainWindow(QMainWindow):
                 host,
                 value,
                 active_ipod.library,
-                sync_ratings=self._context.settings.get(BACK_SYNC_RATINGS),
+                rating_conflict_policy=self._context.settings.get(
+                    RATING_CONFLICT_POLICY
+                )
+                if self._context.settings.get(BACK_SYNC_RATINGS)
+                else None,
                 file_tag_policy=rockbox_tag_policy(active_ipod.profile)
                 if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
                 else None,
@@ -2105,7 +2110,11 @@ class MainWindow(QMainWindow):
                     value,
                     ipod,
                     active_ipod.library,
-                    sync_ratings=self._context.settings.get(BACK_SYNC_RATINGS),
+                    rating_conflict_policy=self._context.settings.get(
+                        RATING_CONFLICT_POLICY
+                    )
+                    if self._context.settings.get(BACK_SYNC_RATINGS)
+                    else None,
                     file_tag_policy=rockbox_tag_policy(active_ipod.profile)
                     if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
                     else None,

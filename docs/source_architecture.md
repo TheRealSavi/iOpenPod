@@ -1788,9 +1788,9 @@ recovery. A separate iPod Analysis Cache in Host storage retains completed analy
 for repeated pre-Review scans, including on read-only devices. It is bound to device
 and Volume identities, validates current file facts, checkpoints on cancellation,
 and contains no Sync Details. Host Photo records carry matching SHA-256 evidence in
-Host Media Scan Cache v18. Versions 9 through 17 migrate while retaining reusable
+Host Media Scan Cache v17. Versions 9 through 16 migrate while retaining reusable
 Acoustic Fingerprints and Photo records. Track metadata is refreshed once to
-record Host file identity and recover previously unread native ratings. Pre-v14 Playlist interpretations are discarded so even
+recover previously unread native ratings. Pre-v14 Playlist interpretations are discarded so even
 unchanged Playlists are reparsed once and previously excluded network references
 and valid POSIX names become available without editing the source. See ADR-0083 and
 ADR-0136. Older no-cover records
@@ -3549,14 +3549,15 @@ This arrangement keeps device knowledge, database knowledge, storage safety, and
 ## Rating reconciliation
 
 The Application Layer owns native rating interpretation, reviewed baseline
-comparison and conflict policy. Sync captures the default-off Host write-back
-choice; it applies the resolved iPod rating through Library preparation and
-requests Host replacement only after verified device publication. Storage owns
-staging, source validation and atomic Host replacement. The checksummed
+comparison and conflict policy. The Sync Plan records the selected outcome once.
+The Library Draft applies the reviewed iPod target and Back Sync applies the
+reviewed Host target after verified device publication. Storage validates the
+source, then verifies that the staged replacement changes size or modification
+time before atomically publishing it. The checksummed
 `iPod_Control/iOpenPod/rating-sync.json` catalog stores rating baselines and
 pending Host writes by persistent Track identity and paired Host path. Sync
 records the pending target before device publication and checks the committed
 iPod rating and reviewed Host rating before writing back. The v7 Library Sync
 Helper remains readable by earlier installations. See
-[ADR-0252](adr/0252-persist-retryable-rating-back-sync-state.md) and
+[ADR-0258](adr/0258-carry-rating-decisions-through-sync.md) and
 [Host media tags](host-media-tags.md#rating-reads-and-back-sync).

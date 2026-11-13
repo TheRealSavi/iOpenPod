@@ -395,6 +395,14 @@ class SyncController(QObject):
                 "The Active iPod or Library changed. Scan again before Sync."
             )
             return False
+        policy = (
+            self._settings.get(RATING_CONFLICT_POLICY)
+            if ipod.ratings_available and self._settings.get(BACK_SYNC_RATINGS)
+            else None
+        )
+        if host.sources and plan.rating_conflict_policy != policy:
+            self.last_error = "Rating Sync settings changed. Scan again before Sync."
+            return False
         if (
             podcasts is None
             and not plan.change_count
@@ -424,8 +432,6 @@ class SyncController(QObject):
                 self._workspace.revision,
                 settings=read_transcoder_settings(self._settings),
                 options=SyncOptions(
-                    back_sync_ratings=self._settings.get(BACK_SYNC_RATINGS),
-                    rating_conflict_policy=self._settings.get(RATING_CONFLICT_POLICY),
                     compute_missing_bpm=self._settings.get(COMPUTE_MISSING_BPM),
                     scrobble=self._settings.get(SCROBBLE_DURING_SYNC),
                     analyze_for_genius=self._settings.get(ANALYZE_FOR_GENIUS),

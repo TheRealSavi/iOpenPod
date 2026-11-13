@@ -140,14 +140,14 @@ The three persistent stores serve different purposes:
 
 | Store | Location and purpose | Reuse requirements | What it cannot establish |
 | --- | --- | --- | --- |
-| Host Media Scan Cache | Host application cache; Track metadata, fingerprints, Photos, Playlists, artwork references | Current normalized path, media kind, size, modification time, completion state, and file identity for Tracks | Current bytes, external-file approval, or permission to write |
+| Host Media Scan Cache | Host application cache; Track metadata, fingerprints, Photos, Playlists, artwork references | Current normalized path, media kind, size, modification time, and completion state | Current bytes, external-file approval, or permission to write |
 | iPod Analysis Cache | Host application cache; completed analysis of one physical device and Volume | Device/Volume binding, persistent item identity, Device Path, size, filesystem-aware modification time | A prior successful Sync or committed Sync Details |
 | Library Sync Helper | `iPod_Control/iOpenPod/library-sync-helper.json`; reusable analysis and proven Sync history | Valid format/checksum and matching item identity, Device Path, size, filesystem-aware modification time | Library contents or authority to mutate the device |
 
 Checksums detect damaged cache documents; they do not make cached source facts
-authoritative. Host cache v18 reads supported older v9-v17 records. A one-time
-metadata refresh records the file identity for Tracks and recovers previously
-unread ratings while reusing Acoustic Fingerprints for unchanged files. Incomplete Photos and failed Playlist reads are retried
+authoritative. Host cache v17 reads supported older v9-v16 records. A one-time
+metadata refresh recovers previously unread ratings while reusing Acoustic
+Fingerprints for unchanged files. Incomplete Photos and failed Playlist reads are retried
 without invalidating healthy neighbors. Successfully parsed Playlists with ordinary
 parser warnings can be reused; older ambiguous records are reparsed once.
 

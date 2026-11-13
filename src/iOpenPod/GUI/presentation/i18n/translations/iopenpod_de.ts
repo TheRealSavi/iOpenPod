@@ -9713,6 +9713,18 @@ Playlists: %3</translation>
         <translation>Foto</translation>
     </message>
     <message>
+        <source>Set Host rating to %1 / 5</source>
+        <translation>Bewertung auf dem Computer auf %1 / 5 setzen</translation>
+    </message>
+    <message>
+        <source>Set iPod rating to %1 / 5</source>
+        <translation>Bewertung auf dem iPod auf %1 / 5 setzen</translation>
+    </message>
+    <message>
+        <source>Record current ratings for future Syncs</source>
+        <translation>Aktuelle Bewertungen für künftige Synchronisierungen speichern</translation>
+    </message>
+    <message>
         <source>Restore automatic stream selection</source>
         <translation>Automatische Streamauswahl wiederherstellen</translation>
     </message>
@@ -9823,10 +9835,6 @@ Playlists: %3</translation>
     <message>
         <source>iPod: %1</source>
         <translation>iPod: %1</translation>
-    </message>
-    <message>
-        <source>Reconcile changed star ratings</source>
-        <translation>Geänderte Sternebewertungen abgleichen</translation>
     </message>
 </context>
 <context>

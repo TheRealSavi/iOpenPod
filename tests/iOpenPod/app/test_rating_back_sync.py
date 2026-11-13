@@ -100,9 +100,22 @@ def test_rating_back_sync_requires_changed_known_baselines(
     baseline_ipod: int | None,
     expected: bool,
 ) -> None:
-    from iOpenPod.app.back_sync import rating_needs_back_sync
+    from iOpenPod.app.back_sync import review_rating
+    from iOpenPod.app.library_sync_helper import SyncDetails
 
-    assert rating_needs_back_sync(host, ipod, baseline_host, baseline_ipod) is expected
+    sync = SyncDetails(
+        "2026-11-13",
+        "track.mp3",
+        1,
+        1,
+        "mp3",
+        "mp3",
+        False,
+        host_rating=baseline_host,
+        ipod_rating=baseline_ipod,
+    )
+    decision = review_rating(host, ipod, sync, "host")
+    assert (decision is not None and decision.host_target is not None) is expected
 
 
 @pytest.mark.skipif(
@@ -132,6 +145,7 @@ def test_rating_back_sync_requires_changed_known_baselines(
         "optout",
         "average_retry",
         "average_retry_without_helper",
+        "average_retry_after_host_write",
         "same_facts",
         "unreadable",
     ],
@@ -159,7 +173,6 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         SyncExecutionRequest,
         SyncExecutionStatus,
         SyncExecutor,
-        SyncOptions,
     )
     from iOpenPod.app.sync_plan import (
         SyncPlanAction,
@@ -167,10 +180,20 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         prepare_sync_plan,
         select_sync_plan,
     )
-    from storage import AtomicHostFile
+    from storage import AtomicHostFile, DevicePath, FilesystemSession
     from storage.host_replacement import replace_host_file
 
-    average_retry = case in {"average_retry", "average_retry_without_helper"}
+    average_retry = case.startswith("average_retry")
+    host_already_written = case == "average_retry_after_host_write"
+    policy = (
+        None
+        if case == "optout"
+        else "ipod"
+        if case == "conflict_ipod"
+        else "average"
+        if case == "conflict_average" or average_retry
+        else "host"
+    )
     monkeypatch.setattr(
         "iOpenPod.app.host_media_fingerprint.FpcalcFingerprinter.fingerprint",
         lambda *args, **kwargs: "1,2,3",
@@ -198,7 +221,9 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         host = scan()
         executor = SyncExecutor(device.coordinator)
         plan = select_sync_plan(
-            prepare_sync_plan(host, ipod, active.library, sync_ratings=True),
+            prepare_sync_plan(
+                host, ipod, active.library, rating_conflict_policy=policy
+            ),
             selected_host_paths=frozenset({host_path_identity(str(path))}),
             selected_ipod_removals=frozenset(),
         )
@@ -211,14 +236,6 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 active,
                 1,
                 1,
-                options=SyncOptions(
-                    back_sync_ratings=case != "optout",
-                    rating_conflict_policy="ipod"
-                    if case == "conflict_ipod"
-                    else "average"
-                    if case == "conflict_average" or average_retry
-                    else "host",
-                ),
             ),
             lambda _: None,
             Event(),
@@ -328,7 +345,9 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 tagged.save(writable)
         host = scan()
         plan = select_sync_plan(
-            prepare_sync_plan(host, ipod, active.library, sync_ratings=True),
+            prepare_sync_plan(
+                host, ipod, active.library, rating_conflict_policy=policy
+            ),
             selected_host_paths=frozenset({host_path_identity(str(path))}),
             selected_ipod_removals=frozenset(),
         )
@@ -347,10 +366,25 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 ),
             )
             assert not prepare_sync_plan(
-                host, ipod, active.library, sync_ratings=True
+                host, ipod, active.library, rating_conflict_policy=policy
             ).change_count
             return
         assert any(item.action is SyncPlanAction.UPDATE for item in plan.items)
+        if case in {"conflict_average", "legacy", "partial_star"} or average_retry:
+            decision = next(
+                item.rating for item in plan.items if item.ipod_id == track.track_id
+            )
+            assert decision is not None
+            if case == "legacy":
+                assert (
+                    decision.host_rating,
+                    decision.ipod_target,
+                    decision.host_target,
+                ) == (60, 80, None)
+            elif case == "partial_star":
+                assert (decision.ipod_target, decision.host_target) == (75, 80)
+            else:
+                assert (decision.ipod_target, decision.host_target) == (60, 60)
         original = path.read_bytes()
         if case == "excluded":
             plan = replace(plan, items=())
@@ -362,15 +396,22 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 *,
                 checkpoint: Callable[[], None],
             ) -> LocalHostFile:
-                new = replace_host_file(observed, transform, checkpoint=checkpoint)
-                os.utime(path, ns=(observed.modified_ns, observed.modified_ns))
-                updated = type(new).observe(new.path)
+                def collide(staged: BinaryIO) -> None:
+                    transform(staged)
+                    staged.flush()
+                    staged_path = next(path.parent.glob(f".{path.name}.*.tmp"))
+                    assert staged_path.stat().st_size == observed.size_bytes
+                    os.utime(
+                        staged_path, ns=(observed.modified_ns, observed.modified_ns)
+                    )
+
+                updated = replace_host_file(observed, collide, checkpoint=checkpoint)
                 assert updated.size_bytes == observed.size_bytes
-                assert updated.modified_ns == observed.modified_ns
+                assert updated.modified_ns != observed.modified_ns
                 return updated
 
             monkeypatch.setattr(back_sync, "replace_host_file", replace_at_same_mtime)
-        if case == "write_failure" or average_retry:
+        if case == "write_failure" or (average_retry and not host_already_written):
 
             def fail_write(*args: object, **kwargs: object) -> None:
                 raise OSError("Host file is read-only")
@@ -383,6 +424,20 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 raise OSError("The Sync helper could not be published")
 
             monkeypatch.setattr(device.coordinator, "publish_sync_success", fail_helper)
+        atomic_write = FilesystemSession.atomic_write
+        if host_already_written:
+
+            def fail_helper_write(
+                session: FilesystemSession,
+                target: DevicePath,
+                data: bytes,
+                **kwargs: Any,
+            ) -> Any:
+                if target == LIBRARY_SYNC_HELPER_PATH:
+                    raise OSError("The Sync helper could not be published")
+                return atomic_write(session, target, data, **kwargs)
+
+            monkeypatch.setattr(FilesystemSession, "atomic_write", fail_helper_write)
         if case == "device_failure":
 
             def fail_save(*args: object, **kwargs: object) -> None:
@@ -405,14 +460,6 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 active,
                 1,
                 1,
-                options=SyncOptions(
-                    back_sync_ratings=case != "optout",
-                    rating_conflict_policy="ipod"
-                    if case == "conflict_ipod"
-                    else "average"
-                    if case == "conflict_average" or average_retry
-                    else "host",
-                ),
             ),
             progress,
             cancelled,
@@ -420,7 +467,9 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         if average_retry:
             assert result.status is SyncExecutionStatus.PARTIAL, result.issues
             assert result.active is not None
-            assert (result.helper is None) == (case == "average_retry_without_helper")
+            assert (result.helper is None) == (
+                case == "average_retry_without_helper" or host_already_written
+            )
             assert (
                 next(
                     t.rating
@@ -429,7 +478,19 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 )
                 == 60
             )
-            monkeypatch.setattr(back_sync, "replace_host_file", replace_host_file)
+            if host_already_written:
+
+                def unexpected_replacement(*args: object, **kwargs: object) -> None:
+                    pytest.fail(
+                        "Retry rewrote a Host file already at the reviewed target"
+                    )
+
+                monkeypatch.setattr(
+                    back_sync, "replace_host_file", unexpected_replacement
+                )
+                monkeypatch.setattr(FilesystemSession, "atomic_write", atomic_write)
+            else:
+                monkeypatch.setattr(back_sync, "replace_host_file", replace_host_file)
             monkeypatch.setattr(
                 device.coordinator, "publish_sync_success", publish_sync_success
             )
@@ -437,9 +498,16 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             retry_ipod = device.coordinator.scan_ipod_media(
                 result.active, lambda _: None, Event()
             )
+            baseline = next(
+                record.sync for record in retry_ipod.tracks if record.sync is not None
+            )
+            assert baseline.pending_rating is not None
             retry_plan = select_sync_plan(
                 prepare_sync_plan(
-                    retry_host, retry_ipod, result.active.library, sync_ratings=True
+                    retry_host,
+                    retry_ipod,
+                    result.active.library,
+                    rating_conflict_policy=policy,
                 ),
                 selected_host_paths=frozenset({host_path_identity(str(path))}),
                 selected_ipod_removals=frozenset(),
@@ -452,15 +520,20 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                     result.active,
                     1,
                     1,
-                    options=SyncOptions(
-                        back_sync_ratings=True, rating_conflict_policy="average"
-                    ),
                 ),
                 lambda _: None,
                 Event(),
             )
             assert retry.status is SyncExecutionStatus.SUCCESS, retry.issues
-            assert retry.active is not None
+            assert retry.active is not None and retry.helper is not None
+            baseline = next(
+                record.sync for record in retry.helper.tracks if record.sync is not None
+            )
+            assert (
+                baseline.host_rating,
+                baseline.ipod_rating,
+                baseline.pending_rating,
+            ) == (60, 60, None)
             assert (
                 next(
                     t.rating
@@ -495,7 +568,10 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             if case in {"write_failure", "cancel_after_commit"}:
                 assert result.active is not None and result.helper is not None
                 retry_comparison = prepare_sync_plan(
-                    scan(), result.helper, result.active.library, sync_ratings=True
+                    scan(),
+                    result.helper,
+                    result.active.library,
+                    rating_conflict_policy=policy,
                 )
                 assert any(
                     i.action is SyncPlanAction.UPDATE for i in retry_comparison.items
@@ -549,7 +625,7 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         after = path.read_bytes()
         scanner = HostMediaScanner(AtomicHostFile(tmp_path / "cache.json"))
         plan = prepare_sync_plan(
-            scan(), result.helper, result.active.library, sync_ratings=True
+            scan(), result.helper, result.active.library, rating_conflict_policy=policy
         )
         if case != "optout":
             assert all(item.action is not SyncPlanAction.UPDATE for item in plan.items)
@@ -574,7 +650,6 @@ def test_v14_mp4_cache_refreshes_previously_unread_rating(tmp_path: Path) -> Non
     HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
     document = json.loads(cache.path.read_bytes())
     document["version"] = 14
-    document["entries"][0]["metadata"].pop("file_identity")
     # Simulate the genuine old reader's cached tag projection, with no RATING.
     document["entries"][0]["metadata"]["tag_values"] = [
         tag

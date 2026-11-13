@@ -81,7 +81,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CACHE_VERSION = 18
+_CACHE_VERSION = 17
 _MAX_CACHE_ENTRIES = 250_000
 _MAX_ARTWORK_BYTES = 64 * 1024 * 1024
 _MAX_INSPECTION_WORKERS = 8
@@ -284,15 +284,11 @@ class HostMediaSource:
     acoustic_fingerprint: str | None = None
     content_sha256: str | None = None
     metadata_complete: bool = field(default=True, kw_only=True)
-    file_identity: tuple[int, int] | None = field(default=None, kw_only=True)
 
     def matches(self, observed: LocalHostFile) -> bool:
         return (self.size_bytes, self.modified_ns) == (
             observed.size_bytes,
             observed.modified_ns,
-        ) and (
-            self.file_identity is None
-            or self.file_identity == (observed.device, observed.inode)
         )
 
     @property
@@ -557,19 +553,12 @@ class _Observation:
     file: LocalHostFile | None = field(default=None, compare=False, repr=False)
 
     @property
-    def file_identity(self) -> tuple[int, int] | None:
-        if self.file is None:
-            return None
-        return self.file.device, self.file.inode
-
-    @property
-    def state(self) -> tuple[str, str, int, int, tuple[int, int]]:
+    def state(self) -> tuple[str, str, int, int]:
         return (
             _path_identity(self.path.path),
             self.kind.value,
             self.size_bytes,
             self.modified_ns,
-            self.file_identity or (-1, -1),
         )
 
 
@@ -653,7 +642,6 @@ class _CachedFileRecord:
 
 @dataclass(frozen=True, slots=True)
 class _CachedTrackRecord(_CachedFileRecord):
-    file_identity: tuple[int, int] | None = None
     metadata_complete: bool = False
     no_audio: bool = False
     embedded_artwork_available: bool = True
@@ -704,7 +692,6 @@ class _CachedTrackRecord(_CachedFileRecord):
             self.modified_ns,
             self.acoustic_fingerprint or None,
             metadata_complete=self.metadata_complete,
-            file_identity=self.file_identity,
         )
 
     def matches(
@@ -719,13 +706,7 @@ class _CachedTrackRecord(_CachedFileRecord):
                 self.kind is not HostMediaFileKind.VIDEO
                 or self.embedded_artwork_available
             )
-            and self.file_facts_match(observation)
-        )
-
-    def file_facts_match(self, observation: _Observation) -> bool:
-        return _CachedFileRecord.matches(self, observation) and (
-            self.file_identity is None
-            or self.file_identity == observation.file_identity
+            and _CachedFileRecord.matches(self, observation)
         )
 
 
@@ -1161,7 +1142,6 @@ class HostMediaScanner:
                     else HostMediaFileKind.VIDEO,
                     reviewed.size_bytes,
                     reviewed.modified_ns,
-                    file=reviewed,
                 )
                 previous = cached.get(identity)
                 record: _CachedRecord
@@ -1213,13 +1193,15 @@ class HostMediaScanner:
                                     cached_fingerprint=(
                                         previous.acoustic_fingerprint
                                         if isinstance(previous, _CachedTrackRecord)
-                                        and previous.file_facts_match(observation)
+                                        and _CachedFileRecord.matches(
+                                            previous, observation
+                                        )
                                         else ""
                                     ),
                                     cached_no_audio=isinstance(
                                         previous, _CachedTrackRecord
                                     )
-                                    and previous.file_facts_match(observation)
+                                    and _CachedFileRecord.matches(previous, observation)
                                     and previous.no_audio,
                                 )
                             )
@@ -1227,7 +1209,6 @@ class HostMediaScanner:
                             record = replace(
                                 record,
                                 path=path,
-                                file_identity=observation.file_identity,
                                 artwork_path=path
                                 if record.artwork_path is not None
                                 else None,
@@ -1407,12 +1388,6 @@ class HostMediaScanner:
                 record.path, record.kind, record.size_bytes, record.modified_ns
             )
             try:
-                current = _observed_file(observation)
-                observation = replace(observation, file=current)
-                if not record.file_facts_match(observation):
-                    raise HostMediaTreeChangedError(
-                        "A Host file changed before inspection. Run Sync again."
-                    )
                 refreshed = _inspect_track(observation, folder, checkpoint=checkpoint)
             except (OSError, StorageError, ValueError, mutagen.MutagenError) as error:
                 raise HostMediaScanError(
@@ -2516,11 +2491,11 @@ def _inspect_selected_files(
                         cached_fingerprint=(
                             previous.acoustic_fingerprint
                             if isinstance(previous, _CachedTrackRecord)
-                            and previous.file_facts_match(observation)
+                            and _CachedFileRecord.matches(previous, observation)
                             else ""
                         ),
                         cached_no_audio=isinstance(previous, _CachedTrackRecord)
-                        and previous.file_facts_match(observation)
+                        and _CachedFileRecord.matches(previous, observation)
                         and previous.no_audio,
                     )
                     pending[future] = observation
@@ -2651,9 +2626,8 @@ def _inspect_track(
     checkpoint: CancellationCheck,
     inspector: MediaInspector | None = None,
 ) -> _CachedTrackRecord:
-    observed_file = _observed_file(observation)
     try:
-        with observed_file.open_read(checkpoint=checkpoint) as stream:
+        with _observed_file(observation).open_read(checkpoint=checkpoint) as stream:
             record = _read_track(observation, folder_artwork, stream)
     except mutagen.MutagenError as error:
         fallback = _fallback_record(
@@ -2661,7 +2635,6 @@ def _inspect_track(
         )
         assert isinstance(fallback, _CachedTrackRecord)
         record = fallback
-    record = replace(record, file_identity=(observed_file.device, observed_file.inode))
     if (
         record.tag_values
         or record.length_ms
@@ -3012,7 +2985,6 @@ def _fallback_record(
             size_bytes=observation.size_bytes,
             modified_ns=observation.modified_ns,
             warning=warning,
-            file_identity=observation.file_identity,
             embedded_artwork_available=False,
             title=observation.path.path.stem,
             artwork_kind=(None if folder_artwork is None else folder_artwork.kind),
@@ -3235,7 +3207,7 @@ def _decode_cache_contents(
     version = _integer(document.get("version"), "version")
     if version == 9:
         expected = {"version", "entries", "catalog_sha256"}
-    elif version in (10, 11, 12, 13, 14, 15, 16, 17, _CACHE_VERSION):
+    elif version in (10, 11, 12, 13, 14, 15, 16, _CACHE_VERSION):
         expected = {
             "version",
             "entries",
@@ -3337,7 +3309,6 @@ def _record_document(record: _CachedRecord) -> dict[str, object]:
         if record.kind not in (HostMediaFileKind.AUDIO, HostMediaFileKind.VIDEO):
             raise HostMediaScanError("A cached Track needs an audio or video kind")
         metadata: dict[str, object] = {
-            "file_identity": record.file_identity,
             "title": record.title,
             "artist": record.artist,
             "album": record.album,
@@ -3421,8 +3392,6 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             expected = expected - {"embedded_artwork_available"}
         if version < 11:
             expected = expected - {"metadata_complete"}
-        if version >= 18:
-            expected = expected | {"file_identity"}
         if frozenset(metadata) - {"payload_sha256"} != expected:
             raise ValueError("Cached Track metadata fields are invalid")
         metadata_complete = metadata.get("metadata_complete")
@@ -3455,18 +3424,9 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             # Reobserve old coverless records once rather than reuse that claim.
             embedded_artwork_available = bool(artwork_kind_value)
             metadata_complete = metadata_complete and embedded_artwork_available
-        file_identity = None
-        if metadata.get("file_identity") is not None:
-            identity = _array(metadata["file_identity"], "Host file identity")
-            if len(identity) != 2:
-                raise ValueError("Cached Host file identity is invalid")
-            file_identity = (
-                _integer(identity[0], "Host file device"),
-                _integer(identity[1], "Host file inode"),
-            )
-        if version < 18:
-            # Older records lack replacement detection. Versions through 16 also
-            # omitted native ratings. Reinspect tags once and keep acoustic evidence.
+        if version <= 16:
+            # Earlier parsers omitted native ratings while marking Tracks complete.
+            # Reinspect each unchanged Track once; retain its Acoustic Fingerprint.
             metadata_complete = False
         artwork_path_value = _text(metadata["artwork_path"], "artwork_path")
         artwork_digest_value = _text(
@@ -3510,7 +3470,6 @@ def _record_from_document(value: object, *, version: int) -> _CachedRecord:
             size_bytes=size_bytes,
             modified_ns=modified_ns,
             warning=warning,
-            file_identity=file_identity,
             metadata_complete=metadata_complete,
             embedded_artwork_available=embedded_artwork_available,
             tag_values=_cached_tag_values(metadata["tag_values"]),

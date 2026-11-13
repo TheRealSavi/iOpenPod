@@ -10,6 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from iOpenPod.app.back_sync import review_rating
 from iOpenPod.app.host_media_library import (
     HostMediaFileKind,
 )
@@ -18,6 +19,7 @@ from iOpenPod.app.sync_track_details import track_tag_sha256, track_tag_values
 from iPodDB.library import MediaType, PhotoRepresentationKind
 
 if TYPE_CHECKING:
+    from iOpenPod.app.back_sync import RatingDecision
     from iOpenPod.app.host_media_library import HostMediaLibrary
     from iOpenPod.app.library_sync_helper import (
         IPodImageFingerprint,
@@ -87,8 +89,14 @@ class SyncPlanItem:
     stream_selection: MediaStreamSelection | None = None
     applied_stream_selection_sha256: str | None = None
     stream_selection_changed: bool = False
+    rating: RatingDecision | None = None
 
     def __post_init__(self) -> None:
+        if self.rating is not None and (
+            self.action is not SyncPlanAction.UPDATE
+            or self.media_kind is not SyncPlanMediaKind.TRACK
+        ):
+            raise ValueError("Rating decisions require a paired Track Update")
         if self.stream_selection is not None and (
             self.media_kind is not SyncPlanMediaKind.TRACK
             or self.action
@@ -147,7 +155,7 @@ class SyncPlan:
     """One immutable, review-only account of a completed scan comparison."""
 
     items: tuple[SyncPlanItem, ...]
-    sync_ratings: bool = field(default=False, kw_only=True)
+    rating_conflict_policy: str | None = field(default=None, kw_only=True)
     file_tag_policy: str | None = field(default=None, kw_only=True)
     duplicate_groups: tuple[SyncDuplicateGroup, ...] = field(default=(), kw_only=True)
     duplicate_resolutions: tuple[SyncDuplicateResolution, ...] = field(
@@ -301,6 +309,7 @@ class SyncDuplicateGroup:
         resolution: SyncDuplicateResolution,
         *,
         file_tag_policy: str | None,
+        rating_conflict_policy: str | None = None,
     ) -> tuple[SyncPlanItem, ...]:
         """Validate choices and derive items from this group's captured evidence."""
 
@@ -324,7 +333,11 @@ class SyncDuplicateGroup:
                 raise ValueError(
                     "The duplicate association has no matching scan evidence"
                 )
-            items.append(_explicit_paired_item(host, ipod, file_tag_policy))
+            items.append(
+                _explicit_paired_item(
+                    host, ipod, file_tag_policy, rating_conflict_policy
+                )
+            )
             paired_hosts.add(path)
             paired_ipods.add(pair.ipod_id)
         added = {host_path_identity(path) for path in resolution.added_host_paths}
@@ -355,7 +368,7 @@ def prepare_sync_plan(
     ipod_library: LibrarySnapshot,
     *,
     file_tag_policy: str | None = None,
-    sync_ratings: bool = False,
+    rating_conflict_policy: str | None = None,
 ) -> SyncPlan:
     """Correlate completed Host and iPod scans without mutating either source.
 
@@ -365,7 +378,8 @@ def prepare_sync_plan(
     destructive action.
     """
 
-    sync_ratings = sync_ratings and ipod.ratings_available
+    if not ipod.ratings_available:
+        rating_conflict_policy = None
     host_candidates = _host_candidates(host)
     ipod_candidates = _ipod_candidates(ipod, ipod_library)
     host_remaining = set(range(len(host_candidates)))
@@ -407,7 +421,7 @@ def prepare_sync_plan(
             host_candidates[host_index],
             ipod_candidates[ipod_index],
             file_tag_policy,
-            sync_ratings=sync_ratings,
+            rating_conflict_policy=rating_conflict_policy,
         )
         for host_index, ipod_index in pairs
     ]
@@ -416,7 +430,7 @@ def prepare_sync_plan(
     items.extend(attention)
     return SyncPlan(
         tuple(sorted(items, key=_item_sort_key)),
-        sync_ratings=sync_ratings,
+        rating_conflict_policy=rating_conflict_policy,
         file_tag_policy=file_tag_policy,
         duplicate_groups=_duplicate_groups(
             host_candidates, ipod_candidates, pairs, attention, ipod_library
@@ -496,7 +510,7 @@ def select_sync_plan(
 
     return SyncPlan(
         tuple(sorted(items, key=_item_sort_key)),
-        sync_ratings=comparison.sync_ratings,
+        rating_conflict_policy=comparison.rating_conflict_policy,
         file_tag_policy=comparison.file_tag_policy,
         duplicate_groups=comparison.duplicate_groups,
         duplicate_resolutions=comparison.duplicate_resolutions,
@@ -565,7 +579,11 @@ def resolve_sync_duplicates(
             for pair in group.established_pairs
         )
         replacements.extend(
-            group.resolved_items(resolution, file_tag_policy=comparison.file_tag_policy)
+            group.resolved_items(
+                resolution,
+                file_tag_policy=comparison.file_tag_policy,
+                rating_conflict_policy=comparison.rating_conflict_policy,
+            )
         )
     items: list[SyncPlanItem] = []
     for item in comparison.items:
@@ -586,7 +604,7 @@ def resolve_sync_duplicates(
     items.extend(replacements)
     return SyncPlan(
         tuple(sorted(items, key=_item_sort_key)),
-        sync_ratings=comparison.sync_ratings,
+        rating_conflict_policy=comparison.rating_conflict_policy,
         file_tag_policy=comparison.file_tag_policy,
         duplicate_groups=comparison.duplicate_groups,
         duplicate_resolutions=resolutions,
@@ -607,9 +625,14 @@ def _can_pair_duplicate(host: _Candidate, ipod: _Candidate) -> bool:
 
 
 def _explicit_paired_item(
-    host: _Candidate, ipod: _Candidate, file_tag_policy: str | None
+    host: _Candidate,
+    ipod: _Candidate,
+    file_tag_policy: str | None,
+    rating_conflict_policy: str | None,
 ) -> SyncPlanItem:
-    item = _paired_item(host, ipod, file_tag_policy)
+    item = _paired_item(
+        host, ipod, file_tag_policy, rating_conflict_policy=rating_conflict_policy
+    )
     if item.action is SyncPlanAction.ATTENTION:
         raise ValueError("Conflicting source facts need a fresh scan before pairing")
     metadata_changed = (
@@ -885,7 +908,7 @@ def _paired_item(
     ipod: _Candidate,
     file_tag_policy: str | None,
     *,
-    sync_ratings: bool = False,
+    rating_conflict_policy: str | None = None,
 ) -> SyncPlanItem:
     sync = ipod.sync
     if sync is None:
@@ -968,21 +991,19 @@ def _paired_item(
         file_tags_changed = (
             file_tag_policy is not None and sync.file_tag_policy != file_tag_policy
         )
-        rating_changed = (
-            sync_ratings
+        rating = (
+            review_rating(
+                host.track.rating, ipod.track.rating, sync, rating_conflict_policy
+            )
+            if rating_conflict_policy is not None
             and same_prior_path
             and host.metadata_complete
             and host.track is not None
             and ipod.track is not None
-            and 0 <= ipod.track.rating <= 100
-            and (
-                sync.pending_rating is not None
-                or host.track.rating != sync.host_rating
-                or ipod.track.rating != sync.ipod_rating
-            )
+            else None
         )
         if (
-            rating_changed
+            rating is not None
             or audio_payload_changed
             or metadata_changed
             or artwork_changed
@@ -1007,6 +1028,7 @@ def _paired_item(
                 artwork_changed=artwork_changed,
                 audio_payload_changed=audio_payload_changed,
                 file_tags_changed=file_tags_changed,
+                rating=rating,
             )
         return _item(
             SyncPlanAction.UNCHANGED,
@@ -1083,6 +1105,7 @@ def _item(
     artwork_changed: bool = False,
     audio_payload_changed: bool = False,
     file_tags_changed: bool = False,
+    rating: RatingDecision | None = None,
 ) -> SyncPlanItem:
     return SyncPlanItem(
         action=action,
@@ -1099,6 +1122,7 @@ def _item(
         artwork_changed=artwork_changed,
         audio_payload_changed=audio_payload_changed,
         file_tags_changed=file_tags_changed,
+        rating=rating,
         applied_stream_selection_sha256=(
             ipod.sync.stream_selection_sha256 if ipod.sync is not None else None
         ),

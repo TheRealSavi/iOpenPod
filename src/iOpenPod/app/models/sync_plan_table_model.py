@@ -299,10 +299,36 @@ def _media_label(kind: SyncPlanMediaKind) -> str:
 
 
 def _basis_label(item: SyncPlanItem) -> str:
-    if item.basis is SyncPlanBasis.RATING_BACK_SYNC:
-        return QCoreApplication.translate(
-            "SyncPlanTableModel", "Reconcile changed star ratings"
+    decision = item.rating
+    if decision is None:
+        return _media_basis_label(item)
+    reasons = (
+        []
+        if item.basis is SyncPlanBasis.RATING_BACK_SYNC
+        else [_media_basis_label(item)]
+    )
+    if decision.host_target is not None:
+        reasons.append(
+            QCoreApplication.translate(
+                "SyncPlanTableModel", "Set Host rating to %1 / 5"
+            ).replace("%1", f"{decision.host_target / 20:g}")
         )
+    if decision.ipod_target != decision.ipod_rating:
+        reasons.append(
+            QCoreApplication.translate(
+                "SyncPlanTableModel", "Set iPod rating to %1 / 5"
+            ).replace("%1", f"{decision.ipod_target / 20:g}")
+        )
+    if decision.host_target is None and decision.ipod_target == decision.ipod_rating:
+        reasons.append(
+            QCoreApplication.translate(
+                "SyncPlanTableModel", "Record current ratings for future Syncs"
+            )
+        )
+    return " · ".join(reasons)
+
+
+def _media_basis_label(item: SyncPlanItem) -> str:
     if item.stream_selection_changed and item.stream_selection is None:
         return QCoreApplication.translate(
             "SyncPlanTableModel", "Restore automatic stream selection"

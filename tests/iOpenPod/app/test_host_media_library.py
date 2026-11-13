@@ -219,8 +219,6 @@ def test_v13_cache_reparses_playlist_and_track(tmp_path: Path) -> None:
     HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
     document = json.loads(cache.path.read_bytes())
     document["version"] = 13
-    for entry in document["entries"]:
-        entry["metadata"].pop("file_identity", None)
     for row in document["entries"]:
         row["metadata"].pop("no_audio", None)
         if row["kind"] == "playlist":
@@ -310,7 +308,7 @@ def test_malformed_cache_falls_back_to_scanning(tmp_path: Path, payload: bytes) 
     result = scanner.complete(pending, frozenset(), checkpoint=lambda: None)
     assert len(result.snapshot.tracks) == 1
     assert result.cache.reused == 0
-    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 18
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["version"] == 17
 
 
 @pytest.mark.parametrize("damage", ["zero_size", "different_source"])
@@ -473,7 +471,7 @@ def test_in_memory_cache_notices_external_invalidation(
         cache.path.write_bytes(b"invalid")
     changed = scanner.scan((folder,), checkpoint=lambda: None)
     assert changed.cache == HostMediaCacheStats(inspected=1)
-    assert json.loads(cache.path.read_bytes())["version"] == 18
+    assert json.loads(cache.path.read_bytes())["version"] == 17
 
 
 def test_cache_save_failure_retains_work_in_memory_and_retries_persistence(
@@ -1738,8 +1736,6 @@ def test_v16_track_cache_recovers_rating_missing_from_old_parser(
     assert fingerprint_calls == 1
     document = json.loads(cache.path.read_bytes())
     document["version"] = 16
-    for entry in document["entries"]:
-        entry["metadata"].pop("file_identity", None)
     track_entry = next(row for row in document["entries"] if row["kind"] == "audio")
     track_entry["metadata"]["tag_values"] = [
         tag for tag in track_entry["metadata"]["tag_values"] if tag["name"] != "rating"
@@ -1777,10 +1773,10 @@ def test_v16_track_cache_recovers_rating_missing_from_old_parser(
     assert HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None).cache == (
         HostMediaCacheStats(reused=3)
     )
-    assert json.loads(cache.path.read_bytes())["version"] == 18
+    assert json.loads(cache.path.read_bytes())["version"] == 17
 
 
-@pytest.mark.parametrize("version", [9, 10, 11, 12, 13, 14, 15, 16, 17])
+@pytest.mark.parametrize("version", [9, 10, 11, 12, 13, 14, 15, 16])
 def test_prior_host_cache_reinspects_track_and_reuses_cover(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: int
 ) -> None:
@@ -1799,8 +1795,6 @@ def test_prior_host_cache_reinspects_track_and_reuses_cover(
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
     document["version"] = version
-    for entry in document["entries"]:
-        entry["metadata"].pop("file_identity", None)
     if version < 15:
         document["entries"][0]["metadata"].pop("no_audio")
     if version < 12:
@@ -1857,7 +1851,7 @@ def test_prior_host_cache_reinspects_track_and_reuses_cover(
         == "1,2,3"
     )
     stored = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert stored["version"] == 18
+    assert stored["version"] == 17
     assert "payload_sha256" not in stored["entries"][0]["metadata"]
 
 
@@ -2312,7 +2306,7 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     )
 
     document = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert document["version"] == 18
+    assert document["version"] == 17
     entries = {entry["kind"]: entry for entry in document["entries"]}
     assert set(entries) == {"audio", "video", "photo", "playlist"}
     common = {
@@ -2325,7 +2319,6 @@ def test_cache_uses_kind_specific_metadata_documents(tmp_path: Path) -> None:
     }
     assert all(set(entry) == common for entry in entries.values())
     assert set(entries["audio"]["metadata"]) == {
-        "file_identity",
         "album",
         "album_artist",
         "artist",
@@ -3026,8 +3019,6 @@ def test_legacy_playlist_cache_retries_unproven_reads_and_reinspects_track(
     HostMediaScanner(cache).scan((folder,), checkpoint=lambda: None)
     document = json.loads(cache.path.read_bytes())
     document["version"] = version
-    for entry in document["entries"]:
-        entry["metadata"].pop("file_identity", None)
     for row in document["entries"]:
         if version < 15:
             row["metadata"].pop("no_audio", None)

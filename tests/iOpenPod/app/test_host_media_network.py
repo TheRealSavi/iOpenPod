@@ -185,7 +185,6 @@ def test_v12_cache_reparses_network_playlist_and_track_without_rereading_photo(
     document["version"] = 12
     for row in document["entries"]:
         row["metadata"].pop("no_audio", None)
-        row["metadata"].pop("file_identity", None)
         if row["kind"] == "playlist":
             row["metadata"].pop("metadata_complete")
     entry = next(row for row in document["entries"] if row["kind"] == "playlist")
@@ -223,7 +222,7 @@ def test_v12_cache_reparses_network_playlist_and_track_without_rereading_photo(
     assert not pending.issues
     assert pending.cache == HostMediaCacheStats(reused=1, inspected=2)
     stored = json.loads(cache.path.read_bytes())
-    assert stored["version"] == 18
+    assert stored["version"] == 17
     playlist_entry = next(row for row in stored["entries"] if row["kind"] == "playlist")
     assert playlist_entry["metadata"]["references"] == [
         os.fspath(song),

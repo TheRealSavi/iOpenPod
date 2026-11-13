@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING
 
 import mutagen
 
 from iOpenPod.app.display_text import source_text
-from iOpenPod.app.library_sync_helper import PendingRatingWrite, SyncedTrack
+from iOpenPod.app.library_sync_helper import SyncedTrack
 from iOpenPod.app.media.ratings import (
     rating_supported,
     rewrite_rating_stream,
@@ -23,10 +23,10 @@ from storage.host_replacement import replace_host_file
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from iOpenPod.app.library_sync_helper import SyncDetails
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.sync_execution import SyncExecutionRequest
     from iOpenPod.app.sync_plan import SyncPlanItem
-    from iPodDB.library import LibrarySnapshot
 
 
 def resolved_rating(
@@ -54,68 +54,36 @@ def resolved_rating(
     return host if host_changed else ipod
 
 
-def rating_needs_back_sync(
-    host: int, ipod: int, baseline_host: int | None, baseline_ipod: int | None
-) -> bool:
-    return (
-        baseline_host is not None
-        and baseline_ipod is not None
-        and (host != baseline_host or ipod != baseline_ipod)
-        and resolved_rating(host, ipod, baseline_host, baseline_ipod) != host
+@dataclass(frozen=True, slots=True)
+class RatingDecision:
+    """Ratings observed during Review and the targets to apply after selection."""
+
+    host_rating: int
+    ipod_rating: int
+    ipod_target: int
+    host_target: int | None = None
+
+
+def review_rating(
+    host: int, ipod: int, sync: SyncDetails, policy: str
+) -> RatingDecision | None:
+    """Resolve one established pair, including a retry or baseline-only update."""
+    if not 0 <= ipod <= 100:
+        return None
+    if sync.host_rating is None or sync.ipod_rating is None:
+        return RatingDecision(host, ipod, ipod)
+
+    pending = sync.pending_rating
+    if pending is not None and pending.matches(host, ipod):
+        target = pending.target_rating
+    elif (host, ipod) == (sync.host_rating, sync.ipod_rating):
+        return None if pending is None else RatingDecision(host, ipod, ipod)
+    else:
+        target = resolved_rating(host, ipod, sync.host_rating, sync.ipod_rating, policy)
+    host_target = whole_star_rating(target)
+    return RatingDecision(
+        host, ipod, target, host_target if host_target != host else None
     )
-
-
-def pending_rating_writes(
-    request: SyncExecutionRequest,
-    desired: LibrarySnapshot,
-    completed: tuple[SyncPlanItem, ...],
-) -> dict[int, PendingRatingWrite]:
-    """Capture a retryable write only for a reviewed, established Host pair."""
-    from iOpenPod.app.sync_plan import host_path_identity
-
-    if not (request.options.back_sync_ratings and request.plan.sync_ratings):
-        return {}
-    hosts = {
-        host_path_identity(track.metadata.location): track
-        for track in request.host.snapshot.tracks
-    }
-    readable = {
-        host_path_identity(str(source.path))
-        for source in request.host.sources
-        if source.metadata_complete
-    }
-    baselines = {record.track_id: record.sync for record in request.ipod.tracks}
-    targets = {track.track_id: track.rating for track in desired.tracks}
-    original = {track.track_id: track.rating for track in request.source.library.tracks}
-    pending: dict[int, PendingRatingWrite] = {}
-    for item in completed:
-        if item.host_path is None or item.ipod_id is None:
-            continue
-        key = host_path_identity(item.host_path)
-        host = hosts.get(key)
-        prior = baselines.get(item.ipod_id)
-        target = targets.get(item.ipod_id)
-        before = original.get(item.ipod_id)
-        if (
-            host is None
-            or key not in readable
-            or prior is None
-            or prior.host_rating is None
-            or prior.ipod_rating is None
-            or host_path_identity(prior.host_path_hint) != key
-            or target is None
-            or before is None
-            or not 0 <= target <= 100
-            or whole_star_rating(target) == host.rating
-            or (
-                prior.pending_rating is None
-                and host.rating == prior.host_rating
-                and before == prior.ipod_rating
-            )
-        ):
-            continue
-        pending[item.ipod_id] = PendingRatingWrite(host.rating, target)
-    return pending
 
 
 def back_sync_ratings(
@@ -151,12 +119,10 @@ def back_sync_ratings(
         if t.sync is not None
     }
     issues: list[WriteIssue] = []
-    selected = set(completed)
-    for item in request.plan.items:
+    for item in completed:
         if (
             item.media_kind is not SyncPlanMediaKind.TRACK
             or item.host_path is None
-            or item not in selected
             or item.action in (SyncPlanAction.REMOVE, SyncPlanAction.ATTENTION)
         ):
             continue
@@ -193,22 +159,11 @@ def back_sync_ratings(
         record = replace(record, sync=sync)
         record_key = (record.track_id, str(record.path))
         updated[record_key] = record
-        enabled = request.options.back_sync_ratings and request.plan.sync_ratings
-        if not source.metadata_complete or (not enabled and prior is not None):
+        decision = item.rating
+        if not source.metadata_complete or (decision is None and prior is not None):
             continue
-        if (
-            sync.pending_rating is None
-            and host.rating == sync.host_rating
-            and track.rating == sync.ipod_rating
-        ):
-            continue
-        host_target = whole_star_rating(track.rating)
-        needs_write = (
-            enabled
-            and sync.pending_rating is not None
-            and sync.pending_rating.matches(host.rating, track.rating)
-            and host_target != host.rating
-        )
+        host_target = decision.host_target if decision is not None else None
+        needs_write = host_target is not None
         try:
             validate_device()
             observation = LocalHostFile.observe(source.path)
@@ -216,8 +171,10 @@ def back_sync_ratings(
                 raise ValueError(
                     "The paired Host file changed after scanning; rescan before retrying."
                 )
-            rating = host.rating
-            if needs_write:
+            rating = host.rating if decision is None else decision.host_rating
+            if decision is not None and track.rating != decision.ipod_target:
+                raise ValueError("The saved iPod rating differs from Review.")
+            if host_target is not None:
                 if not rating_supported(item.host_path):
                     raise ValueError(
                         "This Host media format does not support rating Back Sync."
@@ -228,7 +185,7 @@ def back_sync_ratings(
                         rewrite_rating_stream,
                         file_name=item.host_path,
                         rating=host_target,
-                        expected_rating=host.rating,
+                        expected_rating=rating,
                     ),
                     checkpoint=validate_device,
                 )
