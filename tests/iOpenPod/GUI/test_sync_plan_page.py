@@ -884,3 +884,41 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         context.shutdown()
         window.deleteLater()
         APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
+
+
+def test_sync_selection_caches_selected_plan() -> None:
+    plan = _plan()
+    selection = _selection(plan)
+
+    first = selection.selected_plan
+    assert selection.selected_plan is first
+
+    assert selection.set_tracks_checked((1,), False)
+    second = selection.selected_plan
+    assert second is not first
+    assert selection.selected_plan is second
+
+    update_item = next(
+        item
+        for item in selection.review_plan.items
+        if item.action is SyncPlanAction.UPDATE
+    )
+    assert selection.set_review_items_checked((update_item,), False)
+    third = selection.selected_plan
+    assert third is not second
+    assert selection.selected_plan is third
+
+
+def test_sync_plan_page_defers_refresh_while_inactive() -> None:
+    plan = _plan()
+    selection = _selection(plan)
+    page = SyncPlanPage()
+    page.load_review(selection)
+    initial_plan = page._plan  # pyright: ignore[reportPrivateUsage]
+
+    page.set_deferred(True)
+    assert selection.set_tracks_checked((1,), False)
+    assert page._plan is initial_plan  # pyright: ignore[reportPrivateUsage]
+
+    page.set_deferred(False)
+    assert page._plan is selection.selected_plan  # pyright: ignore[reportPrivateUsage]

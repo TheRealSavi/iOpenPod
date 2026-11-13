@@ -803,6 +803,7 @@ class SyncWorkspace(QWidget):
         if stage is not SyncStage.SCANNING:
             self.stop_scan()
         self._stage = stage
+        self._review.set_deferred(stage is not SyncStage.REVIEW)
         self._refresh_stage_labels()
         self._refresh_review_summary()
         self._storage_bar.setVisible(stage in {SyncStage.SELECT, SyncStage.REVIEW})

@@ -18,6 +18,7 @@ from PySide6.QtCore import (
 
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
 from iOpenPod.app.models.keyed_projection import reconcile_keyed_rows
+from iOpenPod.app.models.track_table_model import TrackRole
 from iPodDB.library import MediaKind
 
 if TYPE_CHECKING:
@@ -26,6 +27,16 @@ if TYPE_CHECKING:
     from iPodDB.library import Track
 
 _ROOT_INDEX = QModelIndex()
+_SELECTION_ONLY_ROLES = frozenset(
+    {
+        Qt.ItemDataRole.CheckStateRole.value,
+        Qt.ItemDataRole.ToolTipRole.value,
+        Qt.ItemDataRole.AccessibleTextRole.value,
+        TrackRole.SORT_VALUE,
+        TrackRole.STREAM_MANUAL,
+        TrackRole.ON_IPOD,
+    }
+)
 _UNKNOWN_ARTIST_SOURCE = cast(
     "str",
     QT_TRANSLATE_NOOP("LibraryLabels", "Unknown Artist"),
@@ -119,9 +130,10 @@ class CollectionListModel(QAbstractListModel):
         self._kind = kind
         self._collections: tuple[CollectionSummary, ...] = ()
         self._search_texts: tuple[str, ...] = ()
+        self._check_state_cache: dict[int, Qt.CheckState] = {}
         self._sync_selection: SyncSelection | None = None
         tracks.modelReset.connect(self._source_reset)
-        tracks.dataChanged.connect(self._source_changed)
+        tracks.dataChanged.connect(self._source_data_changed)
         tracks.rowsInserted.connect(self._source_changed)
         tracks.rowsRemoved.connect(self._source_changed)
         self._source_reset()
@@ -170,7 +182,11 @@ class CollectionListModel(QAbstractListModel):
             return None
         summary = self._collections[index.row()]
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
-            return self._sync_selection.track_group_check_state(summary.track_ids)
+            cached = self._check_state_cache.get(index.row())
+            if cached is None:
+                cached = self._sync_selection.track_group_check_state(summary.track_ids)
+                self._check_state_cache[index.row()] = cached
+            return cached
         if role == CollectionRole.ON_IPOD and self._sync_selection is not None:
             return self._sync_selection.track_group_on_ipod(summary.track_ids)
         if role == Qt.ItemDataRole.DisplayRole:
@@ -262,6 +278,7 @@ class CollectionListModel(QAbstractListModel):
         )
 
     def _commit(self, summaries: tuple[CollectionSummary, ...]) -> None:
+        self._check_state_cache.clear()
         self._collections = summaries
         self._search_texts = tuple(item.title.casefold() for item in summaries)
 
@@ -269,6 +286,16 @@ class CollectionListModel(QAbstractListModel):
         self.beginResetModel()
         self._commit(self._project())
         self.endResetModel()
+
+    def _source_data_changed(
+        self,
+        _top_left: QModelIndex | QPersistentModelIndex,
+        _bottom_right: QModelIndex | QPersistentModelIndex,
+        roles: list[int] | None = None,
+    ) -> None:
+        if roles and all(role in _SELECTION_ONLY_ROLES for role in roles):
+            return
+        self._source_changed()
 
     def _source_changed(self, *_args: object) -> None:
         reconcile_keyed_rows(
@@ -280,6 +307,7 @@ class CollectionListModel(QAbstractListModel):
         )
 
     def _selection_changed(self) -> None:
+        self._check_state_cache.clear()
         if not self._collections:
             return
         self.dataChanged.emit(

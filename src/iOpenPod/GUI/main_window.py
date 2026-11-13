@@ -227,6 +227,7 @@ class MainWindow(QMainWindow):
         self._pending_host_media_library: HostMediaLibrary | None = None
         self._pending_ipod_media_library: IPodMediaLibrary | None = None
         self._review_host: HostMediaLibrary | None = None
+        self._playlist_preview_dirty = False
         self._review_ipod: IPodMediaLibrary | None = None
         self._review_active: ActiveIPod | None = None
         scrobbler, self._scrobbling = create_scrobbling(
@@ -698,6 +699,7 @@ class MainWindow(QMainWindow):
         self._sync_workspace.selection.changed.connect(self._refresh_playlist_preview)
         self._sync_workspace.selection.changed.connect(self._refresh_default_status)
         self._sync_workspace.stageChanged.connect(self._refresh_default_status)
+        self._sync_workspace.stageChanged.connect(self._sync_stage_changed)
         self._sync_workspace.playlistReconciliationChanged.connect(
             self._refresh_playlist_preview
         )
@@ -2176,8 +2178,24 @@ class MainWindow(QMainWindow):
         self._context.host_media_controller.cancel()
         self._context.ipod_media_controller.cancel()
 
+    def _sync_stage_changed(self) -> None:
+        if (
+            self._sync_workspace.stage is SyncStage.REVIEW
+            and self._playlist_preview_dirty
+        ):
+            self._refresh_playlist_preview()
+
     def _refresh_playlist_preview(self) -> None:
         host, ipod, active = self._review_host, self._review_ipod, self._review_active
+        if (
+            host is not None
+            and ipod is not None
+            and active is not None
+            and self._sync_workspace.stage is not SyncStage.REVIEW
+        ):
+            self._playlist_preview_dirty = True
+            return
+        self._playlist_preview_dirty = False
         changes = (
             review_playlist_sync(
                 self._sync_workspace.selection.selected_plan,
@@ -2185,6 +2203,7 @@ class MainWindow(QMainWindow):
                 ipod,
                 active,
                 self._sync_workspace.playlist_choices,
+                comparison=self._sync_workspace.selection.resolved_comparison,
             )
             if host is not None and ipod is not None and active is not None
             else ()

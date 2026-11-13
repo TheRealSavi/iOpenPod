@@ -3723,3 +3723,35 @@ def test_changed_source_cannot_enable_a_previously_conflicting_playlist(
         assert result.helper is None or not result.helper.playlist_associations
     finally:
         device.coordinator.close()
+
+
+def test_review_playlist_sync_reuses_explicit_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device = build_device(tmp_path)
+    try:
+        host = _playlist_host(tmp_path, "A", "B")
+        request = _request(device, host)
+        comparison = prepare_sync_plan(host, request.ipod, request.source.library)
+        expected = review_playlist_sync(
+            request.plan, host, request.ipod, request.source
+        )
+
+        def fail_prepare(*_args: object, **_kwargs: object) -> object:
+            raise AssertionError(
+                "prepare_sync_plan should not run when comparison is passed"
+            )
+
+        monkeypatch.setattr(
+            "iOpenPod.app.sync_execution.prepare_sync_plan", fail_prepare
+        )
+        actual = review_playlist_sync(
+            request.plan,
+            host,
+            request.ipod,
+            request.source,
+            comparison=comparison,
+        )
+        assert actual == expected
+    finally:
+        device.coordinator.close()

@@ -263,18 +263,15 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
         selection_order = self._selection_less_than(left, right)
         if selection_order is not None:
             return selection_order
-        role = {
-            AlbumSortMode.TITLE: AlbumRole.TITLE,
-            AlbumSortMode.ARTIST: AlbumRole.ARTIST,
-            AlbumSortMode.YEAR: AlbumRole.YEAR,
-        }[self._sort_mode]
-        left_value = self._source.data(left, role)
-        right_value = self._source.data(right, role)
-        if isinstance(left_value, str) and isinstance(right_value, str):
-            return left_value.casefold() < right_value.casefold()
-        if isinstance(left_value, int) and isinstance(right_value, int):
-            return left_value < right_value
-        return str(left_value) < str(right_value)
+        left_album = self._source.album_at(left.row())
+        right_album = self._source.album_at(right.row())
+        if left_album is not None and right_album is not None:
+            if self._sort_mode is AlbumSortMode.TITLE:
+                return left_album.title.casefold() < right_album.title.casefold()
+            if self._sort_mode is AlbumSortMode.ARTIST:
+                return left_album.artist.casefold() < right_album.artist.casefold()
+            return left_album.year < right_album.year
+        return str(left_album) < str(right_album)
 
     def _selection_less_than(
         self,
@@ -283,12 +280,8 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
     ) -> bool | None:
         if not self._group_by_selection:
             return None
-        left_rank = _selection_rank(
-            self._source.data(left, Qt.ItemDataRole.CheckStateRole)
-        )
-        right_rank = _selection_rank(
-            self._source.data(right, Qt.ItemDataRole.CheckStateRole)
-        )
+        left_rank = _selection_rank(self._source.check_state_at(left.row()))
+        right_rank = _selection_rank(self._source.check_state_at(right.row()))
         if left_rank == right_rank:
             return None
         return (
@@ -300,7 +293,6 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
     def _selection_data_changed(self) -> None:
         if self._group_by_selection:
             self.invalidate()
-            self.sort(0, self._sort_direction)
 
 
 class CollectionFilterProxyModel(QSortFilterProxyModel):
@@ -414,7 +406,6 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
     def _selection_data_changed(self) -> None:
         if self._group_by_selection:
             self.invalidate()
-            self.sort(0, self._sort_direction)
 
 
 def _selection_rank(value: object) -> int:

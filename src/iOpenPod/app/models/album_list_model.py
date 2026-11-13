@@ -18,6 +18,7 @@ from PySide6.QtCore import (
 
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
 from iOpenPod.app.models.keyed_projection import reconcile_keyed_rows
+from iOpenPod.app.models.track_table_model import TrackRole
 from iPodDB.library import MediaKind
 
 if TYPE_CHECKING:
@@ -28,6 +29,16 @@ _ROOT_INDEX = QModelIndex()
 _UNKNOWN_ALBUM_SOURCE = cast(
     "str",
     QT_TRANSLATE_NOOP("LibraryLabels", "Unknown Album"),
+)
+_SELECTION_ONLY_ROLES = frozenset(
+    {
+        Qt.ItemDataRole.CheckStateRole.value,
+        Qt.ItemDataRole.ToolTipRole.value,
+        Qt.ItemDataRole.AccessibleTextRole.value,
+        TrackRole.SORT_VALUE,
+        TrackRole.STREAM_MANUAL,
+        TrackRole.ON_IPOD,
+    }
 )
 
 
@@ -96,9 +107,10 @@ class AlbumListModel(QAbstractListModel):
         self._media_kind = media_kind
         self._albums: tuple[AlbumSummary, ...] = ()
         self._search_texts: tuple[str, ...] = ()
+        self._check_state_cache: dict[int, Qt.CheckState] = {}
         self._sync_selection: SyncSelection | None = None
         tracks.modelReset.connect(self._source_reset)
-        tracks.dataChanged.connect(self._source_changed)
+        tracks.dataChanged.connect(self._source_data_changed)
         tracks.rowsInserted.connect(self._source_changed)
         tracks.rowsRemoved.connect(self._source_changed)
         self._source_reset()
@@ -116,6 +128,17 @@ class AlbumListModel(QAbstractListModel):
         if not 0 <= row < len(self._albums):
             return None
         return self._albums[row]
+
+    def check_state_at(self, row: int) -> Qt.CheckState | None:
+        if self._sync_selection is None or not 0 <= row < len(self._albums):
+            return None
+        cached = self._check_state_cache.get(row)
+        if cached is None:
+            cached = self._sync_selection.track_group_check_state(
+                self._albums[row].track_ids
+            )
+            self._check_state_cache[row] = cached
+        return cached
 
     def set_sync_selection(self, selection: SyncSelection | None) -> None:
         if selection is self._sync_selection:
@@ -153,7 +176,7 @@ class AlbumListModel(QAbstractListModel):
 
         album = self._albums[index.row()]
         if role == Qt.ItemDataRole.CheckStateRole and self._sync_selection is not None:
-            return self._sync_selection.track_group_check_state(album.track_ids)
+            return self.check_state_at(index.row())
         if role == AlbumRole.ON_IPOD and self._sync_selection is not None:
             return self._sync_selection.track_group_on_ipod(album.track_ids)
         if role == Qt.ItemDataRole.DisplayRole:
@@ -262,6 +285,7 @@ class AlbumListModel(QAbstractListModel):
         )
 
     def _commit(self, summaries: tuple[AlbumSummary, ...]) -> None:
+        self._check_state_cache.clear()
         self._albums = summaries
         self._search_texts = tuple(
             "\x1f".join((album.title, album.artist, str(album.year))).casefold()
@@ -273,6 +297,16 @@ class AlbumListModel(QAbstractListModel):
         self._commit(self._project())
         self.endResetModel()
 
+    def _source_data_changed(
+        self,
+        _top_left: QModelIndex | QPersistentModelIndex,
+        _bottom_right: QModelIndex | QPersistentModelIndex,
+        roles: list[int] | None = None,
+    ) -> None:
+        if roles and all(role in _SELECTION_ONLY_ROLES for role in roles):
+            return
+        self._source_changed()
+
     def _source_changed(self, *_args: object) -> None:
         reconcile_keyed_rows(
             self,
@@ -283,6 +317,7 @@ class AlbumListModel(QAbstractListModel):
         )
 
     def _selection_changed(self) -> None:
+        self._check_state_cache.clear()
         if not self._albums:
             return
         self.dataChanged.emit(
