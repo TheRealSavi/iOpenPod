@@ -865,7 +865,7 @@ def test_execution_builds_one_comparison_for_validation_and_playlists(
         library: LibrarySnapshot,
         *,
         file_tag_policy: str | None = None,
-        sync_ratings: bool = False,
+        rating_conflict_policy: str | None = None,
     ) -> SyncPlan:
         nonlocal comparisons
         comparisons += 1
@@ -874,7 +874,7 @@ def test_execution_builds_one_comparison_for_validation_and_playlists(
             ipod,
             library,
             file_tag_policy=file_tag_policy,
-            sync_ratings=sync_ratings,
+            rating_conflict_policy=rating_conflict_policy,
         )
 
     try:

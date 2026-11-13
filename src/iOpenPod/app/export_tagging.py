@@ -16,6 +16,8 @@ from mutagen.mp4 import MP4, MP4Cover, MP4FreeForm
 from mutagen.wave import WAVE
 from PIL import Image, ImageChops
 
+from iOpenPod.app.media.ratings import whole_star_rating
+
 if TYPE_CHECKING:
     from iPodDB.library import Track
     from storage import HostPath
@@ -256,18 +258,15 @@ def _apply_id3_tags(
     if not preserve_artwork:
         tags.delall("APIC")
     owners = tags.getall("POPM")
+    popm_rating = (0, 1, 64, 128, 196, 255)[whole_star_rating(track.rating) // 20]
     if owners:
         for owner in owners:
-            owner.rating = (0, 1, 64, 128, 196, 255)[
-                min(5, max(0, (track.rating + 10) // 20))
-            ]
+            owner.rating = popm_rating
     else:
         tags.add(
             _ID3_FRAMES.POPM(
                 email="iOpenPod",
-                rating=(0, 1, 64, 128, 196, 255)[
-                    min(5, max(0, (track.rating + 10) // 20))
-                ],
+                rating=popm_rating,
                 count=0,
             )
         )

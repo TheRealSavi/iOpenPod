@@ -9735,6 +9735,22 @@ Playlists: %3</translation>
         <translation>Foto</translation>
     </message>
     <message>
+        <source>Record current ratings for future Syncs</source>
+        <translation>Guardar las valoraciones actuales para futuras sincronizaciones</translation>
+    </message>
+    <message>
+        <source>Set Host and iPod rating to %1</source>
+        <translation>Establecer la valoración del archivo local y del iPod en %1</translation>
+    </message>
+    <message>
+        <source>Set Host rating to %1</source>
+        <translation>Establecer la valoración del archivo local en %1</translation>
+    </message>
+    <message>
+        <source>Set iPod rating to %1</source>
+        <translation>Establecer la valoración del iPod en %1</translation>
+    </message>
+    <message>
         <source>Restore automatic stream selection</source>
         <translation>Restaurar la selección automática de flujos</translation>
     </message>
@@ -9846,10 +9862,6 @@ Playlists: %3</translation>
         <source>iPod: %1</source>
         <translation>iPod: %1</translation>
     </message>
-    <message>
-        <source>Reconcile changed star ratings</source>
-        <translation>Conciliar las valoraciones modificadas</translation>
-    </message>
 </context>
 <context>
     <name>SyncReviewGroup</name>
@@ -9916,6 +9928,14 @@ Playlists: %3</translation>
     <message>
         <source>No changes needed</source>
         <translation>No se necesitan cambios</translation>
+    </message>
+    <message>
+        <source>Update Metadata</source>
+        <translation>Actualizar metadatos</translation>
+    </message>
+    <message>
+        <source>Sync tags, artwork, or ratings while keeping the audio and video</source>
+        <translation>Sincroniza las etiquetas, las carátulas o las valoraciones conservando el audio y el vídeo</translation>
     </message>
     <message>
         <source>Select %1</source>
@@ -13248,6 +13268,10 @@ Playlists: %3</translation>
         <translation>Aleatoria</translation>
     </message>
     <message>
+        <source>Rating Sync state could not be read and was left unchanged: {error}</source>
+        <translation>No se pudo leer el estado de la sincronización de valoraciones y se dejó intacto: {error}</translation>
+    </message>
+    <message>
         <source>Rating must be between 0 and 100.</source>
         <translation>La valoración debe estar entre 0 y 100.</translation>
     </message>
@@ -13806,6 +13830,10 @@ Playlists: %3</translation>
     <message>
         <source>Symbolic link skipped because Follow symbolic links is disabled.</source>
         <translation>Se omitió el enlace simbólico porque Seguir enlaces simbólicos está desactivado.</translation>
+    </message>
+    <message>
+        <source>Sync changes were saved, but Sync history could not be updated. Keep the iPod connected and rescan before another Sync.</source>
+        <translation>Se guardaron los cambios de sincronización, pero no se pudo actualizar el historial. Mantén el iPod conectado y vuelve a analizarlo antes de sincronizar de nuevo.</translation>
     </message>
     <message>
         <source>Sync checked tracks only</source>

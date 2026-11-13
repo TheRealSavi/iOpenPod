@@ -283,6 +283,13 @@ class HostMediaSource:
     modified_ns: int
     acoustic_fingerprint: str | None = None
     content_sha256: str | None = None
+    metadata_complete: bool = field(default=True, kw_only=True)
+
+    def matches(self, observed: LocalHostFile) -> bool:
+        return (self.size_bytes, self.modified_ns) == (
+            observed.size_bytes,
+            observed.modified_ns,
+        )
 
     @property
     def playlist_id(self) -> int | None:
@@ -684,6 +691,7 @@ class _CachedTrackRecord(_CachedFileRecord):
             self.size_bytes,
             self.modified_ns,
             self.acoustic_fingerprint or None,
+            metadata_complete=self.metadata_complete,
         )
 
     def matches(

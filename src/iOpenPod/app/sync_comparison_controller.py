@@ -51,7 +51,7 @@ class SyncComparisonController(QObject):
         ipod: IPodMediaLibrary,
         active: ActiveIPod,
         *,
-        sync_ratings: bool,
+        rating_conflict_policy: str | None,
         file_tag_policy: str | None,
         check_host_details: bool,
     ) -> None:
@@ -65,10 +65,10 @@ class SyncComparisonController(QObject):
                     host,
                     ipod,
                     active.library,
-                    sync_ratings=sync_ratings,
+                    rating_conflict_policy=rating_conflict_policy,
                     file_tag_policy=file_tag_policy,
                 )
-                refresh_paths = (
+                refresh_paths: frozenset[HostPath] = (
                     frozenset(
                         HostPath(Path(item.host_path))
                         for item in plan.items

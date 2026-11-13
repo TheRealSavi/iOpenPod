@@ -3,23 +3,33 @@
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-import mutagen
 import pytest
 from mutagen import id3
 from mutagen.apev2 import APEv2
-from mutagen.asf import (  # type: ignore[attr-defined]
+from mutagen.asf._attrs import (
     ASFDWordAttribute,
     ASFUnicodeAttribute,
 )
 from mutagen.mp4 import MP4FreeForm
-from mutagen.oggopus import OggOpusVComment
-from mutagen.oggvorbis import OggVCommentDict
+from mutagen.oggopus import OggOpus, OggOpusVComment
+from mutagen.oggvorbis import OggVCommentDict, OggVorbis
 from tests.iOpenPod.app.test_host_metadata_tags import media_file, scan_twice
 
 from iOpenPod.app.media.tags import read_tag_values
 from iPodDB.library import ContentAdvisory
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+class _OggMedia(Protocol):
+    @property
+    def tags(self) -> object: ...
+
+    def save(self) -> None: ...
+
 
 FRAMES: Any = id3
 
@@ -142,14 +152,18 @@ def test_ogg_and_opus_native_rating_roundtrip(
     )
     if result.returncode:
         pytest.skip(f"FFmpeg {codec} encoder is unavailable")
-    parsed: Any = mutagen.File(path)
-    assert parsed is not None and isinstance(parsed.tags, wrapper)
-    parsed.tags["RATING"] = [raw]
+    reader = cast(
+        "Callable[[Path], _OggMedia]", OggVorbis if suffix == "ogg" else OggOpus
+    )
+    parsed = reader(path)
+    tags = parsed.tags
+    assert isinstance(tags, wrapper)
+    tags["RATING"] = [raw]
     parsed.save()
-    reopened: Any = mutagen.File(path)
-    assert reopened is not None and isinstance(reopened.tags, wrapper)
+    reopened_tags = reader(path).tags
+    assert isinstance(reopened_tags, wrapper)
     assert ("rating", str(expected)) in {
-        (tag.name, tag.value) for tag in read_tag_values(reopened.tags)
+        (tag.name, tag.value) for tag in read_tag_values(reopened_tags)
     }
     assert scan_twice(tmp_path).rating == expected
 

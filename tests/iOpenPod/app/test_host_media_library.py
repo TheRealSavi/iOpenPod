@@ -15,6 +15,7 @@ from typing import BinaryIO, NoReturn, Protocol, cast
 
 import mutagen
 import pytest
+from mutagen.flac import FLAC, VCFLACDict
 from mutagen.id3 import APIC, TIT2, TPE1, PictureType
 from mutagen.wave import WAVE
 from PIL import Image
@@ -780,6 +781,13 @@ class _MutagenReader(Protocol):
 
 class _FrameTags(Protocol):
     def add(self, frame: object) -> None: ...
+
+
+class _WritableFlac(Protocol):
+    @property
+    def tags(self) -> VCFLACDict | None: ...
+
+    def save(self) -> None: ...
 
 
 class _MutableWave(Protocol):
@@ -1708,9 +1716,10 @@ def test_v16_track_cache_recovers_rating_missing_from_old_parser(
     song = tmp_path / "Rated.flac"
     fixture = Path(__file__).resolve().parents[2] / "fixtures/media/surround.flac.b64"
     song.write_bytes(base64.decodebytes(fixture.read_bytes()))
-    parsed = mutagen.File(song)
-    assert parsed is not None and parsed.tags is not None
-    parsed.tags["RATING"] = ["4"]
+    parsed = cast("Callable[[Path], _WritableFlac]", FLAC)(song)
+    tags = parsed.tags
+    assert tags is not None
+    tags["RATING"] = ["4"]
     parsed.save()
     photo = tmp_path / "Photo.png"
     Image.new("RGB", (2, 2)).save(photo)

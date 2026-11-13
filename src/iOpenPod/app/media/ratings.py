@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Any, BinaryIO, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, cast
 
+import mutagen
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3, POPM
 from mutagen.mp3 import MP3
@@ -14,14 +15,45 @@ from mutagen.oggvorbis import OggVorbis
 
 from iOpenPod.app.media.tags import read_tag_values
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 # These are the five-star POPM values understood by the shared Host tag reader.
 _POPM_VALUES = (0, 1, 64, 128, 196, 255)
 _RATING_KEY = "----:com.apple.iTunes:RATING"
-_RATING_SUFFIXES = frozenset(
-    (".mp3", ".m4a", ".m4b", ".mp4", ".m4v", ".flac", ".ogg", ".opus")
+_OGG_SUFFIXES = frozenset({".ogg", ".oga", ".opus"})
+_RATING_SUFFIXES = (
+    frozenset({".mp3", ".m4a", ".m4b", ".mp4", ".m4v", ".flac"}) | _OGG_SUFFIXES
 )
 _POPM: Any = POPM
 _FREE_FORM: Any = MP4FreeForm
+
+
+class _WritableRatingTags(Protocol):
+    def __setitem__(self, key: str, value: list[str] | list[MP4FreeForm]) -> None: ...
+
+
+class _RatingMedia(Protocol):
+    @property
+    def tags(self) -> ID3 | _WritableRatingTags | None: ...
+
+    def add_tags(self) -> None: ...
+    def save(self, stream: BinaryIO, *, v2_version: int = 4) -> None: ...
+
+
+class _MP3Reader(Protocol):
+    def __call__(self, stream: BinaryIO, *, translate: bool) -> _RatingMedia: ...
+
+
+class _OggReader(Protocol):
+    def File(
+        self, stream: BinaryIO, *, options: list[type[OggVorbis] | type[OggOpus]]
+    ) -> _RatingMedia | None: ...
+
+
+def whole_star_rating(rating: int) -> int:
+    """Project a Library rating onto the whole-star scale of Host tags."""
+    return min(5, max(0, (rating + 10) // 20)) * 20
 
 
 def rating_supported(file_name: str) -> bool:
@@ -35,21 +67,10 @@ def rewrite_rating_stream(
     if rating not in range(0, 101, 20):
         raise ValueError("An iPod star rating must be 0, 20, 40, 60, 80 or 100.")
     if not rating_supported(file_name):
-        raise ValueError("Rating Back Sync supports MP3 and MP4 media only.")
+        raise ValueError("This Host media format does not support rating Back Sync.")
     stream.seek(0)
-    options = (
-        {"translate": False}
-        if PurePosixPath(file_name).suffix.casefold() == ".mp3"
-        else {}
-    )
     suffix = PurePosixPath(file_name).suffix.casefold()
-    factory: Any = {
-        ".mp3": MP3,
-        ".flac": FLAC,
-        ".ogg": OggVorbis,
-        ".opus": OggOpus,
-    }.get(suffix, MP4)
-    audio: Any = factory(stream, **options)
+    audio = _load_rating_media(stream, suffix)
     if audio is None:
         raise ValueError("The Host media format could not be read.")
     current = _rating(audio.tags)
@@ -62,6 +83,8 @@ def rewrite_rating_stream(
     if audio.tags is None:
         audio.add_tags()
     tags = audio.tags
+    if tags is None:
+        raise ValueError("The Host media format could not create rating tags.")
     stream.seek(0)
     if isinstance(tags, ID3):
         native = cast("Any", tags)
@@ -79,7 +102,7 @@ def rewrite_rating_stream(
                 _POPM(email="iOpenPod", rating=_POPM_VALUES[rating // 20], count=0)
             )
         audio.save(stream, v2_version=version)
-    elif suffix in {".flac", ".ogg", ".opus"}:
+    elif suffix == ".flac" or suffix in _OGG_SUFFIXES:
         tags["RATING"] = [str(rating)]
         audio.save(stream)
     else:
@@ -87,12 +110,24 @@ def rewrite_rating_stream(
         audio.save(stream)
     stream.flush()
     stream.seek(0)
-    checked: Any = factory(stream, **options)
+    checked = _load_rating_media(stream, suffix)
     if checked is None or _rating(checked.tags) != rating:
         raise ValueError("Host rating failed read-back verification.")
 
 
-def _rating(tags: Any) -> int:
+def _load_rating_media(stream: BinaryIO, suffix: str) -> _RatingMedia | None:
+    if suffix in _OGG_SUFFIXES:
+        # An Ogg filename can contain Vorbis or Opus.
+        return cast("_OggReader", mutagen).File(stream, options=[OggVorbis, OggOpus])
+    if suffix == ".mp3":
+        return cast("_MP3Reader", MP3)(stream, translate=False)
+    factory = cast(
+        "Callable[[BinaryIO], _RatingMedia]", FLAC if suffix == ".flac" else MP4
+    )
+    return factory(stream)
+
+
+def _rating(tags: object) -> int:
     return int(
         next((tag.value for tag in read_tag_values(tags) if tag.name == "rating"), "0")
     )

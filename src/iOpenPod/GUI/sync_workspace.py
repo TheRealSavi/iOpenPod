@@ -446,7 +446,7 @@ class SyncWorkspace(QWidget):
         selection_page_layout.addWidget(selection_body, 1)
         selection_page_layout.addWidget(selection_footer)
 
-        self._review = SyncPlanPage(self)
+        self._review = SyncPlanPage(self, theme_manager=theme_manager)
         self.execution = SyncExecutionPage(self)
         self._execution_available = False
         self._podcast_count = 0

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
@@ -26,9 +28,13 @@ from iOpenPod.app.models.sync_plan_table_model import (
     SyncPlanRole,
 )
 from iOpenPod.app.sync_plan import SyncPlanAction, SyncPlanItem, SyncPlanMediaKind
+from iOpenPod.GUI.delegates.rating_reason_delegate import RatingReasonDelegate
 from iOpenPod.GUI.presentation.icons import glyph_icon
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
+
+if TYPE_CHECKING:
+    from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 
 
 class _GroupCheckBox(QCheckBox):
@@ -91,6 +97,8 @@ class SyncReviewGroup(QFrame):
         parent: QWidget | None = None,
         *,
         header_action: QWidget | None = None,
+        replaces_payload: bool | None = None,
+        theme_manager: ThemeManager | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("syncReviewGroup")
@@ -100,7 +108,8 @@ class SyncReviewGroup(QFrame):
         self.action = action
         self.media = media
         self._header_action = header_action
-        self.proxy = SyncPlanFilterModel(self)
+        self._replaces_payload = replaces_payload
+        self.proxy = SyncPlanFilterModel(self, replaces_payload=replaces_payload)
         self.proxy.setSourceModel(source)
         self.proxy.set_actions(frozenset({action}))
         self.proxy.set_media_kind(media)
@@ -167,6 +176,10 @@ class SyncReviewGroup(QFrame):
         self.table = QTableView(self)
         self.table.setObjectName("syncPlanTable")
         self.table.setModel(self.proxy)
+        if action is SyncPlanAction.UPDATE and media is SyncPlanMediaKind.TRACK:
+            self.table.setItemDelegateForColumn(
+                SyncPlanColumn.REASON, RatingReasonDelegate(self.table, theme_manager)
+            )
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -187,7 +200,9 @@ class SyncReviewGroup(QFrame):
         self.table.setColumnWidth(SyncPlanColumn.MEDIA, 84)
         self.table.setColumnWidth(SyncPlanColumn.HOST, 180)
         self.table.setColumnWidth(SyncPlanColumn.IPOD, 180)
-        self.table.setColumnWidth(SyncPlanColumn.REASON, 220)
+        self.table.setColumnWidth(
+            SyncPlanColumn.REASON, 290 if media is SyncPlanMediaKind.TRACK else 220
+        )
         self.table.hide()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -283,9 +298,16 @@ class SyncReviewGroup(QFrame):
             ),
             SyncPlanAction.UNCHANGED: self.tr("No changes needed"),
         }
-        title = titles[self.action, self.media]
+        if self._replaces_payload is False:
+            title = self.tr("Update Metadata")
+            description = self.tr(
+                "Sync tags, artwork, or ratings while keeping the audio and video"
+            )
+        else:
+            title = titles[self.action, self.media]
+            description = descriptions[self.action]
         self._title.setText(title)
-        self._subtitle.setText(descriptions[self.action])
+        self._subtitle.setText(description)
         self.checkbox.setAccessibleName(self.tr("Select %1").replace("%1", title))
         self.checkbox.setToolTip(
             self.tr("Select or deselect all matching items in this group")

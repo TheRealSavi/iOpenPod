@@ -37,6 +37,7 @@ from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 if TYPE_CHECKING:
     from iOpenPod.app.models.sync_selection import SyncSelection
+    from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 
 _CHANGE_ACTIONS = frozenset(
     {
@@ -51,7 +52,12 @@ _CHANGE_ACTIONS = frozenset(
 class SyncPlanPage(QWidget):
     """Review actions by category without changing earlier Host media selection."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        theme_manager: ThemeManager | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("syncPlanPage")
         self._plan: SyncPlan | None = None
@@ -108,21 +114,24 @@ class SyncPlanPage(QWidget):
         groups_layout = QVBoxLayout(groups_body)
         groups_layout.setContentsMargins(0, 0, LAYOUT.space_2xs, 0)
         groups_layout.setSpacing(LAYOUT.space_xs)
-        for action, media in (
-            (SyncPlanAction.ADD, SyncPlanMediaKind.TRACK),
-            (SyncPlanAction.REMOVE, SyncPlanMediaKind.TRACK),
-            (SyncPlanAction.UPDATE, SyncPlanMediaKind.TRACK),
-            (SyncPlanAction.ADD, SyncPlanMediaKind.PHOTO),
-            (SyncPlanAction.REMOVE, SyncPlanMediaKind.PHOTO),
-            (SyncPlanAction.UPDATE, SyncPlanMediaKind.PHOTO),
-            (SyncPlanAction.ATTENTION, None),
-            (SyncPlanAction.UNCHANGED, None),
+        for action, media, replaces_payload in (
+            (SyncPlanAction.ADD, SyncPlanMediaKind.TRACK, None),
+            (SyncPlanAction.REMOVE, SyncPlanMediaKind.TRACK, None),
+            (SyncPlanAction.UPDATE, SyncPlanMediaKind.TRACK, True),
+            (SyncPlanAction.UPDATE, SyncPlanMediaKind.TRACK, False),
+            (SyncPlanAction.ADD, SyncPlanMediaKind.PHOTO, None),
+            (SyncPlanAction.REMOVE, SyncPlanMediaKind.PHOTO, None),
+            (SyncPlanAction.UPDATE, SyncPlanMediaKind.PHOTO, None),
+            (SyncPlanAction.ATTENTION, None, None),
+            (SyncPlanAction.UNCHANGED, None, None),
         ):
             group = SyncReviewGroup(
                 self._proxy,
                 action,
                 media,
                 groups_body,
+                theme_manager=theme_manager,
+                replaces_payload=replaces_payload,
                 header_action=(
                     self._duplicates if action is SyncPlanAction.ATTENTION else None
                 ),

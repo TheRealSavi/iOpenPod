@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -10,7 +10,11 @@ import mutagen
 
 from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_sync_helper import SyncedTrack
-from iOpenPod.app.media.ratings import rating_supported, rewrite_rating_stream
+from iOpenPod.app.media.ratings import (
+    rating_supported,
+    rewrite_rating_stream,
+    whole_star_rating,
+)
 from iPodDB.library import IssueSeverity, WriteIssue
 from storage import StorageError
 from storage.host_input import LocalHostFile
@@ -19,6 +23,7 @@ from storage.host_replacement import replace_host_file
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from iOpenPod.app.library_sync_helper import SyncDetails
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.sync_execution import SyncExecutionRequest
     from iOpenPod.app.sync_plan import SyncPlanItem
@@ -49,14 +54,35 @@ def resolved_rating(
     return host if host_changed else ipod
 
 
-def rating_needs_back_sync(
-    host: int, ipod: int, baseline_host: int | None, baseline_ipod: int | None
-) -> bool:
-    return (
-        baseline_host is not None
-        and baseline_ipod is not None
-        and (host != baseline_host or ipod != baseline_ipod)
-        and resolved_rating(host, ipod, baseline_host, baseline_ipod) != host
+@dataclass(frozen=True, slots=True)
+class RatingDecision:
+    """Ratings observed during Review and the targets to apply after selection."""
+
+    host_rating: int
+    ipod_rating: int
+    ipod_target: int
+    host_target: int | None = None
+
+
+def review_rating(
+    host: int, ipod: int, sync: SyncDetails, policy: str
+) -> RatingDecision | None:
+    """Resolve one established pair, including a retry or baseline-only update."""
+    if not 0 <= ipod <= 100:
+        return None
+    if sync.host_rating is None or sync.ipod_rating is None:
+        return RatingDecision(host, ipod, ipod)
+
+    pending = sync.pending_rating
+    if pending is not None and pending.matches(host, ipod):
+        target = pending.target_rating
+    elif (host, ipod) == (sync.host_rating, sync.ipod_rating):
+        return None if pending is None else RatingDecision(host, ipod, ipod)
+    else:
+        target = resolved_rating(host, ipod, sync.host_rating, sync.ipod_rating, policy)
+    host_target = whole_star_rating(target)
+    return RatingDecision(
+        host, ipod, target, host_target if host_target != host else None
     )
 
 
@@ -84,7 +110,6 @@ def back_sync_ratings(
     }
     sources = {host_path_identity(str(s.path)): s for s in request.host.sources}
     scanned = {t.track_id: t for t in request.ipod.tracks}
-    original_tracks = {t.track_id: t for t in request.source.library.tracks}
     tracks = {t.track_id: t for t in active.library.tracks}
     paths = {t.metadata.location: t for t in active.library.tracks}
     updated = {(t.track_id, str(t.path)): t for t in provenance}
@@ -94,12 +119,10 @@ def back_sync_ratings(
         if t.sync is not None
     }
     issues: list[WriteIssue] = []
-    selected = set(completed)
-    for item in request.plan.items:
+    for item in completed:
         if (
             item.media_kind is not SyncPlanMediaKind.TRACK
             or item.host_path is None
-            or item not in selected
             or item.action in (SyncPlanAction.REMOVE, SyncPlanAction.ATTENTION)
         ):
             continue
@@ -131,43 +154,27 @@ def back_sync_ratings(
             record.sync,
             host_rating=prior.host_rating if prior is not None else None,
             ipod_rating=prior.ipod_rating if prior is not None else None,
+            pending_rating=prior.pending_rating if prior is not None else None,
         )
         record = replace(record, sync=sync)
         record_key = (record.track_id, str(record.path))
         updated[record_key] = record
-        enabled = request.options.back_sync_ratings and request.plan.sync_ratings
-        if not enabled and prior is not None:
+        decision = item.rating
+        if not source.metadata_complete or (decision is None and prior is not None):
             continue
-        if host.rating == sync.host_rating and track.rating == sync.ipod_rating:
-            # Established unchanged ratings need no Host I/O or per-Track device
-            # probes. The enclosing Sync Session validates the Library identity.
-            continue
-        original = (
-            original_tracks.get(item.ipod_id) if item.ipod_id is not None else None
-        )
-        changed = original is not None and (
-            host.rating != sync.host_rating or original.rating != sync.ipod_rating
-        )
-        needs_write = (
-            enabled
-            and changed
-            and prior is not None
-            and prior.host_rating is not None
-            and prior.ipod_rating is not None
-            and track.rating != host.rating
-        )
+        host_target = decision.host_target if decision is not None else None
+        needs_write = host_target is not None
         try:
             validate_device()
             observation = LocalHostFile.observe(source.path)
-            if (observation.size_bytes, observation.modified_ns) != (
-                source.size_bytes,
-                source.modified_ns,
-            ):
+            if not source.matches(observation):
                 raise ValueError(
                     "The paired Host file changed after scanning; rescan before retrying."
                 )
-            rating = host.rating
-            if needs_write:
+            rating = host.rating if decision is None else decision.host_rating
+            if decision is not None and track.rating != decision.ipod_target:
+                raise ValueError("The saved iPod rating differs from Review.")
+            if host_target is not None:
                 if not rating_supported(item.host_path):
                     raise ValueError(
                         "This Host media format does not support rating Back Sync."
@@ -177,8 +184,8 @@ def back_sync_ratings(
                     partial(
                         rewrite_rating_stream,
                         file_name=item.host_path,
-                        rating=track.rating,
-                        expected_rating=host.rating,
+                        rating=host_target,
+                        expected_rating=rating,
                     ),
                     checkpoint=validate_device,
                 )
@@ -188,19 +195,20 @@ def back_sync_ratings(
                         source_text(
                             "Updated Host rating from {old} to {new} stars.",
                             old=str(rating // 20),
-                            new=str(track.rating // 20),
+                            new=str(host_target // 20),
                         ),
                         severity=IssueSeverity.INFO,
                         artifact=item.host_path,
                     )
                 )
-                rating = track.rating
+                rating = host_target
             updated[record_key] = replace(
                 record,
                 sync=replace(
                     sync,
                     host_rating=rating,
                     ipod_rating=track.rating,
+                    pending_rating=None,
                     host_size_bytes=observation.size_bytes,
                     host_modified_ns=observation.modified_ns,
                 ),

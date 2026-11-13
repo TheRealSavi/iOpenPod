@@ -25,7 +25,12 @@ from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build
 
 from device_registry import DEFAULT_DEVICE_REGISTRY, IdentificationStatus
 from iOpenPod.app import sync_comparison_controller, sync_execution
-from iOpenPod.app.core.settings.definitions import RETRANSCODE_LOSSY
+from iOpenPod.app.back_sync import RatingDecision
+from iOpenPod.app.core.settings.definitions import (
+    BACK_SYNC_RATINGS,
+    RATING_CONFLICT_POLICY,
+    RETRANSCODE_LOSSY,
+)
 from iOpenPod.app.host_media_library import (
     HostMediaCacheStats,
     HostMediaFileKind,
@@ -46,7 +51,7 @@ from iOpenPod.app.models.device import (
     DeviceCandidateId,
     DeviceReadiness,
 )
-from iOpenPod.app.models.sync_plan_table_model import SyncPlanColumn
+from iOpenPod.app.models.sync_plan_table_model import SyncPlanColumn, SyncPlanTableModel
 from iOpenPod.app.models.sync_selection import SyncSelection
 from iOpenPod.app.models.track_table_model import TrackColumn
 from iOpenPod.app.sync_plan import (
@@ -155,6 +160,124 @@ def _group(page: SyncPlanPage, action: SyncPlanAction) -> SyncReviewGroup:
         for group in page.findChildren(SyncReviewGroup)
         if group.action is action and group.media in {None, SyncPlanMediaKind.TRACK}
     )
+
+
+@pytest.mark.parametrize(
+    ("decision", "visual", "accessible"),
+    [
+        (
+            RatingDecision(20, 80, 60, 60),
+            "Set Host and iPod rating to ★★★☆☆",
+            "Set Host and iPod rating to 3 of 5 stars",
+        ),
+        (
+            RatingDecision(60, 0, 0, 0),
+            "Set Host rating to ☆☆☆☆☆",
+            "Set Host rating to 0 of 5 stars",
+        ),
+        (
+            RatingDecision(100, 60, 100),
+            "Set iPod rating to ★★★★★",
+            "Set iPod rating to 5 of 5 stars",
+        ),
+        (
+            RatingDecision(20, 60, 75, 80),
+            "Set Host rating to ★★★★☆ · Set iPod rating to ★★★★☆",
+            "Set Host rating to 4 of 5 stars · Set iPod rating to 3.75 of 5 stars",
+        ),
+    ],
+)
+def test_review_shows_rating_targets_alongside_other_track_changes(
+    decision: RatingDecision, visual: str, accessible: str
+) -> None:
+    item = replace(
+        _item(SyncPlanAction.UPDATE, "track.mp3"),
+        basis=SyncPlanBasis.TRACK_DETAILS_CHANGED,
+        metadata_changed=True,
+        rating=decision,
+    )
+    model = SyncPlanTableModel()
+    model.replace_plan(SyncPlan((item,), rating_conflict_policy="average"))
+    reason = model.index(0, SyncPlanColumn.REASON)
+    assert reason.data() == f"Host tags differ from the iPod · {visual}"
+    assert reason.data(Qt.ItemDataRole.AccessibleTextRole) == (
+        f"Host tags differ from the iPod · {accessible}"
+    )
+
+
+def test_review_groups_track_updates_by_payload_replacement(
+    review_page: SyncPlanPage,
+) -> None:
+    title = replace(
+        _item(SyncPlanAction.UPDATE, "Title edit.mp3"),
+        basis=SyncPlanBasis.TRACK_DETAILS_CHANGED,
+        metadata_changed=True,
+    )
+    artwork = replace(
+        title,
+        name="Cover edit.mp3",
+        host_path="C:/Music/Cover edit.mp3",
+        metadata_changed=False,
+        artwork_changed=True,
+        ipod_id=22,
+    )
+    embedded_tags = replace(
+        title,
+        name="Embedded tags.mp3",
+        host_path="C:/Music/Embedded tags.mp3",
+        metadata_changed=False,
+        file_tags_changed=True,
+        ipod_id=23,
+    )
+    rating = replace(
+        title,
+        name="Rating edit.mp3",
+        host_path="C:/Music/Rating edit.mp3",
+        basis=SyncPlanBasis.RATING_BACK_SYNC,
+        metadata_changed=False,
+        rating=RatingDecision(20, 80, 60, 60),
+        ipod_id=24,
+    )
+    replacement = replace(
+        rating,
+        name="New audio.mp3",
+        host_path="C:/Music/New audio.mp3",
+        basis=SyncPlanBasis.AUDIO_PAYLOAD_CHANGED,
+        audio_payload_changed=True,
+        ipod_id=25,
+    )
+    video = replace(
+        replacement,
+        name="New video.mp4",
+        host_path="C:/Music/New video.mp4",
+        basis=SyncPlanBasis.MEDIA_SOURCE_CHANGED,
+        rating=None,
+        ipod_id=26,
+    )
+    selection = _selection(
+        SyncPlan((title, artwork, embedded_tags, rating, replacement, video))
+    )
+    review_page.load_review(selection)
+    groups = {
+        group.table.accessibleName(): group
+        for group in review_page.findChildren(SyncReviewGroup)
+        if group.action is SyncPlanAction.UPDATE
+        and group.media is SyncPlanMediaKind.TRACK
+    }
+    metadata = groups["Update Metadata details"]
+    resync = groups["Re-sync Files details"]
+    assert set(metadata.items()) == {title, artwork, embedded_tags, rating}
+    assert set(resync.items()) == {replacement, video}
+
+    metadata.checkbox.click()
+    assert set(selection.selected_plan.items) == {replacement, video}
+    assert resync.checkbox.checkState() is Qt.CheckState.Checked
+    review_page.proxy.set_query("rating edit")
+    review_page.load_review(selection)
+    assert metadata.items() == (rating,)
+    assert not resync.items()
+    metadata.checkbox.click()
+    assert set(selection.selected_plan.items) == {rating, replacement, video}
 
 
 def test_review_checkboxes_skip_actions_without_changing_host_membership(
@@ -407,9 +530,11 @@ def test_sync_plan_page_clear_invalidates_the_presented_plan() -> None:
         APPLICATION.sendPostedEvents(page, QEvent.Type.DeferredDelete)
 
 
+@pytest.mark.parametrize("rating_policy", [None, "host", "ipod", "average"])
 def test_completed_scans_open_selection_with_matched_checked_and_host_only_unchecked(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    rating_policy: str | None,
 ) -> None:
     host_path = HostPath(tmp_path / "song.mp3")
     host_track = Track(
@@ -553,13 +678,15 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
 
     comparisons: list[int] = []
     gui_thread = get_ident()
+    context.settings.set_global(BACK_SYNC_RATINGS, rating_policy is not None)
+    context.settings.set_global(RATING_CONFLICT_POLICY, rating_policy or "average")
 
     def compare(
         host: HostMediaLibrary,
         ipod: IPodMediaLibrary,
         library: LibrarySnapshot,
         *,
-        sync_ratings: bool = False,
+        rating_conflict_policy: str | None = None,
         file_tag_policy: str | None = None,
     ) -> SyncPlan:
         comparisons.append(get_ident())
@@ -567,7 +694,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
             host,
             ipod,
             library,
-            sync_ratings=sync_ratings,
+            rating_conflict_policy=rating_conflict_policy,
             file_tag_policy=file_tag_policy,
         )
 
@@ -600,6 +727,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         assert workspace.browser is None
         wait_for(lambda: workspace.stage is SyncStage.SELECT)
         assert len(comparisons) == 1 and comparisons[0] != gui_thread
+        assert workspace.selection.comparison.rating_conflict_policy == rating_policy
         assert all(
             table.property("tableId") != "host-podcasts"
             for table in workspace.findChildren(TrackTable)
@@ -905,7 +1033,7 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         ipod: IPodMediaLibrary,
         library: LibrarySnapshot,
         *,
-        sync_ratings: bool = False,
+        rating_conflict_policy: str | None = None,
         file_tag_policy: str | None = None,
     ) -> SyncPlan:
         entered.set()
@@ -915,7 +1043,7 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
                 host,
                 ipod,
                 library,
-                sync_ratings=sync_ratings,
+                rating_conflict_policy=rating_conflict_policy,
                 file_tag_policy=file_tag_policy,
             )
         finally:
