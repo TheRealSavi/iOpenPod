@@ -16,6 +16,7 @@ from PySide6.QtCore import (
 )
 
 from iOpenPod.app.models.filter_compat import end_rows_filter_change
+from iOpenPod.app.models.track_columns import rating_stars
 from iOpenPod.app.sync_plan import (
     SyncPlan,
     SyncPlanAction,
@@ -115,6 +116,8 @@ class SyncPlanTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole:
             return _tooltip(item)
         if role == Qt.ItemDataRole.AccessibleTextRole:
+            if column is SyncPlanColumn.REASON:
+                return _basis_label(item, numeric=True)
             return (
                 self.tr("%1, %2, %3")
                 .replace("%1", _action_label(item.action))
@@ -298,7 +301,7 @@ def _media_label(kind: SyncPlanMediaKind) -> str:
     }[kind]
 
 
-def _basis_label(item: SyncPlanItem) -> str:
+def _basis_label(item: SyncPlanItem, *, numeric: bool = False) -> str:
     decision = item.rating
     if decision is None:
         return _media_basis_label(item)
@@ -307,24 +310,43 @@ def _basis_label(item: SyncPlanItem) -> str:
         if item.basis is SyncPlanBasis.RATING_BACK_SYNC
         else [_media_basis_label(item)]
     )
-    if decision.host_target is not None:
-        reasons.append(
-            QCoreApplication.translate(
-                "SyncPlanTableModel", "Set Host rating to %1 / 5"
-            ).replace("%1", f"{decision.host_target / 20:g}")
-        )
-    if decision.ipod_target != decision.ipod_rating:
-        reasons.append(
-            QCoreApplication.translate(
-                "SyncPlanTableModel", "Set iPod rating to %1 / 5"
-            ).replace("%1", f"{decision.ipod_target / 20:g}")
-        )
-    if decision.host_target is None and decision.ipod_target == decision.ipod_rating:
+    host = decision.host_target
+    ipod = (
+        decision.ipod_target if decision.ipod_target != decision.ipod_rating else None
+    )
+
+    def rating_text(value: int) -> str:
+        if numeric:
+            return QCoreApplication.translate("StarRating", "%1 of 5 stars").replace(
+                "%1", f"{value / 20:g}"
+            )
+        return rating_stars(value)
+
+    if host is None and ipod is None:
         reasons.append(
             QCoreApplication.translate(
                 "SyncPlanTableModel", "Record current ratings for future Syncs"
             )
         )
+    elif host is not None and host == ipod:
+        reasons.append(
+            QCoreApplication.translate(
+                "SyncPlanTableModel", "Set Host and iPod rating to %1"
+            ).replace("%1", rating_text(host))
+        )
+    else:
+        if host is not None:
+            reasons.append(
+                QCoreApplication.translate(
+                    "SyncPlanTableModel", "Set Host rating to %1"
+                ).replace("%1", rating_text(host))
+            )
+        if ipod is not None:
+            reasons.append(
+                QCoreApplication.translate(
+                    "SyncPlanTableModel", "Set iPod rating to %1"
+                ).replace("%1", rating_text(ipod))
+            )
     return " · ".join(reasons)
 
 
@@ -453,7 +475,7 @@ def _media_basis_label(item: SyncPlanItem) -> str:
 
 
 def _tooltip(item: SyncPlanItem) -> str:
-    lines = [_action_label(item.action) + " · " + _basis_label(item)]
+    lines = [_action_label(item.action) + " · " + _basis_label(item, numeric=True)]
     if item.host_path:
         lines.append(
             QCoreApplication.translate("SyncPlanTableModel", "Host: %1").replace(

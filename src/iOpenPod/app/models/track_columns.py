@@ -520,9 +520,7 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
         _column(
             "Plays", lambda track: track.play_count, _format_count, right_aligned=True
         ),
-        _column(
-            "Rating", lambda track: track.rating, _format_rating, right_aligned=True
-        ),
+        _column("Rating", lambda track: track.rating, rating_stars, right_aligned=True),
         _column("Album Artist", lambda track: track.album_artist),
         _column("Composer", lambda track: track.metadata.composer),
         _column("Comment", lambda track: track.metadata.comment),
@@ -896,7 +894,7 @@ def _format_bitrate(value: int) -> str:
     return f"{value} kbps" if value > 0 else _MISSING
 
 
-def _format_rating(value: int) -> str:
+def rating_stars(value: int) -> str:
     stars = min(5, max(0, round(value / 20)))
     return ("★" * stars) + ("☆" * (5 - stars))
 

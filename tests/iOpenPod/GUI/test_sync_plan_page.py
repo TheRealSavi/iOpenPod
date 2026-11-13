@@ -155,17 +155,46 @@ def _group(page: SyncPlanPage, action: SyncPlanAction) -> SyncReviewGroup:
     )
 
 
-def test_review_shows_rating_targets_alongside_other_track_changes() -> None:
+@pytest.mark.parametrize(
+    ("decision", "visual", "accessible"),
+    [
+        (
+            RatingDecision(20, 80, 60, 60),
+            "Set Host and iPod rating to ★★★☆☆",
+            "Set Host and iPod rating to 3 of 5 stars",
+        ),
+        (
+            RatingDecision(60, 0, 0, 0),
+            "Set Host rating to ☆☆☆☆☆",
+            "Set Host rating to 0 of 5 stars",
+        ),
+        (
+            RatingDecision(100, 60, 100),
+            "Set iPod rating to ★★★★★",
+            "Set iPod rating to 5 of 5 stars",
+        ),
+        (
+            RatingDecision(20, 60, 75, 80),
+            "Set Host rating to ★★★★☆ · Set iPod rating to ★★★★☆",
+            "Set Host rating to 4 of 5 stars · Set iPod rating to 3.75 of 5 stars",
+        ),
+    ],
+)
+def test_review_shows_rating_targets_alongside_other_track_changes(
+    decision: RatingDecision, visual: str, accessible: str
+) -> None:
     item = replace(
         _item(SyncPlanAction.UPDATE, "track.mp3"),
         basis=SyncPlanBasis.TRACK_DETAILS_CHANGED,
         metadata_changed=True,
-        rating=RatingDecision(20, 80, 60, 60),
+        rating=decision,
     )
     model = SyncPlanTableModel()
     model.replace_plan(SyncPlan((item,), rating_conflict_policy="average"))
-    assert model.index(0, SyncPlanColumn.REASON).data() == (
-        "Host tags differ from the iPod · Set Host rating to 3 / 5 · Set iPod rating to 3 / 5"
+    reason = model.index(0, SyncPlanColumn.REASON)
+    assert reason.data() == f"Host tags differ from the iPod · {visual}"
+    assert reason.data(Qt.ItemDataRole.AccessibleTextRole) == (
+        f"Host tags differ from the iPod · {accessible}"
     )
 
 

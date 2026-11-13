@@ -9713,16 +9713,20 @@ Playlists: %3</translation>
         <translation>Foto</translation>
     </message>
     <message>
-        <source>Set Host rating to %1 / 5</source>
-        <translation>Bewertung auf dem Computer auf %1 / 5 setzen</translation>
-    </message>
-    <message>
-        <source>Set iPod rating to %1 / 5</source>
-        <translation>Bewertung auf dem iPod auf %1 / 5 setzen</translation>
-    </message>
-    <message>
         <source>Record current ratings for future Syncs</source>
         <translation>Aktuelle Bewertungen für künftige Synchronisierungen speichern</translation>
+    </message>
+    <message>
+        <source>Set Host and iPod rating to %1</source>
+        <translation>Bewertung auf dem Computer und dem iPod auf %1 setzen</translation>
+    </message>
+    <message>
+        <source>Set Host rating to %1</source>
+        <translation>Bewertung auf dem Computer auf %1 setzen</translation>
+    </message>
+    <message>
+        <source>Set iPod rating to %1</source>
+        <translation>Bewertung auf dem iPod auf %1 setzen</translation>
     </message>
     <message>
         <source>Restore automatic stream selection</source>

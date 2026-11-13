@@ -37,6 +37,7 @@ from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
 
 if TYPE_CHECKING:
     from iOpenPod.app.models.sync_selection import SyncSelection
+    from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 
 _CHANGE_ACTIONS = frozenset(
     {
@@ -51,7 +52,12 @@ _CHANGE_ACTIONS = frozenset(
 class SyncPlanPage(QWidget):
     """Review actions by category without changing earlier Host media selection."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        theme_manager: ThemeManager | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("syncPlanPage")
         self._plan: SyncPlan | None = None
@@ -121,6 +127,7 @@ class SyncPlanPage(QWidget):
                 action,
                 media,
                 groups_body,
+                theme_manager=theme_manager,
                 header_action=(
                     self._duplicates if action is SyncPlanAction.ATTENTION else None
                 ),
