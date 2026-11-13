@@ -9908,6 +9908,14 @@ Playlists: %3</translation>
         <translation>No se necesitan cambios</translation>
     </message>
     <message>
+        <source>Update Metadata</source>
+        <translation>Actualizar metadatos</translation>
+    </message>
+    <message>
+        <source>Sync tags, artwork, or ratings while keeping the audio and video</source>
+        <translation>Sincroniza las etiquetas, las carátulas o las valoraciones conservando el audio y el vídeo</translation>
+    </message>
+    <message>
         <source>Select %1</source>
         <translation>Seleccionar %1</translation>
     </message>

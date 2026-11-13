@@ -198,6 +198,81 @@ def test_review_shows_rating_targets_alongside_other_track_changes(
     )
 
 
+def test_review_groups_track_updates_by_payload_replacement(
+    review_page: SyncPlanPage,
+) -> None:
+    title = replace(
+        _item(SyncPlanAction.UPDATE, "Title edit.mp3"),
+        basis=SyncPlanBasis.TRACK_DETAILS_CHANGED,
+        metadata_changed=True,
+    )
+    artwork = replace(
+        title,
+        name="Cover edit.mp3",
+        host_path="C:/Music/Cover edit.mp3",
+        metadata_changed=False,
+        artwork_changed=True,
+        ipod_id=22,
+    )
+    embedded_tags = replace(
+        title,
+        name="Embedded tags.mp3",
+        host_path="C:/Music/Embedded tags.mp3",
+        metadata_changed=False,
+        file_tags_changed=True,
+        ipod_id=23,
+    )
+    rating = replace(
+        title,
+        name="Rating edit.mp3",
+        host_path="C:/Music/Rating edit.mp3",
+        basis=SyncPlanBasis.RATING_BACK_SYNC,
+        metadata_changed=False,
+        rating=RatingDecision(20, 80, 60, 60),
+        ipod_id=24,
+    )
+    replacement = replace(
+        rating,
+        name="New audio.mp3",
+        host_path="C:/Music/New audio.mp3",
+        basis=SyncPlanBasis.AUDIO_PAYLOAD_CHANGED,
+        audio_payload_changed=True,
+        ipod_id=25,
+    )
+    video = replace(
+        replacement,
+        name="New video.mp4",
+        host_path="C:/Music/New video.mp4",
+        basis=SyncPlanBasis.MEDIA_SOURCE_CHANGED,
+        rating=None,
+        ipod_id=26,
+    )
+    selection = _selection(
+        SyncPlan((title, artwork, embedded_tags, rating, replacement, video))
+    )
+    review_page.load_review(selection)
+    groups = {
+        group.table.accessibleName(): group
+        for group in review_page.findChildren(SyncReviewGroup)
+        if group.action is SyncPlanAction.UPDATE
+        and group.media is SyncPlanMediaKind.TRACK
+    }
+    metadata = groups["Update Metadata details"]
+    resync = groups["Re-sync Files details"]
+    assert set(metadata.items()) == {title, artwork, embedded_tags, rating}
+    assert set(resync.items()) == {replacement, video}
+
+    metadata.checkbox.click()
+    assert set(selection.selected_plan.items) == {replacement, video}
+    assert resync.checkbox.checkState() is Qt.CheckState.Checked
+    review_page.proxy.set_query("rating edit")
+    review_page.load_review(selection)
+    assert metadata.items() == (rating,)
+    assert not resync.items()
+    metadata.checkbox.click()
+    assert set(selection.selected_plan.items) == {rating, replacement, video}
+
+
 def test_review_checkboxes_skip_actions_without_changing_host_membership(
     review_page: SyncPlanPage,
 ) -> None:

@@ -178,6 +178,7 @@ class SyncReviewGroup(QFrame):
         parent: QWidget | None = None,
         *,
         header_action: QWidget | None = None,
+        replaces_payload: bool | None = None,
         theme_manager: ThemeManager | None = None,
     ) -> None:
         super().__init__(parent)
@@ -188,7 +189,8 @@ class SyncReviewGroup(QFrame):
         self.action = action
         self.media = media
         self._header_action = header_action
-        self.proxy = SyncPlanFilterModel(self)
+        self._replaces_payload = replaces_payload
+        self.proxy = SyncPlanFilterModel(self, replaces_payload=replaces_payload)
         self.proxy.setSourceModel(source)
         self.proxy.set_actions(frozenset({action}))
         self.proxy.set_media_kind(media)
@@ -377,9 +379,16 @@ class SyncReviewGroup(QFrame):
             ),
             SyncPlanAction.UNCHANGED: self.tr("No changes needed"),
         }
-        title = titles[self.action, self.media]
+        if self._replaces_payload is False:
+            title = self.tr("Update Metadata")
+            description = self.tr(
+                "Sync tags, artwork, or ratings while keeping the audio and video"
+            )
+        else:
+            title = titles[self.action, self.media]
+            description = descriptions[self.action]
         self._title.setText(title)
-        self._subtitle.setText(descriptions[self.action])
+        self._subtitle.setText(description)
         self.checkbox.setAccessibleName(self.tr("Select %1").replace("%1", title))
         self.checkbox.setToolTip(
             self.tr("Select or deselect all matching items in this group")

@@ -207,10 +207,13 @@ class SyncPlanTableModel(QAbstractTableModel):
 
 
 class SyncPlanFilterModel(QSortFilterProxyModel):
-    """Filter one plan by action, media family, and normalized search text."""
+    """Filter one plan by action, media family, payload replacement, and search."""
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self, parent: QObject | None = None, *, replaces_payload: bool | None = None
+    ) -> None:
         super().__init__(parent)
+        self._replaces_payload = replaces_payload
         self._actions: frozenset[SyncPlanAction] | None = None
         self._media_kind: SyncPlanMediaKind | None = None
         self._query = ""
@@ -251,6 +254,11 @@ class SyncPlanFilterModel(QSortFilterProxyModel):
         if self._actions is not None and item.action not in self._actions:
             return False
         if self._media_kind is not None and item.media_kind is not self._media_kind:
+            return False
+        if (
+            self._replaces_payload is not None
+            and item.audio_payload_changed != self._replaces_payload
+        ):
             return False
         return not self._query or self._query in item.search_text
 
