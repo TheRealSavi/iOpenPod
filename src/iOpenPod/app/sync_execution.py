@@ -2888,8 +2888,6 @@ def preview_playlist_sync(
     ipod: IPodMediaLibrary,
     source: ActiveIPod,
     choices: tuple[PlaylistSyncChoice, ...] = (),
-    *,
-    comparison: SyncPlan | None = None,
 ) -> tuple[PlaylistSyncChange, ...]:
     """Describe Host reconciliation using the same pure rules as execution.
 
@@ -2901,7 +2899,7 @@ def preview_playlist_sync(
     request = SyncExecutionRequest(
         plan, host, ipod, source, 0, 0, playlist_choices=choices
     )
-    return _preview_playlist_sync(request, comparison=comparison)
+    return _preview_playlist_sync(request)
 
 
 def review_playlist_sync(

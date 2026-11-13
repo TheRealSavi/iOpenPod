@@ -12108,6 +12108,10 @@ Playlists: %3</translation>
         <translation>Gespeicherte Mediathek-Dateien: {completed} von {total}</translation>
     </message>
     <message>
+        <source>Comparing Host and iPod media…</source>
+        <translation>Medien des Computers und des iPods werden verglichen…</translation>
+    </message>
+    <message>
         <source>Comparing the iPod media with its Sync helper…</source>
         <translation>iPod-Medien werden mit den gespeicherten Synchronisierungsinformationen verglichen…</translation>
     </message>
@@ -13608,6 +13612,10 @@ Playlists: %3</translation>
         <translation>Die Einrichtung konnte nicht abgeschlossen werden. Die akustische Analyse bleibt verfügbar.</translation>
     </message>
     <message>
+        <source>Several compatible browse records exist; an existing record was selected for the incoming Track.</source>
+        <translation>Es gibt mehrere kompatible Einträge für die Mediatheksnavigation. Für den hinzuzufügenden Titel wurde ein vorhandener Eintrag ausgewählt.</translation>
+    </message>
+    <message>
         <source>Shared Photo files have conflicting captured content.</source>
         <translation>Gemeinsam genutzte Fotodateien haben widersprüchliche erfasste Inhalte.</translation>
     </message>
@@ -14748,6 +14756,10 @@ Die akustische Analyse bleibt verfügbar.</translation>
     <message>
         <source>The iPod timezone is unknown. Dates are interpreted as UTC; unchanged native date bytes are retained.</source>
         <translation>Die Zeitzone des iPod ist unbekannt. Datumsangaben werden als UTC interpretiert; unveränderte Datumsangaben behalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
+        <source>The incoming Track has no unambiguous compatible browse record.</source>
+        <translation>Für den hinzuzufügenden Titel lässt sich kein kompatibler Navigationseintrag eindeutig bestimmen.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>

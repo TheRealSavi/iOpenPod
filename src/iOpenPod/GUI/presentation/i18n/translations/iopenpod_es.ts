@@ -12108,6 +12108,10 @@ Playlists: %3</translation>
         <translation>Archivos de biblioteca guardados: {completed} de {total}</translation>
     </message>
     <message>
+        <source>Comparing Host and iPod media…</source>
+        <translation>Comparando los medios del equipo y del iPod…</translation>
+    </message>
+    <message>
         <source>Comparing the iPod media with its Sync helper…</source>
         <translation>Comparando los medios del iPod con su índice auxiliar de sincronización…</translation>
     </message>
@@ -13608,6 +13612,10 @@ Playlists: %3</translation>
         <translation>No se pudo completar la instalación. El análisis acústico sigue disponible.</translation>
     </message>
     <message>
+        <source>Several compatible browse records exist; an existing record was selected for the incoming Track.</source>
+        <translation>Hay varios registros de navegación compatibles. Se ha seleccionado un registro existente para la pista que se va a añadir.</translation>
+    </message>
+    <message>
         <source>Shared Photo files have conflicting captured content.</source>
         <translation>Los archivos de fotos compartidos tienen contenido capturado incompatible.</translation>
     </message>
@@ -14748,6 +14756,10 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>The iPod timezone is unknown. Dates are interpreted as UTC; unchanged native date bytes are retained.</source>
         <translation>Se desconoce la zona horaria del iPod. Las fechas se interpretan como UTC; las fechas sin modificar conservan sus bytes originales.</translation>
+    </message>
+    <message>
+        <source>The incoming Track has no unambiguous compatible browse record.</source>
+        <translation>No se ha podido identificar de forma inequívoca un registro de navegación compatible para la pista que se va a añadir.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>

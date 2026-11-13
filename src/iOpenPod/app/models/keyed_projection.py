@@ -1,10 +1,22 @@
 """Proportionate Qt row updates for stable-key aggregate projections."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from itertools import groupby
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex
 
 _ROOT_INDEX = QModelIndex()
+
+
+def contiguous_row_ranges(rows: Iterable[int]) -> tuple[tuple[int, int], ...]:
+    """Group affected model rows into contiguous Qt notification ranges."""
+    ranges: list[tuple[int, int]] = []
+    for _, group in groupby(
+        enumerate(sorted(rows)), key=lambda pair: pair[1] - pair[0]
+    ):
+        group_rows = tuple(row for _, row in group)
+        ranges.append((group_rows[0], group_rows[-1]))
+    return tuple(ranges)
 
 
 def reconcile_keyed_rows[Row](
@@ -86,16 +98,8 @@ def _emit_changed_rows(
     model: QAbstractListModel,
     rows: tuple[int, ...],
 ) -> None:
-    if not rows:
-        return
-    start = end = rows[0]
-    for row in rows[1:]:
-        if row == end + 1:
-            end = row
-            continue
+    for start, end in contiguous_row_ranges(rows):
         model.dataChanged.emit(model.index(start, 0), model.index(end, 0), [])
-        start = end = row
-    model.dataChanged.emit(model.index(start, 0), model.index(end, 0), [])
 
 
-__all__ = ["reconcile_keyed_rows"]
+__all__ = ["contiguous_row_ranges", "reconcile_keyed_rows"]

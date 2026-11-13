@@ -15,6 +15,7 @@ from PySide6.QtCore import (
 )
 
 from iOpenPod.app.models.artwork_seed import stable_artwork_seed
+from iOpenPod.app.models.keyed_projection import contiguous_row_ranges
 from iOpenPod.app.models.track_columns import (
     TrackColumn,
     track_column_count,
@@ -47,6 +48,29 @@ class TrackRole(IntEnum):
     ON_IPOD = Qt.ItemDataRole.UserRole.value + 9
 
 
+_SYNC_SELECTION_ROLES = (
+    Qt.ItemDataRole.CheckStateRole.value,
+    Qt.ItemDataRole.ToolTipRole.value,
+    Qt.ItemDataRole.AccessibleTextRole.value,
+    TrackRole.SORT_VALUE,
+    TrackRole.STREAM_MANUAL,
+    TrackRole.ON_IPOD,
+)
+
+
+def is_sync_selection_change(
+    top_left: QModelIndex | QPersistentModelIndex,
+    bottom_right: QModelIndex | QPersistentModelIndex,
+    roles: list[int],
+) -> bool:
+    """Recognize changes that leave Track metadata and aggregate projections intact."""
+    return (
+        top_left.column() == bottom_right.column() == TrackColumn.SYNC_SELECTION
+        and bool(roles)
+        and all(role in _SYNC_SELECTION_ROLES for role in roles)
+    )
+
+
 class TrackTableModel(QAbstractTableModel):
     """Expose immutable Track data to Qt item views."""
 
@@ -58,6 +82,7 @@ class TrackTableModel(QAbstractTableModel):
         self._playlist_positions: tuple[int | None, ...] = ()
         self._search_texts: tuple[str, ...] = ()
         self._sync_selection: SyncSelection | None = None
+        self._rows_by_track_id: dict[int, list[int]] | None = None
 
     @property
     def track_count(self) -> int:
@@ -88,6 +113,7 @@ class TrackTableModel(QAbstractTableModel):
             raise ValueError("Playlist positions must align one-to-one with Tracks.")
         if tracks == self._tracks and positions == self._playlist_positions:
             return
+        self._rows_by_track_id = None
 
         old_count = len(self._tracks)
         new_count = len(tracks)
@@ -140,6 +166,7 @@ class TrackTableModel(QAbstractTableModel):
 
         self.beginResetModel()
         self._tracks = tracks
+        self._rows_by_track_id = None
         self._playlist_positions = (None,) * len(tracks)
         self._search_texts = tuple(_search_text(track) for track in tracks)
         self.endResetModel()
@@ -157,11 +184,13 @@ class TrackTableModel(QAbstractTableModel):
         if selection is self._sync_selection:
             return
         if self._sync_selection is not None:
-            self._sync_selection.changed.disconnect(self._selection_changed)
+            self._sync_selection.trackSelectionChanged.disconnect(
+                self._selection_changed
+            )
         self._sync_selection = selection
         if selection is not None:
-            selection.changed.connect(self._selection_changed)
-        self._selection_changed()
+            selection.trackSelectionChanged.connect(self._selection_changed)
+        self._selection_changed(None)
         self.syncSelectionEnabledChanged.emit(self.sync_selection_enabled)
 
     def rowCount(
@@ -303,40 +332,36 @@ class TrackTableModel(QAbstractTableModel):
             )
 
     def _emit_changed_rows(self, rows: tuple[int, ...]) -> None:
-        if not rows:
-            return
-        start = rows[0]
-        end = start
-        for row in rows[1:]:
-            if row == end + 1:
-                end = row
-                continue
+        for start, end in contiguous_row_ranges(rows):
             self.dataChanged.emit(
                 self.index(start, 0),
                 self.index(end, track_column_count() - 1),
                 [],
             )
-            start = end = row
-        self.dataChanged.emit(
-            self.index(start, 0),
-            self.index(end, track_column_count() - 1),
-            [],
-        )
 
-    def _selection_changed(self) -> None:
+    def _selection_changed(self, track_ids: tuple[int, ...] | None) -> None:
         if not self._tracks:
             return
+        if track_ids is None:
+            self._emit_selection_rows(0, len(self._tracks) - 1)
+            return
+        if self._rows_by_track_id is None:
+            self._rows_by_track_id = {}
+            for row, track in enumerate(self._tracks):
+                self._rows_by_track_id.setdefault(track.track_id, []).append(row)
+        rows = {
+            row
+            for track_id in track_ids
+            for row in self._rows_by_track_id.get(track_id, ())
+        }
+        for first, last in contiguous_row_ranges(rows):
+            self._emit_selection_rows(first, last)
+
+    def _emit_selection_rows(self, first: int, last: int) -> None:
         self.dataChanged.emit(
-            self.index(0, TrackColumn.SYNC_SELECTION),
-            self.index(len(self._tracks) - 1, TrackColumn.SYNC_SELECTION),
-            [
-                Qt.ItemDataRole.CheckStateRole.value,
-                Qt.ItemDataRole.ToolTipRole.value,
-                Qt.ItemDataRole.AccessibleTextRole.value,
-                TrackRole.SORT_VALUE,
-                TrackRole.STREAM_MANUAL,
-                TrackRole.ON_IPOD,
-            ],
+            self.index(first, TrackColumn.SYNC_SELECTION),
+            self.index(last, TrackColumn.SYNC_SELECTION),
+            list(_SYNC_SELECTION_ROLES),
         )
 
 
