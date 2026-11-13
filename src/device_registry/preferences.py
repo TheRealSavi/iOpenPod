@@ -4,6 +4,7 @@ from device_registry.firmware import resolve_firmware_target, strongest_values
 from device_registry.models import (
     DeviceEvidence,
     DeviceProfile,
+    FirmwareTarget,
     PreferencesSupport,
 )
 
@@ -34,7 +35,8 @@ def resolve_preferences_support(
         strongest_values(evidence.firmware_versions),
         strongest_values(evidence.updater_family_ids),
     )
-    if target is not None:
+    # Nano 2's alarm-only compatibility policy does not establish Preferences.
+    if target is not None and target is not FirmwareTarget.NANO_2_1_1_3:
         return PreferencesSupport(target=target)
     return PreferencesSupport(
         reason="This model and firmware combination is not qualified for preferences editing."

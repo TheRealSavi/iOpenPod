@@ -323,3 +323,8 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0256: Resolve duplicate Album destinations by release](0256-resolve-duplicate-album-destinations-by-release.md)
 - [ADR-0257: Continue writes after browse ID conflicts](0257-continue-writes-after-browse-id-conflicts.md)
 - [ADR-0258: Carry rating decisions through Sync](0258-carry-rating-decisions-through-sync.md)
+- [ADR-0259: Manage native Alarm collections and countdown observations](0259-manage-native-alarm-collections-and-countdown-observations.md)
+- [ADR-0260: Bind Alarm sounds to native sources and preserve Playlist identities](0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md)
+- [ADR-0261: Use Nano 1 alarm compatibility for Nano 2](0261-use-nano-1-alarm-compatibility-for-nano-2.md)
+- [ADR-0262: Leave Alarm selections unchanged during Library writes](0262-leave-alarm-selections-unchanged-during-library-writes.md)
+- [ADR-0263: Author Clock cities and native Alarm Playlist selections](0263-author-clock-cities-and-native-alarm-playlist-selections.md)

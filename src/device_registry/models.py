@@ -320,12 +320,14 @@ class ExtrasCapabilities:
 
 
 class AlarmFormat(StrEnum):
-    """Qualified saved format, not an authorization to create alarm defaults."""
+    """Selected saved alarm or countdown format, independent of device I/O."""
 
     NONE = "none"
     CLASSIC = "classic"
     MINI = "mini"
-    VIDEO = "video"
+    MINI_1 = "mini1"
+    CLOCK = "clock"
+    TIMER = "timer"
 
 
 class FirmwareTarget(StrEnum):
@@ -334,6 +336,7 @@ class FirmwareTarget(StrEnum):
     MINI_1_1_4_1 = "mini_1_1_4_1"
     MINI_2_1_4_1 = "mini_2_1_4_1"
     NANO_1_1_3_1 = "nano_1_1_3_1"
+    NANO_2_1_1_3 = "nano_2_1_1_3"
     NANO_3_1_1_3 = "nano_3_1_1_3"
     NANO_4_1_0_4 = "nano_4_1_0_4"
     NANO_5_1_0_2 = "nano_5_1_0_2"
@@ -363,10 +366,13 @@ class PreferencesSupport:
 class ExtrasSupport:
     """Calendar availability from the model and Clock Alarm layout evidence.
 
-    alarm_write permits edits to proven fields of an existing captured record.
-    It does not permit creating records, changing unknown modes, or clock sync.
+    alarm_write permits format-qualified edits. CLASSIC also has proven native
+    constructors and record removal; other formats edit existing settings only.
+    Unknown modes and clock synchronization are never implicitly authorized.
     sleep_timer describes native support; sleep_timer_write describes whether
     a host control protocol is established. These are deliberately separate.
+    timer_settings_write permits saved countdown preset/action edits, independent
+    of live start/stop commands and without changing its retained deadline.
     """
 
     calendar_write: bool = False
@@ -376,6 +382,7 @@ class ExtrasSupport:
     sleep_timer: FeatureSupport = FeatureSupport.UNKNOWN
     sleep_timer_write: bool = False
     reason: str = "The connected firmware is not qualified for Extras editing."
+    timer_settings_write: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

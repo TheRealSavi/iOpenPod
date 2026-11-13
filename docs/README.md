@@ -17,6 +17,8 @@ sessions.
   typography, metric, and interaction foundations for the desktop GUI.
 - [`eta.md`](eta.md) — reusable stage ETA model, integration, and accuracy limits.
 - [iPod timestamp conversion](ipod-time.md)
+- [Alarms and countdown timers](alarms.md) — firmware-wide coverage, supported
+  editing, native formats, saved-state limitations and validation.
 - [Datetime engineering guide](datetime-engineering.md) — code inventory, Whenever
   boundaries, file interpretation, firmware hints and unresolved questions.
 - [Further firmware contract corrections](research/classic201-additional-contracts-2026-10-26.md) —

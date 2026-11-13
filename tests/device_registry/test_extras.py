@@ -10,7 +10,9 @@ from device_registry import (
     DeviceProfile,
     EvidenceAuthority,
     FeatureSupport,
+    FirmwareTarget,
     resolve_extras_support,
+    resolve_preferences_support,
 )
 
 
@@ -32,9 +34,16 @@ def _id[T](
     "family,generation,firmware,updater,format",
     (
         ("iPod Mini", "2nd Gen", "1.4.1", 7, AlarmFormat.MINI),
-        ("iPod", "5th Gen", "1.3", 13, AlarmFormat.VIDEO),
-        ("iPod", "5th Gen", "1.3", 20, AlarmFormat.VIDEO),
-        ("iPod", "5.5th Gen", "1.3", 25, AlarmFormat.VIDEO),
+        ("iPod Mini", "1st Gen", "1.4.1", 3, AlarmFormat.MINI_1),
+        ("iPod Mini", "1st Gen", "1.4.1", 6, AlarmFormat.MINI_1),
+        ("iPod Nano", "1st Gen", "1.3.1", 14, AlarmFormat.CLOCK),
+        ("iPod Nano", "1st Gen", "1.3.1", 17, AlarmFormat.CLOCK),
+        ("iPod Nano", "3rd Gen", "1.1.3", 26, AlarmFormat.CLASSIC),
+        ("iPod Nano", "4th Gen", "1.0.4", 31, AlarmFormat.CLASSIC),
+        ("iPod Nano", "5th Gen", "1.0.2", 34, AlarmFormat.CLASSIC),
+        ("iPod", "5th Gen", "1.3", 13, AlarmFormat.CLOCK),
+        ("iPod", "5th Gen", "1.3", 20, AlarmFormat.CLOCK),
+        ("iPod", "5.5th Gen", "1.3", 25, AlarmFormat.CLOCK),
         ("iPod Classic", "6th Gen", "1.1.2", 24, AlarmFormat.CLASSIC),
         ("iPod Classic", "6.5th Gen", "2.0.1", 33, AlarmFormat.CLASSIC),
         ("iPod Classic", "7th Gen", "2.0.4", 35, AlarmFormat.CLASSIC),
@@ -58,15 +67,13 @@ def test_each_latest_target_qualifies_independently_without_enabling_sleep_contr
     )
     support = resolve_extras_support(profile, evidence)
     assert support.calendar_write and support.alarm_format is format
-    assert support.alarm_write is (format is not AlarmFormat.VIDEO)
+    assert support.alarm_write
     assert support.sleep_timer is FeatureSupport.SUPPORTED
     assert not support.sleep_timer_write
     without_family = resolve_extras_support(
         profile, DeviceEvidence(firmware_versions=(_id(firmware),))
     )
-    assert without_family.alarm_write == (
-        updater not in (35, 38) and format is not AlarmFormat.VIDEO
-    )
+    assert without_family.alarm_write == (updater not in (35, 38))
 
 
 def test_missing_versions_only_gate_alarm_writes() -> None:
@@ -119,23 +126,45 @@ def test_unidentified_device_cannot_write_extras() -> None:
 
 
 @pytest.mark.parametrize("updater", (19, 29))
-def test_nano_2_uses_shared_calendar_policy(updater: int) -> None:
+def test_nano_2_uses_explicit_clock_compatibility_without_preferences_support(
+    updater: int,
+) -> None:
     profile = _profile("iPod Nano", "2nd Gen")
+    evidence = DeviceEvidence(
+        firmware_versions=(_id("1.1.3"),), updater_family_ids=(_id(updater),)
+    )
+    support = resolve_extras_support(profile, evidence)
+    assert profile.capabilities.extras.calendar is FeatureSupport.SUPPORTED
+    assert support.calendar_write and support.alarm_write
+    assert support.alarm_format is AlarmFormat.CLOCK
+    assert support.alarm_firmware is FirmwareTarget.NANO_2_1_1_3
+    assert "compatibility" in support.reason
+    assert resolve_preferences_support(profile, evidence).target is None
+    assert not support.sleep_timer_write
+
+
+@pytest.mark.parametrize(
+    "versions,families",
+    (((), (19,)), (("1.1.2",), (19,)), (("1.1.3",), (14,)), (("1.1.3",), (19, 29))),
+)
+def test_nano_2_compatibility_still_requires_matching_identity(
+    versions: tuple[str, ...], families: tuple[int, ...]
+) -> None:
     support = resolve_extras_support(
-        profile,
+        _profile("iPod Nano", "2nd Gen"),
         DeviceEvidence(
-            firmware_versions=(_id("1.1.3"),), updater_family_ids=(_id(updater),)
+            firmware_versions=tuple(_id(value) for value in versions),
+            updater_family_ids=tuple(_id(value) for value in families),
         ),
     )
-    assert profile.capabilities.extras.calendar is FeatureSupport.SUPPORTED
-    assert support.calendar_write and not support.alarm_write
+    assert support.alarm_format is AlarmFormat.NONE and not support.alarm_write
 
 
 @pytest.mark.parametrize(
     "generation,firmware,updater",
     (("6th Gen", "1.2", 36), ("7th Gen", "1.0.4", 37), ("7th Gen", "1.1.2", 39)),
 )
-def test_native_calendar_exclusion_does_not_grant_any_writer(
+def test_touch_nano_qualifies_saved_timer_settings_independently(
     generation: str, firmware: str, updater: int
 ) -> None:
     support = resolve_extras_support(
@@ -146,6 +175,10 @@ def test_native_calendar_exclusion_does_not_grant_any_writer(
     )
     assert not support.calendar_write
     assert not support.alarm_write
+    assert support.alarm_format is AlarmFormat.TIMER
+    assert support.sleep_timer is FeatureSupport.SUPPORTED
+    assert not support.sleep_timer_write
+    assert support.timer_settings_write
 
 
 @pytest.mark.parametrize(

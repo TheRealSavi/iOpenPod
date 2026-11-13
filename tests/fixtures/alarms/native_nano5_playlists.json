@@ -1,0 +1,2534 @@
+{
+  "schema_version": 1,
+  "firmware": "Nano5 RetailOS 1.0.2 / 34A20020",
+  "image_sha256": "dbd25a9279e7c8ccdc5212d94f2e1b376a73dcebe105b1b1925d9669f0cecd49",
+  "script": "ipod-firmware-lab/scripts/probe_alarm_playlist_nano5_sql_20261113.py",
+  "script_sha256": "51f714e3774eec3093b104955e1173422f70c0dec0d6a07054683faa679e95a6",
+  "receipt": "ipod-firmware-lab/artifacts/alarm-playlist-nano5-sql-20261113-v2/native.json",
+  "receipt_sha256": "a20a0d0a76ca368c9ae8ee21438ade9fe8f5b8b1e3469388c2b629268badd97c",
+  "qualification": "Original hash-bound instructions execute media conversion, typed row filter, query-row iteration, primary positioning, selector bounds and lookup. SQL cell access and object services are adapted. No native SQLite query planner, VFS, or physical device. Hidden fixture input is converted to a byte at the synthetic cell boundary; this coercion is separately traced statically.",
+  "media_cases": [
+    {
+      "input": 0,
+      "output": 0
+    },
+    {
+      "input": 1,
+      "output": 1
+    },
+    {
+      "input": 2,
+      "output": 2
+    },
+    {
+      "input": 4,
+      "output": 4
+    },
+    {
+      "input": 8,
+      "output": 8
+    },
+    {
+      "input": 16,
+      "output": 0
+    },
+    {
+      "input": 32,
+      "output": 16
+    },
+    {
+      "input": 64,
+      "output": 32
+    },
+    {
+      "input": 128,
+      "output": 0
+    },
+    {
+      "input": 256,
+      "output": 256
+    },
+    {
+      "input": 512,
+      "output": 0
+    },
+    {
+      "input": 1024,
+      "output": 0
+    },
+    {
+      "input": 2048,
+      "output": 0
+    },
+    {
+      "input": 4096,
+      "output": 0
+    },
+    {
+      "input": 8192,
+      "output": 0
+    },
+    {
+      "input": 16384,
+      "output": 0
+    },
+    {
+      "input": 32768,
+      "output": 128
+    },
+    {
+      "input": 65536,
+      "output": 0
+    },
+    {
+      "input": 131072,
+      "output": 0
+    },
+    {
+      "input": 262144,
+      "output": 0
+    },
+    {
+      "input": 524288,
+      "output": 0
+    },
+    {
+      "input": 1048576,
+      "output": 256
+    },
+    {
+      "input": 2097152,
+      "output": 2097152
+    },
+    {
+      "input": 4194304,
+      "output": 0
+    },
+    {
+      "input": 8388608,
+      "output": 0
+    },
+    {
+      "input": 16777216,
+      "output": 0
+    },
+    {
+      "input": 33554432,
+      "output": 0
+    },
+    {
+      "input": 67108864,
+      "output": 0
+    },
+    {
+      "input": 134217728,
+      "output": 0
+    },
+    {
+      "input": 268435456,
+      "output": 0
+    },
+    {
+      "input": 536870912,
+      "output": 0
+    },
+    {
+      "input": 1073741824,
+      "output": 0
+    },
+    {
+      "input": 2147483648,
+      "output": 0
+    },
+    {
+      "input": 3,
+      "output": 3
+    },
+    {
+      "input": 66,
+      "output": 34
+    },
+    {
+      "input": 32768,
+      "output": 128
+    },
+    {
+      "input": 32769,
+      "output": 129
+    },
+    {
+      "input": 4294967295,
+      "output": 2097599
+    },
+    {
+      "input": 2147483650,
+      "output": 2
+    }
+  ],
+  "filter_cases": [
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 1,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 2,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 3,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 4,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 5,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 6,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 7,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 8,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 9,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 10,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 11,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 12,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 13,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 14,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 15,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 16,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 17,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 18,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 19,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 20,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 21,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 22,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 23,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 24,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 25,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 26,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 27,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 28,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 29,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 30,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 31,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 32,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 33,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 34,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 35,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 36,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 37,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 38,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 39,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 40,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 41,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 42,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 43,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 44,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 45,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 46,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 47,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 48,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 49,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 50,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 51,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 52,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 53,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 54,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 55,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 56,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 57,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 58,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 59,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 60,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 61,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 62,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 63,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 64,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 65,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 66,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 67,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 68,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 69,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 70,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 71,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 72,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 73,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 74,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 75,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 76,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 77,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 78,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 79,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 80,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 81,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 82,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 83,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 84,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 85,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 86,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 87,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 88,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 89,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 90,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 91,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 92,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 93,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 94,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 95,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 96,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 97,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 98,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 99,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 100,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 101,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 102,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 103,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 104,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 105,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 106,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 107,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 108,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 109,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 110,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 111,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 112,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 113,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 114,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 115,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 116,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 117,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 118,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 119,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 120,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 121,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 122,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 123,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 124,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 125,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 126,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 127,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 0,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 2,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 4,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 8,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 16,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 32,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 64,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 128,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 256,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 512,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1024,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 2048,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 4096,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 8192,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 16384,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 32768,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 65536,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 131072,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 262144,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 524288,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1048576,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 2097152,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 4194304,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 8388608,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 16777216,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 33554432,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 67108864,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 134217728,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 268435456,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 536870912,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1073741824,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 2147483648,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 3,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 66,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 32768,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 32769,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 4294967295,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 2147483650,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 1,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 2,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 255,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 256,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 257,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": -1,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": false
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1,
+        "folder": 0
+      },
+      "eligible": true
+    },
+    {
+      "row": {
+        "pid": 1,
+        "kind": 0,
+        "hidden": 0,
+        "media": 1,
+        "folder": 1
+      },
+      "eligible": true
+    }
+  ],
+  "order_cases": [
+    {
+      "primary": 999,
+      "rows": [
+        {
+          "pid": 44,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 12,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 1
+        },
+        {
+          "pid": 100,
+          "kind": 11,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 33,
+          "kind": 0,
+          "hidden": 1,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 71,
+          "kind": 0,
+          "hidden": 0,
+          "media": 2,
+          "folder": 0
+        },
+        {
+          "pid": 90,
+          "kind": 0,
+          "hidden": 0,
+          "media": 0,
+          "folder": 0
+        },
+        {
+          "pid": 22,
+          "kind": 25,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        }
+      ],
+      "indices": [
+        0,
+        1,
+        5,
+        6
+      ],
+      "pids": [
+        44,
+        12,
+        90,
+        22
+      ]
+    },
+    {
+      "primary": 44,
+      "rows": [
+        {
+          "pid": 44,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 12,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 1
+        },
+        {
+          "pid": 100,
+          "kind": 11,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 33,
+          "kind": 0,
+          "hidden": 1,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 71,
+          "kind": 0,
+          "hidden": 0,
+          "media": 2,
+          "folder": 0
+        },
+        {
+          "pid": 90,
+          "kind": 0,
+          "hidden": 0,
+          "media": 0,
+          "folder": 0
+        },
+        {
+          "pid": 22,
+          "kind": 25,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        }
+      ],
+      "indices": [
+        0,
+        1,
+        5,
+        6
+      ],
+      "pids": [
+        44,
+        12,
+        90,
+        22
+      ]
+    },
+    {
+      "primary": 12,
+      "rows": [
+        {
+          "pid": 44,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 12,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 1
+        },
+        {
+          "pid": 100,
+          "kind": 11,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 33,
+          "kind": 0,
+          "hidden": 1,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 71,
+          "kind": 0,
+          "hidden": 0,
+          "media": 2,
+          "folder": 0
+        },
+        {
+          "pid": 90,
+          "kind": 0,
+          "hidden": 0,
+          "media": 0,
+          "folder": 0
+        },
+        {
+          "pid": 22,
+          "kind": 25,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        }
+      ],
+      "indices": [
+        1,
+        0,
+        5,
+        6
+      ],
+      "pids": [
+        12,
+        44,
+        90,
+        22
+      ]
+    },
+    {
+      "primary": 90,
+      "rows": [
+        {
+          "pid": 44,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 12,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 1
+        },
+        {
+          "pid": 100,
+          "kind": 11,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 33,
+          "kind": 0,
+          "hidden": 1,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 71,
+          "kind": 0,
+          "hidden": 0,
+          "media": 2,
+          "folder": 0
+        },
+        {
+          "pid": 90,
+          "kind": 0,
+          "hidden": 0,
+          "media": 0,
+          "folder": 0
+        },
+        {
+          "pid": 22,
+          "kind": 25,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        }
+      ],
+      "indices": [
+        5,
+        0,
+        1,
+        6
+      ],
+      "pids": [
+        90,
+        44,
+        12,
+        22
+      ]
+    },
+    {
+      "primary": 33,
+      "rows": [
+        {
+          "pid": 44,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 12,
+          "kind": 0,
+          "hidden": 0,
+          "media": 1,
+          "folder": 1
+        },
+        {
+          "pid": 100,
+          "kind": 11,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 33,
+          "kind": 0,
+          "hidden": 1,
+          "media": 1,
+          "folder": 0
+        },
+        {
+          "pid": 71,
+          "kind": 0,
+          "hidden": 0,
+          "media": 2,
+          "folder": 0
+        },
+        {
+          "pid": 90,
+          "kind": 0,
+          "hidden": 0,
+          "media": 0,
+          "folder": 0
+        },
+        {
+          "pid": 22,
+          "kind": 25,
+          "hidden": 0,
+          "media": 1,
+          "folder": 0
+        }
+      ],
+      "indices": [
+        0,
+        1,
+        5,
+        6
+      ],
+      "pids": [
+        44,
+        12,
+        90,
+        22
+      ]
+    }
+  ],
+  "selector_cases": [
+    {
+      "primary": 999,
+      "selector": 0,
+      "accepted": true,
+      "lookup_pid": 44,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 999,
+      "selector": 1,
+      "accepted": true,
+      "lookup_pid": 12,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 999,
+      "selector": 2,
+      "accepted": true,
+      "lookup_pid": 90,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 999,
+      "selector": 3,
+      "accepted": true,
+      "lookup_pid": 22,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 999,
+      "selector": 4,
+      "accepted": false,
+      "lookup_pid": 1311768467750121216,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 999,
+      "selector": 5,
+      "accepted": false,
+      "lookup_pid": null,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 44,
+      "selector": 0,
+      "accepted": true,
+      "lookup_pid": 44,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 44,
+      "selector": 1,
+      "accepted": true,
+      "lookup_pid": 12,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 44,
+      "selector": 2,
+      "accepted": true,
+      "lookup_pid": 90,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 44,
+      "selector": 3,
+      "accepted": true,
+      "lookup_pid": 22,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 44,
+      "selector": 4,
+      "accepted": false,
+      "lookup_pid": 1311768467750121216,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 44,
+      "selector": 5,
+      "accepted": false,
+      "lookup_pid": null,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 12,
+      "selector": 0,
+      "accepted": true,
+      "lookup_pid": 12,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 12,
+      "selector": 1,
+      "accepted": true,
+      "lookup_pid": 44,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 12,
+      "selector": 2,
+      "accepted": true,
+      "lookup_pid": 90,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 12,
+      "selector": 3,
+      "accepted": true,
+      "lookup_pid": 22,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 12,
+      "selector": 4,
+      "accepted": false,
+      "lookup_pid": 1311768467750121216,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 12,
+      "selector": 5,
+      "accepted": false,
+      "lookup_pid": null,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 90,
+      "selector": 0,
+      "accepted": true,
+      "lookup_pid": 90,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 90,
+      "selector": 1,
+      "accepted": true,
+      "lookup_pid": 44,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 90,
+      "selector": 2,
+      "accepted": true,
+      "lookup_pid": 12,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 90,
+      "selector": 3,
+      "accepted": true,
+      "lookup_pid": 22,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 90,
+      "selector": 4,
+      "accepted": false,
+      "lookup_pid": 1311768467750121216,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 90,
+      "selector": 5,
+      "accepted": false,
+      "lookup_pid": null,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 33,
+      "selector": 0,
+      "accepted": true,
+      "lookup_pid": 44,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 33,
+      "selector": 1,
+      "accepted": true,
+      "lookup_pid": 12,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 33,
+      "selector": 2,
+      "accepted": true,
+      "lookup_pid": 90,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 33,
+      "selector": 3,
+      "accepted": true,
+      "lookup_pid": 22,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 33,
+      "selector": 4,
+      "accepted": false,
+      "lookup_pid": 1311768467750121216,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    },
+    {
+      "primary": 33,
+      "selector": 5,
+      "accepted": false,
+      "lookup_pid": null,
+      "raw_count": 6,
+      "user_count": 5,
+      "expected_sql_rows": 4
+    }
+  ]
+}

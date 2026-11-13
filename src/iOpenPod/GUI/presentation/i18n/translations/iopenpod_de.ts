@@ -59,6 +59,30 @@
         <translation>Wecker bearbeiten</translation>
     </message>
     <message>
+        <source>New alarm</source>
+        <translation>Neuer Wecker</translation>
+    </message>
+    <message>
+        <source>Choose a city from the list.</source>
+        <translation>Wählen Sie eine Stadt aus der Liste.</translation>
+    </message>
+    <message>
+        <source>Add city</source>
+        <translation>Stadt hinzufügen</translation>
+    </message>
+    <message>
+        <source>Edit {city} alarm</source>
+        <translation>Wecker für {city} bearbeiten</translation>
+    </message>
+    <message>
+        <source>City</source>
+        <translation>Stadt</translation>
+    </message>
+    <message>
+        <source>Daylight saving time</source>
+        <translation>Sommerzeit</translation>
+    </message>
+    <message>
         <source>Date</source>
         <translation>Datum</translation>
     </message>
@@ -69,6 +93,26 @@
     <message>
         <source>Repeat</source>
         <translation>Wiederholung</translation>
+    </message>
+    <message>
+        <source>Enabled</source>
+        <translation>Aktiviert</translation>
+    </message>
+    <message>
+        <source>Label</source>
+        <translation>Bezeichnung</translation>
+    </message>
+    <message>
+        <source>Sound</source>
+        <translation>Ton</translation>
+    </message>
+    <message>
+        <source>Keep current sound</source>
+        <translation>Aktuellen Ton beibehalten</translation>
+    </message>
+    <message>
+        <source>Playlist: {name}</source>
+        <translation>Wiedergabeliste: {name}</translation>
     </message>
     <message>
         <source>Once</source>
@@ -99,12 +143,28 @@
         <translation>Jährlich</translation>
     </message>
     <message>
+        <source>The alarm uses this city&apos;s local time. Daylight saving time is set manually.</source>
+        <translation>Der Wecker verwendet die Ortszeit dieser Stadt. Die Sommerzeit wird manuell eingestellt.</translation>
+    </message>
+    <message>
+        <source>Times follow the iPod&apos;s clock. Check the alarm on your iPod after ejecting.</source>
+        <translation>Die Uhrzeiten richten sich nach der Uhr des iPod. Prüfen Sie den Wecker nach dem Auswerfen auf Ihrem iPod.</translation>
+    </message>
+    <message>
+        <source>Times follow the iPod&apos;s clock. Check the saved alarm and its sound on the iPod after ejecting.</source>
+        <translation type="vanished">Die Uhrzeiten richten sich nach der Uhr des iPod. Prüfen Sie den gespeicherten Wecker und seinen Ton nach dem Auswerfen auf dem iPod.</translation>
+    </message>
+    <message>
+        <source>Times follow the iPod&apos;s clock. Change this alarm&apos;s enable and sound settings on the iPod.</source>
+        <translation type="vanished">Die Uhrzeiten richten sich nach der Uhr des iPod. Aktivieren oder deaktivieren Sie diesen Wecker und wählen Sie seinen Ton auf dem iPod.</translation>
+    </message>
+    <message>
         <source>Keep current setting ({value})</source>
         <translation>Aktuelle Einstellung beibehalten ({value})</translation>
     </message>
     <message>
         <source>Times follow the iPod&apos;s clock. Check that the alarm is enabled and its sound is set on the iPod.</source>
-        <translation>Die Uhrzeiten richten sich nach der Uhr des iPod. Prüfen Sie auf dem iPod, ob der Wecker aktiviert und sein Ton eingestellt ist.</translation>
+        <translation type="vanished">Die Uhrzeiten richten sich nach der Uhr des iPod. Prüfen Sie auf dem iPod, ob der Wecker aktiviert und sein Ton eingestellt ist.</translation>
     </message>
     <message>
         <source>Save</source>
@@ -150,8 +210,28 @@
         <translation>Wecker</translation>
     </message>
     <message>
+        <source>Timer</source>
+        <translation>Timer</translation>
+    </message>
+    <message>
         <source>Sleep Timer</source>
         <translation>Ruhezustand-Timer</translation>
+    </message>
+    <message>
+        <source>{count} saved</source>
+        <translation>{count} gespeichert</translation>
+    </message>
+    <message>
+        <source>Times follow the saved clock on your iPod. Changes are saved to the device; check them after ejecting.</source>
+        <translation>Die Uhrzeiten richten sich nach der gespeicherten Uhr des iPod. Änderungen werden auf dem Gerät gespeichert. Prüfen Sie sie nach dem Auswerfen.</translation>
+    </message>
+    <message>
+        <source>Countdown timer</source>
+        <translation>Countdown-Timer</translation>
+    </message>
+    <message>
+        <source>Saved duration preset. Start or stop the timer on your iPod.</source>
+        <translation type="vanished">Gespeicherte Dauer. Starten oder stoppen Sie den Timer auf Ihrem iPod.</translation>
     </message>
     <message>
         <source>Alarm</source>
@@ -166,6 +246,38 @@
         <translation>Wiederholung</translation>
     </message>
     <message>
+        <source>Some timer settings could not be read. Available settings are shown below.</source>
+        <translation>Einige Timer-Einstellungen konnten nicht gelesen werden. Verfügbare Einstellungen werden unten angezeigt.</translation>
+    </message>
+    <message>
+        <source>No saved alarms. Create an alarm to get started.</source>
+        <translation>Keine gespeicherten Wecker. Erstellen Sie einen neuen Wecker.</translation>
+    </message>
+    <message>
+        <source>When timer ends: Sleep iPod</source>
+        <translation>Bei Timer-Ende: iPod in Ruhezustand</translation>
+    </message>
+    <message>
+        <source>When timer ends: Play a sound</source>
+        <translation type="vanished">Bei Timer-Ende: Ton abspielen</translation>
+    </message>
+    <message>
+        <source>Saved end time: {time}</source>
+        <translation>Gespeicherte Endzeit: {time}</translation>
+    </message>
+    <message>
+        <source>No saved timer settings are available.</source>
+        <translation>Keine gespeicherten Timer-Einstellungen verfügbar.</translation>
+    </message>
+    <message>
+        <source>Saved settings do not show whether the timer is running.</source>
+        <translation>Die gespeicherten Einstellungen zeigen nicht, ob der Timer gerade läuft.</translation>
+    </message>
+    <message>
+        <source>Open Clock on your iPod, then Timer. Choose a duration and sound, or Sleep iPod, then tap Start.</source>
+        <translation>Öffnen Sie auf Ihrem iPod „Uhr“ und dann „Timer“. Wählen Sie eine Dauer und einen Ton oder „iPod in Ruhezustand“ und tippen Sie auf „Start“.</translation>
+    </message>
+    <message>
         <source>Edit time…</source>
         <translation type="vanished">Uhrzeit bearbeiten…</translation>
     </message>
@@ -178,6 +290,14 @@
         <translation>Uhrzeit nicht verfügbar</translation>
     </message>
     <message>
+        <source>Enabled</source>
+        <translation>Aktiviert</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Deaktiviert</translation>
+    </message>
+    <message>
         <source>Read only</source>
         <translation>Schreibgeschützt</translation>
     </message>
@@ -186,16 +306,44 @@
         <translation>Dieser Wecker kann hier angezeigt werden. Ändern Sie seine weiteren Einstellungen auf Ihrem iPod.</translation>
     </message>
     <message>
+        <source>Remove alarm</source>
+        <translation>Wecker entfernen</translation>
+    </message>
+    <message>
+        <source>Remove city</source>
+        <translation>Stadt entfernen</translation>
+    </message>
+    <message>
+        <source>Remove {city} and its alarm from your iPod&apos;s clocks?</source>
+        <translation>{city} und den zugehörigen Wecker aus den Uhren Ihres iPod entfernen?</translation>
+    </message>
+    <message>
+        <source>Remove this saved alarm from your iPod?</source>
+        <translation>Diesen gespeicherten Wecker vom iPod entfernen?</translation>
+    </message>
+    <message>
         <source>Saved alarms</source>
         <translation>Gespeicherte Wecker</translation>
     </message>
     <message>
         <source>Times follow your iPod&apos;s clock. Turn alarms on or off and choose their sound on the iPod.</source>
-        <translation>Die Uhrzeiten richten sich nach der Uhr Ihres iPod. Aktivieren oder deaktivieren Sie Wecker und wählen Sie ihren Ton auf dem iPod.</translation>
+        <translation type="vanished">Die Uhrzeiten richten sich nach der Uhr Ihres iPod. Aktivieren oder deaktivieren Sie Wecker und wählen Sie ihren Ton auf dem iPod.</translation>
+    </message>
+    <message>
+        <source>Cities &amp; alarms</source>
+        <translation>Städte und Wecker</translation>
+    </message>
+    <message>
+        <source>Each city has its own alarm. Times follow that city&apos;s clock on your iPod.</source>
+        <translation>Jede Stadt hat ihren eigenen Wecker. Die Uhrzeiten richten sich nach der jeweiligen Uhr auf Ihrem iPod.</translation>
     </message>
     <message>
         <source>Fall asleep to your music</source>
         <translation>Mit Ihrer Musik einschlafen</translation>
+    </message>
+    <message>
+        <source>Saved duration and ending action.</source>
+        <translation>Gespeicherte Dauer und Aktion bei Timer-Ende.</translation>
     </message>
     <message>
         <source>Let your iPod stop playback after a little while. Set a Sleep Timer directly on the device.</source>
@@ -204,6 +352,22 @@
     <message>
         <source>Edit alarm…</source>
         <translation>Wecker bearbeiten…</translation>
+    </message>
+    <message>
+        <source>New alarm…</source>
+        <translation>Neuer Wecker…</translation>
+    </message>
+    <message>
+        <source>Add city…</source>
+        <translation>Stadt hinzufügen…</translation>
+    </message>
+    <message>
+        <source>Edit timer settings…</source>
+        <translation>Timer-Einstellungen bearbeiten…</translation>
+    </message>
+    <message>
+        <source>{hours} h {minutes} min</source>
+        <translation>{hours} Std. {minutes} Min.</translation>
     </message>
     <message>
         <source>{model} · Firmware {firmware}
@@ -220,12 +384,24 @@ Wecker können nicht bearbeitet werden, da die Unterstützung für dieses Modell
         <translation>Wählen Sie einen iPod, um seine Wecker anzuzeigen.</translation>
     </message>
     <message>
+        <source>No cities saved. Add a city to set its alarm.</source>
+        <translation>Keine Städte gespeichert. Fügen Sie eine Stadt hinzu, um ihren Wecker einzustellen.</translation>
+    </message>
+    <message>
+        <source>When timer ends: {sound}</source>
+        <translation>Bei Timer-Ende: {sound}</translation>
+    </message>
+    <message>
+        <source>Play a sound</source>
+        <translation>Ton abspielen</translation>
+    </message>
+    <message>
         <source>This read-only snapshot is the iPod&apos;s saved alarm time. It may be disabled or out of date. Manage saved alarms on the iPod.</source>
-        <translation>Diese schreibgeschützte Momentaufnahme zeigt die gespeicherte Weckzeit des iPod. Der Wecker kann ausgeschaltet oder die Uhrzeit veraltet sein. Verwalten Sie gespeicherte Wecker auf dem iPod.</translation>
+        <translation type="vanished">Diese schreibgeschützte Momentaufnahme zeigt die gespeicherte Weckzeit des iPod. Der Wecker kann ausgeschaltet oder die Uhrzeit veraltet sein. Verwalten Sie gespeicherte Wecker auf dem iPod.</translation>
     </message>
     <message>
         <source>Clock alarm snapshot</source>
-        <translation>Momentaufnahme des Weckers</translation>
+        <translation type="vanished">Momentaufnahme des Weckers</translation>
     </message>
     <message>
         <source>Some alarm details could not be read. Available alarms are shown below.</source>
@@ -245,7 +421,7 @@ Wecker können nicht bearbeitet werden, da die Unterstützung für dieses Modell
     </message>
     <message>
         <source>The clock alarm snapshot could not be read. Check saved alarms on your iPod.</source>
-        <translation>Die Momentaufnahme des Weckers konnte nicht gelesen werden. Prüfen Sie gespeicherte Wecker auf Ihrem iPod.</translation>
+        <translation type="vanished">Die Momentaufnahme des Weckers konnte nicht gelesen werden. Prüfen Sie gespeicherte Wecker auf Ihrem iPod.</translation>
     </message>
     <message>
         <source>No saved alarms were found. Create an alarm on the iPod, then refresh this page.</source>
@@ -2040,6 +2216,49 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     <message>
         <source>%1 selected</source>
         <translation>%1 ausgewählt</translation>
+    </message>
+</context>
+<context>
+    <name>ClockCityPicker</name>
+    <message>
+        <source>Africa</source>
+        <translation>Afrika</translation>
+    </message>
+    <message>
+        <source>Asia</source>
+        <translation>Asien</translation>
+    </message>
+    <message>
+        <source>Atlantic</source>
+        <translation>Atlantik</translation>
+    </message>
+    <message>
+        <source>Australia</source>
+        <translation>Australien</translation>
+    </message>
+    <message>
+        <source>Europe</source>
+        <translation>Europa</translation>
+    </message>
+    <message>
+        <source>North America</source>
+        <translation>Nordamerika</translation>
+    </message>
+    <message>
+        <source>Pacific</source>
+        <translation>Pazifik</translation>
+    </message>
+    <message>
+        <source>South America</source>
+        <translation>Südamerika</translation>
+    </message>
+    <message>
+        <source>City</source>
+        <translation>Stadt</translation>
+    </message>
+    <message>
+        <source>Search cities…</source>
+        <translation>Städte suchen…</translation>
     </message>
 </context>
 <context>
@@ -10497,6 +10716,45 @@ Playlists: %3</translation>
     </message>
 </context>
 <context>
+    <name>TimerEditor</name>
+    <message>
+        <source>Timer settings</source>
+        <translation>Timer-Einstellungen</translation>
+    </message>
+    <message>
+        <source>Hours</source>
+        <translation>Stunden</translation>
+    </message>
+    <message>
+        <source>Minutes</source>
+        <translation>Minuten</translation>
+    </message>
+    <message>
+        <source>Unchanged</source>
+        <translation>Unverändert</translation>
+    </message>
+    <message>
+        <source>When timer ends</source>
+        <translation>Bei Timer-Ende</translation>
+    </message>
+    <message>
+        <source>Sleep iPod</source>
+        <translation>iPod in Ruhezustand</translation>
+    </message>
+    <message>
+        <source>Keep current setting</source>
+        <translation>Aktuelle Einstellung beibehalten</translation>
+    </message>
+    <message>
+        <source>Your iPod loads these settings on restart. Start and stop the timer on the iPod.</source>
+        <translation>Ihr iPod lädt diese Einstellungen beim Neustart. Starten und stoppen Sie den Timer auf dem iPod.</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Speichern</translation>
+    </message>
+</context>
+<context>
     <name>TrackActions</name>
     <message>
         <source>Library action unavailable</source>
@@ -11780,6 +12038,10 @@ Playlists: %3</translation>
         <translation>Weitere Geräteeinstellungen</translation>
     </message>
     <message>
+        <source>Alarm</source>
+        <translation>Wecker</translation>
+    </message>
+    <message>
         <source>Alarm {number}</source>
         <translation>Wecker {number}</translation>
     </message>
@@ -11860,6 +12122,10 @@ Playlists: %3</translation>
         <translation>Änderungen werden analysiert</translation>
     </message>
     <message>
+        <source>Anniversary</source>
+        <translation>Jahrestag</translation>
+    </message>
+    <message>
         <source>Another operation is using this backup or iPod.</source>
         <translation>Ein anderer Vorgang verwendet dieses Backup oder diesen iPod.</translation>
     </message>
@@ -11874,6 +12140,10 @@ Playlists: %3</translation>
     <message>
         <source>Apply this Playlist edit to established counterparts while retaining each dataset&apos;s private metadata.</source>
         <translation>Diese Wiedergabelistenänderung auf die bekannten zugehörigen Datensätze anwenden und dabei die eigenen Metadaten jedes Datenbestands beibehalten.</translation>
+    </message>
+    <message>
+        <source>Appointment</source>
+        <translation>Termin</translation>
     </message>
     <message>
         <source>Artwork edits cannot contain pixels and a source identity.</source>
@@ -11904,6 +12174,10 @@ Playlists: %3</translation>
         <translation>ArtworkDB ist leer oder keine reguläre Datei.</translation>
     </message>
     <message>
+        <source>Ascending</source>
+        <translation>Aufsteigend</translation>
+    </message>
+    <message>
         <source>Ask</source>
         <translation>Nachfragen</translation>
     </message>
@@ -11928,6 +12202,10 @@ Playlists: %3</translation>
         <translation>Backup abgeschlossen · {total} Dateien gesichert.</translation>
     </message>
     <message>
+        <source>Bark</source>
+        <translation>Bellen</translation>
+    </message>
+    <message>
         <source>Bass Booster</source>
         <translation>Bässe verstärken</translation>
     </message>
@@ -11936,12 +12214,36 @@ Playlists: %3</translation>
         <translation>Bässe absenken</translation>
     </message>
     <message>
+        <source>Beep</source>
+        <translation>Signalton</translation>
+    </message>
+    <message>
+        <source>Bell Tower</source>
+        <translation>Glockenturm</translation>
+    </message>
+    <message>
+        <source>Birthday</source>
+        <translation>Geburtstag</translation>
+    </message>
+    <message>
+        <source>Blues</source>
+        <translation>Blues</translation>
+    </message>
+    <message>
+        <source>Boing</source>
+        <translation>Boing</translation>
+    </message>
+    <message>
         <source>Boolean conditions do not accept a value.</source>
         <translation>Ja/Nein-Bedingungen akzeptieren keinen zusätzlichen Wert.</translation>
     </message>
     <message>
         <source>Both</source>
         <translation>Beide</translation>
+    </message>
+    <message>
+        <source>Breakfast</source>
+        <translation>Frühstück</translation>
     </message>
     <message>
         <source>Brightness</source>
@@ -12124,6 +12426,10 @@ Playlists: %3</translation>
         <translation>In der Prüfung ausgewählt</translation>
     </message>
     <message>
+        <source>Class</source>
+        <translation>Unterricht</translation>
+    </message>
+    <message>
         <source>Classical</source>
         <translation>Klassik</translation>
     </message>
@@ -12145,11 +12451,15 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Clock alarm snapshot</source>
-        <translation>Momentaufnahme des Weckers</translation>
+        <translation type="vanished">Momentaufnahme des Weckers</translation>
     </message>
     <message>
         <source>Clock city</source>
         <translation>Uhrenstadt</translation>
+    </message>
+    <message>
+        <source>Clock {number}</source>
+        <translation>Uhr {number}</translation>
     </message>
     <message>
         <source>Combining musical evidence · CPU</source>
@@ -12280,6 +12590,10 @@ Playlists: %3</translation>
         <translation>Das Erstellen der besonderen Podcasts-Wiedergabeliste erfordert für dieses Ziel einen vorhandenen Datenbestand mit Podcast-Unterstützung.</translation>
     </message>
     <message>
+        <source>Crickets</source>
+        <translation>Grillen</translation>
+    </message>
+    <message>
         <source>Cross Fade</source>
         <translation>Überblenden</translation>
     </message>
@@ -12308,6 +12622,10 @@ Playlists: %3</translation>
         <translation>Die Datenbankversion muss ein positiver vorzeichenloser 32-Bit-Wert sein.</translation>
     </message>
     <message>
+        <source>Date</source>
+        <translation>Verabredung</translation>
+    </message>
+    <message>
         <source>Date ranges require two whole-number timestamps.</source>
         <translation>Datumsbereiche erfordern zwei ganzzahlige Zeitstempel.</translation>
     </message>
@@ -12326,6 +12644,10 @@ Playlists: %3</translation>
     <message>
         <source>Deleting obsolete Track files.</source>
         <translation>Nicht mehr benötigte Titeldateien werden gelöscht.</translation>
+    </message>
+    <message>
+        <source>Delivery</source>
+        <translation>Lieferung</translation>
     </message>
     <message>
         <source>Demucs htdemucs_6s</source>
@@ -12352,12 +12674,24 @@ Playlists: %3</translation>
         <translation>Geräteeinstellungen</translation>
     </message>
     <message>
+        <source>Digital</source>
+        <translation>Digital</translation>
+    </message>
+    <message>
+        <source>Dinner</source>
+        <translation>Abendessen</translation>
+    </message>
+    <message>
         <source>Disk use</source>
         <translation>Als Festplatte verwenden</translation>
     </message>
     <message>
         <source>Dissolve</source>
         <translation>Überblenden</translation>
+    </message>
+    <message>
+        <source>Doorbell</source>
+        <translation>Türklingel</translation>
     </message>
     <message>
         <source>Downloading Podcast Episode…</source>
@@ -12378,6 +12712,10 @@ Playlists: %3</translation>
     <message>
         <source>Downloading {title}…</source>
         <translation>{title} wird heruntergeladen…</translation>
+    </message>
+    <message>
+        <source>Duck</source>
+        <translation>Ente</translation>
     </message>
     <message>
         <source>Electronic</source>
@@ -12560,8 +12898,16 @@ Playlists: %3</translation>
         <translation>Geben Sie der Wiedergabeliste einen Namen.</translation>
     </message>
     <message>
+        <source>Go Home</source>
+        <translation>Nach Hause gehen</translation>
+    </message>
+    <message>
         <source>HASH72 output requires the selected device&apos;s retained IV and random bytes.</source>
         <translation>Die HASH72-Ausgabe erfordert den gespeicherten IV und die Zufallsbytes des ausgewählten Geräts.</translation>
+    </message>
+    <message>
+        <source>Harp</source>
+        <translation>Harfe</translation>
     </message>
     <message>
         <source>Headphones</source>
@@ -12576,12 +12922,20 @@ Playlists: %3</translation>
         <translation>Hip Hop</translation>
     </message>
     <message>
+        <source>Holiday</source>
+        <translation>Feiertag</translation>
+    </message>
+    <message>
         <source>Host Media Library scan complete.</source>
         <translation>Suche in der Mediathek auf dem Computer abgeschlossen.</translation>
     </message>
     <message>
         <source>ID3 tag flags, extended headers or unsynchronization need explicit conversion first.</source>
         <translation>ID3-Tag-Flags, erweiterte Header oder Unsynchronisierung erfordern zuerst eine ausdrückliche Konvertierung.</translation>
+    </message>
+    <message>
+        <source>Important</source>
+        <translation>Wichtig</translation>
     </message>
     <message>
         <source>Imported Track facts do not match the captured media.</source>
@@ -12728,6 +13082,10 @@ Playlists: %3</translation>
         <translation>Niedrig</translation>
     </message>
     <message>
+        <source>Lunch</source>
+        <translation>Mittagessen</translation>
+    </message>
+    <message>
         <source>Lyrics cannot be verified for this iPod&apos;s native player: {reason} The full lyrics and source file were not truncated.</source>
         <translation>Der Liedtext kann für den integrierten Player dieses iPod nicht überprüft werden: {reason} Der vollständige Liedtext und die Quelldatei wurden nicht gekürzt.</translation>
     </message>
@@ -12776,6 +13134,10 @@ Playlists: %3</translation>
         <translation>Manuell</translation>
     </message>
     <message>
+        <source>Marimba</source>
+        <translation>Marimba</translation>
+    </message>
+    <message>
         <source>Master Playlist membership does not match the resulting library.</source>
         <translation>Die Einträge der Hauptwiedergabeliste stimmen nicht mit der resultierenden Mediathek überein.</translation>
     </message>
@@ -12786,6 +13148,10 @@ Playlists: %3</translation>
     <message>
         <source>Media replacement requires an existing source Track retained in the desired Library.</source>
         <translation>Das Ersetzen von Medien erfordert einen vorhandenen Quelltitel, der in der gewünschten Mediathek beibehalten wird.</translation>
+    </message>
+    <message>
+        <source>Meeting</source>
+        <translation>Besprechung</translation>
     </message>
     <message>
         <source>Membership refresh requires a retained, supported live Smart Playlist, requested once.</source>
@@ -12810,6 +13176,10 @@ Playlists: %3</translation>
     <message>
         <source>More than one Playlist has this name. Choose an iPod Playlist or create a new one.</source>
         <translation>Mehrere Playlists haben diesen Namen. Eine iPod-Playlist auswählen oder eine neue erstellen.</translation>
+    </message>
+    <message>
+        <source>Motorcycle</source>
+        <translation>Motorrad</translation>
     </message>
     <message>
         <source>Multiple playlist datasets have the same type; their ownership is ambiguous.</source>
@@ -13220,6 +13590,10 @@ Playlists: %3</translation>
         <translation>{count} ausgewählte Titel werden auf dem Computer vorbereitet…</translation>
     </message>
     <message>
+        <source>Prescription</source>
+        <translation>Rezept</translation>
+    </message>
+    <message>
         <source>Previous Library restored. Removing recovery files…</source>
         <translation>Vorherige Mediathek wiederhergestellt. Wiederherstellungsdateien werden entfernt…</translation>
     </message>
@@ -13262,6 +13636,10 @@ Playlists: %3</translation>
     <message>
         <source>Radial</source>
         <translation>Radial</translation>
+    </message>
+    <message>
+        <source>Radio</source>
+        <translation>Radio</translation>
     </message>
     <message>
         <source>Random</source>
@@ -13400,6 +13778,10 @@ Playlists: %3</translation>
         <translation>Laden Sie die bestätigten iPod-Einstellungen vor der Bearbeitung erneut.</translation>
     </message>
     <message>
+        <source>Reminder</source>
+        <translation>Erinnerung</translation>
+    </message>
+    <message>
         <source>Remove deleted Track references from hidden playlists while preserving their metadata.</source>
         <translation>Verweise auf gelöschte Titel aus ausgeblendeten Wiedergabelisten entfernen und ihre Metadaten beibehalten.</translation>
     </message>
@@ -13476,6 +13858,10 @@ Playlists: %3</translation>
         <translation>Vorbereitung der Mediathek wird unter Beibehaltung vorhandener Cover erneut versucht…</translation>
     </message>
     <message>
+        <source>Return Call</source>
+        <translation>Zurückrufen</translation>
+    </message>
+    <message>
         <source>Reusing external file {index} of {total}…</source>
         <translation>Externe Datei {index} von {total} wird wiederverwendet…</translation>
     </message>
@@ -13510,6 +13896,10 @@ Playlists: %3</translation>
     <message>
         <source>Rewrite embedded tags on the retained media; verify lyrics and derive the final file size.</source>
         <translation>Eingebettete Tags der beibehaltenen Mediendatei neu schreiben; Liedtext prüfen und endgültige Dateigröße ermitteln.</translation>
+    </message>
+    <message>
+        <source>Robot</source>
+        <translation>Roboter</translation>
     </message>
     <message>
         <source>Rock</source>
@@ -13560,6 +13950,14 @@ Playlists: %3</translation>
         <translation>Gespeicherte Zuordnung</translation>
     </message>
     <message>
+        <source>Saved playlist</source>
+        <translation>Gespeicherte Wiedergabeliste</translation>
+    </message>
+    <message>
+        <source>Saved playlist and tone</source>
+        <translation>Gespeicherte Wiedergabeliste und Ton</translation>
+    </message>
+    <message>
         <source>Saving Sync helper…</source>
         <translation>Synchronisierungsinformationen werden gespeichert…</translation>
     </message>
@@ -13594,6 +13992,10 @@ Playlists: %3</translation>
     <message>
         <source>Scanning the iPod…</source>
         <translation>iPod wird durchsucht…</translation>
+    </message>
+    <message>
+        <source>Sci-Fi</source>
+        <translation>Science-Fiction</translation>
     </message>
     <message>
         <source>Secondary library identifier</source>
@@ -13760,6 +14162,10 @@ Playlists: %3</translation>
         <translation>Einige Quelleinträge konnten nicht gelesen werden oder wurden abgelehnt. Diese Einträge prüfen und erneut scannen.</translation>
     </message>
     <message>
+        <source>Sonar</source>
+        <translation>Sonar</translation>
+    </message>
+    <message>
         <source>Songs</source>
         <translation>Titel</translation>
     </message>
@@ -13810,6 +14216,10 @@ Playlists: %3</translation>
     <message>
         <source>Store visible Playlists in folder preorder.</source>
         <translation>Sichtbare Wiedergabelisten in der Reihenfolge der Ordnerhierarchie speichern.</translation>
+    </message>
+    <message>
+        <source>Strum</source>
+        <translation>Gitarrenakkord</translation>
     </message>
     <message>
         <source>Supply exactly the Photo assets requested by this draft.</source>
@@ -13900,6 +14310,10 @@ Playlists: %3</translation>
         <translation>Das Neuschreiben von Tags erfordert einen eingehenden Titel oder einen beibehaltenen Titel an seinem bisherigen Speicherort.</translation>
     </message>
     <message>
+        <source>Take Medicine</source>
+        <translation>Medikament einnehmen</translation>
+    </message>
+    <message>
         <source>Temporary Host files could not be prepared. Check free space and file access, then retry.</source>
         <translation>Temporäre Dateien auf dem Computer konnten nicht vorbereitet werden. Prüfen Sie den freien Speicherplatz und die Zugriffsrechte und versuchen Sie es erneut.</translation>
     </message>
@@ -13966,6 +14380,10 @@ Playlists: %3</translation>
     <message>
         <source>The Host source {name} changed after scanning. Rescan before Sync.</source>
         <translation>Die Quelle {name} auf dem Computer hat sich nach der Suche geändert. Starten Sie vor der Synchronisierung die Suche erneut.</translation>
+    </message>
+    <message>
+        <source>The Library change would affect a saved alarm. Choose another alarm sound and try again.</source>
+        <translation type="vanished">Die Änderung der Mediathek würde einen gespeicherten Wecker beeinflussen. Wählen Sie einen anderen Weckton und versuchen Sie es erneut.</translation>
     </message>
     <message>
         <source>The Library changed. Reopen this action to use the current selection.</source>
@@ -14720,6 +15138,14 @@ Playlists: %3</translation>
         <translation>Aus (Rohwert 0)</translation>
     </message>
     <message>
+        <source>Old Car Horn</source>
+        <translation>Alte Autohupe</translation>
+    </message>
+    <message>
+        <source>Old Phone</source>
+        <translation>Altes Telefon</translation>
+    </message>
+    <message>
         <source>On (raw {value})</source>
         <translation>Ein (Rohwert {value})</translation>
     </message>
@@ -14736,8 +15162,28 @@ Playlists: %3</translation>
         <translation>Umblättern</translation>
     </message>
     <message>
+        <source>Party</source>
+        <translation>Party</translation>
+    </message>
+    <message>
+        <source>Phone Call</source>
+        <translation>Telefonanruf</translation>
+    </message>
+    <message>
         <source>Piano</source>
         <translation>Klavier</translation>
+    </message>
+    <message>
+        <source>Piano Riff</source>
+        <translation>Klavier-Riff</translation>
+    </message>
+    <message>
+        <source>Pick-Up</source>
+        <translation>Abholen</translation>
+    </message>
+    <message>
+        <source>Pinball</source>
+        <translation>Flipper</translation>
     </message>
     <message>
         <source>Playlist datasets do not match the authoritative dataset 3.</source>
@@ -14898,6 +15344,14 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Diese Updater-Familie wird für die Spielautorisierung nicht unterstützt. Unterstützte Familien: {families}.</translation>
     </message>
     <message>
+        <source>Timba</source>
+        <translation>Timba</translation>
+    </message>
+    <message>
+        <source>Time Passing</source>
+        <translation>Zeitablauf</translation>
+    </message>
+    <message>
         <source>Time per slide</source>
         <translation>Anzeigedauer pro Foto</translation>
     </message>
@@ -14928,6 +15382,10 @@ Die akustische Analyse bleibt verfügbar.</translation>
     <message>
         <source>Treble Reducer</source>
         <translation>Höhen absenken</translation>
+    </message>
+    <message>
+        <source>Trill</source>
+        <translation>Triller</translation>
     </message>
     <message>
         <source>UTC{offset}</source>
@@ -15070,6 +15528,10 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Warten auf das Ende der Schreibvorgänge auf dem iPod…</translation>
     </message>
     <message>
+        <source>Wake up</source>
+        <translation>Aufwachen</translation>
+    </message>
+    <message>
         <source>Widescreen</source>
         <translation>Breitbild</translation>
     </message>
@@ -15094,8 +15556,16 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Von der Mitte wischen</translation>
     </message>
     <message>
+        <source>Work</source>
+        <translation>Arbeit</translation>
+    </message>
+    <message>
         <source>Writing metadata to the prepared copy</source>
         <translation>Metadaten werden in die vorbereitete Kopie geschrieben</translation>
+    </message>
+    <message>
+        <source>Xylophone</source>
+        <translation>Xylophon</translation>
     </message>
     <message>
         <source>Zoom</source>

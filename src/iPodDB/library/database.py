@@ -27,6 +27,11 @@ from iPodDB.library._sidecar_projection import (
     project_sidecars,
 )
 from iPodDB.library._write_logging import log_plan
+from iPodDB.library.alarm_playlists import (
+    AlarmPlaylistCatalog,
+    AlarmPlaylistLayout,
+    project_alarm_playlists,
+)
 from iPodDB.library.artwork import ArtworkRead, CoverFormat, select_artwork
 from iPodDB.library.models import LibrarySnapshot
 from iPodDB.library.phase import resolve_phase_playlist
@@ -153,6 +158,10 @@ class IPodLibrary:
     def consumed_sidecars(self) -> tuple[PlaybackSidecar, ...]:
         """Evidence that must be retired with a successfully prepared Library."""
         return self._consumed_sidecars
+
+    def alarm_playlists(self, layout: AlarmPlaylistLayout) -> AlarmPlaylistCatalog:
+        """Return source-qualified native indices, including the Master Playlist."""
+        return project_alarm_playlists(self._document, layout)
 
     @property
     def sidecar_issues(self) -> tuple[WriteIssue, ...]:

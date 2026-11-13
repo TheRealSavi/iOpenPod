@@ -37,6 +37,7 @@ def resolve_firmware_target(
         ("iPod Mini", "1st Gen", "1.4.1"): (FirmwareTarget.MINI_1_1_4_1, {3, 6}),
         ("iPod Mini", "2nd Gen", "1.4.1"): (FirmwareTarget.MINI_2_1_4_1, {7}),
         ("iPod Nano", "1st Gen", "1.3.1"): (FirmwareTarget.NANO_1_1_3_1, {14, 17}),
+        ("iPod Nano", "2nd Gen", "1.1.3"): (FirmwareTarget.NANO_2_1_1_3, {19, 29}),
         ("iPod Nano", "3rd Gen", "1.1.3"): (FirmwareTarget.NANO_3_1_1_3, {26}),
         ("iPod Nano", "4th Gen", "1.0.4"): (FirmwareTarget.NANO_4_1_0_4, {31}),
         ("iPod Nano", "5th Gen", "1.0.2"): (FirmwareTarget.NANO_5_1_0_2, {34}),

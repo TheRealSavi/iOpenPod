@@ -218,7 +218,7 @@ def test_mini_alarm_changes_only_minute_word(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("minutes, kind", ((90, 0), (4095, 0), (0, 8)))
-def test_video_projection_is_read_only_and_does_not_block_calendar(
+def test_video_invalid_clock_does_not_fall_back_to_projection_or_block_calendar(
     tmp_path: Path, minutes: int, kind: int
 ) -> None:
     device = tmp_path / "iPod_Control/Device"
@@ -253,14 +253,12 @@ def test_video_projection_is_read_only_and_does_not_block_calendar(
         storage.discover().volumes[0], access=AccessMode.READ_WRITE
     ) as session:
         catalog = read_extras(session, support, lambda: None)
-        alarm = catalog.alarms[0]
-        assert alarm.display_label == "Clock alarm snapshot"
-        assert alarm.time == (
-            Time(minutes // 60, minutes % 60) if minutes < 1440 else None
-        )
-        assert not alarm.editable and not support.alarm_write
-        with pytest.raises(ValueError, match="not available for editing"):
-            prepare_change(catalog, SaveAlarm(alarm, Time(7)), checkpoint=lambda: None)
+        assert not catalog.alarms
+        assert catalog.issues
+        assert support.alarm_write
+        assert "iPod_Control/Device/Preferences" not in [
+            file.key for file in catalog.files
+        ]
         transaction = prepare_change(
             catalog,
             SaveCalendar(

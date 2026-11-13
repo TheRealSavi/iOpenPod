@@ -243,6 +243,17 @@ QTimeEdit#alarmTime {{
     font-size: {typography.title_pt:g}pt;
 }}
 
+/* Hallmark · Alarms · preserved iOpenPod system · time-led working list
+ * primary creation above; selected-record actions below; explicit saved state
+ * pre-emit critique: P5 H5 E4 S5 R5 V4 · native keyboard and palette states
+ */
+QLabel#timerSavedDuration {{
+    color: {tokens.text};
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt * 1.6:g}pt;
+    font-weight: 600;
+}}
+
 QLabel#pageDescription,
 QLabel#gamesEmptyDetail,
 QLabel#pageMeta,
@@ -344,6 +355,7 @@ QDialog#helpSupportDialog,
 QDialog#playlistEditor,
 QDialog#calendarEditor,
 QDialog#alarmEditor,
+QDialog#timerEditor,
 QDialog#metadataEditor,
 QDialog#artworkCropDialog,
 QDialog#consolidateArtworkDialog,
@@ -2350,7 +2362,8 @@ QDialog#calendarEditor QSpinBox,
 QDialog#calendarEditor QDateEdit,
 QDialog#calendarEditor QTimeEdit,
 QDialog#alarmEditor QDateEdit,
-QDialog#alarmEditor QTimeEdit {{
+QDialog#alarmEditor QTimeEdit,
+QDialog#timerEditor QSpinBox {{
     min-height: {LAYOUT.control_height}px;
     padding: 0 {LAYOUT.space_sm}px;
     color: {tokens.text};
@@ -2367,7 +2380,8 @@ QDialog#calendarEditor QSpinBox:hover,
 QDialog#calendarEditor QDateEdit:hover,
 QDialog#calendarEditor QTimeEdit:hover,
 QDialog#alarmEditor QDateEdit:hover,
-QDialog#alarmEditor QTimeEdit:hover {{
+QDialog#alarmEditor QTimeEdit:hover,
+QDialog#timerEditor QSpinBox:hover {{
     border-color: {tokens.text_secondary};
 }}
 
@@ -2377,8 +2391,13 @@ QDialog#calendarEditor QSpinBox:focus,
 QDialog#calendarEditor QDateEdit:focus,
 QDialog#calendarEditor QTimeEdit:focus,
 QDialog#alarmEditor QDateEdit:focus,
-QDialog#alarmEditor QTimeEdit:focus {{
+QDialog#alarmEditor QTimeEdit:focus,
+QDialog#timerEditor QSpinBox:focus {{
     border: 1px solid {tokens.focus};
+}}
+
+QDialog#alarmEditor QTimeEdit#alarmTime {{
+    min-height: {LAYOUT.control_height_large * 2}px;
 }}
 
 QLineEdit#renameIPod {{

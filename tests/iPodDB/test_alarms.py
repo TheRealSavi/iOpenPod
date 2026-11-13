@@ -157,9 +157,9 @@ def test_public_dataclass_replacement_cannot_invent_records_or_patch_other_field
     alarm = document.records[0]
     for changed in (
         replace(document, records=(alarm, alarm)),
-        replace(document, records=(replace(alarm, label="New label"),)),
+        replace(document, records=(replace(alarm, label="Invalid\0tone"),)),
         replace(document, records=(replace(alarm, source_offset=0),)),
-        replace(document, records=(replace(alarm, control_word=0),)),
+        replace(document, records=(replace(alarm, control_word=1),)),
     ):
         with pytest.raises(iPodDBWriteError):
             write_alarms(changed)

@@ -1,5 +1,39 @@
 [
   {
+    "date": "2026-11-13",
+    "scope": "component",
+    "macrostructure": "Existing time-led alarm list with searchable city editor",
+    "theme": "preserved iOpenPod semantic theme",
+    "enrichment": "none",
+    "brief": "Native city creation/removal and manual DST, plus Classic/Nano playlist selection in the existing Sound field",
+    "validation": "Porcelain/Slate at 700/1200px and 100/200% scaling, German dialogs, themed city-search popup, invalid input, keyboard completion, cancellation and stale-device tests",
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-11-13",
+    "scope": "app",
+    "macrostructure": "Time-led alarm list and saved countdown panel",
+    "theme": "preserved iOpenPod semantic theme",
+    "enrichment": "none",
+    "brief": "Firmware-qualified alarm authoring with native labels, explicit enable state, source-qualified sound choices, and saved countdown preset editing",
+    "validation": "Native QWidget renders at 100% and 200%, Porcelain/Slate, 700/1200px; German alarm and timer dialogs; keyboard order, dialog geometry, explicit sound/enable coupling, unknown timer values, and device/catalog lifecycle tests",
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
     "date": "2026-11-07",
     "scope": "app",
     "macrostructure": "Month and agenda / time-led list",

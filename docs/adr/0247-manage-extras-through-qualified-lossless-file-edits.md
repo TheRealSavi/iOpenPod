@@ -5,7 +5,9 @@
 - Extends: ADR-0234, ADR-0240, ADR-0242 and ADR-0243
 
 ADR-0251 updates Calendar availability and editing. This record continues to
-govern Clock Alarm qualification and the Extras publication workflow.
+govern the Extras publication workflow. ADR-0259 extends Clock Alarm qualification,
+adds native-default collection authoring and replaces Video projection display
+with persistent per-city editing.
 
 ## Context and decision
 
@@ -100,6 +102,10 @@ Device changes invalidate page state and stale dialogs. Disconnects cancel work;
 only an actual transaction recovery condition gates subsequent device writes.
 Optional parsing and datetime issues remain local to Extras. Merely opening a
 page never writes, and these artifacts do not become Library or Sync dependencies.
+The later [ADR-0260](0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md)
+initially added a write-time exception to preserve legacy Alarm Playlist identities.
+[ADR-0262](0262-leave-alarm-selections-unchanged-during-library-writes.md) removes
+that exception by user direction: Library writes leave Alarm selections unchanged.
 
 ## Validation
 

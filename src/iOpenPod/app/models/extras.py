@@ -1,10 +1,12 @@
 """Captured Calendar and Alarm views and explicit, connection-bound edits."""
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from whenever import Date, PlainDateTime, Time
 
 from device_registry import ExtrasSupport
+from iPodDB.alarms import ClockCity, CountdownTimerChanges, CountdownTimerSnapshot
 from iPodDB.calendar import (
     CalendarComponent,
     CalendarEntry,
@@ -13,7 +15,8 @@ from iPodDB.calendar import (
     CalendarOccurrence,
     calendar_zone_names,
 )
-from storage import FileFingerprint
+from iPodDB.library import AlarmPlaylistCatalog
+from storage import FileFingerprint, FilePrecondition
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +41,23 @@ class CalendarItem:
 
 
 @dataclass(frozen=True, slots=True)
+class AlarmSound:
+    """One source-qualified native sound choice, never a Host media path."""
+
+    class Kind(StrEnum):
+        BEEP = "beep"
+        PLAYLIST = "playlist"
+        TONE = "tone"
+
+    kind: Kind
+    name: str
+    playlist_id: int | None = None
+    playlist_index: int | None = None
+
+    tone_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AlarmItem:
     index: int
     display_label: str
@@ -46,6 +66,17 @@ class AlarmItem:
     editable: bool
     detail: str = ""
     repeat_editable: bool = False
+    enabled: bool | None = None
+    enabled_editable: bool = False
+    label_index: int | None = None
+    label_editable: bool = False
+    sound: AlarmSound | None = None
+    sound_editable: bool = False
+    sound_description: str = ""
+    playlist_index: int | None = None
+    clock_city: ClockCity | None = None
+    daylight_saving: bool | None = None
+    daylight_saving_editable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +106,15 @@ class ExtrasCatalog:
     support: ExtrasSupport | None = None
     files: tuple[ExtrasFile, ...] = ()
     calendars: tuple[CalendarGroup, ...] = ()
+    timer: CountdownTimerSnapshot | None = None
+    can_create_alarm: bool = False
+    alarm_sounds: tuple[AlarmSound, ...] = ()
+    alarm_playlists: AlarmPlaylistCatalog | None = None
+    playlist_source: FilePrecondition | None = None
+    tone_dependencies: tuple[FilePrecondition, ...] = ()
+    tone_inventory: tuple[str, ...] | None = None
+    clock_cities: tuple[ClockCity, ...] = ()
+    playlist_dependencies: tuple[FilePrecondition, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +160,38 @@ class SaveAlarm:
     item: AlarmItem
     time: PlainDateTime | Time
     repeat: int | None = None
+    enabled: bool | None = None
+    label_index: int | None = None
+    sound: AlarmSound | None = None
+    daylight_saving: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CreateAlarm:
+    time: PlainDateTime
+    repeat: int = 0
+    enabled: bool = True
+    label_index: int = 3
+    sound: AlarmSound | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RemoveAlarm:
+    item: AlarmItem
+
+
+@dataclass(frozen=True, slots=True)
+class CreateClockAlarm:
+    city: ClockCity
+    time: Time
+    daylight_saving: bool = False
+    enabled: bool = False
+    sound: AlarmSound | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SaveTimerSettings:
+    changes: CountdownTimerChanges
 
 
 type ExtrasChange = (
@@ -130,4 +202,8 @@ type ExtrasChange = (
     | SaveAlarm
     | CreateCalendar
     | RenameCalendar
+    | CreateAlarm
+    | RemoveAlarm
+    | SaveTimerSettings
+    | CreateClockAlarm
 )

@@ -9,6 +9,12 @@ from iPodDB.library._equalizer import (
     decode_track_equalizer,
     encode_track_equalizer,
 )
+from iPodDB.library.alarm_playlists import (
+    AlarmPlaylist,
+    AlarmPlaylistCatalog,
+    AlarmPlaylistLayout,
+    project_sqlite_alarm_playlists,
+)
 from iPodDB.library.artwork import (
     ArtworkPixels,
     ArtworkRead,
@@ -148,6 +154,9 @@ from iPodDB.SQLiteDB.video import video_metadata_required
 
 __all__ = [
     "MAX_SIDECAR_BYTES",
+    "AlarmPlaylist",
+    "AlarmPlaylistCatalog",
+    "AlarmPlaylistLayout",
     "ArtworkAsset",
     "ArtworkGroupReference",
     "ArtworkPixels",
@@ -258,6 +267,7 @@ __all__ = [
     "playlist_sort_value",
     "prepared_audio",
     "prepared_video",
+    "project_sqlite_alarm_playlists",
     "read_content",
     "recover_hash72_checksum_book_material",
     "recover_hash72_material",

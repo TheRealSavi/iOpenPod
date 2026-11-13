@@ -17,7 +17,9 @@ from device_registry import (
     DeviceIdentifier,
     DeviceRegistry,
     EvidenceAuthority,
+    ExtrasSupport,
     FeatureSupport,
+    FirmwareTarget,
     IdentificationResult,
     IdentificationStatus,
     UsbIdentifier,
@@ -73,7 +75,13 @@ from iOpenPod.app.models.device import (
     DeviceDiscoveryIssue,
     DeviceReadiness,
 )
-from iOpenPod.app.models.extras import SaveAlarm
+from iOpenPod.app.models.extras import (
+    CreateAlarm,
+    CreateClockAlarm,
+    RemoveAlarm,
+    SaveAlarm,
+    SaveTimerSettings,
+)
 from iOpenPod.app.models.photos import (
     FULL_RESOLUTION_REQUEST_ID,
     PhotoImage,
@@ -87,6 +95,8 @@ from iOpenPod.app.podcasts.models import (
 )
 from iOpenPod.app.podcasts.store import LoadedPodcastState, PodcastDeviceStore
 from iOpenPod.app.services import (
+    alarm_playlists,
+    alarm_tones,
     extras,
     firmware_preferences,
     game_download,
@@ -1333,11 +1343,48 @@ class DeviceCoordinator:
                         "The iPod disconnected while loading Extras."
                     )
 
-        catalog = extras.read_extras(active.session, support, checkpoint)
+        catalog = self._read_extras_catalog(
+            active, expected, active.session, support, checkpoint
+        )
         with self._lock:
             checkpoint()
             self._extras_catalog = (expected, catalog)
         return catalog
+
+    @staticmethod
+    def _read_extras_catalog(
+        active: _ActiveConnection,
+        expected: ActiveIPod,
+        session: FilesystemSession,
+        support: ExtrasSupport,
+        checkpoint: Callable[[], None],
+    ) -> ExtrasCatalog:
+        layout = extras.alarm_playlist_layout(support)
+        playlists = None
+        source = None
+        playlist_dependencies: tuple[FilePrecondition, ...] = ()
+        if support.alarm_firmware is FirmwareTarget.NANO_5_1_0_2:
+            captured = alarm_playlists.capture_sqlite_alarm_playlists(
+                session, checkpoint
+            )
+            playlists = captured.catalog
+            playlist_dependencies = captured.dependencies
+        elif layout is not None:
+            path = library_resources.database_path(expected.database_name)
+            if (
+                session.exists(path)
+                and session.fingerprint(path) == expected.database_fingerprint
+            ):
+                playlists = active.library_source.alarm_playlists(layout)
+                source = FilePrecondition(path, expected.database_fingerprint)
+        return extras.read_extras(
+            session,
+            support,
+            checkpoint,
+            alarm_playlists=playlists,
+            playlist_source=source,
+            playlist_dependencies=playlist_dependencies,
+        )
 
     def save_extras(
         self,
@@ -1367,6 +1414,16 @@ class DeviceCoordinator:
                     raise DeviceChangedError(
                         "The iPod disconnected while saving Extras."
                     )
+            if (
+                isinstance(change, SaveAlarm | CreateAlarm)
+                and change.sound is not None
+                and change.sound.tone_name is not None
+                and catalog.tone_inventory is not None
+                and alarm_tones.tone_inventory(session) != catalog.tone_inventory
+            ):
+                raise DeviceChangedError(
+                    "The iPod's tone collection changed. Reload Extras."
+                )
 
         try:
             with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
@@ -1375,7 +1432,14 @@ class DeviceCoordinator:
                 if support is None:
                     raise DeviceChangedError("Reload Extras before saving.")
                 dependencies: tuple[FilePrecondition, ...] = ()
-                if isinstance(change, SaveAlarm):
+                if isinstance(
+                    change,
+                    CreateAlarm
+                    | CreateClockAlarm
+                    | RemoveAlarm
+                    | SaveAlarm
+                    | SaveTimerSettings,
+                ):
                     previous_support = support
                     dependencies = tuple(
                         FilePrecondition(
@@ -1395,6 +1459,9 @@ class DeviceCoordinator:
                         raise DeviceChangedError(
                             "The iPod firmware evidence changed. Reload Extras."
                         )
+                if isinstance(change, SaveTimerSettings):
+                    dependencies += extras.timer_preconditions(catalog)
+                dependencies += extras.alarm_sound_preconditions(catalog, change)
                 transaction = extras.prepare_change(
                     catalog, change, dependencies=dependencies, checkpoint=checkpoint
                 )
@@ -1416,7 +1483,9 @@ class DeviceCoordinator:
                         raise SyncRecoveryRequiredError(
                             str(committed.recovery.journal_path)
                         ) from error
-                updated = extras.read_extras(session, support, checkpoint)
+                updated = self._read_extras_catalog(
+                    active, expected, session, support, checkpoint
+                )
                 with self._lock:
                     checkpoint()
                     self._extras_catalog = (expected, updated)

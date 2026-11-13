@@ -8,19 +8,25 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal, Slot
 
+from device_registry import AlarmFormat
 from iOpenPod.app.core.status import StatusProgress
 from iOpenPod.app.models.extras import (
     AlarmItem,
+    AlarmSound,
     CalendarGroup,
     CalendarItem,
+    CreateAlarm,
     CreateCalendar,
+    CreateClockAlarm,
     ExtrasCatalog,
     ExtrasChange,
     ImportCalendar,
+    RemoveAlarm,
     RemoveCalendar,
     RenameCalendar,
     SaveAlarm,
     SaveCalendar,
+    SaveTimerSettings,
     SkipCalendarOccurrence,
 )
 from iOpenPod.app.services.device_coordinator import SyncRecoveryRequiredError
@@ -32,6 +38,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
+    from iPodDB.alarms import ClockCity, CountdownTimerChanges
     from iPodDB.calendar import CalendarEntryChanges, CalendarEntryDraft
 
 _LOGGER = logging.getLogger(__name__)
@@ -200,7 +207,15 @@ class ExtrasController(QObject):
         )
 
     def save_alarm(
-        self, item: AlarmItem, time: PlainDateTime | Time, repeat: int | None = None
+        self,
+        item: AlarmItem,
+        time: PlainDateTime | Time,
+        repeat: int | None = None,
+        *,
+        enabled: bool | None = None,
+        label_index: int | None = None,
+        sound: AlarmSound | None = None,
+        daylight_saving: bool | None = None,
     ) -> bool:
         support = self._catalog.support
         if (
@@ -210,7 +225,68 @@ class ExtrasController(QObject):
             or not item.editable
         ):
             return False
-        return self._write(SaveAlarm(item, time, repeat))
+        return self._write(
+            SaveAlarm(item, time, repeat, enabled, label_index, sound, daylight_saving)
+        )
+
+    def create_alarm(
+        self,
+        time: PlainDateTime,
+        repeat: int = 0,
+        *,
+        enabled: bool = True,
+        label_index: int = 3,
+        sound: AlarmSound | None = None,
+    ) -> bool:
+        support = self._catalog.support
+        return bool(
+            support
+            and support.alarm_write
+            and support.alarm_format is AlarmFormat.CLASSIC
+            and self._catalog.can_create_alarm
+            and self._write(CreateAlarm(time, repeat, enabled, label_index, sound))
+        )
+
+    def create_clock_alarm(
+        self,
+        city: ClockCity,
+        time: Time,
+        *,
+        daylight_saving: bool = False,
+        enabled: bool = False,
+        sound: AlarmSound | None = None,
+    ) -> bool:
+        support = self._catalog.support
+        return bool(
+            support
+            and support.alarm_write
+            and support.alarm_format is AlarmFormat.CLOCK
+            and self._catalog.can_create_alarm
+            and city in self._catalog.clock_cities
+            and self._write(
+                CreateClockAlarm(city, time, daylight_saving, enabled, sound)
+            )
+        )
+
+    def remove_alarm(self, item: AlarmItem) -> bool:
+        support = self._catalog.support
+        return bool(
+            support
+            and support.alarm_write
+            and support.alarm_format in (AlarmFormat.CLASSIC, AlarmFormat.CLOCK)
+            and item in self._catalog.alarms
+            and item.editable
+            and self._write(RemoveAlarm(item))
+        )
+
+    def save_timer_settings(self, changes: CountdownTimerChanges) -> bool:
+        support = self._catalog.support
+        return bool(
+            support
+            and support.timer_settings_write
+            and self._catalog.timer is not None
+            and self._write(SaveTimerSettings(changes))
+        )
 
     def _write(self, change: ExtrasChange) -> bool:
         active = self.active_ipod

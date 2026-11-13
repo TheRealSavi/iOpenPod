@@ -30,7 +30,9 @@ broader than the edit allowlist: partial meanings, raw values and bounded Unknow
 Data summaries remain visible without authorizing writes. Exact identity and
 file framing qualify each interpretation and editor. Nano 5/6/7 use the separate
 `iPodSettings.xml` model; earlier targets use binary Preferences. Nano 4's
-extensionless named store and Nano 6's timer store are additionally read-only.
+extensionless named store and Nano 6's timer store are read-only in the
+Preferences catalog. The Alarms workflow separately edits qualified saved
+Countdown Timer fields under ADR-0260.
 Optional legacy Nano binary state does not gate XML edits. Clock uncertainty
 remains nonblocking, and unrelated bytes remain preserved. Changes use
 source-checked Storage Transactions. Successful file publication is distinct from
@@ -67,14 +69,23 @@ The editor supports saved start-relative, end-relative and absolute reminders,
 and the native To Do states. Unknown properties and unsupported combinations
 retain their original bytes. See [ADR-0251](docs/adr/0251-use-shared-calendar-behavior-by-model.md)
 and the [firmware evidence](docs/research/calendar-firmware-coverage-2026-11-08.md).
-Alarms use large, localized times and contextual editing. Existing saved
-alarms expose only verified time/repeat fields for the latest studied Mini 2 and
-Classic firmware. Video's next-alarm snapshot is read-only: its persistent
-per-city alarms are a separate artifact. Device-specific Sleep Timer guidance remains on-device
-because a mounted-file control protocol is not established. Unknown dates and
-properties remain preserved; optional Extras failures never block Library loading
-or Sync. Publication uses source-checked Storage Transactions. See
-[ADR-0247](docs/adr/0247-manage-extras-through-qualified-lossless-file-edits.md).
+Alarms use localized times, explicit saved enable states and contextual editing.
+The latest studied Classic and Nano 3–5 firmwares support creation, removal,
+date/time, repeat, native labels, enable, tones and native Playlist selection. Mini 1/2 support
+saved time, sound and source-qualified enable edits. Nano 1 and Video edit
+the persistent per-city Clock Alarms, including city creation/removal, manual DST,
+Beep and native Playlist choices; their Preferences projection is not edited.
+Nano 2 1.1.3 follows Nano 1's city editor by explicit user-directed compatibility
+policy (ADR-0261, extended by ADR-0263);
+its encrypted firmware remains unverified. Nano 6/7 edit saved
+countdown duration and ending action while observing saved deadlines. No saved value
+is presented as live timer status. Unknown data remains preserved; optional
+Extras failures never block Library loading. Library writes leave saved Alarm
+selections unchanged, including when Playlist positions change or selected Playlists
+are deleted (ADR-0262). Publication uses
+source-checked Storage Transactions and remains distinct from firmware adoption.
+See [Alarms](docs/alarms.md) and
+[ADR-0260](docs/adr/0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md).
 
 The Track metadata editor offers 22 translated EQ presets and **Use iPod setting**.
 Unknown assignments remain preserved until explicitly replaced, and mixed
