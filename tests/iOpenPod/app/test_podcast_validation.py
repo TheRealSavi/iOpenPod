@@ -19,7 +19,7 @@ from tests.iOpenPod.app.podcast_sync_test_support import (
 from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
-from iOpenPod.app.podcasts import media
+from iOpenPod.app.podcasts import http_client
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
 from iPodDB.library import MediaKind
@@ -73,7 +73,7 @@ def test_invalid_episode_is_skipped_while_valid_episode_commits(
     tags.save(path, v2_version=3)
     good_media = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
     monkeypatch.setattr(
-        media, "build_opener", _EpisodeDownloads(path.read_bytes(), good_media)
+        http_client, "build_opener", _EpisodeDownloads(path.read_bytes(), good_media)
     )
     device = build_device(tmp_path)
     try:

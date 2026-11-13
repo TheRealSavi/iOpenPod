@@ -44,6 +44,7 @@ _CONTRACT_FIELDS: dict[str, tuple[tuple[int, str], ...]] = {
     "IPodMediaScanIssue": ((1, "detail"),),
     "PodcastIssue": ((1, "message"),),
     "PodcastOperationFailure": ((1, "message"),),
+    "PodcastFeedError": ((0, "message"),),
     "DeviceOperationFailure": ((1, "message"),),
     "BackupOperationFailure": ((1, "message"),),
     "ArtworkLoadFailure": ((1, "message"),),

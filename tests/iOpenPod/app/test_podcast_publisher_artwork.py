@@ -23,7 +23,7 @@ from tests.iOpenPod.app.test_music_import import FIXTURES
 
 from iOpenPod.app.media.transcoding import LossyEncoder, TranscodeSettings
 from iOpenPod.app.models.artwork import ArtworkRequest
-from iOpenPod.app.podcasts import chapter_artwork, feed_client, media
+from iOpenPod.app.podcasts import chapter_artwork, feed_client, http_client
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
 from iPodDB.library import MediaKind, TrackChapter
@@ -77,7 +77,7 @@ def test_publisher_episode_cover_and_timed_images_survive_native_publication(
     )
     tags.save(source, v2_version=3)
     monkeypatch.setattr(
-        media, "build_opener", PodcastOpenerFactory(source.read_bytes())
+        http_client, "build_opener", PodcastOpenerFactory(source.read_bytes())
     )
     requested: list[str] = []
 

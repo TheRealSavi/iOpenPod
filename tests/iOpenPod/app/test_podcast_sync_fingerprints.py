@@ -40,7 +40,7 @@ from iOpenPod.app.host_media_fingerprint import (
 from iOpenPod.app.library_sync_helper import LIBRARY_SYNC_HELPER_PATH
 from iOpenPod.app.media.fingerprint_codec import decode_fingerprint
 from iOpenPod.app.media.transcoding import TranscodeSettings
-from iOpenPod.app.podcasts import media
+from iOpenPod.app.podcasts import http_client
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
 from iPodDB.library import IssueSeverity, MediaKind
@@ -71,7 +71,7 @@ def _mock_fingerprint(
 
 def _prepare_addition(monkeypatch: pytest.MonkeyPatch) -> None:
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
         FixedPodcastPlan(PodcastSyncPlan(additions=(podcast_addition(),))),
@@ -99,7 +99,9 @@ def test_real_podcast_fingerprint_is_published_without_temporary_host_provenance
             addition.episode, enclosure_url="https://publisher.example/episode.wav"
         ),
     )
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(content.getvalue()))
+    monkeypatch.setattr(
+        http_client, "build_opener", PodcastOpenerFactory(content.getvalue())
+    )
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
         FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),

@@ -257,10 +257,11 @@ class AppContext:
             settings=settings,
         )
         podcast_artwork_controller = PodcastArtworkController(
-            HttpPodcastArtworkLoader(),
+            HttpPodcastArtworkLoader(access=podcast_controller.access),
             application,
-            feed_client=FeedparserPodcastClient(),
+            feed_client=FeedparserPodcastClient(access=podcast_controller.access),
         )
+        podcast_controller.loginChanged.connect(podcast_artwork_controller.invalidate)
         status = ApplicationStatus(application)
         library_write_controller = LibraryWriteController(
             device_coordinator,

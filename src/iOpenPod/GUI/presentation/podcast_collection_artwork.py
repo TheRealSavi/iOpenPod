@@ -59,6 +59,7 @@ def paint_podcast_collection_artwork(
             subscription.artwork_url,
             round(tile_size),
             device_pixel_ratio,
+            feed_url=subscription.feed_url,
         )
         if (
             pixmap is None

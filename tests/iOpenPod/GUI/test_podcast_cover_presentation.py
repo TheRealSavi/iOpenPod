@@ -53,7 +53,9 @@ class _Pixels:
         self.colors = colors
         self.requests: list[str | int] = []
 
-    def pixmap(self, source: str | int, size: int, _ratio: float) -> QPixmap | None:
+    def pixmap(
+        self, source: str | int, size: int, _ratio: float, *, feed_url: str = ""
+    ) -> QPixmap | None:
         self.requests.append(source)
         if source not in self.colors:
             return None

@@ -100,6 +100,7 @@ class ToneConversionDialog(QDialog):
             self._error,
         ):
             layout.addWidget(widget)
+        layout.addStretch(1)
         layout.addLayout(actions)
         conversion.changed.connect(self._update)
         extras.changed.connect(self._update)

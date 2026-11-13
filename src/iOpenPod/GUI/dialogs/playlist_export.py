@@ -89,6 +89,7 @@ class PlaylistExportDialog(QDialog):
         layout.addWidget(self.copy_tracks)
         layout.addWidget(self.host_references)
         layout.addLayout(form)
+        layout.addStretch(1)
         layout.addLayout(actions)
         self.retranslate_ui()
 

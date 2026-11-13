@@ -7,8 +7,11 @@ import json
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from iOpenPod.app.track_conversion import media_type_choices
+from iPodDB.library import MediaType, metadata_edit_issues
+
 if TYPE_CHECKING:
-    from iPodDB.library import Track
+    from iPodDB.library import Track, WriteIssue
 
 
 TRACK_TAG_FIELDS = (
@@ -101,6 +104,22 @@ def apply_track_tags(target: Track, source: Track) -> Track:
     )
 
 
+def track_tag_edit_issues(before: Track, after: Track) -> tuple[WriteIssue, ...]:
+    """Validate Sync tags and compatible retained-media classification together."""
+    classification = after.media_types
+    if (
+        type(classification) is tuple
+        and len(classification) == 1
+        and type(classification[0]) is MediaType
+        and classification[0] in media_type_choices(before)
+    ):
+        # Classification belongs to the Application Layer (ADR-0088), not the
+        # ordinary metadata editor. Approve only a compatible classification;
+        # validate every other changed field against the actual retained Track.
+        before = replace(before, media_types=classification)
+    return metadata_edit_issues(before, after)
+
+
 def track_tag_sha256(track: Track) -> str:
     """Fingerprint the semantic iPod Track fields recorded at verified Sync."""
 
@@ -123,4 +142,9 @@ def track_tag_sha256(track: Track) -> str:
     return hashlib.sha256(b"iopenpod.sync.track-tags.v1\0" + payload).hexdigest()
 
 
-__all__ = ["apply_track_tags", "track_tag_sha256", "track_tag_values"]
+__all__ = [
+    "apply_track_tags",
+    "track_tag_edit_issues",
+    "track_tag_sha256",
+    "track_tag_values",
+]

@@ -40,11 +40,13 @@ class PodcastArtworkPixmapProvider(QObject):
         source_url: str,
         logical_size: int,
         device_pixel_ratio: float,
+        *,
+        feed_url: str = "",
     ) -> QPixmap | None:
         if self._closed or not source_url.strip() or logical_size <= 0:
             return None
         target_px = max(1, ceil(logical_size * max(1.0, device_pixel_ratio)))
-        image = self._controller.request(source_url, target_px)
+        image = self._controller.request(source_url, target_px, feed_url=feed_url)
         return self._pixmap_for(image) if image is not None else None
 
     def shutdown(self) -> None:

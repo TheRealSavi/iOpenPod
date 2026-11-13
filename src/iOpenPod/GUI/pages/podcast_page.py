@@ -51,6 +51,7 @@ from iOpenPod.GUI.delegates.podcast_delegates import (
     PodcastEpisodeDelegate,
     PodcastShowDelegate,
 )
+from iOpenPod.GUI.dialogs.podcast_login import PodcastLoginDialog
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
 from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
 from iOpenPod.GUI.presentation.desktop_services import open_desktop_url
@@ -308,6 +309,9 @@ class PodcastPage(QWidget):
         self._sync_show.setObjectName("podcastSyncShow")
         self._sync_settings = ActionButton(parent=hero)
         self._sync_settings.setObjectName("podcastSyncSettings")
+        self._login_button = ActionButton(parent=hero, kind=ActionButtonKind.INLINE)
+        self._login_button.setObjectName("podcastLogin")
+        self._login_button.clicked.connect(self._show_login)
         self._refresh_show = ActionButton(parent=hero)
         self._refresh_show.setObjectName("podcastRefreshShow")
         self._show_website = ActionButton(parent=hero)
@@ -339,7 +343,8 @@ class PodcastPage(QWidget):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
         )
         hero_layout.addLayout(show_copy, 0, 1)
-        hero_layout.addLayout(hero_actions, 1, 1)
+        hero_layout.addWidget(self._login_button, 0, 2, Qt.AlignmentFlag.AlignTop)
+        hero_layout.addLayout(hero_actions, 1, 1, 1, 2)
         hero_layout.setColumnStretch(1, 1)
         hero_layout.setRowStretch(0, 1)
 
@@ -616,6 +621,13 @@ class PodcastPage(QWidget):
         self._settings_dialog.accepted.connect(self._save_sync_settings)
         self._settings_dialog.open()
 
+    def _show_login(self) -> None:
+        subscription = self._selected_subscription()
+        if subscription is not None and self._controller.can_edit:
+            PodcastLoginDialog(
+                self._controller, subscription.subscription_id, self
+            ).open()
+
     @Slot()
     def _save_sync_settings(self) -> None:
         if (
@@ -755,6 +767,11 @@ class PodcastPage(QWidget):
         self._sync_show.setVisible(subscription is not None)
         self._sync_show.setEnabled(syncable and subscription is not None)
         self._sync_settings.setVisible(subscription is not None)
+        self._login_button.setText(self.tr("Podcast Login"))
+        self._login_button.setVisible(
+            subscription is not None and subscription.feed_url.startswith("https://")
+        )
+        self._login_button.setEnabled(editable and subscription is not None)
         self._sync_settings.setEnabled(editable and subscription is not None)
         addable = syncable and bool(self._selected_sync_identities(on_device=False))
         removable = syncable and bool(self._selected_sync_identities(on_device=True))
@@ -925,7 +942,9 @@ class PodcastPage(QWidget):
         self._episodes_label.setText(self.tr("Episodes"))
         artwork_seed = stable_artwork_seed(subscription.subscription_id)
         if subscription.artwork_url:
-            self._show_artwork.set_artwork(subscription.artwork_url, artwork_seed)
+            self._show_artwork.set_artwork(
+                subscription.artwork_url, artwork_seed, feed_url=subscription.feed_url
+            )
             self._show_artwork_stack.setCurrentWidget(self._show_artwork)
         elif self._device_show_artwork is not None and subscription.artwork_id > 0:
             self._device_show_artwork.set_seed(artwork_seed)
@@ -969,6 +988,7 @@ class PodcastPage(QWidget):
             self._query,
             self._episode_filter(),
             artwork_url=subscription.artwork_url,
+            feed_url=subscription.feed_url,
         )
         visible = self._episode_model.rowCount()
         filters_active = self._episode_filter().active

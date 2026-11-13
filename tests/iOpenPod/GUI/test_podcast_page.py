@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
+import pytest
 from PySide6.QtCore import (
     QItemSelectionModel,
     QObject,
@@ -34,7 +35,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QSplitter,
     QStackedWidget,
     QStyleOptionViewItem,
@@ -91,8 +91,6 @@ from iOpenPod.GUI.widgets.search_field import SearchField
 from iPodDB.library import Track
 
 if TYPE_CHECKING:
-    import pytest
-
     from iOpenPod.app.podcasts.controller import PodcastController
     from iOpenPod.GUI.widgets.track_actions import TrackActions
 
@@ -101,6 +99,7 @@ class PodcastControllerStub(QObject):
     changed = Signal()
     busyChanged = Signal(bool)
     operationFailed = Signal(object)
+    operationSucceeded = Signal(object)
     searchFinished = Signal(object)
 
     def __init__(
@@ -151,7 +150,7 @@ class PodcastControllerStub(QObject):
     def search(self, _query: str) -> None:
         pass
 
-    def subscribe(self, feed_url: str) -> None:
+    def subscribe(self, feed_url: str, **_kwargs: object) -> None:
         self.subscribe_calls.append(feed_url)
 
     def mark_listened(
@@ -256,6 +255,7 @@ class _SolidPodcastArtworkProvider:
         source_url: str,
         logical_size: int,
         _device_pixel_ratio: float,
+        **_kwargs: object,
     ) -> QPixmap | None:
         color = self._colors.get(source_url)
         if color is None:
@@ -1064,22 +1064,22 @@ def test_podcast_sync_actions_preserve_show_identity_and_filter_membership() -> 
         APPLICATION.processEvents()
         dialog = page.findChild(PodcastSyncSettingsDialog)
         assert dialog is not None and dialog.isVisible()
-        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        slots = dialog.findChild(QComboBox, "podcastSyncEpisodeSlots")
         assert slots is not None
-        slots.setValue(7)
+        slots.setCurrentIndex(slots.findData(-1))
         dialog.reject()
         assert controller.settings_calls == []
         sync_settings.click()
         APPLICATION.processEvents()
         dialogs = page.findChildren(PodcastSyncSettingsDialog)
         dialog = next(item for item in dialogs if item.isVisible())
-        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        slots = dialog.findChild(QComboBox, "podcastSyncEpisodeSlots")
         assert slots is not None
-        assert slots.value() == 3
-        slots.setValue(8)
+        assert slots.currentData() == 3
+        slots.setCurrentIndex(slots.findData(-1))
         dialog.accept()
         assert controller.settings_calls == [
-            ("First", PodcastSyncSettings(episode_slots=8))
+            ("First", PodcastSyncSettings(episode_slots=-1))
         ]
 
         sync_settings.click()
@@ -1115,14 +1115,18 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
         dialog.show()
         APPLICATION.processEvents()
         assert dialog.selected_settings == policy
-        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        slots = dialog.findChild(QComboBox, "podcastSyncEpisodeSlots")
         fill = dialog.findChild(QComboBox, "podcastSyncFillMode")
         age = dialog.findChild(QComboBox, "podcastSyncClearAge")
         method = dialog.findChild(QComboBox, "podcastSyncClearMethod")
         listened = dialog.findChild(QCheckBox, "podcastSyncClearListened")
-        assert slots is not None and (slots.minimum(), slots.maximum()) == (0, 50)
+        assert slots is not None
+        assert [slots.itemData(index) for index in range(slots.count())] == [
+            *range(51),
+            -1,
+        ]
         assert slots.accessibleName() == "Episodes to keep"
-        assert slots.text() == "12 episodes"
+        assert slots.currentText() == "12 episodes"
         assert "extra episodes yourself" in slots.toolTip()
         assert fill is not None and age is not None and method is not None
         assert listened is not None and not listened.isChecked()
@@ -1147,9 +1151,9 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
         age.setCurrentIndex(age.findData("never"))
         explanation = " ".join(label.text() for label in descriptions)
         assert "skipped" not in explanation
-        slots.setValue(1)
-        assert slots.text() == "1 episode"
-        slots.setValue(12)
+        slots.setCurrentIndex(slots.findData(1))
+        assert slots.currentText() == "1 episode"
+        slots.setCurrentIndex(slots.findData(12))
         age.setCurrentIndex(age.findData("immediate"))
         method.setCurrentIndex(method.findData("remove"))
         listened.setChecked(True)
@@ -1163,16 +1167,17 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
             fill_mode=PodcastFillMode.NEXT,
             clear_older_than=PodcastClearAge.IMMEDIATE,
         )
-        slots.setValue(0)
-        assert slots.text() == "0 episodes"
+        slots.setCurrentIndex(slots.findData(0))
+        assert slots.currentText() == "0 episodes"
         assert dialog.selected_settings.episode_slots == 0
         assert all(not control.isEnabled() for control in (fill, age, method, listened))
         explanation = " ".join(label.text() for label in descriptions)
         assert "Automatic sync is disabled for this podcast" in explanation
-        slots.setValue(12)
+        slots.setCurrentIndex(slots.findData(-1))
+        assert slots.currentText() == "All"
         assert all(control.isEnabled() for control in (fill, age, method, listened))
         assert dialog.selected_settings == PodcastSyncSettings(
-            episode_slots=12,
+            episode_slots=-1,
             fill_mode=PodcastFillMode.NEXT,
             clear_older_than=PodcastClearAge.IMMEDIATE,
         )
@@ -1181,15 +1186,16 @@ def test_podcast_sync_settings_retain_policy_and_explain_age_selection() -> None
         dialog.close()
 
 
-def test_podcast_sync_settings_open_with_zero_slots() -> None:
-    settings = PodcastSyncSettings(episode_slots=0)
+@pytest.mark.parametrize("episode_slots", (0, -1))
+def test_podcast_sync_settings_open_with_zero_or_all_slots(episode_slots: int) -> None:
+    settings = PodcastSyncSettings(episode_slots=episode_slots)
     dialog = PodcastSyncSettingsDialog("Example Podcast", settings)
     try:
         assert dialog.selected_settings == settings
-        slots = dialog.findChild(QSpinBox, "podcastSyncEpisodeSlots")
+        slots = dialog.findChild(QComboBox, "podcastSyncEpisodeSlots")
         fill = dialog.findChild(QComboBox, "podcastSyncFillMode")
-        assert slots is not None and slots.value() == 0
-        assert fill is not None and not fill.isEnabled()
+        assert slots is not None and slots.currentData() == episode_slots
+        assert fill is not None and fill.isEnabled() == (episode_slots != 0)
     finally:
         dialog.close()
 

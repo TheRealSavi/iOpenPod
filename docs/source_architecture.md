@@ -1936,7 +1936,11 @@ facts, and prepares media concurrently on the Host. Independent preparation
 failures retain existing device media while other selected changes may proceed.
 Incoming Tracks pass iPodDB's per-Track metadata validation before entering the
 shared Library Draft. Metadata-only Updates validate changed fields and current
-Host source facts independently. Invalid items retain their Host path, readable
+Host source facts independently. Sync validates classification with the same
+retained audio/video family choices as the metadata editor (ADR-0088), separately
+from ordinary editable fields. Compatible classification changes retain media;
+incompatible changes and invalid metadata still fail per item.
+Invalid items retain their Host path, readable
 Track context and validation reasons in the result; failed replacements retain
 their device media and successful Sync Details. Cancellation, disconnected
 Filesystem Sessions, shared Library validation and publication failures still
@@ -2336,6 +2340,14 @@ thread.
 
 #### `app/podcasts`
 
+Private feed access uses one application-owned `PodcastAccess` shared with the
+Controller, Sync executor and artwork workers. Credentials are transient inputs or
+native Host vault entries keyed by canonical feed URL, never catalog fields. The
+shared HTTP adapter validates each redirect and permits Basic credentials only on
+the owning feed's exact HTTPS origin. Resource requests carry that feed context
+explicitly. Public requests work without a credential store; typed failures retain
+the existing failed-feed and failed-replacement safety rules. See ADR-0266.
+
 Contains the device-aware Podcast Catalog and its external adapters. It exposes one
 immutable Podcast Snapshot composed from explicit Podcast Subscriptions, refreshed
 RSS/Atom metadata, independent Listening History, and Podcast Tracks projected from
@@ -2429,7 +2441,10 @@ transaction preconditions, so changed source media cannot publish stale pixels.
 See ADR-0152 and ADR-0153.
 
 Episode slots limit automatic filling, not manual additions or retained membership.
-The range is 0–50. Zero disables that Subscription's automatic Sync feed refresh,
+The choices are 0–50 and All, persisted as `-1`. All fills every eligible Episode
+without a count limit and preserves ordering, automatic-clear exclusions, and
+clearing rules. The shared dialog also offers All for Host defaults.
+Zero disables that Subscription's automatic Sync feed refresh,
 filling, clearing, replacements, and retained-cover repair; explicit Episode
 additions and removals remain available. Observed Listening History still reconciles.
 Both fill modes clear by listened state or time on the iPod. Newest fills vacancies

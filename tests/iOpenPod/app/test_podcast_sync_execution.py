@@ -32,7 +32,7 @@ from iOpenPod.app.library_sync_helper import (
 )
 from iOpenPod.app.media.transcoding import MediaTranscoder
 from iOpenPod.app.models.artwork import ArtworkRequest
-from iOpenPod.app.podcasts import feed_client, media
+from iOpenPod.app.podcasts import feed_client, http_client, media
 from iOpenPod.app.podcasts.catalog import mark_episode_selection_listened
 from iOpenPod.app.podcasts.documents import decode_history, decode_subscriptions
 from iOpenPod.app.podcasts.feed_client import FeedparserPodcastClient
@@ -71,7 +71,9 @@ if TYPE_CHECKING:
 def test_download_checks_actual_size_and_cleans_private_capture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(b"episode media"))
+    monkeypatch.setattr(
+        http_client, "build_opener", PodcastOpenerFactory(b"episode media")
+    )
     samples: list[int] = []
     with media.download_episode(
         podcast_addition(),
@@ -82,7 +84,9 @@ def test_download_checks_actual_size_and_cleans_private_capture(
         assert path.read_bytes() == b"episode media"
     assert not path.exists()
     assert samples == [len(b"episode media")]
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(b"short", 100))
+    monkeypatch.setattr(
+        http_client, "build_opener", PodcastOpenerFactory(b"short", 100)
+    )
     with (
         pytest.raises(ValueError, match="incomplete"),
         media.download_episode(podcast_addition(), checkpoint=lambda: None),
@@ -118,7 +122,7 @@ def test_podcast_add_replace_and_remove_publish_verified_media_without_overwriti
 ) -> None:
     device = build_device(tmp_path)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     addition = podcast_addition()
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
@@ -232,7 +236,7 @@ def test_unsubscribe_removes_episodes_and_subscription_in_one_sync(
 ) -> None:
     device = build_device(tmp_path)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     try:
         with monkeypatch.context() as patch:
             patch.setattr(
@@ -292,7 +296,9 @@ def test_failed_podcast_replacement_preserves_existing_track_and_file(
     device = build_device(tmp_path)
     old = device.active.library.tracks[0]
     addition = replace(podcast_addition(), replaces_track_id=old.track_id)
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(b"short", 100))
+    monkeypatch.setattr(
+        http_client, "build_opener", PodcastOpenerFactory(b"short", 100)
+    )
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
         FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
@@ -328,7 +334,7 @@ def test_podcast_add_records_committed_episode_in_sync_helper(
 ) -> None:
     device = build_device(tmp_path)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",
         FixedPodcastPlan(PodcastSyncPlan(additions=(podcast_addition(),))),
@@ -442,12 +448,12 @@ def test_downloaded_podcast_persists_publisher_cover_in_device_artwork(
 ) -> None:
     device = build_device(tmp_path)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     cover = io.BytesIO()
     Image.new("RGB", (64, 64), "red").save(cover, format="PNG")
     monkeypatch.setattr(
         feed_client,
-        "urlopen",
+        "open_podcast_request",
         PodcastOpener(cover.getvalue() if cover_available else b"not an image").open,
     )
     addition = podcast_addition()
@@ -536,7 +542,7 @@ def test_podcast_sync_repairs_retained_cover_without_replacing_media(
 
     monkeypatch.setattr(FeedparserPodcastClient, "fetch", fetch)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
 
     def sync(*, repair_only: bool = False) -> SyncExecutionResult:
         state = device.coordinator.load_podcast_state(device.active)
@@ -571,7 +577,7 @@ def test_podcast_sync_repairs_retained_cover_without_replacing_media(
         cover = io.BytesIO()
         Image.new("RGB", (64, 64), "blue").save(cover, format="PNG")
         monkeypatch.setattr(
-            feed_client, "urlopen", PodcastOpener(cover.getvalue()).open
+            feed_client, "open_podcast_request", PodcastOpener(cover.getvalue()).open
         )
         show = replace(show, artwork_url="https://publisher.example/cover.png")
 
@@ -642,7 +648,7 @@ def test_saved_policy_sync_is_idempotent_and_retains_history_after_removal(
 
     monkeypatch.setattr(FeedparserPodcastClient, "fetch", fetch)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     try:
         loaded = device.coordinator.load_podcast_state(device.active)
         device.coordinator.save_podcast_state(
@@ -754,7 +760,7 @@ def test_age_clears_commit_with_library_and_do_not_redownload_after_reconnect(
 
     monkeypatch.setattr(FeedparserPodcastClient, "fetch", fetch)
     data = base64.decodebytes((FIXTURES / "tone.m4a.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
 
     def sync(
         *,

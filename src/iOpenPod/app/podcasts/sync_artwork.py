@@ -15,6 +15,7 @@ from iPodDB.library import ArtworkPixels, IssueSeverity, TimedArtworkFrame, Writ
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from iOpenPod.app.podcasts.credentials import PodcastAccess
     from iOpenPod.app.podcasts.feed_client import PodcastArtworkLoader
     from iOpenPod.app.podcasts.models import PodcastEpisode, PodcastSubscription
 
@@ -43,13 +44,17 @@ class PodcastArtworkPreparation:
         progress: Callable[[WriteProgress], None],
         retained_bytes: int = 0,
         loader: PodcastArtworkLoader | None = None,
+        access: PodcastAccess | None = None,
     ) -> None:
         self.checkpoint = checkpoint
         self.progress = progress
         self.used_bytes = retained_bytes
         self.issues: list[WriteIssue] = []
-        self._loader = loader or HttpPodcastArtworkLoader(checkpoint=checkpoint)
-        self._images: dict[tuple[str, int, bool], ArtworkPixels | None] = {}
+        self._access = access
+        self._loader = loader or HttpPodcastArtworkLoader(
+            checkpoint=checkpoint, access=access
+        )
+        self._images: dict[tuple[str, int, bool, str], ArtworkPixels | None] = {}
 
     @property
     def remaining_bytes(self) -> int:
@@ -70,12 +75,18 @@ class PodcastArtworkPreparation:
         )
 
     def _load(
-        self, url: str, title: str, target_px: int, *, preserve_aspect: bool = False
+        self,
+        url: str,
+        title: str,
+        target_px: int,
+        *,
+        preserve_aspect: bool = False,
+        feed_url: str = "",
     ) -> ArtworkPixels | None:
         self.checkpoint()
         if not url:
             return None
-        key = (url, target_px, preserve_aspect)
+        key = (url, target_px, preserve_aspect, feed_url if self._access else "")
         if key not in self._images:
             self._images[key] = None
             self.progress(
@@ -87,7 +98,7 @@ class PodcastArtworkPreparation:
             )
             try:
                 image = self._loader.load_artwork(
-                    PodcastArtworkRequest(url, target_px, preserve_aspect)
+                    PodcastArtworkRequest(url, target_px, preserve_aspect, feed_url)
                 )
                 self.checkpoint()
                 if image is None:
@@ -111,26 +122,37 @@ class PodcastArtworkPreparation:
     def cover(
         self, subscription: PodcastSubscription, episode: PodcastEpisode, target_px: int
     ) -> ArtworkPixels | None:
-        return self.episode_cover(episode, target_px) or self.show_cover(
-            subscription, target_px
-        )
+        return self.episode_cover(
+            episode, target_px, feed_url=subscription.feed_url
+        ) or self.show_cover(subscription, target_px)
 
     def episode_cover(
-        self, episode: PodcastEpisode, target_px: int
+        self,
+        episode: PodcastEpisode,
+        target_px: int,
+        *,
+        feed_url: str = "",
     ) -> ArtworkPixels | None:
         """Resolve the Episode's own publisher image before other cover sources."""
-        return self._load(episode.artwork_url, episode.title, target_px)
+        return self._load(
+            episode.artwork_url, episode.title, target_px, feed_url=feed_url
+        )
 
     def show_cover(
         self, subscription: PodcastSubscription, target_px: int
     ) -> ArtworkPixels | None:
         """Resolve a show's cover using this batch's cache and retained-pixel budget."""
-        return self._load(subscription.artwork_url, subscription.title, target_px)
+        return self._load(
+            subscription.artwork_url,
+            subscription.title,
+            target_px,
+            feed_url=subscription.feed_url,
+        )
 
     def source_url(self, pixels: ArtworkPixels) -> str:
         return next(
             url
-            for (url, _size, _aspect), cached in self._images.items()
+            for (url, _size, _aspect, _feed), cached in self._images.items()
             if cached is pixels
         )
 
@@ -140,6 +162,8 @@ class PodcastArtworkPreparation:
         duration_ms: int,
         target_px: int,
         embedded: tuple[TimedArtworkFrame, ...],
+        *,
+        feed_url: str = "",
     ) -> tuple[TimedArtworkFrame, ...]:
         self.checkpoint()
         sources = episode.chapter_images
@@ -148,7 +172,10 @@ class PodcastArtworkPreparation:
                 sources = (
                     *sources,
                     *fetch_chapter_images(
-                        episode.chapter_document_url, checkpoint=self.checkpoint
+                        episode.chapter_document_url,
+                        checkpoint=self.checkpoint,
+                        feed_url=feed_url,
+                        access=self._access,
                     ),
                 )
             except PreparationCancelledError:
@@ -171,7 +198,11 @@ class PodcastArtworkPreparation:
                 )
                 continue
             pixels = self._load(
-                source.source_url, episode.title, target_px, preserve_aspect=True
+                source.source_url,
+                episode.title,
+                target_px,
+                preserve_aspect=True,
+                feed_url=feed_url,
             )
             if pixels is not None:
                 frames[position] = TimedArtworkFrame(position, pixels)

@@ -7537,6 +7537,48 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
 </context>
 <context>
+    <name>PodcastLoginDialog</name>
+    <message>
+        <source>Podcast Login</source>
+        <translation>Inicio de sesión del pódcast</translation>
+    </message>
+    <message>
+        <source>Verify Login</source>
+        <translation>Verificar inicio de sesión</translation>
+    </message>
+    <message>
+        <source>Forget Login</source>
+        <translation>Olvidar inicio de sesión</translation>
+    </message>
+    <message>
+        <source>Remove this feed&apos;s saved and temporary login from this computer.</source>
+        <translation>Eliminar de este equipo los datos de inicio de sesión guardados y temporales de este canal.</translation>
+    </message>
+    <message>
+        <source>Checking login…</source>
+        <translation>Verificando inicio de sesión…</translation>
+    </message>
+</context>
+<context>
+    <name>PodcastLoginFields</name>
+    <message>
+        <source>Username</source>
+        <translation>Nombre de usuario</translation>
+    </message>
+    <message>
+        <source>Password</source>
+        <translation>Contraseña</translation>
+    </message>
+    <message>
+        <source>Remember on this computer</source>
+        <translation>Recordar en este equipo</translation>
+    </message>
+    <message>
+        <source>Saved logins stay in your computer&apos;s credential store, never on the iPod. Without remembering, this login lasts until iOpenPod closes.</source>
+        <translation>Los datos de inicio de sesión se guardan en el almacén de credenciales del equipo, nunca en el iPod. Si no los guardas, este inicio de sesión durará hasta que cierres iOpenPod.</translation>
+    </message>
+</context>
+<context>
     <name>PodcastPage</name>
     <message>
         <source>Podcasts</source>
@@ -7661,6 +7703,10 @@ Usa Editar para revisar sus reglas.</translation>
     <message>
         <source>Unsubscribing will remove this Podcast&apos;s episodes from the iPod. Continue?</source>
         <translation>Al cancelar la suscripción, se eliminarán del iPod los episodios de este pódcast. ¿Continuar?</translation>
+    </message>
+    <message>
+        <source>Podcast Login</source>
+        <translation>Inicio de sesión del pódcast</translation>
     </message>
     <message>
         <source>Episode links</source>
@@ -7836,6 +7882,10 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>¿Tienes la URL de una fuente?</translation>
     </message>
     <message>
+        <source>Back to search</source>
+        <translation>Volver a la búsqueda</translation>
+    </message>
+    <message>
         <source>Add using an RSS feed</source>
         <translation>Añadir mediante un canal RSS</translation>
     </message>
@@ -7860,12 +7910,20 @@ Usa Editar para revisar sus reglas.</translation>
         <translation>Añadir fuente</translation>
     </message>
     <message>
+        <source>Requires login</source>
+        <translation>Requiere inicio de sesión</translation>
+    </message>
+    <message>
         <source>Discover a show to take with you.</source>
         <translation>Descubre un programa para llevar contigo.</translation>
     </message>
     <message>
         <source>Enter a Podcast name, then choose Search.</source>
         <translation>Introduce el nombre de un pódcast y elige Buscar.</translation>
+    </message>
+    <message>
+        <source>Checking feed…</source>
+        <translation>Comprobando canal…</translation>
     </message>
     <message>
         <source>Searching the Podcast directory…</source>
@@ -7911,7 +7969,15 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>How many episodes to add automatically. You can still add extra episodes yourself.</source>
-        <translation>Cuántos episodios añadir automáticamente. Puedes añadir más episodios por tu cuenta.</translation>
+        <translation type="vanished">Cuántos episodios añadir automáticamente. Puedes añadir más episodios por tu cuenta.</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <source>How many episodes to add automatically. All removes the episode limit. You can still add extra episodes yourself.</source>
+        <translation>Cuántos episodios añadir automáticamente. Todos elimina el límite de episodios. Puedes añadir más episodios por tu cuenta.</translation>
     </message>
     <message>
         <source>Add</source>
@@ -8011,11 +8077,11 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source> episode</source>
-        <translation> episodio</translation>
+        <translation type="vanished"> episodio</translation>
     </message>
     <message>
         <source> episodes</source>
-        <translation> episodios</translation>
+        <translation type="vanished"> episodios</translation>
     </message>
     <message>
         <source>Adds the newest available episodes when there&apos;s room.</source>
@@ -12672,6 +12738,10 @@ Playlists: %3</translation>
         <translation>No se pudieron abrir los datos de reproducción</translation>
     </message>
     <message>
+        <source>Could not read the Podcast login. Unlock your OS credential store, or enter the login again without remembering it.</source>
+        <translation>No se pudieron leer los datos de inicio de sesión del pódcast. Desbloquea el almacén de credenciales del sistema o vuelve a introducir los datos sin guardarlos.</translation>
+    </message>
+    <message>
         <source>Could not read these settings: {detail}</source>
         <translation>No se han podido leer estos ajustes: {detail}</translation>
     </message>
@@ -12684,8 +12754,16 @@ Playlists: %3</translation>
         <translation>No se pudo actualizar {title}: {error}</translation>
     </message>
     <message>
+        <source>Could not remove the saved Podcast login. Unlock your OS credential store and try again.</source>
+        <translation>No se pudieron eliminar los datos de inicio de sesión guardados del pódcast. Desbloquea el almacén de credenciales del sistema y vuelve a intentarlo.</translation>
+    </message>
+    <message>
         <source>Could not repair subtitle and caption metadata for &quot;{title}&quot;. The existing video is unchanged; Sync can retry the repair.</source>
         <translation>No se pudieron reparar los metadatos de subtítulos y subtítulos ocultos de &quot;{title}&quot;. El vídeo existente no ha cambiado; la sincronización puede volver a intentar la reparación.</translation>
+    </message>
+    <message>
+        <source>Could not save the Podcast login. Unlock your OS credential store, or turn off Remember on this computer and try again.</source>
+        <translation>No se pudieron guardar los datos de inicio de sesión del pódcast. Desbloquea el almacén de credenciales del sistema o desactiva «Recordar en este equipo» y vuelve a intentarlo.</translation>
     </message>
     <message>
         <source>Cover Flow devices are sensitive to Artist+Album differences and same-name albums.</source>
@@ -12888,8 +12966,16 @@ Playlists: %3</translation>
         <translation>Introduce un nombre para el iPod.</translation>
     </message>
     <message>
+        <source>Enter a valid HTTP or HTTPS podcast feed URL</source>
+        <translation>Introduce una URL HTTP o HTTPS válida para el canal del pódcast</translation>
+    </message>
+    <message>
         <source>Enter a valid HTTP or HTTPS podcast feed URL.</source>
         <translation>Introduce una URL válida de fuente de pódcast con HTTP o HTTPS.</translation>
+    </message>
+    <message>
+        <source>Enter both a Podcast username and password.</source>
+        <translation>Introduce el nombre de usuario y la contraseña del pódcast.</translation>
     </message>
     <message>
         <source>Entire library</source>
@@ -14504,6 +14590,10 @@ Playlists: %3</translation>
         <translation>No se pudo completar la operación de copia de seguridad de forma segura.</translation>
     </message>
     <message>
+        <source>The Episode contains too many chapter images</source>
+        <translation>El episodio contiene demasiadas imágenes de capítulos</translation>
+    </message>
+    <message>
         <source>The Host Media Library changed while it was scanned; the available files were kept for review. Sync will recheck source files before writing to the iPod.</source>
         <translation>La biblioteca de medios del equipo cambió durante el análisis; se conservaron los archivos disponibles para revisión. La sincronización volverá a comprobar los archivos de origen antes de escribir en el iPod.</translation>
     </message>
@@ -14594,6 +14684,50 @@ Playlists: %3</translation>
     <message>
         <source>The Podcast Subscription is no longer available.</source>
         <translation>La suscripción de pódcast ya no está disponible.</translation>
+    </message>
+    <message>
+        <source>The Podcast artwork could not be decoded</source>
+        <translation>No se pudo decodificar la portada del pódcast</translation>
+    </message>
+    <message>
+        <source>The Podcast artwork dimensions are unsafe</source>
+        <translation>Las dimensiones de la portada del pódcast superan el límite de seguridad</translation>
+    </message>
+    <message>
+        <source>The Podcast login contains unsupported characters.</source>
+        <translation>Los datos de inicio de sesión del pódcast contienen caracteres no compatibles.</translation>
+    </message>
+    <message>
+        <source>The Podcast request failed. Check your connection and try again.</source>
+        <translation>La solicitud del pódcast ha fallado. Comprueba la conexión y vuelve a intentarlo.</translation>
+    </message>
+    <message>
+        <source>The Podcast request redirected to an unsupported URL.</source>
+        <translation>La solicitud del pódcast se ha redirigido a una URL no compatible.</translation>
+    </message>
+    <message>
+        <source>The Podcast server could not complete the request. Try again later.</source>
+        <translation>El servidor del pódcast no pudo completar la solicitud. Vuelve a intentarlo más tarde.</translation>
+    </message>
+    <message>
+        <source>The Podcast server denied access. Check that your subscription is active.</source>
+        <translation>El servidor del pódcast ha denegado el acceso. Comprueba que tu suscripción esté activa.</translation>
+    </message>
+    <message>
+        <source>The Podcast server redirected from HTTPS to an insecure connection.</source>
+        <translation>El servidor del pódcast se ha redirigido de HTTPS a una conexión no segura.</translation>
+    </message>
+    <message>
+        <source>The Podcast server rejected the login. Check your username and password.</source>
+        <translation>El servidor del pódcast ha rechazado el inicio de sesión. Comprueba tu nombre de usuario y tu contraseña.</translation>
+    </message>
+    <message>
+        <source>The Podcast server requires an unsupported login method. HTTP Basic authentication is supported.</source>
+        <translation>El servidor del pódcast requiere un método de inicio de sesión no compatible. Se admite la autenticación básica HTTP.</translation>
+    </message>
+    <message>
+        <source>The URL and login fields contain different credentials. Use the login fields with a URL without credentials.</source>
+        <translation>La URL y los campos de inicio de sesión contienen credenciales distintas. Usa los campos de inicio de sesión con una URL sin credenciales.</translation>
     </message>
     <message>
         <source>The accepted Playlist file changed while it was scanned and was omitted: {error}</source>
@@ -14708,6 +14842,26 @@ Playlists: %3</translation>
         <translation>La zona horaria de algunas fechas de reproducción se interpreta de forma aproximada; el archivo de reproducción original se archiva al guardar.</translation>
     </message>
     <message>
+        <source>The chapter artwork document contains too many entries</source>
+        <translation>El documento de imágenes de capítulos contiene demasiadas entradas</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document is not valid JSON</source>
+        <translation>El documento de imágenes de capítulos no contiene JSON válido</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document must be an object</source>
+        <translation>El documento de imágenes de capítulos debe ser un objeto</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document requires an HTTP(S) URL</source>
+        <translation>El documento de imágenes de capítulos requiere una URL HTTP(S)</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document uses an unsupported format</source>
+        <translation>El documento de imágenes de capítulos utiliza un formato no compatible</translation>
+    </message>
+    <message>
         <source>The existing helper is invalid: {error}</source>
         <translation>El índice auxiliar existente no es válido: {error}</translation>
     </message>
@@ -14718,6 +14872,10 @@ Playlists: %3</translation>
     <message>
         <source>The export could not be completed.</source>
         <translation>No se pudo completar la exportación.</translation>
+    </message>
+    <message>
+        <source>The feed does not contain playable podcast episodes</source>
+        <translation>El canal no contiene episodios de pódcast reproducibles</translation>
     </message>
     <message>
         <source>The generated special Podcasts playlist is missing its native marker.</source>
@@ -15352,6 +15510,10 @@ Playlists: %3</translation>
         <translation>Los metadatos de posición de la entrega de pódcast faltan o son ambiguos.</translation>
     </message>
     <message>
+        <source>Podcast logins require an HTTPS feed URL.</source>
+        <translation>El inicio de sesión del pódcast requiere una URL HTTPS del canal.</translation>
+    </message>
+    <message>
         <source>Podcast normalization changed or omitted the retained root identity.</source>
         <translation>La normalización de pódcasts cambió u omitió la identidad raíz conservada.</translation>
     </message>
@@ -15418,6 +15580,34 @@ El análisis acústico sigue disponible.</translation>
         <translation>El índice nativo de capítulos selecciona la última entrada aplicable con la misma posición de inicio. Se conservan los metadatos editables de capítulos.</translation>
     </message>
     <message>
+        <source>The podcast directory response is malformed</source>
+        <translation>La respuesta del directorio de pódcasts tiene un formato incorrecto</translation>
+    </message>
+    <message>
+        <source>The podcast directory returned an unreadable response</source>
+        <translation>El directorio de pódcasts ha devuelto una respuesta ilegible</translation>
+    </message>
+    <message>
+        <source>The podcast feed could not be parsed.</source>
+        <translation>No se pudo analizar el canal del pódcast.</translation>
+    </message>
+    <message>
+        <source>The podcast feed repeats Episode IDs: multiple entries share the same media URL.</source>
+        <translation>El canal del pódcast repite identificadores de episodios: varias entradas comparten la misma URL multimedia.</translation>
+    </message>
+    <message>
+        <source>The podcast request exceeded its download deadline</source>
+        <translation>La solicitud del pódcast ha superado el tiempo límite de descarga</translation>
+    </message>
+    <message>
+        <source>The podcast request returned an empty response</source>
+        <translation>La solicitud del pódcast ha devuelto una respuesta vacía</translation>
+    </message>
+    <message>
+        <source>The podcast response could not be read. Try again.</source>
+        <translation>No se pudo leer la respuesta del pódcast. Vuelve a intentarlo.</translation>
+    </message>
+    <message>
         <source>The previous instrument analysis setup needs attention. Acoustic analysis remains available.</source>
         <translation>La instalación anterior del análisis de instrumentos necesita atención. El análisis acústico sigue disponible.</translation>
     </message>
@@ -15436,6 +15626,14 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>The reported firmware release could not be interpreted.</source>
         <translation>No se ha podido interpretar la versión de firmware comunicada.</translation>
+    </message>
+    <message>
+        <source>The request redirected outside HTTP or HTTPS</source>
+        <translation>La solicitud se ha redirigido a un protocolo distinto de HTTP o HTTPS</translation>
+    </message>
+    <message>
+        <source>The response is larger than iOpenPod accepts</source>
+        <translation>La respuesta supera el tamaño que admite iOpenPod</translation>
     </message>
     <message>
         <source>The retained Chapter header disables the native named index. Editable Chapter metadata is retained.</source>
@@ -15464,6 +15662,14 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>These saved preferences request a reset on the iPod. Editing is disabled until the iPod has handled it.</source>
         <translation>Estas preferencias guardadas solicitan un restablecimiento en el iPod. La edición está desactivada hasta que el iPod haya procesado la solicitud.</translation>
+    </message>
+    <message>
+        <source>This Podcast requires a username and password.</source>
+        <translation>Este pódcast requiere un nombre de usuario y una contraseña.</translation>
+    </message>
+    <message>
+        <source>This Podcast resource requires a login on a different server. Your feed password was not shared with it.</source>
+        <translation>Este recurso del pódcast requiere iniciar sesión en otro servidor. No se ha compartido con él la contraseña del canal.</translation>
     </message>
     <message>
         <source>This iPod layout cannot store the date; its previous value is retained.</source>

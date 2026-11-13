@@ -238,6 +238,7 @@ class MediaFolderSettingsDialog(QDialog):
         )
         layout.setSpacing(LAYOUT.space_sm)
         layout.addWidget(self._row)
+        layout.addStretch(1)
         layout.addWidget(self._buttons)
         self.retranslate_ui()
 

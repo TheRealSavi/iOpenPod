@@ -447,7 +447,8 @@ class AddGeniusMixesDialog(QDialog):
             LAYOUT.space_md,
         )
         shelf.addWidget(self._grid)
-        shelf.addWidget(self._empty)
+        shelf.addWidget(self._empty, 1)
+        shelf.addStretch()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -565,6 +566,7 @@ class GeniusMixSettingsDialog(QDialog):
         layout.addWidget(self._description)
         layout.addLayout(form)
         layout.addWidget(self._help)
+        layout.addStretch(1)
         layout.addLayout(actions)
         self.retranslate_ui()
 

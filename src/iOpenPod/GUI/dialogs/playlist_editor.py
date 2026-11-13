@@ -969,6 +969,8 @@ class PlaylistEditorDialog(QDialog):
         self._error.setWordWrap(True)
         self._error.setObjectName("playlistEditorError")
         layout.addWidget(self._error)
+        if kind is not PlaylistKind.SMART:
+            layout.addStretch(1)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel,

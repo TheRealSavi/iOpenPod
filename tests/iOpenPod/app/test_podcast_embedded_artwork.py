@@ -26,7 +26,7 @@ from tests.iOpenPod.app.test_music_import import FIXTURES
 from iOpenPod.app.media.sync_artwork import capture_embedded_chapter_artwork
 from iOpenPod.app.media.transcoding import LossyEncoder, TranscodeSettings
 from iOpenPod.app.models.artwork import ArtworkRequest
-from iOpenPod.app.podcasts import feed_client, media
+from iOpenPod.app.podcasts import feed_client, http_client
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
 from iPodDB.library import ArtworkPixels, MediaKind, TrackChapter
@@ -130,16 +130,18 @@ def test_episode_cover_precedes_show_cover_and_chapters_reach_native_library(
     )
     tags.save(source, v2_version=3)
     monkeypatch.setattr(
-        media, "build_opener", PodcastOpenerFactory(source.read_bytes())
+        http_client, "build_opener", PodcastOpenerFactory(source.read_bytes())
     )
     publisher = PodcastOpener(_image("red"))
     requested_covers: list[str] = []
 
-    def load_publisher(request: Request, *, timeout: int) -> PodcastResponse:
+    def load_publisher(
+        request: Request, *, timeout: int, **_kwargs: object
+    ) -> PodcastResponse:
         requested_covers.append(request.full_url)
         return publisher.open(request, timeout=timeout)
 
-    monkeypatch.setattr(feed_client, "urlopen", load_publisher)
+    monkeypatch.setattr(feed_client, "open_podcast_request", load_publisher)
     addition = podcast_addition()
     addition = replace(
         addition,
@@ -217,17 +219,19 @@ def test_episode_rss_cover_reaches_ipod_ahead_of_embedded_show_cover(
     tags.add(_FRAMES.APIC(mime="image/png", type=3, data=_image("blue")))
     tags.save(source, v2_version=3)
     monkeypatch.setattr(
-        media, "build_opener", PodcastOpenerFactory(source.read_bytes())
+        http_client, "build_opener", PodcastOpenerFactory(source.read_bytes())
     )
     requested_covers: list[str] = []
 
-    def load_publisher(request: Request, *, timeout: int) -> PodcastResponse:
+    def load_publisher(
+        request: Request, *, timeout: int, **_kwargs: object
+    ) -> PodcastResponse:
         requested_covers.append(request.full_url)
         return PodcastOpener(_image("red") if rss_available else b"invalid image").open(
             request, timeout=timeout
         )
 
-    monkeypatch.setattr(feed_client, "urlopen", load_publisher)
+    monkeypatch.setattr(feed_client, "open_podcast_request", load_publisher)
     addition = podcast_addition()
     addition = replace(
         addition,

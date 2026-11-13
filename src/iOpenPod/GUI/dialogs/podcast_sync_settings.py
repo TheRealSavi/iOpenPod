@@ -9,17 +9,18 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from iOpenPod.app.podcasts.models import (
+    ALL_EPISODE_SLOTS,
     PodcastClearAge,
     PodcastClearMethod,
     PodcastFillMode,
     PodcastSyncSettings,
 )
+from iOpenPod.GUI.presentation.i18n.text import episode_count_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
@@ -48,11 +49,12 @@ class PodcastSyncSettingsDialog(QDialog):
         self._description.setWordWrap(True)
 
         self._slots_label = QLabel(self)
-        self._slots = QSpinBox(self)
+        self._slots = AppComboBox(self)
         self._slots.setObjectName("podcastSyncEpisodeSlots")
         self._slots.setMinimumHeight(LAYOUT.control_height)
-        self._slots.setRange(0, 50)
-        self._slots.setValue(settings.episode_slots)
+        for count in (*range(51), ALL_EPISODE_SLOTS):
+            self._slots.addItem("", count)
+        self._slots.setCurrentIndex(self._slots.findData(settings.episode_slots))
         self._slots_label.setBuddy(self._slots)
 
         self._fill_label = QLabel(self)
@@ -126,9 +128,10 @@ class PodcastSyncSettingsDialog(QDialog):
         layout.addWidget(self._description)
         layout.addLayout(form)
         layout.addWidget(self._help)
+        layout.addStretch(1)
         layout.addLayout(actions)
         self._fill.currentIndexChanged.connect(self._update_help)
-        self._slots.valueChanged.connect(self._update_help)
+        self._slots.currentIndexChanged.connect(self._update_help)
         self._age.currentIndexChanged.connect(self._update_help)
         self._method.currentIndexChanged.connect(self._update_help)
         self.retranslate_ui()
@@ -136,7 +139,7 @@ class PodcastSyncSettingsDialog(QDialog):
     @property
     def selected_settings(self) -> PodcastSyncSettings:
         return PodcastSyncSettings(
-            episode_slots=self._slots.value(),
+            episode_slots=int(self._slots.currentData()),
             fill_mode=PodcastFillMode(str(self._fill.currentData())),
             clear_when_listened=self._clear_listened.isChecked(),
             clear_older_than=PodcastClearAge(str(self._age.currentData())),
@@ -150,9 +153,18 @@ class PodcastSyncSettingsDialog(QDialog):
         )
         self._slots_label.setText(self.tr("Keep"))
         self._slots.setAccessibleName(self.tr("Episodes to keep"))
+        for index in range(self._slots.count()):
+            count = int(self._slots.itemData(index))
+            self._slots.setItemText(
+                index,
+                self.tr("All")
+                if count == ALL_EPISODE_SLOTS
+                else episode_count_text(count),
+            )
         self._slots.setToolTip(
             self.tr(
-                "How many episodes to add automatically. You can still add extra episodes yourself."
+                "How many episodes to add automatically. All removes the episode limit. "
+                "You can still add extra episodes yourself."
             )
         )
         self._fill_label.setText(self.tr("Add"))
@@ -191,10 +203,7 @@ class PodcastSyncSettingsDialog(QDialog):
     @Slot(int)
     def _update_help(self, _index: int | None = None) -> None:
         newest = self._fill.currentData() == "newest"
-        self._slots.setSuffix(
-            self.tr(" episode") if self._slots.value() == 1 else self.tr(" episodes")
-        )
-        automatic = self._slots.value() > 0
+        automatic = self._slots.currentData() != 0
         for control in (
             self._fill_label,
             self._fill,

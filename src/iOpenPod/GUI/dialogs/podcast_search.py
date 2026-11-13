@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from PySide6.QtCore import QEvent, QItemSelection, QModelIndex, Qt, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -26,8 +27,11 @@ from iOpenPod.app.podcasts.controller import (
     PodcastOperation,
     PodcastOperationFailure,
 )
+from iOpenPod.app.podcasts.credentials import parse_feed_input
+from iOpenPod.app.podcasts.errors import PodcastFeedError
 from iOpenPod.app.podcasts.models import PodcastSearchResult
 from iOpenPod.GUI.delegates.podcast_delegates import PodcastSearchResultDelegate
+from iOpenPod.GUI.dialogs.podcast_login import PodcastLoginFields
 from iOpenPod.GUI.presentation.i18n.text import podcasts_found_text
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.podcast_styles import render_podcast_search_style
@@ -58,6 +62,7 @@ class PodcastSearchDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self._controller = controller
+        self._pending_subscribe = False
         self._theme_manager = theme_manager
         self._search_state: Literal[
             "initial", "loading", "results", "empty", "error"
@@ -86,6 +91,7 @@ class PodcastSearchDialog(QDialog):
         self._search_button.setObjectName("podcastDirectorySearch")
         self._search_button.setMinimumHeight(LAYOUT.control_height_large)
         self._search_button.clicked.connect(self._search)
+        self._search_button.setAutoDefault(False)
         search_row = QHBoxLayout()
         search_row.setSpacing(LAYOUT.space_xs)
         search_row.addWidget(self._query, 1)
@@ -142,10 +148,12 @@ class PodcastSearchDialog(QDialog):
         self._rss_url.setClearButtonEnabled(True)
         self._rss_url.setMinimumHeight(LAYOUT.control_height_large)
         self._rss_url.returnPressed.connect(self._subscribe_url)
+        self._rss_url.textEdited.connect(self._extract_url_login)
         self._add_url = ActionButton(parent=rss_panel)
         self._add_url.setObjectName("podcastAddRss")
         self._add_url.setMinimumHeight(LAYOUT.control_height_large)
         self._add_url.clicked.connect(self._subscribe_url)
+        self._add_url.setAutoDefault(False)
         rss_row = QHBoxLayout()
         rss_row.setSpacing(LAYOUT.space_xs)
         rss_row.addWidget(self._rss_url, 1)
@@ -163,6 +171,14 @@ class PodcastSearchDialog(QDialog):
         rss_layout.addSpacing(LAYOUT.space_2xs)
         rss_layout.addWidget(self._rss_label)
         rss_layout.addLayout(rss_row)
+        self._requires_login = QCheckBox(rss_panel)
+        self._requires_login.setObjectName("podcastRequiresLogin")
+        self._login = PodcastLoginFields(rss_panel)
+        self._login.password.returnPressed.connect(self._subscribe_url)
+        self._login.hide()
+        self._requires_login.toggled.connect(self._toggle_login)
+        rss_layout.addWidget(self._requires_login)
+        rss_layout.addWidget(self._login)
         rss_panel.hide()
 
         self._status = QLabel(self)
@@ -180,6 +196,7 @@ class PodcastSearchDialog(QDialog):
         apply_action_button_kind(self._subscribe, ActionButtonKind.PRIMARY)
         self._subscribe.setObjectName("podcastSubscribeSelected")
         self._subscribe.clicked.connect(self._subscribe_selected)
+        self._subscribe.setAutoDefault(False)
         self._buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
@@ -198,12 +215,16 @@ class PodcastSearchDialog(QDialog):
         layout.addWidget(self._result_stack, 1)
         layout.addWidget(self._rss_toggle, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(rss_panel)
+        # The results take the stretch in search mode; this absorbs it in RSS mode.
+        layout.addStretch()
         layout.addWidget(self._status)
         layout.addWidget(self._buttons)
 
         controller.searchFinished.connect(self._search_finished)
         controller.busyChanged.connect(self._busy_changed)
         controller.operationFailed.connect(self._operation_failed)
+        controller.operationSucceeded.connect(self._operation_succeeded)
+        self.finished.connect(self._clear_login)
         self._results.selectionModel().selectionChanged.connect(self._selection_changed)
         theme_manager.effectiveThemeChanged.connect(self._theme_changed)
         self._apply_styles()
@@ -219,7 +240,11 @@ class PodcastSearchDialog(QDialog):
         self._query.setAccessibleName(self.tr("Podcast search query"))
         self._search_button.setText(self.tr("Search"))
         self._rss_title.setText(self.tr("Have a feed URL?"))
-        self._rss_toggle.setText(self.tr("Add using an RSS feed"))
+        self._rss_toggle.setText(
+            self.tr("Back to search")
+            if self._rss_toggle.isChecked()
+            else self.tr("Add using an RSS feed")
+        )
         self._rss_detail.setText(
             self.tr("Subscribe directly when a Podcast is not listed in the directory.")
         )
@@ -227,6 +252,7 @@ class PodcastSearchDialog(QDialog):
         self._rss_url.setPlaceholderText(self.tr("https://example.com/feed.xml"))
         self._rss_url.setAccessibleName(self.tr("Podcast RSS URL"))
         self._add_url.setText(self.tr("Add Feed"))
+        self._requires_login.setText(self.tr("Requires login"))
         self._subscribe.setText(self.tr("Subscribe"))
         self._render_result_text()
 
@@ -258,6 +284,7 @@ class PodcastSearchDialog(QDialog):
             self._status.setText(self.tr("Enter a Podcast name, then choose Search."))
             self._query.setFocus()
             return
+        self._rss_toggle.setChecked(False)
         self._search_state = "loading"
         self._results_model.replace(())
         self._render_result_text()
@@ -287,11 +314,14 @@ class PodcastSearchDialog(QDialog):
         result = self._results_model.result_at(self._results.currentIndex().row())
         if result is None:
             return
+        self._pending_subscribe = True
         self._controller.subscribe(result.feed_url)
-        self.accept()
 
     @Slot()
     def _subscribe_url(self) -> None:
+        if self._controller.busy or not self._controller.can_edit:
+            return
+        self._extract_url_login()
         url = self._rss_url.text().strip()
         if not url:
             self._status.setText(
@@ -301,8 +331,38 @@ class PodcastSearchDialog(QDialog):
             )
             self._rss_url.setFocus()
             return
-        self._controller.subscribe(url)
-        if self._controller.busy:
+        try:
+            credentials = (
+                self._login.credentials() if self._requires_login.isChecked() else None
+            )
+        except PodcastFeedError as error:
+            self._status.setText(workflow_text(str(error)))
+            return
+        self._pending_subscribe = True
+        self._status.setText(self.tr("Checking feed…"))
+        self._controller.subscribe(
+            url, credentials=credentials, remember=self._login.remember.isChecked()
+        )
+
+    def _extract_url_login(self, _text: str = "") -> None:
+        try:
+            entered = parse_feed_input(self._rss_url.text())
+        except PodcastFeedError:
+            return
+        if entered.credentials is not None:
+            self._rss_url.setText(entered.url)
+            self._requires_login.setChecked(True)
+            self._login.username.setText(entered.credentials.username)
+            self._login.password.setText(entered.credentials.password)
+
+    def _clear_login(self, _result: int) -> None:
+        self._pending_subscribe = False
+        self._login.clear()
+        self._rss_url.clear()
+        self._requires_login.setChecked(False)
+
+    def _operation_succeeded(self, operation: object) -> None:
+        if self._pending_subscribe and operation is PodcastOperation.SUBSCRIBE:
             self.accept()
 
     @Slot(bool)
@@ -311,6 +371,14 @@ class PodcastSearchDialog(QDialog):
 
     @Slot(object)
     def _operation_failed(self, value: object) -> None:
+        if (
+            self._pending_subscribe
+            and isinstance(value, PodcastOperationFailure)
+            and value.operation is PodcastOperation.SUBSCRIBE
+        ):
+            self._pending_subscribe = False
+            self._status.setText(workflow_text(value.message))
+            return
         if (
             isinstance(value, PodcastOperationFailure)
             and value.operation is PodcastOperation.SEARCH
@@ -327,6 +395,8 @@ class PodcastSearchDialog(QDialog):
         self._query.setEnabled(idle)
         self._search_button.setEnabled(idle)
         self._rss_url.setEnabled(idle and self._controller.can_edit)
+        self._login.setEnabled(idle and self._controller.can_edit)
+        self._requires_login.setEnabled(idle and self._controller.can_edit)
         self._add_url.setEnabled(idle and self._controller.can_edit)
         self._subscribe.setEnabled(
             idle
@@ -344,8 +414,27 @@ class PodcastSearchDialog(QDialog):
         self._availability_changed()
 
     @Slot(bool)
+    def _toggle_login(self, visible: bool) -> None:
+        self._login.setVisible(visible)
+        self._login.ensurePolished()
+        if layout := self.layout():
+            layout.invalidate()
+        self.setMinimumHeight(max(560, self.minimumSizeHint().height()))
+
+    @Slot(bool)
     def _toggle_rss(self, visible: bool) -> None:
         self._rss_panel.setVisible(visible)
+        self._result_stack.setVisible(not visible)
+        for widget in (
+            self._intro,
+            self._query_label,
+            self._query,
+            self._search_button,
+        ):
+            widget.setVisible(not visible)
+        self._rss_toggle.setText(
+            self.tr("Back to search") if visible else self.tr("Add using an RSS feed")
+        )
         self.setMinimumHeight(
             max(560, self.minimumSizeHint().height()) if visible else 560
         )

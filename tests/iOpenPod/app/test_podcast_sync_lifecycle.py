@@ -39,7 +39,9 @@ class _Feeds:
     def __init__(self, show: PodcastSubscription) -> None:
         self.show = show
 
-    def fetch(self, feed_url: str) -> PodcastSubscription:
+    def fetch(
+        self, feed_url: str, *, credentials: object = None
+    ) -> PodcastSubscription:
         del feed_url
         return replace(self.show, last_refreshed=123)
 

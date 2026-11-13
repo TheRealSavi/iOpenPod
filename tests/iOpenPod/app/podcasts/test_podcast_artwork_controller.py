@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from threading import Event, Lock
 
 import pytest
 from PySide6.QtTest import QTest
@@ -63,7 +64,9 @@ class _Feeds:
         self.missing = missing
         self.fail = fail
 
-    def fetch(self, feed_url: str) -> PodcastSubscription:
+    def fetch(
+        self, feed_url: str, *, credentials: object = None
+    ) -> PodcastSubscription:
         self.requests.append(feed_url)
         if self.fail:
             raise OSError("Publisher unavailable")
@@ -84,6 +87,70 @@ def _finish(controller: PodcastArtworkController) -> None:
     assert not controller.pending_count
 
 
+def test_login_change_discards_in_flight_artwork_and_allows_a_fresh_request() -> None:
+    started, release, ended = Event(), Event(), Event()
+    lock = Lock()
+
+    class Loader:
+        def __init__(self) -> None:
+            self.count = 0
+
+        def load_artwork(self, request: PodcastArtworkRequest) -> PodcastArtworkImage:
+            with lock:
+                self.count += 1
+                first = self.count == 1
+            if first:
+                started.set()
+                assert release.wait(2)
+                ended.set()
+            return PodcastArtworkImage(
+                "old" if first else "new",
+                request.source_url,
+                1,
+                1,
+                b"old" if first else b"new",
+            )
+
+    loader = Loader()
+    controller = PodcastArtworkController(loader)
+    url, feed = "https://publisher.test/cover.png", "https://publisher.test/feed"
+    try:
+        assert controller.request(url, 1, feed_url=feed) is None
+        assert started.wait(1)
+        controller.invalidate()
+        assert controller.request(url, 1, feed_url=feed) is None
+        _finish(controller)
+        current = controller.request(url, 1, feed_url=feed)
+        assert current is not None and current.rgb888 == b"new"
+        release.set()
+        assert ended.wait(1)
+        QTest.qWait(30)
+        APPLICATION.processEvents()
+        assert controller.request(url, 1, feed_url=feed) == current
+    finally:
+        release.set()
+        controller.shutdown()
+
+
+def test_same_artwork_url_does_not_reuse_another_feeds_access_context() -> None:
+    loader = _Loader()
+    controller = PodcastArtworkController(loader)
+    url = "https://publisher.test/private.png"
+    try:
+        controller.request(url, 1, feed_url="https://publisher.test/first")
+        _finish(controller)
+        assert (
+            controller.request(url, 1, feed_url="https://publisher.test/second") is None
+        )
+        _finish(controller)
+        assert [request.feed_url for request in loader.requests] == [
+            "https://publisher.test/first",
+            "https://publisher.test/second",
+        ]
+    finally:
+        controller.shutdown()
+
+
 def test_discovery_resolves_only_requested_publisher_covers_and_reuses_pixels() -> None:
     feeds, loader = _Feeds(), _Loader()
     controller = PodcastArtworkController(loader, feed_client=feeds)
@@ -98,7 +165,11 @@ def test_discovery_resolves_only_requested_publisher_covers_and_reuses_pixels() 
         assert image is not None
         assert image.source_url == "https://publisher.test/cover.jpg"
         assert feeds.requests == ["https://publisher.test/rss"]
-        assert loader.requests == [PodcastArtworkRequest(image.source_url, 88)]
+        assert loader.requests == [
+            PodcastArtworkRequest(
+                image.source_url, 88, feed_url="https://publisher.test/rss"
+            )
+        ]
         assert changed == feeds.requests
         assert controller.cached_byte_count == 88 * 88 * 3
     finally:

@@ -21,7 +21,7 @@ from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_music_import import FIXTURES
 
 from iOpenPod.app.media.transcoding import LossyEncoder
-from iOpenPod.app.podcasts import media
+from iOpenPod.app.podcasts import http_client
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
 from iPodDB.library import MediaKind
@@ -68,7 +68,7 @@ def test_podcast_sync_exceeds_byte_transform_budget(
         )
 
     monkeypatch.setattr(MediaWorkspace, "transform_bytes", small_byte_transform)
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     addition = podcast_addition()
     addition = replace(
         addition,

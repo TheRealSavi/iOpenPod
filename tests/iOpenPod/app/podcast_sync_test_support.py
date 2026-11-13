@@ -57,12 +57,10 @@ def podcast_addition() -> PodcastEpisodeAddition:
 class PodcastResponse(io.BytesIO):
     def __init__(self, content: bytes, length: int | None = None) -> None:
         super().__init__(content)
+        self.url = "https://publisher.example/media.m4a"
         self.headers = {
             "Content-Length": str(len(content) if length is None else length)
         }
-
-    def geturl(self) -> str:
-        return "https://publisher.example/media.m4a"
 
 
 class PodcastOpener:
@@ -70,7 +68,9 @@ class PodcastOpener:
         self.content = content
         self.length = length
 
-    def open(self, request: Request, *, timeout: int) -> PodcastResponse:
+    def open(
+        self, request: Request, *, timeout: int, **_kwargs: object
+    ) -> PodcastResponse:
         assert request.full_url.startswith("https://publisher.example/")
         assert timeout > 0
         return PodcastResponse(self.content, self.length)
@@ -95,6 +95,7 @@ class FixedPodcastPlan:
         source: ActiveIPod,
         coordinator: DeviceCoordinator,
         checkpoint: Callable[[], None],
+        **_kwargs: object,
     ) -> PreparedPodcastSync:
         del request
         checkpoint()

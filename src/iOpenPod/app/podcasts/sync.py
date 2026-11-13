@@ -10,6 +10,7 @@ from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import normalize_feed_url, track_podcast_identity
 from iOpenPod.app.podcasts.models import (
+    ALL_EPISODE_SLOTS,
     PodcastClearMethod,
     PodcastEpisode,
     PodcastFillMode,
@@ -313,12 +314,15 @@ def _managed_plan(
                 else _publication_order(episode) > floor
             )
         ]
-    vacancies = max(0, settings.episode_slots - len(current))
+    unlimited = settings.episode_slots == ALL_EPISODE_SLOTS
+    vacancies = (
+        len(candidates) if unlimited else max(0, settings.episode_slots - len(current))
+    )
     # Manual over-capacity libraries may swap one-for-one, but cannot grow from
     # automatic filling. Remove can drain excess; reducing the target never does.
     replacement_limit = (
         len(clearing)
-        if replacing
+        if replacing or unlimited
         else max(0, settings.episode_slots - len(current) + len(clearing)) - vacancies
     )
     pairs = (

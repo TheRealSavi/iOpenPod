@@ -34,7 +34,7 @@ from iOpenPod.app.library_sync_helper import (
     SyncDetails,
 )
 from iOpenPod.app.media.transcoding import MediaTranscoder
-from iOpenPod.app.podcasts import feed_client, media
+from iOpenPod.app.podcasts import feed_client, http_client
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import (
     SyncExecutionRequest,
@@ -314,7 +314,7 @@ def test_downloaded_video_podcast_uses_frame_only_after_publisher_artwork(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, publisher_cover: bool
 ) -> None:
     data = base64.b64decode((FIXTURES / "silent.mp4.b64").read_bytes())
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(data))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
     addition = podcast_addition()
     if publisher_cover:
         addition = replace(
@@ -326,7 +326,7 @@ def test_downloaded_video_podcast_uses_frame_only_after_publisher_artwork(
         image = io.BytesIO()
         Image.new("RGB", (16, 16), "blue").save(image, format="PNG")
         monkeypatch.setattr(
-            feed_client, "urlopen", PodcastOpener(image.getvalue()).open
+            feed_client, "open_podcast_request", PodcastOpener(image.getvalue()).open
         )
     monkeypatch.setattr(
         "iOpenPod.app.sync_execution.prepare_podcast_sync",

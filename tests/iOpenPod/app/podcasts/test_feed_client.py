@@ -143,6 +143,7 @@ def test_directory_retains_text_and_feed_url_without_promotional_artwork(
         limit: int,
         timeout_seconds: int,
         accept: str,
+        **_kwargs: object,
     ) -> tuple[bytes, str]:
         del limit, timeout_seconds
         assert url.startswith("https://itunes.apple.com/search?")
@@ -198,6 +199,7 @@ def test_feedparser_client_normalizes_typed_podcast_metadata(
         limit: int,
         timeout_seconds: int,
         accept: str,
+        **_kwargs: object,
     ) -> tuple[bytes, str]:
         del url, limit, timeout_seconds, accept
         return payload, "https://example.test/feed"
@@ -240,6 +242,7 @@ def test_artwork_loader_returns_bounded_square_rgb_pixels(
         timeout_seconds: int,
         accept: str,
         checkpoint: Callable[[], None] | None = None,
+        **_kwargs: object,
     ) -> tuple[bytes, str]:
         del url, limit, timeout_seconds, accept, checkpoint
         return payload.getvalue(), "https://cdn.example.test/cover.png"
@@ -284,11 +287,9 @@ class _TrickleResponse:
         self.content = BytesIO(content)
         self.after_read = after_read
         self.headers: dict[str, str] = {}
+        self.url = "https://example.test/cover.png"
         self.consumed = 0
         self.elapsed = 0.0
-
-    def geturl(self) -> str:
-        return "https://example.test/cover.png"
 
     def monotonic(self) -> float:
         return self.elapsed
@@ -320,8 +321,10 @@ class _TrickleResponse:
 class _OpenResponse:
     response: _TrickleResponse
 
-    def __call__(self, request: Request, *, timeout: int) -> _TrickleResponse:
-        assert request.full_url == self.response.geturl()
+    def __call__(
+        self, request: Request, *, timeout: int, **_kwargs: object
+    ) -> _TrickleResponse:
+        assert request.full_url == self.response.url
         assert timeout > 0
         return self.response
 
@@ -337,7 +340,7 @@ def test_sync_cover_cancellation_interrupts_response_before_it_is_complete(
 ) -> None:
     cancelled = Event()
     response = _TrickleResponse(_cover_bytes(), cancelled.set)
-    monkeypatch.setattr(feed_client, "urlopen", _OpenResponse(response))
+    monkeypatch.setattr(feed_client, "open_podcast_request", _OpenResponse(response))
 
     def checkpoint() -> None:
         if cancelled.is_set():
@@ -351,7 +354,7 @@ def test_sync_cover_cancellation_interrupts_response_before_it_is_complete(
                     "https://example.test/feed",
                     "Show",
                     SubscriptionSource.USER,
-                    artwork_url=response.geturl(),
+                    artwork_url=response.url,
                 ),
             ),
             128,
@@ -367,14 +370,14 @@ def test_trickling_cover_response_stops_at_overall_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = _TrickleResponse(_cover_bytes())
-    monkeypatch.setattr(feed_client, "urlopen", _OpenResponse(response))
+    monkeypatch.setattr(feed_client, "open_podcast_request", _OpenResponse(response))
     monkeypatch.setattr(
         "iOpenPod.app.podcasts.feed_client.time.monotonic", response.monotonic
     )
 
     with pytest.raises(PodcastFeedError, match="deadline"):
         HttpPodcastArtworkLoader().load_artwork(
-            PodcastArtworkRequest(response.geturl(), 128)
+            PodcastArtworkRequest(response.url, 128)
         )
 
     assert 0 < response.consumed < len(_cover_bytes())
@@ -385,12 +388,12 @@ def test_cover_response_limit_applies_without_content_length(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = _TrickleResponse(b"a" * 100)
-    monkeypatch.setattr(feed_client, "urlopen", _OpenResponse(response))
+    monkeypatch.setattr(feed_client, "open_podcast_request", _OpenResponse(response))
     monkeypatch.setattr(feed_client, "_ARTWORK_LIMIT", 16)
 
     with pytest.raises(PodcastFeedError, match="larger"):
         HttpPodcastArtworkLoader().load_artwork(
-            PodcastArtworkRequest(response.geturl(), 128)
+            PodcastArtworkRequest(response.url, 128)
         )
 
     assert response.consumed == 17

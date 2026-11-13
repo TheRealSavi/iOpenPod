@@ -160,6 +160,7 @@ class PodcastShowDelegate(QStyledItemDelegate):
                 subscription.artwork_url,
                 _SHOW_ARTWORK,
                 option.widget.devicePixelRatioF(),
+                feed_url=subscription.feed_url,
             )
             if pixmap is None and self._device_artwork_provider is not None:
                 pixmap = self._device_artwork_provider.pixmap(
@@ -468,7 +469,12 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
         ratio = painter.device().devicePixelRatioF()
         size = round(rect.width())
         pixmap = (
-            self._artwork_provider.pixmap(episode.artwork_url, size, ratio)
+            self._artwork_provider.pixmap(
+                episode.artwork_url,
+                size,
+                ratio,
+                feed_url=str(index.data(PodcastListRole.FEED_URL) or ""),
+            )
             if self._artwork_provider is not None
             else None
         )
@@ -487,6 +493,7 @@ class PodcastEpisodeDelegate(QStyledItemDelegate):
                 str(index.data(PodcastListRole.SUBSCRIPTION_ARTWORK_URL) or ""),
                 size,
                 ratio,
+                feed_url=str(index.data(PodcastListRole.FEED_URL) or ""),
             )
         if pixmap is None:
             paint_artwork_placeholder(

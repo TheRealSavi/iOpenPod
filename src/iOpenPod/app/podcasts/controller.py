@@ -16,6 +16,12 @@ from iOpenPod.app.podcasts.catalog import (
     reconcile_device_podcasts,
     remove_subscription,
 )
+from iOpenPod.app.podcasts.credentials import (
+    PodcastAccess,
+    PodcastCredentials,
+    parse_feed_input,
+    require_secure_feed,
+)
 from iOpenPod.app.podcasts.feed_client import (
     ApplePodcastDirectoryClient,
     FeedparserPodcastClient,
@@ -23,7 +29,6 @@ from iOpenPod.app.podcasts.feed_client import (
     PodcastFeedClient,
     PodcastFeedError,
 )
-from iOpenPod.app.podcasts.identity import normalize_feed_url
 from iOpenPod.app.podcasts.models import (
     PodcastIssue,
     PodcastIssueCode,
@@ -57,6 +62,7 @@ class PodcastOperation(StrEnum):
     LISTENED = "listened"
     SETTINGS = "settings"
     SYNC = "sync"
+    LOGIN = "login"
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +120,8 @@ class PodcastController(QObject):
     operationFailed = Signal(object)
     searchFinished = Signal(object)
     syncRequested = Signal(object)
+    operationSucceeded = Signal(object)
+    loginChanged = Signal()
 
     def __init__(
         self,
@@ -124,11 +132,13 @@ class PodcastController(QObject):
         feeds: PodcastFeedClient | None = None,
         directory: PodcastDirectoryClient | None = None,
         settings: SettingsService | None = None,
+        access: PodcastAccess | None = None,
     ) -> None:
         super().__init__(parent)
         self._coordinator = coordinator
         self._devices = devices
-        self._feeds = feeds or FeedparserPodcastClient()
+        self.access = access or PodcastAccess()
+        self._feeds = feeds or FeedparserPodcastClient(access=self.access)
         self._directory = directory or ApplePodcastDirectoryClient()
         self._settings = settings
         self._pool = QThreadPool(self)
@@ -288,17 +298,33 @@ class PodcastController(QObject):
             lambda: _SearchResult(self._directory.search(query)),
         )
 
-    def subscribe(self, feed_url: str) -> None:
+    def subscribe(
+        self,
+        feed_url: str,
+        *,
+        credentials: PodcastCredentials | None = None,
+        remember: bool = False,
+    ) -> None:
         """Subscribe using metadata and artwork supplied by the publisher's feed."""
         source = self._require_editable_source()
         if source is None:
             return
-        normalized = normalize_feed_url(feed_url)
-        if not normalized:
-            self._fail(
-                PodcastOperation.SUBSCRIBE,
-                "Enter a valid HTTP or HTTPS podcast feed URL.",
-            )
+        try:
+            entered = parse_feed_input(feed_url)
+            if (
+                entered.credentials is not None
+                and credentials is not None
+                and entered.credentials != credentials
+            ):
+                raise PodcastFeedError(
+                    "The URL and login fields contain different credentials. Use the login fields with a URL without credentials."
+                )
+            credentials = credentials or entered.credentials
+            normalized = entered.url
+            if credentials is not None:
+                require_secure_feed(normalized)
+        except PodcastFeedError as error:
+            self._fail(PodcastOperation.SUBSCRIBE, str(error))
             return
         loaded = self._loaded
         defaults = (
@@ -308,7 +334,13 @@ class PodcastController(QObject):
         )
 
         def action() -> _StateResult:
-            fetched = self._feeds.fetch(normalized)
+            fetched = (
+                self._feeds.fetch(normalized, credentials=credentials)
+                if credentials is not None
+                else self._feeds.fetch(normalized)
+            )
+            if credentials is not None:
+                self.access.save(normalized, credentials, remember=remember)
             snapshot = merge_fetched_subscription(
                 loaded.snapshot,
                 replace(fetched, sync_settings=defaults),
@@ -322,6 +354,52 @@ class PodcastController(QObject):
             )
 
         self._begin_device_write(PodcastOperation.SUBSCRIBE, action)
+
+    def set_login(
+        self,
+        subscription_id: str,
+        credentials: PodcastCredentials,
+        *,
+        remember: bool,
+    ) -> None:
+        """Verify a replacement login before changing its Host credential record."""
+        source = self._require_editable_source()
+        subscription = self.snapshot.subscription(subscription_id)
+        if source is None or subscription is None:
+            return
+        try:
+            url = require_secure_feed(subscription.feed_url)
+        except PodcastFeedError as error:
+            self._fail(PodcastOperation.LOGIN, str(error))
+            return
+        loaded = self._loaded
+
+        def action() -> _StateResult:
+            fetched = self._feeds.fetch(url, credentials=credentials)
+            self.access.save(url, credentials, remember=remember)
+            return _StateResult(
+                self._coordinator.save_podcast_state(
+                    source,
+                    replace(
+                        loaded,
+                        snapshot=merge_fetched_subscription(loaded.snapshot, fetched),
+                    ),
+                )
+            )
+
+        self._begin_device_write(PodcastOperation.LOGIN, action)
+
+    def forget_login(self, subscription_id: str) -> None:
+        subscription = self.snapshot.subscription(subscription_id)
+        if not self.can_edit or subscription is None:
+            return
+        loaded = self._loaded
+
+        def action() -> _StateResult:
+            self.access.forget(subscription.feed_url)
+            return _StateResult(loaded)
+
+        self._begin(PodcastOperation.LOGIN, action)
 
     def refresh(
         self, subscription_id: str | None = None, *, only_if_stale: bool = False
@@ -500,6 +578,7 @@ class PodcastController(QObject):
         self._pool.clear()
         self._pool.waitForDone()
         self._jobs.clear()
+        self.access.clear_session()
         self._release_device_reservation()
 
     def _require_editable_source(self) -> ActiveIPod | None:
@@ -574,6 +653,9 @@ class PodcastController(QObject):
                 self.changed.emit()
             elif isinstance(result, _SearchResult):
                 self.searchFinished.emit(result.value)
+            if resolved in (PodcastOperation.SUBSCRIBE, PodcastOperation.LOGIN):
+                self.loginChanged.emit()
+            self.operationSucceeded.emit(resolved)
         finally:
             if owns_device_reservation:
                 self._release_device_reservation()

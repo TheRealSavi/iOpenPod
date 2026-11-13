@@ -7537,6 +7537,48 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
 </context>
 <context>
+    <name>PodcastLoginDialog</name>
+    <message>
+        <source>Podcast Login</source>
+        <translation>Podcast-Anmeldung</translation>
+    </message>
+    <message>
+        <source>Verify Login</source>
+        <translation>Anmeldung prüfen</translation>
+    </message>
+    <message>
+        <source>Forget Login</source>
+        <translation>Anmeldung vergessen</translation>
+    </message>
+    <message>
+        <source>Remove this feed&apos;s saved and temporary login from this computer.</source>
+        <translation>Gespeicherte und vorübergehende Anmeldedaten dieses Feeds von diesem Computer entfernen.</translation>
+    </message>
+    <message>
+        <source>Checking login…</source>
+        <translation>Anmeldung wird geprüft…</translation>
+    </message>
+</context>
+<context>
+    <name>PodcastLoginFields</name>
+    <message>
+        <source>Username</source>
+        <translation>Benutzername</translation>
+    </message>
+    <message>
+        <source>Password</source>
+        <translation>Passwort</translation>
+    </message>
+    <message>
+        <source>Remember on this computer</source>
+        <translation>Auf diesem Computer merken</translation>
+    </message>
+    <message>
+        <source>Saved logins stay in your computer&apos;s credential store, never on the iPod. Without remembering, this login lasts until iOpenPod closes.</source>
+        <translation>Gespeicherte Anmeldedaten bleiben im Anmeldedatenspeicher dieses Computers, niemals auf dem iPod. Ohne Speicherung gilt diese Anmeldung bis zum Schließen von iOpenPod.</translation>
+    </message>
+</context>
+<context>
     <name>PodcastPage</name>
     <message>
         <source>Podcasts</source>
@@ -7661,6 +7703,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Unsubscribing will remove this Podcast&apos;s episodes from the iPod. Continue?</source>
         <translation>Wenn Sie das Abonnement beenden, werden die Folgen dieses Podcasts vom iPod entfernt. Fortfahren?</translation>
+    </message>
+    <message>
+        <source>Podcast Login</source>
+        <translation>Podcast-Anmeldung</translation>
     </message>
     <message>
         <source>Episode links</source>
@@ -7836,6 +7882,10 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Haben Sie eine Feed-URL?</translation>
     </message>
     <message>
+        <source>Back to search</source>
+        <translation>Zurück zur Suche</translation>
+    </message>
+    <message>
         <source>Add using an RSS feed</source>
         <translation>Über einen RSS-Feed hinzufügen</translation>
     </message>
@@ -7860,12 +7910,20 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
         <translation>Feed hinzufügen</translation>
     </message>
     <message>
+        <source>Requires login</source>
+        <translation>Anmeldung erforderlich</translation>
+    </message>
+    <message>
         <source>Discover a show to take with you.</source>
         <translation>Entdecken Sie eine Sendung für unterwegs.</translation>
     </message>
     <message>
         <source>Enter a Podcast name, then choose Search.</source>
         <translation>Geben Sie einen Podcast-Namen ein und wählen Sie „Suchen“.</translation>
+    </message>
+    <message>
+        <source>Checking feed…</source>
+        <translation>Feed wird geprüft…</translation>
     </message>
     <message>
         <source>Searching the Podcast directory…</source>
@@ -7911,7 +7969,15 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>How many episodes to add automatically. You can still add extra episodes yourself.</source>
-        <translation>Anzahl der automatisch hinzugefügten Folgen. Sie können weiterhin selbst weitere Folgen hinzufügen.</translation>
+        <translation type="vanished">Anzahl der automatisch hinzugefügten Folgen. Sie können weiterhin selbst weitere Folgen hinzufügen.</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>Alle</translation>
+    </message>
+    <message>
+        <source>How many episodes to add automatically. All removes the episode limit. You can still add extra episodes yourself.</source>
+        <translation>Anzahl der automatisch hinzugefügten Folgen. Alle hebt die Begrenzung der Folgenzahl auf. Sie können weiterhin selbst weitere Folgen hinzufügen.</translation>
     </message>
     <message>
         <source>Add</source>
@@ -8011,11 +8077,11 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source> episode</source>
-        <translation> Folge</translation>
+        <translation type="vanished"> Folge</translation>
     </message>
     <message>
         <source> episodes</source>
-        <translation> Folgen</translation>
+        <translation type="vanished"> Folgen</translation>
     </message>
     <message>
         <source>Adds the newest available episodes when there&apos;s room.</source>
@@ -12672,6 +12738,10 @@ Playlists: %3</translation>
         <translation>Wiedergabedaten konnten nicht geöffnet werden</translation>
     </message>
     <message>
+        <source>Could not read the Podcast login. Unlock your OS credential store, or enter the login again without remembering it.</source>
+        <translation>Die Podcast-Anmeldedaten konnten nicht gelesen werden. Entsperre den Anmeldedatenspeicher deines Betriebssystems oder gib die Daten erneut ein, ohne sie zu speichern.</translation>
+    </message>
+    <message>
         <source>Could not read these settings: {detail}</source>
         <translation>Diese Einstellungen konnten nicht gelesen werden: {detail}</translation>
     </message>
@@ -12684,8 +12754,16 @@ Playlists: %3</translation>
         <translation>{title} konnte nicht aktualisiert werden: {error}</translation>
     </message>
     <message>
+        <source>Could not remove the saved Podcast login. Unlock your OS credential store and try again.</source>
+        <translation>Die gespeicherten Podcast-Anmeldedaten konnten nicht entfernt werden. Entsperre den Anmeldedatenspeicher deines Betriebssystems und versuche es erneut.</translation>
+    </message>
+    <message>
         <source>Could not repair subtitle and caption metadata for &quot;{title}&quot;. The existing video is unchanged; Sync can retry the repair.</source>
         <translation>Die Metadaten für Untertitel und geschlossene Untertitel von &quot;{title}&quot; konnten nicht repariert werden. Das vorhandene Video bleibt unverändert; bei der Synchronisierung kann die Reparatur erneut versucht werden.</translation>
+    </message>
+    <message>
+        <source>Could not save the Podcast login. Unlock your OS credential store, or turn off Remember on this computer and try again.</source>
+        <translation>Die Podcast-Anmeldedaten konnten nicht gespeichert werden. Entsperre den Anmeldedatenspeicher deines Betriebssystems oder deaktiviere „Auf diesem Computer merken“ und versuche es erneut.</translation>
     </message>
     <message>
         <source>Cover Flow devices are sensitive to Artist+Album differences and same-name albums.</source>
@@ -12888,8 +12966,16 @@ Playlists: %3</translation>
         <translation>Geben Sie einen Namen für den iPod ein.</translation>
     </message>
     <message>
+        <source>Enter a valid HTTP or HTTPS podcast feed URL</source>
+        <translation>Gib eine gültige HTTP- oder HTTPS-URL für den Podcast-Feed ein</translation>
+    </message>
+    <message>
         <source>Enter a valid HTTP or HTTPS podcast feed URL.</source>
         <translation>Geben Sie eine gültige HTTP- oder HTTPS-URL für den Podcast-Feed ein.</translation>
+    </message>
+    <message>
+        <source>Enter both a Podcast username and password.</source>
+        <translation>Gib sowohl den Benutzernamen als auch das Passwort für den Podcast ein.</translation>
     </message>
     <message>
         <source>Entire library</source>
@@ -14504,6 +14590,10 @@ Playlists: %3</translation>
         <translation>Der Backup-Vorgang konnte nicht sicher abgeschlossen werden.</translation>
     </message>
     <message>
+        <source>The Episode contains too many chapter images</source>
+        <translation>Die Episode enthält zu viele Kapitelbilder</translation>
+    </message>
+    <message>
         <source>The Host Media Library changed while it was scanned; the available files were kept for review. Sync will recheck source files before writing to the iPod.</source>
         <translation>Die Mediathek auf dem Computer hat sich während der Suche geändert. Die verfügbaren Dateien bleiben zur Prüfung erhalten. Vor dem Schreiben auf den iPod prüft die Synchronisierung die Quelldateien erneut.</translation>
     </message>
@@ -14594,6 +14684,50 @@ Playlists: %3</translation>
     <message>
         <source>The Podcast Subscription is no longer available.</source>
         <translation>Das Podcast-Abonnement ist nicht mehr verfügbar.</translation>
+    </message>
+    <message>
+        <source>The Podcast artwork could not be decoded</source>
+        <translation>Das Podcast-Cover konnte nicht dekodiert werden</translation>
+    </message>
+    <message>
+        <source>The Podcast artwork dimensions are unsafe</source>
+        <translation>Die Abmessungen des Podcast-Covers überschreiten die Sicherheitsgrenze</translation>
+    </message>
+    <message>
+        <source>The Podcast login contains unsupported characters.</source>
+        <translation>Die Podcast-Anmeldedaten enthalten nicht unterstützte Zeichen.</translation>
+    </message>
+    <message>
+        <source>The Podcast request failed. Check your connection and try again.</source>
+        <translation>Die Podcast-Anfrage ist fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.</translation>
+    </message>
+    <message>
+        <source>The Podcast request redirected to an unsupported URL.</source>
+        <translation>Die Podcast-Anfrage wurde auf eine nicht unterstützte URL umgeleitet.</translation>
+    </message>
+    <message>
+        <source>The Podcast server could not complete the request. Try again later.</source>
+        <translation>Der Podcast-Server konnte die Anfrage nicht abschließen. Versuche es später erneut.</translation>
+    </message>
+    <message>
+        <source>The Podcast server denied access. Check that your subscription is active.</source>
+        <translation>Der Podcast-Server hat den Zugriff verweigert. Prüfe, ob dein Abonnement aktiv ist.</translation>
+    </message>
+    <message>
+        <source>The Podcast server redirected from HTTPS to an insecure connection.</source>
+        <translation>Der Podcast-Server hat von HTTPS auf eine unsichere Verbindung umgeleitet.</translation>
+    </message>
+    <message>
+        <source>The Podcast server rejected the login. Check your username and password.</source>
+        <translation>Der Podcast-Server hat die Anmeldung abgelehnt. Prüfe deinen Benutzernamen und dein Passwort.</translation>
+    </message>
+    <message>
+        <source>The Podcast server requires an unsupported login method. HTTP Basic authentication is supported.</source>
+        <translation>Der Podcast-Server erfordert eine nicht unterstützte Anmeldemethode. Unterstützt wird HTTP-Basisauthentifizierung.</translation>
+    </message>
+    <message>
+        <source>The URL and login fields contain different credentials. Use the login fields with a URL without credentials.</source>
+        <translation>Die URL und die Anmeldefelder enthalten unterschiedliche Anmeldedaten. Verwende die Anmeldefelder zusammen mit einer URL ohne Anmeldedaten.</translation>
     </message>
     <message>
         <source>The accepted Playlist file changed while it was scanned and was omitted: {error}</source>
@@ -14708,6 +14842,26 @@ Playlists: %3</translation>
         <translation>Die Zeitzone einiger Wiedergabezeitpunkte wird näherungsweise interpretiert; die ursprüngliche Wiedergabedatei wird beim Speichern archiviert.</translation>
     </message>
     <message>
+        <source>The chapter artwork document contains too many entries</source>
+        <translation>Das Dokument mit Kapitelbildern enthält zu viele Einträge</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document is not valid JSON</source>
+        <translation>Das Dokument mit Kapitelbildern ist kein gültiges JSON</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document must be an object</source>
+        <translation>Das Dokument mit Kapitelbildern muss ein Objekt sein</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document requires an HTTP(S) URL</source>
+        <translation>Das Dokument mit Kapitelbildern erfordert eine HTTP(S)-URL</translation>
+    </message>
+    <message>
+        <source>The chapter artwork document uses an unsupported format</source>
+        <translation>Das Dokument mit Kapitelbildern verwendet ein nicht unterstütztes Format</translation>
+    </message>
+    <message>
         <source>The existing helper is invalid: {error}</source>
         <translation>Die vorhandene Datei mit Synchronisierungsinformationen ist ungültig: {error}</translation>
     </message>
@@ -14718,6 +14872,10 @@ Playlists: %3</translation>
     <message>
         <source>The export could not be completed.</source>
         <translation>Der Export konnte nicht abgeschlossen werden.</translation>
+    </message>
+    <message>
+        <source>The feed does not contain playable podcast episodes</source>
+        <translation>Der Feed enthält keine abspielbaren Podcast-Episoden</translation>
     </message>
     <message>
         <source>The generated special Podcasts playlist is missing its native marker.</source>
@@ -15352,6 +15510,10 @@ Playlists: %3</translation>
         <translation>Die Positionsmetadaten einer Podcast-Folge fehlen oder sind mehrdeutig.</translation>
     </message>
     <message>
+        <source>Podcast logins require an HTTPS feed URL.</source>
+        <translation>Podcast-Anmeldungen erfordern eine HTTPS-Feed-URL.</translation>
+    </message>
+    <message>
         <source>Podcast normalization changed or omitted the retained root identity.</source>
         <translation>Die Podcast-Vereinheitlichung hat die beibehaltene Kennung der Datenbankwurzel geändert oder ausgelassen.</translation>
     </message>
@@ -15418,6 +15580,34 @@ Die akustische Analyse bleibt verfügbar.</translation>
         <translation>Der native Kapitelindex wählt den letzten passenden Eintrag mit gleicher Startposition aus. Bearbeitbare Kapitelmetadaten bleiben erhalten.</translation>
     </message>
     <message>
+        <source>The podcast directory response is malformed</source>
+        <translation>Die Antwort des Podcast-Verzeichnisses ist fehlerhaft</translation>
+    </message>
+    <message>
+        <source>The podcast directory returned an unreadable response</source>
+        <translation>Das Podcast-Verzeichnis hat eine unlesbare Antwort zurückgegeben</translation>
+    </message>
+    <message>
+        <source>The podcast feed could not be parsed.</source>
+        <translation>Der Podcast-Feed konnte nicht gelesen werden.</translation>
+    </message>
+    <message>
+        <source>The podcast feed repeats Episode IDs: multiple entries share the same media URL.</source>
+        <translation>Der Podcast-Feed enthält doppelte Episoden-IDs: Mehrere Einträge verwenden dieselbe Medien-URL.</translation>
+    </message>
+    <message>
+        <source>The podcast request exceeded its download deadline</source>
+        <translation>Die Podcast-Anfrage hat die maximale Downloadzeit überschritten</translation>
+    </message>
+    <message>
+        <source>The podcast request returned an empty response</source>
+        <translation>Die Podcast-Anfrage hat eine leere Antwort zurückgegeben</translation>
+    </message>
+    <message>
+        <source>The podcast response could not be read. Try again.</source>
+        <translation>Die Podcast-Antwort konnte nicht gelesen werden. Versuche es erneut.</translation>
+    </message>
+    <message>
         <source>The previous instrument analysis setup needs attention. Acoustic analysis remains available.</source>
         <translation>Die bisherige Einrichtung der Instrumentenanalyse muss überprüft werden. Die akustische Analyse bleibt verfügbar.</translation>
     </message>
@@ -15436,6 +15626,14 @@ Die akustische Analyse bleibt verfügbar.</translation>
     <message>
         <source>The reported firmware release could not be interpreted.</source>
         <translation>Die gemeldete Firmwareversion konnte nicht interpretiert werden.</translation>
+    </message>
+    <message>
+        <source>The request redirected outside HTTP or HTTPS</source>
+        <translation>Die Anfrage wurde auf ein anderes Protokoll als HTTP oder HTTPS umgeleitet</translation>
+    </message>
+    <message>
+        <source>The response is larger than iOpenPod accepts</source>
+        <translation>Die Antwort überschreitet die von iOpenPod akzeptierte Größe</translation>
     </message>
     <message>
         <source>The retained Chapter header disables the native named index. Editable Chapter metadata is retained.</source>
@@ -15464,6 +15662,14 @@ Die akustische Analyse bleibt verfügbar.</translation>
     <message>
         <source>These saved preferences request a reset on the iPod. Editing is disabled until the iPod has handled it.</source>
         <translation>Diese gespeicherten Einstellungen fordern ein Zurücksetzen auf dem iPod an. Die Bearbeitung ist deaktiviert, bis der iPod dies verarbeitet hat.</translation>
+    </message>
+    <message>
+        <source>This Podcast requires a username and password.</source>
+        <translation>Dieser Podcast erfordert einen Benutzernamen und ein Passwort.</translation>
+    </message>
+    <message>
+        <source>This Podcast resource requires a login on a different server. Your feed password was not shared with it.</source>
+        <translation>Diese Podcast-Ressource erfordert eine Anmeldung auf einem anderen Server. Dein Feed-Passwort wurde nicht an diesen Server weitergegeben.</translation>
     </message>
     <message>
         <source>This iPod layout cannot store the date; its previous value is retained.</source>

@@ -252,6 +252,7 @@ class MainWindow(QMainWindow):
             SyncExecutor(
                 context.device_coordinator,
                 scrobbler=scrobbler,
+                podcast_access=context.podcast_controller.access,
                 find_tool=context.find_media_tool,
             ),
             context.library_workspace,

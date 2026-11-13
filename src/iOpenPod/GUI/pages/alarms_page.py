@@ -193,6 +193,7 @@ class AlarmEditor(QDialog):
         layout.addLayout(form)
         layout.addWidget(self._note)
         layout.addWidget(self._error)
+        layout.addStretch(1)
         layout.addLayout(actions)
         self.setTabOrder(self._city, self._time)
         self.setTabOrder(self._time, self._date)

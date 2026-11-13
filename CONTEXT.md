@@ -1083,6 +1083,13 @@ snapshots from splitting into separate sidebar devices; unmatched and explicitly
 unstable imports retain their stricter legacy authorization. See ADR-0039, ADR-0040,
 ADR-0041, and ADR-0062.
 
+Private Podcast feeds support HTTPS username/password login, including
+pasted credential URLs. Logins stay in the Host's native credential store or the
+current application session and apply to feed refreshes, downloads and protected
+publisher images on the same server. Podcast Login updates or forgets a login.
+Failed feed logins preserve that show's existing Episodes, and failed Episode
+replacements keep their current Tracks. See ADR-0266.
+
 The Podcasts browser now projects a typed Podcast Snapshot from versioned
 subscriptions, independent Listening History, refreshed RSS/Atom metadata, and the
 current Active iPod's Podcast Tracks. Existing device Podcasts are recovered into
@@ -1147,7 +1154,9 @@ Episode tag differences, preserving unrelated show metadata and validating the
 album once across all its members. Explicit title/feed changes can split shows;
 ordinary saves do not merge separate source albums. See ADR-0165.
 Episode slots are an automatic filling target;
-manual additions may exceed it. Episode count alone never authorizes removal.
+manual additions may exceed it. **All**, after 50 in the Keep choices, removes the
+count limit while preserving the selected ordering and clearing rules. It is also
+available in Host defaults. Episode count alone never authorizes removal.
 Setting the target to zero disables automatic feed refresh, filling, clearing,
 replacement, and retained-cover repair during Sync for that Podcast Subscription;
 manual Episode additions and removals remain available.

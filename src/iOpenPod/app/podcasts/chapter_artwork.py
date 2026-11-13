@@ -18,9 +18,15 @@ from iOpenPod.app.podcasts.models import PodcastChapterImage
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from iOpenPod.app.podcasts.credentials import PodcastAccess
+
 
 def fetch_chapter_images(
-    url: str, *, checkpoint: Callable[[], None]
+    url: str,
+    *,
+    checkpoint: Callable[[], None],
+    feed_url: str = "",
+    access: PodcastAccess | None = None,
 ) -> tuple[PodcastChapterImage, ...]:
     url = normalize_feed_url(url)
     if not url:
@@ -31,6 +37,8 @@ def fetch_chapter_images(
         timeout_seconds=20,
         accept="application/json+chapters, application/json",
         checkpoint=checkpoint,
+        feed_url=feed_url,
+        access=access,
     )
     checkpoint()
     return parse_chapter_images(payload, final_url)

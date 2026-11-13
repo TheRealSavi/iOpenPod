@@ -96,6 +96,7 @@ class TimerEditor(QDialog):
         layout.addLayout(duration)
         layout.addLayout(ending)
         layout.addWidget(self._note)
+        layout.addStretch(1)
         layout.addLayout(actions)
         self.setTabOrder(self._hours, self._minutes)
         self.setTabOrder(self._minutes, self._ending)

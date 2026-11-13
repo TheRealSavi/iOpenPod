@@ -6,6 +6,7 @@ import json
 from typing import TYPE_CHECKING, cast
 
 from iOpenPod.app.podcasts.models import (
+    ALL_EPISODE_SLOTS,
     ListeningRecord,
     PodcastClearAge,
     PodcastClearMethod,
@@ -230,7 +231,7 @@ def decode_sync_settings(value: object) -> PodcastSyncSettings:
     if not isinstance(listened, bool):
         raise PodcastDocumentError("clear_when_listened must be true or false")
     return PodcastSyncSettings(
-        episode_slots=_integer(row, "episode_slots"),
+        episode_slots=_integer(row, "episode_slots", minimum=ALL_EPISODE_SLOTS),
         fill_mode=PodcastFillMode(_text(row, "fill_mode", required=True)),
         clear_when_listened=listened,
         clear_older_than=PodcastClearAge(_text(row, "clear_older_than", required=True)),
@@ -294,10 +295,10 @@ def _date(row: Mapping[str, object], name: str) -> int:
     return value if type(value) is int else 0
 
 
-def _integer(row: Mapping[str, object], name: str) -> int:
+def _integer(row: Mapping[str, object], name: str, *, minimum: int = 0) -> int:
     value = row.get(name, 0)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise PodcastDocumentError(f"{name} must be a non-negative integer")
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise PodcastDocumentError(f"{name} must be an integer at least {minimum}")
     return value
 
 

@@ -78,6 +78,8 @@ from iOpenPod.app.playlist_sync import (
 from iOpenPod.app.playlist_sync import (
     playlist_changes as _playlist_changes,
 )
+from iOpenPod.app.podcasts.credentials import PodcastAccess
+from iOpenPod.app.podcasts.feed_client import FeedparserPodcastClient
 from iOpenPod.app.podcasts.media import download_episode, episode_track
 from iOpenPod.app.podcasts.sync_artwork import (
     MAX_PODCAST_COVER_BYTES,
@@ -109,7 +111,11 @@ from iOpenPod.app.sync_plan import (
     resolve_sync_duplicates,
     with_stream_selection,
 )
-from iOpenPod.app.sync_track_details import apply_track_tags, track_tag_sha256
+from iOpenPod.app.sync_track_details import (
+    apply_track_tags,
+    track_tag_edit_issues,
+    track_tag_sha256,
+)
 from iOpenPod.app.tag_normalizer import normalize_tags, tag_profile
 from iOpenPod.app.track_playback_policy import (
     enforce_library_playback_policy,
@@ -137,7 +143,6 @@ from iPodDB.library import (
     content_chunks,
     edit_track_metadata,
     incoming_track_issues,
-    metadata_edit_issues,
     prepared_audio,
     prepared_video,
 )
@@ -286,10 +291,12 @@ class SyncExecutor:
         transcoder: MediaTranscoder | None = None,
         workers: int | None = None,
         scrobbler: ScrobbleService | None = None,
+        podcast_access: PodcastAccess | None = None,
         find_tool: MediaToolFinder | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._scrobbler = scrobbler
+        self._podcast_access = podcast_access or PodcastAccess()
         self._find_tool = find_tool
         self._transcoder = transcoder or MediaTranscoder(find_tool=find_tool)
         self._default_transcoder = transcoder is None
@@ -386,7 +393,11 @@ class SyncExecutor:
                     )
                 )
                 podcast_sync = prepare_podcast_sync(
-                    request.podcasts, request.source, self._coordinator, checkpoint
+                    request.podcasts,
+                    request.source,
+                    self._coordinator,
+                    checkpoint,
+                    feeds=FeedparserPodcastClient(access=self._podcast_access),
                 )
                 podcast_plan = podcast_sync.plan
                 issues.extend(podcast_plan.issues)
@@ -532,6 +543,7 @@ class SyncExecutor:
                             progress,
                             checkpoint,
                             find_tool=self._find_tool,
+                            access=self._podcast_access,
                         )
                     )
                     issues.extend(cover_issues)
@@ -1557,7 +1569,7 @@ class SyncExecutor:
                             normalization_gain_db=host_track.metadata.normalization_gain_db,
                         ),
                     )
-                if invalid := metadata_edit_issues(old_track, desired):
+                if invalid := track_tag_edit_issues(old_track, desired):
                     raise TrackEditError(invalid)
                 prior = scanned.sync
                 sync = (
@@ -1845,7 +1857,10 @@ class SyncExecutor:
             with ExitStack() as lifetime:
                 source = lifetime.enter_context(
                     download_episode(
-                        addition, checkpoint=checkpoint, progress=downloaded
+                        addition,
+                        checkpoint=checkpoint,
+                        progress=downloaded,
+                        access=self._podcast_access,
                     )
                 )
                 track = episode_track(addition)
@@ -3585,19 +3600,26 @@ def _capture_podcast_artwork(
     checkpoint: Callable[[], None],
     *,
     find_tool: MediaToolFinder | None = None,
+    access: PodcastAccess | None = None,
 ) -> tuple[
     list[_PreparedPodcast], tuple[_PodcastArtworkRepair, ...], tuple[WriteIssue, ...]
 ]:
     formats = application_artwork_formats(request.source.profile)
     target_px = max(max(item.width, item.height) for item in formats)
-    artwork = PodcastArtworkPreparation(checkpoint=checkpoint, progress=progress)
+    artwork = PodcastArtworkPreparation(
+        checkpoint=checkpoint, progress=progress, access=access
+    )
     embedded: list[_PreparedPodcast] = []
     issues: list[WriteIssue] = []
     for podcast in prepared:
         checkpoint()
         episode_cover = None
         if podcast.episode is not None:
-            episode_cover = artwork.episode_cover(podcast.episode, target_px)
+            episode_cover = artwork.episode_cover(
+                podcast.episode,
+                target_px,
+                feed_url=podcast.song.track.metadata.podcast_rss_url,
+            )
             if episode_cover is not None:
                 podcast = replace(
                     podcast, song=replace(podcast.song, artwork=episode_cover)
@@ -3744,6 +3766,7 @@ def _capture_podcast_artwork(
                 podcast.song.track.length_ms,
                 chapter_target_px,
                 podcast.chapter_artwork,
+                feed_url=podcast.song.track.metadata.podcast_rss_url,
             )
             podcast = replace(podcast, chapter_artwork=frames)
         if (

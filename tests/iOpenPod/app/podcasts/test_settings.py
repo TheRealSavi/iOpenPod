@@ -21,7 +21,7 @@ from iOpenPod.app.podcasts.settings import (
 from storage import AtomicHostFile
 
 
-@pytest.mark.parametrize("slots", (0, 7, 50))
+@pytest.mark.parametrize("slots", (-1, 0, 7, 50))
 def test_defaults_round_trip_all_choices_in_host_settings(
     tmp_path: Path, slots: int
 ) -> None:

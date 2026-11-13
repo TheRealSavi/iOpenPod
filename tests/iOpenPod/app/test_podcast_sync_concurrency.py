@@ -22,7 +22,7 @@ from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.library_write import PreparationCancelledError
 from iOpenPod.app.media.inspection import _parse  # pyright: ignore[reportPrivateUsage]
 from iOpenPod.app.media.transcoding import MediaTranscoder, PreparedTranscode
-from iOpenPod.app.podcasts import media
+from iOpenPod.app.podcasts import http_client, media
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import SyncExecutor
 from iPodDB.library import AudioEncoding
@@ -90,7 +90,7 @@ def _prepare(
 @pytest.fixture
 def prepared_media(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace codec work, retaining actual Storage captures and Sync orchestration."""
-    monkeypatch.setattr(media, "build_opener", PodcastOpenerFactory(b"media"))
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(b"media"))
 
     def fingerprint(
         _self: FpcalcFingerprinter,
@@ -126,6 +126,7 @@ def test_next_download_starts_while_an_episode_is_busy(
         *,
         checkpoint: Callable[[], None],
         progress: Callable[[int, int | None], None] | None = None,
+        **_kwargs: object,
     ) -> Generator[HostPath]:
         if addition.episode.episode_id == "0":
             if stage == "download":
@@ -199,6 +200,7 @@ def test_concurrency_is_bounded_and_progress_and_paths_stay_on_owner_thread(
         *,
         checkpoint: Callable[[], None],
         progress: Callable[[int, int | None], None] | None = None,
+        **_kwargs: object,
     ) -> Generator[HostPath]:
         nonlocal running, peak
         with lock:
@@ -282,6 +284,7 @@ def test_abort_joins_downloads_and_cleans_captures_without_starting_more(
         *,
         checkpoint: Callable[[], None],
         progress: Callable[[int, int | None], None] | None = None,
+        **_kwargs: object,
     ) -> Generator[HostPath]:
         with download_episode(
             addition, checkpoint=checkpoint, progress=progress

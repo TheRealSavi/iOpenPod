@@ -41,16 +41,22 @@ class PodcastArtworkView(QWidget):
         self._provider = provider
         self._size = size
         self._source_url = ""
+        self._feed_url = ""
         self._seed = 0
         self.setObjectName("podcastArtworkView")
         self.setFixedSize(size, size)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         provider.artworkChanged.connect(self._artwork_changed)
 
-    def set_artwork(self, source_url: str, seed: int) -> None:
-        if source_url == self._source_url and seed == self._seed:
+    def set_artwork(self, source_url: str, seed: int, *, feed_url: str = "") -> None:
+        if (
+            source_url == self._source_url
+            and seed == self._seed
+            and feed_url == self._feed_url
+        ):
             return
         self._source_url = source_url
+        self._feed_url = feed_url
         self._seed = seed
         self.update()
 
@@ -66,6 +72,7 @@ class PodcastArtworkView(QWidget):
             self._source_url,
             round(rect.width()),
             self.devicePixelRatioF(),
+            feed_url=self._feed_url,
         )
         if pixmap is None:
             paint_artwork_placeholder(

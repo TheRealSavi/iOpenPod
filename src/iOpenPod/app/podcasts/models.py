@@ -7,6 +7,8 @@ from enum import StrEnum
 
 from iPodDB.library import ContentAdvisory
 
+ALL_EPISODE_SLOTS = -1
+
 
 class SubscriptionSource(StrEnum):
     """How a subscription first became part of this iPod's catalog."""
@@ -106,7 +108,7 @@ class PodcastClearMethod(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PodcastSyncSettings:
-    """Per-show retention policy; zero slots disable automatic Podcast Sync."""
+    """Per-show retention policy; -1 means All, zero disables automatic Sync."""
 
     episode_slots: int = 3
     fill_mode: PodcastFillMode = PodcastFillMode.NEWEST
@@ -117,8 +119,13 @@ class PodcastSyncSettings:
     def __post_init__(self) -> None:
         if type(self.episode_slots) is not int:
             raise ValueError("Podcast episode slots must be an integer")
-        if not 0 <= self.episode_slots <= 50:
-            raise ValueError("Podcast episode slots must be between 0 and 50")
+        if (
+            self.episode_slots != ALL_EPISODE_SLOTS
+            and not 0 <= self.episode_slots <= 50
+        ):
+            raise ValueError(
+                "Podcast episode slots must be All (-1) or between 0 and 50"
+            )
         if type(self.fill_mode) is not PodcastFillMode:
             raise ValueError("Podcast fill mode must be a supported value")
         if type(self.clear_when_listened) is not bool:
@@ -312,6 +319,7 @@ class PodcastArtworkRequest:
     source_url: str
     target_px: int
     preserve_aspect: bool = False
+    feed_url: str = ""
 
     def __post_init__(self) -> None:
         if not self.source_url.strip():

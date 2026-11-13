@@ -4,6 +4,7 @@
 > records, show-link repair, and embedded chapter-picture import.
 > The 2026-11-01 amendment below extends the slot range to 0–50 and defines zero
 > as disabling automatic Podcast Sync for that Subscription.
+> The 2026-11-13 amendment adds All (`-1`) after 50 without changing clearing rules.
 
 - Status: Accepted
 - Date: 2026-09-27
@@ -149,3 +150,18 @@ Changing defaults does not rewrite existing Subscriptions. Device-recovered
 Subscriptions and older Subscription documents retain their established behavior.
 Host and Subscription documents share the same retention-policy codec without
 changing the Subscription document version.
+
+## Amendment: All Episode slots (2026-11-13)
+
+Keep offers **All** after 50 in both per-Subscription and Host-default settings.
+The named `ALL_EPISODE_SLOTS` value is `-1`; zero still disables automatic Sync,
+and finite targets remain 1–50. Using a distinct sentinel keeps All independent of
+any arbitrarily large finite limit. The shared codec persists the integer without
+a document version change; older readers reject it instead of misinterpreting it.
+
+All removes only the automatic filling count limit. Every eligible Episode from
+the available feed catalog can be selected, including catalogs larger than 50;
+subsequent Syncs can add newly published Episodes. Newest/Next chronology,
+listened and age clearing, automatic-clear exclusions, and successful replacement
+requirements retain their existing meanings. No background schedule or other Sync
+behavior is introduced. The default remains three Episodes.

@@ -25,7 +25,7 @@ from iOpenPod.app.library_write import LibraryPreparationRequest
 from iOpenPod.app.media.importing import MusicImporter
 from iOpenPod.app.media.inspection import MediaInspector
 from iOpenPod.app.media.transcoding import enrich_source_metadata
-from iOpenPod.app.podcasts import media
+from iOpenPod.app.podcasts import http_client
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
 from iPodDB.library import MediaKind, Track, TrackChapter, TrackMetadata
@@ -91,7 +91,7 @@ def test_podcast_sync_orders_observed_chapters_before_library_validation(
 ) -> None:
     device = build_device(tmp_path)
     monkeypatch.setattr(
-        media,
+        http_client,
         "build_opener",
         PodcastOpenerFactory(Path(unordered_chapters).read_bytes()),
     )

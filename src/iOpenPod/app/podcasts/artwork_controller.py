@@ -32,6 +32,7 @@ class _RequestKey:
     source_url: str
     target_px: int
     from_feed: bool = False
+    feed_url: str = ""
 
 
 class _ArtworkSignals(QObject):
@@ -97,6 +98,7 @@ class PodcastArtworkController(QObject):
         self._work_items: dict[int, _ArtworkWork] = {}
         self._next_token = 0
         self._closed = False
+        self._generation = 0
 
     @property
     def cached_byte_count(self) -> int:
@@ -106,9 +108,11 @@ class PodcastArtworkController(QObject):
     def pending_count(self) -> int:
         return len(self._pending)
 
-    def request(self, source_url: str, target_px: int) -> PodcastArtworkImage | None:
+    def request(
+        self, source_url: str, target_px: int, *, feed_url: str = ""
+    ) -> PodcastArtworkImage | None:
         """Return retained pixels now or queue one non-blocking download."""
-        return self._request(source_url, target_px, from_feed=False)
+        return self._request(source_url, target_px, from_feed=False, feed_url=feed_url)
 
     def request_feed(self, feed_url: str, target_px: int) -> PodcastArtworkImage | None:
         """Resolve a visible directory result's publisher cover off the GUI thread.
@@ -123,13 +127,18 @@ class PodcastArtworkController(QObject):
         )
 
     def _request(
-        self, source_url: str, target_px: int, *, from_feed: bool
+        self,
+        source_url: str,
+        target_px: int,
+        *,
+        from_feed: bool,
+        feed_url: str = "",
     ) -> PodcastArtworkImage | None:
 
         normalized = source_url.strip()
         if self._closed or not normalized or target_px <= 0:
             return None
-        key = _RequestKey(normalized, target_px, from_feed)
+        key = _RequestKey(normalized, target_px, from_feed, feed_url)
         cache_key = self._request_cache_keys.get(key)
         if cache_key is not None:
             image = self._images.get(cache_key)
@@ -154,7 +163,11 @@ class PodcastArtworkController(QObject):
                 else normalized
             )
             return (
-                self._loader.load_artwork(PodcastArtworkRequest(url, target_px))
+                self._loader.load_artwork(
+                    PodcastArtworkRequest(
+                        url, target_px, feed_url=normalized if from_feed else feed_url
+                    )
+                )
                 if url
                 else None
             )
@@ -184,6 +197,24 @@ class PodcastArtworkController(QObject):
         self._pool.start(run)
         return None
 
+    @Slot()
+    def invalidate(self) -> None:
+        """Retry protected images after login changes; discard earlier results."""
+        self._generation = self._next_token
+        self._pool.clear()
+        self._work_items.clear()
+        sources = {
+            key.source_url
+            for key in (*self._request_cache_keys, *self._pending, *self._unavailable)
+        }
+        self._images.clear()
+        self._request_cache_keys.clear()
+        self._unavailable.clear()
+        self._pending.clear()
+        self._cache_bytes = 0
+        for source in sources:
+            self.artworkUnavailable.emit(source)
+
     def shutdown(self) -> None:
         if self._closed:
             return
@@ -199,7 +230,11 @@ class PodcastArtworkController(QObject):
 
     @Slot(int, object, object)
     def _work_succeeded(self, _token: int, key: object, result: object) -> None:
-        if self._closed or not isinstance(key, _RequestKey):
+        if (
+            self._closed
+            or _token <= self._generation
+            or not isinstance(key, _RequestKey)
+        ):
             return
         if not isinstance(result, PodcastArtworkImage):
             self._unavailable.add(key)
@@ -212,7 +247,11 @@ class PodcastArtworkController(QObject):
 
     @Slot(int, object, object)
     def _work_failed(self, _token: int, key: object, error: object) -> None:
-        if self._closed or not isinstance(key, _RequestKey):
+        if (
+            self._closed
+            or _token <= self._generation
+            or not isinstance(key, _RequestKey)
+        ):
             return
         self._unavailable.add(key)
         self.artworkUnavailable.emit(key.source_url)
@@ -227,7 +266,7 @@ class PodcastArtworkController(QObject):
     @Slot(int, object)
     def _work_finished(self, token: int, key: object) -> None:
         self._work_items.pop(token, None)
-        if isinstance(key, _RequestKey):
+        if token > self._generation and isinstance(key, _RequestKey):
             self._pending.discard(key)
 
     def _store(self, request_key: _RequestKey, image: PodcastArtworkImage) -> None:

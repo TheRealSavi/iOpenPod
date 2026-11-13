@@ -91,6 +91,71 @@ def _added(plan: PodcastSyncPlan) -> tuple[str, ...]:
 
 @pytest.mark.parametrize("mode", tuple(PodcastFillMode))
 @pytest.mark.parametrize("method", tuple(PodcastClearMethod))
+def test_all_slots_fill_large_back_catalog_and_add_later_publications(
+    mode: PodcastFillMode, method: PodcastClearMethod
+) -> None:
+    show = _show(
+        *(_episode(number) for number in range(1, 126)),
+        settings=PodcastSyncSettings(
+            episode_slots=-1,
+            fill_mode=mode,
+            clear_when_listened=False,
+            clear_method=method,
+        ),
+    )
+    expected = range(125, 0, -1) if mode is PodcastFillMode.NEWEST else range(1, 126)
+    initial = _plan(show)
+    assert _added(initial) == tuple(f"episode-{number}" for number in expected)
+    assert not initial.removals and not initial.issues
+    synced = replace(
+        show,
+        episodes=tuple(_episode(number, on_device=True) for number in range(1, 126)),
+    )
+    assert _plan(synced) == PodcastSyncPlan()
+    refreshed = replace(synced, episodes=(*synced.episodes, _episode(126)))
+    later = _plan(refreshed)
+    assert _added(later) == ("episode-126",)
+    assert not later.removals and not later.automatic_removals
+
+
+@pytest.mark.parametrize("mode", tuple(PodcastFillMode))
+@pytest.mark.parametrize("method", tuple(PodcastClearMethod))
+def test_all_slots_preserve_clearing_rules_and_automatic_clear_exclusions(
+    mode: PodcastFillMode, method: PodcastClearMethod
+) -> None:
+    show = _show(
+        _episode(1, on_device=True, listened=True),
+        _episode(2, on_device=True),
+        replace(_episode(3), automatically_cleared=True),
+        *(_episode(number) for number in range(4, 105)),
+        settings=PodcastSyncSettings(
+            episode_slots=-1,
+            fill_mode=mode,
+            clear_older_than=PodcastClearAge.DAY,
+            clear_method=method,
+        ),
+    )
+    plan = _plan(show)
+    assert set(_added(plan)) == {f"episode-{number}" for number in range(4, 105)}
+    assert set(plan.automatic_removals) == {
+        ("show", "episode-1"),
+        ("show", "episode-2"),
+    }
+    if method is PodcastClearMethod.REPLACE:
+        assert not plan.removals
+        assert {
+            item.replaces_track_id
+            for item in plan.additions
+            if item.replaces_track_id is not None
+        } == {1, 2}
+    else:
+        assert set(plan.removals) == {1, 2}
+        assert all(item.replaces_track_id is None for item in plan.additions)
+    assert not plan.issues
+
+
+@pytest.mark.parametrize("mode", tuple(PodcastFillMode))
+@pytest.mark.parametrize("method", tuple(PodcastClearMethod))
 @pytest.mark.parametrize("on_device", (False, True))
 def test_zero_slots_disable_automatic_additions_clearing_and_replacements(
     mode: PodcastFillMode, method: PodcastClearMethod, on_device: bool
