@@ -1,5 +1,9 @@
 # Media-tool setup
 
+FFmpeg, FFprobe and Chromaprint's fpcalc are required dependencies. Every supported
+installation channel must provide a working route for all three without bundling
+their executables. See [ADR-0264](adr/0264-require-fpcalc-in-supported-installations.md).
+
 iOpenPod checks FFmpeg, FFprobe, and Chromaprint's fpcalc at startup. A missing or
 unusable tool opens **Set Up Media Tools**. Close the popup to continue browsing.
 **Settings > Media Tools** shows each tool's status and executable path. Its FFmpeg
@@ -29,8 +33,9 @@ output, and verifies that the executables can run afterward. A successful check
 does not prove that every optional FFmpeg encoder is present; Sync retains its
 operation-specific encoder checks. A previously failed scan or Sync must be retried.
 FFprobe supports inspection, FFmpeg prepares incoming media, and fpcalc supplies
-optional acoustic matching. Missing fpcalc does not block explicit Adds or proven
-Sync relationships.
+acoustic matching. Current code still allows explicit Adds and proven Sync
+relationships when fpcalc is missing. This reduced-operation behavior predates
+ADR-0264 and does not make fpcalc an optional dependency.
 
 | Host | Channel | Packages |
 | --- | --- | --- |

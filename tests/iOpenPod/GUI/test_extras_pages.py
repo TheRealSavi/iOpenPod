@@ -789,10 +789,15 @@ def test_extras_are_direct_sidebar_routes_and_a_compact_dropdown() -> None:
         APPLICATION.processEvents()
         assert not requests
         actions = dropdown.actions()
-        assert len(actions) == 2
+        assert len(actions) == 3
         actions[0].trigger()
         actions[1].trigger()
-        assert requests == [PageId.CALENDAR.value, PageId.ALARMS.value]
+        actions[2].trigger()
+        assert requests == [
+            PageId.CALENDAR.value,
+            PageId.ALARMS.value,
+            PageId.TONES.value,
+        ]
         unknown = replace(
             active.profile,
             capabilities=replace(

@@ -1,0 +1,276 @@
+{
+  "description": "Canonical authored tone files accepted by all seven original firmware parsers; synthetic melodies, no source music.",
+  "receipt_sha256": "456365057847298bb8b1a6fe21245bb89ea414cbf701d09a34d04d1173a8c29b",
+  "probe_sha256": "20bed1bb969c1b0638ffd1586dddb367eaa782af814c5abd5641191e38494ef3",
+  "prior_harness_sha256": "28b36d0c3bb58df3c2a08e10ca3265b0942db7bf723a3d857b3702bf8c856063",
+  "firmware": [
+    {
+      "family": 24,
+      "image": {
+        "path": "Classic24FW/decrypted/osos.bin",
+        "size": 9924476,
+        "sha256": "9fc12ffc0817d481af6bcdded1a8f3c720027c85872aa13bade22cbe60913b4a",
+        "memory_map": "Classic24FW/evidence/runtime-map.json",
+        "memory_map_sha256": "271b568f9b144f97b2a1cc76c1fef28790ac8577e5c0520780860e6f147abdd0"
+      }
+    },
+    {
+      "family": 33,
+      "image": {
+        "path": "inputs/prepared-2.0.1/osos.bin",
+        "size": 10513984,
+        "sha256": "220913cb8569af0538a7e828f1aaa08d9313bf9a5c2b0a7a7e6e2dc0bee5f16e",
+        "memory_map": "vendor/osos-lab/ghidra/profiles/classic6g-reva-2.0.1.json",
+        "memory_map_sha256": "b668b37155bea4ea1b4d4de545a01a5c047a4609d532b4421d34ced78ab5317c"
+      }
+    },
+    {
+      "family": 35,
+      "image": {
+        "path": "Classic35FW/decrypted/osos.bin",
+        "size": 10597864,
+        "sha256": "2ca353870e84bc92ff5090024122ee0712d9bb992c6933b3b230c0ae613b0ffe",
+        "memory_map": "Classic35FW/evidence/runtime-map.json",
+        "memory_map_sha256": "02211c5ac30cdde950e0e4fa0a15352acd96e92269dfcb25d1321b1742d013c9"
+      }
+    },
+    {
+      "family": 38,
+      "image": {
+        "path": "Classic38FW/decrypted/osos.bin",
+        "size": 10632448,
+        "sha256": "d7669f9266e7cae15867248eeb9c34a2711f1f9a1f3cf40132ef86d9fdbf8224",
+        "memory_map": "Classic38FW/evidence/runtime-map.json",
+        "memory_map_sha256": "28e9144e5a83c5809ddd149ff328184d0dc5238d0be359dc24f7886b949e18d0"
+      }
+    },
+    {
+      "family": 26,
+      "image": {
+        "path": "Nano3FW/decrypted/osos.bin",
+        "size": 10790256,
+        "sha256": "ff5980009c6720742f5b85f3e80a5c853bd0e3caa433d015e6836c209e08081a",
+        "memory_map": "Nano3FW/evidence/runtime-map.json",
+        "memory_map_sha256": "a0ea44cd0f72790aded3ddd76aeb479550ff71718fe7fe0fc3ce285da4c041db"
+      }
+    },
+    {
+      "family": 31,
+      "image": {
+        "path": "Nano4FW/decrypted/osos.bin",
+        "size": 5763080,
+        "sha256": "a5d273ab3be00dcea90e72444bb9750ebe5d88f5f986c3e62e4fd108332ff372",
+        "memory_map": "Nano4FW/evidence/runtime-map.json",
+        "memory_map_sha256": "10fe9114cc89777b6035256217b381f3120d58606c276d77217bb816b25f8c03"
+      }
+    },
+    {
+      "family": 34,
+      "image": {
+        "sha256": "dbd25a9279e7c8ccdc5212d94f2e1b376a73dcebe105b1b1925d9669f0cecd49"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "key": "seven-second-phrase",
+      "name": "Morning melody",
+      "notes": [
+        [
+          523,
+          500
+        ],
+        [
+          587,
+          500
+        ],
+        [
+          659,
+          500
+        ],
+        [
+          0,
+          125
+        ],
+        [
+          659,
+          375
+        ],
+        [
+          698,
+          500
+        ],
+        [
+          784,
+          1000
+        ],
+        [
+          0,
+          250
+        ],
+        [
+          784,
+          500
+        ],
+        [
+          698,
+          500
+        ],
+        [
+          659,
+          500
+        ],
+        [
+          587,
+          500
+        ],
+        [
+          523,
+          1250
+        ]
+      ],
+      "payload_utf8": "Morning melody\n523 500\n587 500\n659 500\n0 125\n659 375\n698 500\n784 1000\n0 250\n784 500\n698 500\n659 500\n587 500\n523 1250\n",
+      "sha256": "5fed4f80629378b56b97746b28bbaa49147b2a353d534e443a5689b1e7479058"
+    },
+    {
+      "key": "unicode-name",
+      "name": "Melodía 東京 🎵",
+      "notes": [
+        [
+          523,
+          500
+        ],
+        [
+          587,
+          500
+        ],
+        [
+          659,
+          500
+        ],
+        [
+          0,
+          125
+        ],
+        [
+          659,
+          375
+        ],
+        [
+          698,
+          500
+        ],
+        [
+          784,
+          1000
+        ],
+        [
+          0,
+          250
+        ],
+        [
+          784,
+          500
+        ],
+        [
+          698,
+          500
+        ],
+        [
+          659,
+          500
+        ],
+        [
+          587,
+          500
+        ],
+        [
+          523,
+          1250
+        ]
+      ],
+      "payload_utf8": "Melodía 東京 🎵\n523 500\n587 500\n659 500\n0 125\n659 375\n698 500\n784 1000\n0 250\n784 500\n698 500\n659 500\n587 500\n523 1250\n",
+      "sha256": "cdb5677c2dda9821a196004ae06863f7fc1e2dc4a21ec72494c139c0c20ebede"
+    },
+    {
+      "key": "unicode-name-byte-limit",
+      "name": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééA",
+      "notes": [
+        [
+          440,
+          7000
+        ]
+      ],
+      "payload_utf8": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééA\n440 7000\n",
+      "sha256": "8d77dedbdf4539e71b49f1cfc1e2b13d12f005ac859f3afd4ca7a46c3662bfae"
+    },
+    {
+      "key": "u16-boundaries",
+      "name": "Ranges",
+      "notes": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          65535,
+          65535
+        ],
+        [
+          131,
+          25
+        ],
+        [
+          2093,
+          1000
+        ]
+      ],
+      "payload_utf8": "Ranges\n0 0\n1 1\n65535 65535\n131 25\n2093 1000\n",
+      "sha256": "9c7893672eef337d8c78ef6536259215d25f3a2d044d3e2b9efd92504332ee24"
+    },
+    {
+      "key": "beep-default",
+      "name": "Beep",
+      "notes": [
+        [
+          540,
+          200
+        ],
+        [
+          676,
+          400
+        ],
+        [
+          540,
+          200
+        ],
+        [
+          676,
+          400
+        ],
+        [
+          540,
+          200
+        ],
+        [
+          676,
+          400
+        ],
+        [
+          540,
+          200
+        ],
+        [
+          676,
+          400
+        ]
+      ],
+      "payload_utf8": "Beep\n540 200\n676 400\n540 200\n676 400\n540 200\n676 400\n540 200\n676 400\n",
+      "sha256": "f8991403cb7d1a54799c872879f90358ce4f7a279e4b2ce9f40e5fdff93f7d4c"
+    }
+  ]
+}

@@ -328,3 +328,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0261: Use Nano 1 alarm compatibility for Nano 2](0261-use-nano-1-alarm-compatibility-for-nano-2.md)
 - [ADR-0262: Leave Alarm selections unchanged during Library writes](0262-leave-alarm-selections-unchanged-during-library-writes.md)
 - [ADR-0263: Author Clock cities and native Alarm Playlist selections](0263-author-clock-cities-and-native-alarm-playlist-selections.md)
+- [ADR-0264: Require fpcalc in supported installations](0264-require-fpcalc-in-supported-installations.md)
+- [ADR-0265: Author Alarm Tones from local melody arrangements](0265-author-alarm-tones-from-local-melody-arrangements.md)

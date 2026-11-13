@@ -168,7 +168,8 @@ QLabel[browserTitle="true"] {{
  * pre-emit critique: P5 H4 E4 S5 R5 V4 · native app gates reviewed
  */
 QWidget#calendarPage,
-QWidget#alarmsPage {{
+QWidget#alarmsPage,
+QWidget#tonesPage {{
     background-color: {tokens.window};
 }}
 
@@ -345,6 +346,7 @@ QLabel#playlistEmpty {{
 QLabel#playlistEditorError,
 QLabel#calendarEditorError,
 QLabel#alarmEditorError,
+QLabel#toneError,
 QLabel#metadataEditError,
 QLabel#photoAlbumManagerError {{
     color: {tokens.danger};
@@ -356,6 +358,7 @@ QDialog#playlistEditor,
 QDialog#calendarEditor,
 QDialog#alarmEditor,
 QDialog#timerEditor,
+QDialog#toneConversionDialog,
 QDialog#metadataEditor,
 QDialog#artworkCropDialog,
 QDialog#consolidateArtworkDialog,

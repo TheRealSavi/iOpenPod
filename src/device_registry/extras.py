@@ -38,8 +38,22 @@ def native_extras_capabilities(family: str, generation: str) -> ExtrasCapabiliti
             todos=FeatureSupport.UNSUPPORTED,
             alarms=FeatureSupport.UNSUPPORTED,
             sleep_timer=FeatureSupport.SUPPORTED,
+            custom_tones=FeatureSupport.UNSUPPORTED,
         )
-    return ExtrasCapabilities(support, support, support, support)
+    tones = (
+        family == "iPod Classic" and generation in {"6th Gen", "6.5th Gen", "7th Gen"}
+    ) or (family == "iPod Nano" and generation in {"3rd Gen", "4th Gen", "5th Gen"})
+    return ExtrasCapabilities(
+        support,
+        support,
+        support,
+        support,
+        FeatureSupport.SUPPORTED
+        if tones
+        else FeatureSupport.UNSUPPORTED
+        if known
+        else FeatureSupport.UNKNOWN,
+    )
 
 
 def resolve_extras_support(

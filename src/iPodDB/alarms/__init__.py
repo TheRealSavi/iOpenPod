@@ -32,8 +32,10 @@ from iPodDB.alarms.timer import (
 )
 from iPodDB.alarms.tones import (
     MAX_ALARM_TONE_BYTES,
+    MAX_CUSTOM_ALARM_TONES,
     AlarmToneDocument,
     AlarmToneNote,
+    create_alarm_tone,
     default_alarm_tone_name,
     parse_alarm_tone,
     saved_alarm_tone_name,
@@ -43,6 +45,7 @@ __all__ = [
     "CLOCK_CITIES",
     "COUNTDOWN_TIMER_SOUNDS",
     "MAX_ALARM_TONE_BYTES",
+    "MAX_CUSTOM_ALARM_TONES",
     "AlarmDocument",
     "AlarmRecord",
     "AlarmToneDocument",
@@ -57,6 +60,7 @@ __all__ = [
     "add_alarm",
     "add_clock_alarm",
     "clock_city",
+    "create_alarm_tone",
     "default_alarm_tone_name",
     "empty_alarm_document",
     "empty_clock_document",

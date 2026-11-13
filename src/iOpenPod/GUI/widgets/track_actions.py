@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from device_registry import FeatureSupport
 from iOpenPod.app.chaptered_conversion import can_convert_album
 from iOpenPod.app.core.settings.definitions import (
     LIBRARY_DOUBLE_CLICK_SHORTCUT,
@@ -47,6 +48,7 @@ from iOpenPod.app.models.collection_list_model import (
 )
 from iOpenPod.app.models.track_order import album_track_sort_key
 from iOpenPod.app.models.track_table_model import TrackRole
+from iOpenPod.app.tone_conversion import can_convert_track
 from iOpenPod.app.track_conversion import podcast_conversion_needed
 from iOpenPod.app.track_playback_policy import requires_track_playback_policy
 from iOpenPod.GUI.dialogs.metadata_editor import MetadataEditorDialog
@@ -113,6 +115,7 @@ class TrackActions(QObject):
     playlistCreated = Signal(int)
     trackExportRequested = Signal(object)
     chapteredConversionRequested = Signal(object)
+    toneConversionRequested = Signal(object)
 
     def __init__(
         self,
@@ -474,6 +477,22 @@ class TrackActions(QObject):
             lambda: self.convert_to_chaptered(selection),
             enabled=editable and self._can_convert_chaptered(selection),
         )
+        active = (
+            self._device_controller.active_ipod if self._device_controller else None
+        )
+        if (
+            active is not None
+            and active.profile.capabilities.extras.custom_tones
+            is FeatureSupport.SUPPORTED
+        ):
+            add(
+                menu,
+                self.tr("Convert to tone…"),
+                lambda: self.convert_to_tone(selection),
+                enabled=editable
+                and len(selection.tracks) == 1
+                and can_convert_track(selection.tracks[0]),
+            )
         play_next = add(
             menu,
             self.tr("Play Next"),
@@ -664,6 +683,11 @@ class TrackActions(QObject):
     def remove_tracks(self, selection: TrackSelection) -> None:
         self._require(selection)
         self.workspace.remove_tracks(selection.track_ids, selection.revision)
+
+    def convert_to_tone(self, selection: TrackSelection) -> None:
+        self._require(selection)
+        if len(selection.tracks) == 1 and can_convert_track(selection.tracks[0]):
+            self.toneConversionRequested.emit(selection.tracks[0])
 
     def convert_to_podcast(self, selection: TrackSelection) -> None:
         self._require(selection)

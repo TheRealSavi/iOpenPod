@@ -73,6 +73,16 @@ deadlines; no Host countdown or live timer command is added. See
 [ADR-0260](adr/0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md).
 This distinction does not restrict Video Calendar editing or Library workflows.
 
+Classic and Nano 3–5 expose a separate Tones page and a single-Track conversion
+action. `iPodDB.alarms` authors native frequency/duration sequences; the Extras
+workflow publishes explicit new files through source-checked Storage Transactions.
+`ToneConversionController` owns a cancellable read reservation and delegates
+bounded local audio analysis to `tone_conversion`. Ordered phrase recurrence,
+harmonic salience and a continuous pitch path produce an immutable arrangement.
+The GUI previews the generated notes and submits a typed `CreateTone` only after
+Save. Temporary audio never becomes Library media, and saved Alarm selections
+remain unchanged. See [ADR-0265](adr/0265-author-alarm-tones-from-local-melody-arrangements.md).
+
 Calendar uses model-level availability and one format implementation in iPodDB.
 The codec owns the supported recurrence selectors, exception lists, Calendar
 zone binding and saved reminder evaluation. The GUI displays projected day spans

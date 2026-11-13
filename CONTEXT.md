@@ -87,6 +87,13 @@ source-checked Storage Transactions and remains distinct from firmware adoption.
 See [Alarms](docs/alarms.md) and
 [ADR-0260](docs/adr/0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md).
 
+Classic and Nano 3–5 also expose Tones under Extras. A saved Music Track's
+**Convert to tone…** action analyzes the song locally and arranges a short melodic
+phrase as native notes. Users listen, name and explicitly save the tone; it then
+appears in Alarm sound selection. The original Track and existing Alarms are
+preserved. See [ADR-0265](docs/adr/0265-author-alarm-tones-from-local-melody-arrangements.md)
+for the analysis limits and verified publication path.
+
 The Track metadata editor offers 22 translated EQ presets and **Use iPod setting**.
 Unknown assignments remain preserved until explicitly replaced, and mixed
 selections remain unchanged until edited. The Track table uses the same labels.
@@ -535,8 +542,10 @@ FFprobe, or fpcalc. Settings > Media Tools shows tool and FFmpeg encoder status,
 with setup offered when a tool is missing. Installation is explicitly user-directed
 through WinGet, architecture-specific Homebrew, or supported Linux
 package managers, with progress and subsequent executable verification. Tools stay
-outside the app distribution; fpcalc remains optional. See
-[Media-tool setup](docs/media-tools.md) and ADR-0103 for platform prerequisites.
+outside the app distribution. FFmpeg, FFprobe and fpcalc are required dependencies
+for supported installations (ADR-0264). Current code still permits reduced Sync
+operation without fpcalc; that behavior does not satisfy the dependency requirement.
+See [Media-tool setup](docs/media-tools.md) and ADR-0103 for platform prerequisites.
 
 Scrobbling now submits committed iPod music plays to Last.fm and ListenBrainz from
 Maintenance or an optional Sync step. Account-specific Host receipts prevent

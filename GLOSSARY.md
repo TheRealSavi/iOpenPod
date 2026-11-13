@@ -150,7 +150,8 @@ normal lowercase conventions while retaining the same domain term.
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **Extras** | Device applications presented through Calendar and Alarms pages, with native support distinguished from qualified iOpenPod file editing. | SQLite Extras database |
+| **Extras** | Device applications presented through Calendar, Alarms and Tones pages, with native support distinguished from qualified iOpenPod file editing. | SQLite Extras database |
+| **Alarm Tone** | A named monophonic sequence of frequency/duration notes and rests, stored as a native tone file on Classic or Nano 3–5 and selected by name for a Clock Alarm. A Host preview approximates its pitches and timing. | Music Track, Countdown Timer sound, audio excerpt |
 | **Calendar** | A named collection of Calendar Entries, or an explicitly unnamed collection. Its saved `X-WR-CALNAME` is distinct from entry titles and file paths; multiple source files can contribute to the same exact-name collection. | Calendar Entry, filename |
 | **Calendar Entry** | One imported or authored VEVENT or VTODO component with retained source date forms; it is not an expanded recurrence occurrence. | Track date, UTC timestamp |
 | **Calendar Occurrence** | One projected start/end pair belonging to a source Calendar Entry and returned for a queried civil day. It is a display result, not a separately writable event; series edits retain the source entry's identity. | Calendar Entry, detached event |

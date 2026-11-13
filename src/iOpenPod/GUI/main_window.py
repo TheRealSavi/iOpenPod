@@ -108,6 +108,7 @@ from iOpenPod.GUI.dialogs.phase_runtime_setup import PhaseRuntimeSetupDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
 from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
+from iOpenPod.GUI.dialogs.tone_conversion import ToneConversionDialog
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.alarms_page import AlarmsPage
 from iOpenPod.GUI.pages.backup_page import BackupPage
@@ -124,6 +125,7 @@ from iOpenPod.GUI.pages.podcast_page import PodcastPage
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.pages.start_page import StartPage
 from iOpenPod.GUI.pages.synesthesia_page import SynesthesiaPage
+from iOpenPod.GUI.pages.tones_page import TonesPage
 from iOpenPod.GUI.pages.track_page import TrackPage
 from iOpenPod.GUI.pages.video_player_page import VideoPlayerPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
@@ -612,6 +614,14 @@ class MainWindow(QMainWindow):
         calendar_page = CalendarPage(context.extras_controller, self._pages)
         self._page_widgets[PageId.CALENDAR] = calendar_page
         self._pages.addWidget(calendar_page)
+        tones_page = TonesPage(context.extras_controller, self._pages)
+        tones_page.previewRequested.connect(context.playback_controller.pause)
+        self._page_widgets[PageId.TONES] = tones_page
+        self._pages.addWidget(tones_page)
+        self._tone_dialog: ToneConversionDialog | None = None
+        self._track_actions.toneConversionRequested.connect(
+            self._tone_conversion_requested
+        )
         if developer_flags.ENABLE_EXTRAS_PAGES:
             alarms_page = AlarmsPage(context.extras_controller, self._pages)
             self._page_widgets[PageId.ALARMS] = alarms_page
@@ -1470,6 +1480,38 @@ class MainWindow(QMainWindow):
         if self._export_controller.start_tracks(tracks, directory):
             self._show_export_progress(self.tr("Preparing Track export…"))
 
+    def _tone_conversion_requested(self, value: object) -> None:
+        if not isinstance(value, Track):
+            return
+        if self._tone_dialog is not None and self._tone_dialog.isVisible():
+            self._tone_dialog.raise_()
+            return
+        conversion = self._context.tone_conversion_controller
+        if not conversion.start(value):
+            self._show_tone_unavailable()
+            return
+        self._context.extras_controller.refresh()
+        dialog = ToneConversionDialog(
+            value, conversion, self._context.extras_controller, self
+        )
+        dialog.previewRequested.connect(self._context.playback_controller.pause)
+        self._tone_dialog = dialog
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.finished.connect(self._tone_dialog_finished)
+        dialog.open()
+
+    def _show_tone_unavailable(self) -> None:
+        QMessageBox.information(
+            self,
+            self.tr("Convert to tone"),
+            self.tr(
+                "Tone conversion is unavailable while the iPod is busy. Select a saved music track and try again."
+            ),
+        )
+
+    def _tone_dialog_finished(self, _result: int) -> None:
+        self._tone_dialog = None
+
     def _chaptered_conversion_requested(self, value: object) -> None:
         tracks = _tracks_from_signal(value)
         if not tracks:
@@ -1789,7 +1831,7 @@ class MainWindow(QMainWindow):
 
     def _show_page(self, page_value: str) -> None:
         page_id = PageId(page_value)
-        if page_id in (PageId.CALENDAR, PageId.ALARMS):
+        if page_id in (PageId.CALENDAR, PageId.ALARMS, PageId.TONES):
             if page_id not in self._page_widgets:
                 return
             self._context.extras_controller.refresh()

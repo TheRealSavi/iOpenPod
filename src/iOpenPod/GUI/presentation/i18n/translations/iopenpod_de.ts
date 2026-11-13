@@ -4508,6 +4508,14 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <source>Export Complete</source>
         <translation>Export abgeschlossen</translation>
     </message>
+    <message>
+        <source>Convert to tone</source>
+        <translation>In Signalton umwandeln</translation>
+    </message>
+    <message>
+        <source>Tone conversion is unavailable while the iPod is busy. Select a saved music track and try again.</source>
+        <translation>Der iPod ist beschäftigt. Wählen Sie einen gespeicherten Musiktitel und versuchen Sie es erneut.</translation>
+    </message>
     <message numerus="yes">
         <source>Skipped %n playlist track(s) that could not be found on this host.</source>
         <translation>
@@ -5521,6 +5529,10 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     <message>
         <source>Alarms</source>
         <translation>Wecker</translation>
+    </message>
+    <message>
+        <source>Tones</source>
+        <translation>Signaltöne</translation>
     </message>
     <message>
         <source>Podcasts</source>
@@ -10755,6 +10767,124 @@ Playlists: %3</translation>
     </message>
 </context>
 <context>
+    <name>ToneConversionDialog</name>
+    <message>
+        <source>New tone</source>
+        <translation>Neuer Signalton</translation>
+    </message>
+    <message>
+        <source>Saving tone…</source>
+        <translation>Signalton wird gespeichert…</translation>
+    </message>
+    <message>
+        <source>%1 seconds · from %2 in the track</source>
+        <translation>%1 Sekunden · ab %2 im Titel</translation>
+    </message>
+    <message>
+        <source>A tone with this name already exists. Choose another name.</source>
+        <translation>Ein Signalton mit diesem Namen ist bereits vorhanden. Wählen Sie einen anderen Namen.</translation>
+    </message>
+    <message>
+        <source>A tone cannot be added. Refresh Tones and check that fewer than 19 custom tones are saved.</source>
+        <translation>Der Signalton kann nicht hinzugefügt werden. Aktualisieren Sie die Signaltöne und prüfen Sie, ob weniger als 19 eigene Töne gespeichert sind.</translation>
+    </message>
+    <message>
+        <source>The iPod is busy. Try saving again when it is ready.</source>
+        <translation>Der iPod ist beschäftigt. Versuchen Sie es erneut, wenn er bereit ist.</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Stopp</translation>
+    </message>
+    <message>
+        <source>Listen</source>
+        <translation>Anhören</translation>
+    </message>
+    <message>
+        <source>Convert to tone</source>
+        <translation>In Signalton umwandeln</translation>
+    </message>
+    <message>
+        <source>A short melody for your iPod&apos;s alarms. Listen to the arrangement before saving; the iPod&apos;s speaker will sound different.</source>
+        <translation>Eine kurze Melodie für die Wecker Ihres iPod. Hören Sie sich das Ergebnis vor dem Speichern an; auf dem iPod klingt es anders.</translation>
+    </message>
+    <message>
+        <source>Tone name</source>
+        <translation>Name des Signaltons</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="vanished">Abbrechen</translation>
+    </message>
+    <message>
+        <source>Save tone</source>
+        <translation>Signalton speichern</translation>
+    </message>
+</context>
+<context>
+    <name>TonesPage</name>
+    <message>
+        <source>Built-in</source>
+        <translation>Integriert</translation>
+    </message>
+    <message>
+        <source>Custom</source>
+        <translation>Eigener Ton</translation>
+    </message>
+    <message>
+        <source>%1 s</source>
+        <translation>%1 s</translation>
+    </message>
+    <message>
+        <source>Loading tones…</source>
+        <translation>Signaltöne werden geladen…</translation>
+    </message>
+    <message>
+        <source>No tones to show. Refresh to read this iPod&apos;s tones.</source>
+        <translation>Keine Signaltöne verfügbar. Aktualisieren Sie die Liste, um die Töne dieses iPod zu laden.</translation>
+    </message>
+    <message>
+        <source>%1 of 19 custom tones</source>
+        <translation>%1 von 19 eigenen Tönen</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Stopp</translation>
+    </message>
+    <message>
+        <source>Listen</source>
+        <translation>Anhören</translation>
+    </message>
+    <message>
+        <source>Tones</source>
+        <translation>Signaltöne</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Aktualisieren</translation>
+    </message>
+    <message>
+        <source>Make a short melody from a song: right-click a music track and choose Convert to tone. Saved tones are available in the alarm&apos;s Sound menu.</source>
+        <translation>Erstellen Sie eine kurze Melodie aus einem Lied: Klicken Sie mit der rechten Maustaste auf einen Musiktitel und wählen Sie In Signalton umwandeln. Gespeicherte Töne stehen im Klangmenü des Weckers zur Verfügung.</translation>
+    </message>
+    <message>
+        <source>Tone</source>
+        <translation>Signalton</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>Typ</translation>
+    </message>
+    <message>
+        <source>Duration</source>
+        <translation>Dauer</translation>
+    </message>
+    <message>
+        <source>Preview the notes. The iPod&apos;s speaker will sound different.</source>
+        <translation>Hören Sie sich die Noten an. Auf dem iPod klingt der Ton anders.</translation>
+    </message>
+</context>
+<context>
     <name>TrackActions</name>
     <message>
         <source>Library action unavailable</source>
@@ -10783,6 +10913,10 @@ Playlists: %3</translation>
     <message>
         <source>Chaptered-track conversion is coming later.</source>
         <translation type="vanished">Die Umwandlung in Titel mit Kapiteln wird später verfügbar sein.</translation>
+    </message>
+    <message>
+        <source>Convert to tone…</source>
+        <translation>In Signalton umwandeln…</translation>
     </message>
     <message>
         <source>Play Next</source>
@@ -13066,6 +13200,10 @@ Playlists: %3</translation>
         <translation>Linux benötigt die mitgelieferte Identifikationsregel 61-iopenpod.rules, damit iOpenPod dieses Modell prüfen kann. Installieren Sie diese in /etc/udev/rules.d, laden Sie die udev-Regeln neu und schließen Sie den iPod erneut an.</translation>
     </message>
     <message>
+        <source>Listening for a melodic phrase…</source>
+        <translation>Melodischer Abschnitt wird gesucht…</translation>
+    </message>
+    <message>
         <source>Loading Demucs htdemucs_6s</source>
         <translation>Demucs htdemucs_6s wird geladen</translation>
     </message>
@@ -13680,6 +13818,10 @@ Playlists: %3</translation>
     <message>
         <source>Reading the Host file into private staging</source>
         <translation>Die Datei auf dem Computer wird in einen geschützten Vorbereitungsbereich eingelesen</translation>
+    </message>
+    <message>
+        <source>Reading the track…</source>
+        <translation>Titel wird gelesen…</translation>
     </message>
     <message>
         <source>Reading transaction files for verification before completing recovery…</source>
@@ -15386,6 +15528,10 @@ Die akustische Analyse bleibt verfügbar.</translation>
     <message>
         <source>Trill</source>
         <translation>Triller</translation>
+    </message>
+    <message>
+        <source>Turning the melody into notes…</source>
+        <translation>Melodie wird in Noten umgewandelt…</translation>
     </message>
     <message>
         <source>UTC{offset}</source>

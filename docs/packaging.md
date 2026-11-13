@@ -173,7 +173,9 @@ See [ADR-0103](adr/0103-offer-native-media-tool-installation.md) and
 The frozen app preserves the user's PATH. Shared discovery also finds standard
 WinGet aliases and Homebrew prefixes, allowing setup without a restart. Media
 inspection requires FFprobe; incoming Track preparation checks FFmpeg/FFprobe and
-needed encoders before device changes. fpcalc supports optional acoustic matching.
+needed encoders before device changes. fpcalc supplies required acoustic matching.
+Every supported channel needs a working route for all three tools; see
+[ADR-0264](adr/0264-require-fpcalc-in-supported-installations.md).
 Startup checks tools and offers setup without requiring installation to browse.
 Some Synesthesia decoding also uses external FFmpeg. Store descriptions and setup
 help must disclose the affected features, external installation, and opt-in network
@@ -238,7 +240,7 @@ as required by [Store policy 10.2.4](https://learn.microsoft.com/en-us/windows/a
 Suggested opening text:
 
 > Media inspection and conversion require separately installed FFmpeg (including
-> FFprobe); Chromaprint's fpcalc enables optional acoustic matching. These tools
+> FFprobe); acoustic matching requires Chromaprint's fpcalc. These tools
 > are not bundled. The setup helper can install missing packages through WinGet
 > after you choose Install, or you can use your own installation on PATH.
 

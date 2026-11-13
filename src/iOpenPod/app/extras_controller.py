@@ -18,6 +18,7 @@ from iOpenPod.app.models.extras import (
     CreateAlarm,
     CreateCalendar,
     CreateClockAlarm,
+    CreateTone,
     ExtrasCatalog,
     ExtrasChange,
     ImportCalendar,
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
-    from iPodDB.alarms import ClockCity, CountdownTimerChanges
+    from iPodDB.alarms import AlarmToneNote, ClockCity, CountdownTimerChanges
     from iPodDB.calendar import CalendarEntryChanges, CalendarEntryDraft
 
 _LOGGER = logging.getLogger(__name__)
@@ -287,6 +288,9 @@ class ExtrasController(QObject):
             and self._catalog.timer is not None
             and self._write(SaveTimerSettings(changes))
         )
+
+    def create_tone(self, name: str, notes: tuple[AlarmToneNote, ...]) -> bool:
+        return self._catalog.can_create_tone and self._write(CreateTone(name, notes))
 
     def _write(self, change: ExtrasChange) -> bool:
         active = self.active_ipod

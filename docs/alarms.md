@@ -115,11 +115,39 @@ first line inside a tone file, not its filename. Beep is first and uses the nati
 localized resource name, resolved from qualified saved language settings. The app
 offers custom names only when the candidate collection fits the native 19-custom
 limit and names are valid, unique and distinct from the default. It never rewrites
-tone files. Unknown language or ambiguous tone sources do not authorize guesses.
+tone files during Alarm edits. Unknown language or ambiguous tone sources do not authorize guesses.
 The Sound dropdown offers a single tone or Playlist. Explicitly selecting a tone
 clears the Playlist selector; explicitly selecting a Playlist clears the tone
 string. Existing enabled gates are retained. Native combined tone/Playlist states
 stay intact during unrelated edits and appear as a saved combined sound.
+
+### Tones and Track conversion
+
+Classic and Nano 3–5 have a **Tones** page under Extras (a direct route in Sidebar).
+It lists saved names, durations and the built-in Beep. **Listen** previews the
+saved note sequence on the computer; the iPod speaker has a different timbre.
+Nano 6/7's 25 fixed Countdown Timer sounds do not use this custom-tone format.
+
+Right-click one saved music Track and choose **Convert to tone…**. iOpenPod scans
+the song locally for a repeated, active phrase, follows harmonic pitch evidence
+over time, and arranges roughly seven seconds of notes and rests. Listen to the
+result, edit its name if desired, then choose **Save tone**. The new tone becomes
+available in the alarm's Sound menu. Conversion does not change the original
+Track, create another Library Track, or change an existing Alarm's sound.
+
+The arrangement uses existing audio-analysis libraries; no model download or
+audio upload is needed. The main melody is not always unambiguous in dense music.
+Silence and unpitched input can be rejected instead of producing arbitrary notes.
+Tracks must be saved Music Tracks between one second and 15 minutes, and their
+encoded files must not exceed 512 MiB. Analysis is cancellable. Native capacity
+is 19 custom tones beside Beep; unique names and captured device sources are
+checked when saving.
+
+See [tone authoring evidence](research/alarm-tone-authoring-2026-11-13.md),
+[melody extraction research](research/alarm-tone-melody-extraction-2026-11-13.md)
+and [ADR-0265](adr/0265-author-alarm-tones-from-local-melody-arrangements.md).
+
+### Playlist sources
 
 Classic and Nano 3/4 Playlist choices use the
 [native imported-array projection](research/alarm-playlist-source-projection-2026-11-13.md):

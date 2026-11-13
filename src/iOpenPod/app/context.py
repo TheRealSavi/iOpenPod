@@ -48,6 +48,7 @@ from iOpenPod.app.preferences_controller import PreferencesController
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnalyzer
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
+from iOpenPod.app.tone_conversion_controller import ToneConversionController
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iPodDB.library import MediaKind
@@ -92,9 +93,20 @@ class AppContext:
     playback_video_output: PlaybackVideoOutput | None = None
     games_controller: GamesController = field(init=False)
     extras_controller: ExtrasController = field(init=False)
+    tone_conversion_controller: ToneConversionController = field(init=False)
     preferences_controller: PreferencesController = field(init=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "tone_conversion_controller",
+            ToneConversionController(
+                self.device_controller,
+                self.device_coordinator,
+                self.device_controller,
+                find_tool=self.find_media_tool,
+            ),
+        )
         object.__setattr__(
             self,
             "preferences_controller",
@@ -320,6 +332,7 @@ class AppContext:
         self.backup_controller.shutdown()
         self.games_controller.shutdown()
         self.extras_controller.shutdown()
+        self.tone_conversion_controller.shutdown()
         self.preferences_controller.shutdown()
         self.host_media_controller.shutdown()
         self.ipod_media_controller.shutdown()

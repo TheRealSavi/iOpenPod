@@ -57,7 +57,7 @@ _VIDEO_PAGES = (
     PageId.VIDEOS,
 )
 _MAINTENANCE_PAGES = (PageId.BACKUPS, PageId.NORMALIZE_TAGS)
-_EXTRAS_PAGES = (PageId.CALENDAR, PageId.ALARMS)
+_EXTRAS_PAGES = (PageId.CALENDAR, PageId.ALARMS, PageId.TONES)
 _PAGE_GLYPHS = {
     PageId.ALBUMS: "album",
     PageId.ARTISTS: "user",
@@ -74,6 +74,7 @@ _PAGE_GLYPHS = {
     PageId.NORMALIZE_TAGS: "check-circle",
     PageId.CALENDAR: "grid",
     PageId.ALARMS: "bell",
+    PageId.TONES: "music",
 }
 _PLAYLIST_GLYPHS = {
     PlaylistKind.PLAYLIST.value: "playlist",

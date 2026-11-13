@@ -78,6 +78,7 @@ from iOpenPod.app.models.device import (
 from iOpenPod.app.models.extras import (
     CreateAlarm,
     CreateClockAlarm,
+    CreateTone,
     RemoveAlarm,
     SaveAlarm,
     SaveTimerSettings,
@@ -1406,6 +1407,8 @@ class DeviceCoordinator:
             ):
                 raise DeviceChangedError("Extras changed. Reload before saving.")
 
+        created_tone_path: str | None = None
+
         def checkpoint() -> None:
             if cancelled.is_set():
                 raise DeviceAccessError("Saving Extras was cancelled.")
@@ -1415,15 +1418,22 @@ class DeviceCoordinator:
                         "The iPod disconnected while saving Extras."
                     )
             if (
-                isinstance(change, SaveAlarm | CreateAlarm)
-                and change.sound is not None
-                and change.sound.tone_name is not None
-                and catalog.tone_inventory is not None
-                and alarm_tones.tone_inventory(session) != catalog.tone_inventory
-            ):
-                raise DeviceChangedError(
-                    "The iPod's tone collection changed. Reload Extras."
+                isinstance(change, CreateTone)
+                or (
+                    isinstance(change, SaveAlarm | CreateAlarm)
+                    and change.sound is not None
+                    and change.sound.tone_name is not None
                 )
+            ) and catalog.tone_inventory is not None:
+                inventories = {catalog.tone_inventory}
+                if isinstance(change, CreateTone) and created_tone_path is not None:
+                    inventories.add(
+                        tuple(sorted((*catalog.tone_inventory, created_tone_path)))
+                    )
+                if alarm_tones.tone_inventory(session) not in inventories:
+                    raise DeviceChangedError(
+                        "The iPod's tone collection changed. Reload Extras."
+                    )
 
         try:
             with self.sync_session(expected, access=AccessMode.READ_WRITE) as session:
@@ -1438,7 +1448,8 @@ class DeviceCoordinator:
                     | CreateClockAlarm
                     | RemoveAlarm
                     | SaveAlarm
-                    | SaveTimerSettings,
+                    | SaveTimerSettings
+                    | CreateTone,
                 ):
                     previous_support = support
                     dependencies = tuple(
@@ -1465,6 +1476,8 @@ class DeviceCoordinator:
                 transaction = extras.prepare_change(
                     catalog, change, dependencies=dependencies, checkpoint=checkpoint
                 )
+                if isinstance(change, CreateTone) and transaction is not None:
+                    created_tone_path = str(transaction.writes[0].path)
                 checkpoint()
                 library_resources.recheck(session, dependencies)
                 if transaction is not None:

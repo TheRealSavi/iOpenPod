@@ -24,6 +24,7 @@ class PageId(StrEnum):
     PHOTOS = "photos"
     CALENDAR = "calendar"
     ALARMS = "alarms"
+    TONES = "tones"
     PODCASTS = "podcasts"
     AUDIOBOOKS = "audiobooks"
     MOVIES = "movies"
@@ -51,6 +52,7 @@ _LIBRARY_PAGES = _VIDEO_PAGES | frozenset(
         PageId.PHOTOS,
         PageId.CALENDAR,
         PageId.ALARMS,
+        PageId.TONES,
         PageId.PODCASTS,
         PageId.AUDIOBOOKS,
     }
@@ -84,6 +86,11 @@ def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
             profile.capabilities.extras.calendar is FeatureSupport.SUPPORTED
             or profile.capabilities.extras.todos is FeatureSupport.SUPPORTED
         )
+    if page_id is PageId.TONES:
+        return (
+            profile is not None
+            and profile.capabilities.extras.custom_tones is FeatureSupport.SUPPORTED
+        )
     if page_id is PageId.ALARMS:
         return profile is not None and (
             profile.capabilities.extras.alarms is FeatureSupport.SUPPORTED
@@ -107,6 +114,7 @@ _PAGE_LABEL_SOURCES = cast(
         PageId.PHOTOS: QT_TRANSLATE_NOOP("Navigation", "Photos"),
         PageId.CALENDAR: QT_TRANSLATE_NOOP("Navigation", "Calendar"),
         PageId.ALARMS: QT_TRANSLATE_NOOP("Navigation", "Alarms"),
+        PageId.TONES: QT_TRANSLATE_NOOP("Navigation", "Tones"),
         PageId.PODCASTS: QT_TRANSLATE_NOOP("Navigation", "Podcasts"),
         PageId.AUDIOBOOKS: QT_TRANSLATE_NOOP("Navigation", "Audiobooks"),
         PageId.MOVIES: QT_TRANSLATE_NOOP("Navigation", "Movies"),

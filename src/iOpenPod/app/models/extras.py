@@ -6,7 +6,12 @@ from enum import StrEnum
 from whenever import Date, PlainDateTime, Time
 
 from device_registry import ExtrasSupport
-from iPodDB.alarms import ClockCity, CountdownTimerChanges, CountdownTimerSnapshot
+from iPodDB.alarms import (
+    AlarmToneNote,
+    ClockCity,
+    CountdownTimerChanges,
+    CountdownTimerSnapshot,
+)
 from iPodDB.calendar import (
     CalendarComponent,
     CalendarEntry,
@@ -115,6 +120,29 @@ class ExtrasCatalog:
     tone_inventory: tuple[str, ...] | None = None
     clock_cities: tuple[ClockCity, ...] = ()
     playlist_dependencies: tuple[FilePrecondition, ...] = ()
+    tones: tuple["AlarmToneItem", ...] = ()
+    can_create_tone: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class AlarmToneItem:
+    """Captured tone for display and approximate Host preview; key is its identity."""
+
+    key: str
+    name: str
+    notes: tuple[AlarmToneNote, ...] = ()
+    builtin: bool = False
+    issue: str = ""
+
+    @property
+    def duration_ms(self) -> int:
+        return sum(note.duration_ms for note in self.notes)
+
+
+@dataclass(frozen=True, slots=True)
+class CreateTone:
+    name: str
+    notes: tuple[AlarmToneNote, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,4 +234,5 @@ type ExtrasChange = (
     | RemoveAlarm
     | SaveTimerSettings
     | CreateClockAlarm
+    | CreateTone
 )

@@ -4508,6 +4508,14 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
         <source>Export Complete</source>
         <translation>Exportación completada</translation>
     </message>
+    <message>
+        <source>Convert to tone</source>
+        <translation>Convertir en tono</translation>
+    </message>
+    <message>
+        <source>Tone conversion is unavailable while the iPod is busy. Select a saved music track and try again.</source>
+        <translation>El iPod está ocupado. Selecciona una pista de música guardada e inténtalo de nuevo.</translation>
+    </message>
     <message numerus="yes">
         <source>Skipped %n playlist track(s) that could not be found on this host.</source>
         <translation>
@@ -5521,6 +5529,10 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
     <message>
         <source>Alarms</source>
         <translation>Alarmas</translation>
+    </message>
+    <message>
+        <source>Tones</source>
+        <translation>Tonos</translation>
     </message>
     <message>
         <source>Podcasts</source>
@@ -10755,6 +10767,124 @@ Playlists: %3</translation>
     </message>
 </context>
 <context>
+    <name>ToneConversionDialog</name>
+    <message>
+        <source>New tone</source>
+        <translation>Nuevo tono</translation>
+    </message>
+    <message>
+        <source>Saving tone…</source>
+        <translation>Guardando tono…</translation>
+    </message>
+    <message>
+        <source>%1 seconds · from %2 in the track</source>
+        <translation>%1 segundos · desde %2 de la pista</translation>
+    </message>
+    <message>
+        <source>A tone with this name already exists. Choose another name.</source>
+        <translation>Ya existe un tono con este nombre. Elige otro nombre.</translation>
+    </message>
+    <message>
+        <source>A tone cannot be added. Refresh Tones and check that fewer than 19 custom tones are saved.</source>
+        <translation>No se puede añadir el tono. Actualiza Tonos y comprueba que haya menos de 19 tonos personalizados guardados.</translation>
+    </message>
+    <message>
+        <source>The iPod is busy. Try saving again when it is ready.</source>
+        <translation>El iPod está ocupado. Vuelve a guardar cuando esté disponible.</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Detener</translation>
+    </message>
+    <message>
+        <source>Listen</source>
+        <translation>Escuchar</translation>
+    </message>
+    <message>
+        <source>Convert to tone</source>
+        <translation>Convertir en tono</translation>
+    </message>
+    <message>
+        <source>A short melody for your iPod&apos;s alarms. Listen to the arrangement before saving; the iPod&apos;s speaker will sound different.</source>
+        <translation>Una melodía breve para las alarmas del iPod. Escucha el resultado antes de guardarlo; el altavoz del iPod sonará diferente.</translation>
+    </message>
+    <message>
+        <source>Tone name</source>
+        <translation>Nombre del tono</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="vanished">Cancelar</translation>
+    </message>
+    <message>
+        <source>Save tone</source>
+        <translation>Guardar tono</translation>
+    </message>
+</context>
+<context>
+    <name>TonesPage</name>
+    <message>
+        <source>Built-in</source>
+        <translation>Integrado</translation>
+    </message>
+    <message>
+        <source>Custom</source>
+        <translation>Personalizado</translation>
+    </message>
+    <message>
+        <source>%1 s</source>
+        <translation>%1 s</translation>
+    </message>
+    <message>
+        <source>Loading tones…</source>
+        <translation>Cargando tonos…</translation>
+    </message>
+    <message>
+        <source>No tones to show. Refresh to read this iPod&apos;s tones.</source>
+        <translation>No hay tonos para mostrar. Actualiza para leer los tonos de este iPod.</translation>
+    </message>
+    <message>
+        <source>%1 of 19 custom tones</source>
+        <translation>%1 de 19 tonos personalizados</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Detener</translation>
+    </message>
+    <message>
+        <source>Listen</source>
+        <translation>Escuchar</translation>
+    </message>
+    <message>
+        <source>Tones</source>
+        <translation>Tonos</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Actualizar</translation>
+    </message>
+    <message>
+        <source>Make a short melody from a song: right-click a music track and choose Convert to tone. Saved tones are available in the alarm&apos;s Sound menu.</source>
+        <translation>Crea una melodía breve a partir de una canción: haz clic derecho en una pista de música y elige Convertir en tono. Los tonos guardados estarán disponibles en el menú Sonido de la alarma.</translation>
+    </message>
+    <message>
+        <source>Tone</source>
+        <translation>Tono</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>Tipo</translation>
+    </message>
+    <message>
+        <source>Duration</source>
+        <translation>Duración</translation>
+    </message>
+    <message>
+        <source>Preview the notes. The iPod&apos;s speaker will sound different.</source>
+        <translation>Escucha las notas. El altavoz del iPod sonará diferente.</translation>
+    </message>
+</context>
+<context>
     <name>TrackActions</name>
     <message>
         <source>Library action unavailable</source>
@@ -10783,6 +10913,10 @@ Playlists: %3</translation>
     <message>
         <source>Chaptered-track conversion is coming later.</source>
         <translation type="vanished">La conversión a pistas con capítulos estará disponible más adelante.</translation>
+    </message>
+    <message>
+        <source>Convert to tone…</source>
+        <translation>Convertir en tono…</translation>
     </message>
     <message>
         <source>Play Next</source>
@@ -13066,6 +13200,10 @@ Playlists: %3</translation>
         <translation>Linux necesita la regla de identidad 61-iopenpod.rules incluida para que iOpenPod pueda verificar este modelo. Instálala en /etc/udev/rules.d, recarga las reglas de udev y vuelve a conectar el iPod.</translation>
     </message>
     <message>
+        <source>Listening for a melodic phrase…</source>
+        <translation>Buscando una frase melódica…</translation>
+    </message>
+    <message>
         <source>Loading Demucs htdemucs_6s</source>
         <translation>Cargando Demucs htdemucs_6s</translation>
     </message>
@@ -13680,6 +13818,10 @@ Playlists: %3</translation>
     <message>
         <source>Reading the Host file into private staging</source>
         <translation>Leyendo el archivo del equipo en un área temporal privada</translation>
+    </message>
+    <message>
+        <source>Reading the track…</source>
+        <translation>Leyendo la pista…</translation>
     </message>
     <message>
         <source>Reading transaction files for verification before completing recovery…</source>
@@ -15386,6 +15528,10 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>Trill</source>
         <translation>Trino</translation>
+    </message>
+    <message>
+        <source>Turning the melody into notes…</source>
+        <translation>Convirtiendo la melodía en notas…</translation>
     </message>
     <message>
         <source>UTC{offset}</source>

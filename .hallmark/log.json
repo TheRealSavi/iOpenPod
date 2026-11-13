@@ -1,6 +1,23 @@
 [
   {
     "date": "2026-11-13",
+    "scope": "app",
+    "macrostructure": "Existing Extras list with listen-name-save conversion dialog",
+    "theme": "preserved iOpenPod semantic theme",
+    "enrichment": "none",
+    "brief": "Native tone list and local melody-to-tone conversion for Classic and Nano 3–5",
+    "validation": "Porcelain/Slate at 700/1200px and 100/200% scaling; German ready/error/loading dialogs; keyboard list preview, explicit save, cancellation, stale device, busy save state; existing theme owns fonts, colors and interaction states",
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-11-13",
     "scope": "component",
     "macrostructure": "Existing time-led alarm list with searchable city editor",
     "theme": "preserved iOpenPod semantic theme",
@@ -201,21 +218,5 @@
     "vibe": "calm technical desktop music utility",
     "enrichment": "Tier-A deterministic placeholder artwork",
     "brief": "Original-informed iOpenPod application shell with virtualized Library views"
-  },
-  {
-    "date": "2026-08-28",
-    "macrostructure": "Theme foundation (no page build)",
-    "theme": "custom",
-    "theme_axes": "light and dark / native sans / cool blue",
-    "vibe": "quiet precise desktop music utility",
-    "enrichment": "none",
-    "brief": "Original-informed semantic palette and metric foundation for iOpenPod 2.0"
-  },
-  {
-    "date": "2026-08-28",
-    "macrostructure": "Workbench",
-    "theme": "Cobalt",
-    "enrichment": "none",
-    "brief": "Minimal read-only iTunesDB library proof of concept in PySide6"
   }
 ]

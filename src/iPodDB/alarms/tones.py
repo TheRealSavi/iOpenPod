@@ -18,6 +18,7 @@ from iPodDB.preferences.definitions import (
 )
 
 MAX_ALARM_TONE_BYTES = 1024 * 1024
+MAX_CUSTOM_ALARM_TONES = 19
 
 _CLASSIC_PROFILES = frozenset(
     (
@@ -171,6 +172,41 @@ class AlarmToneDocument:
     def selectable(self) -> bool:
         """A native-valid named entry, before collection/identity qualification."""
         return self.valid and bool(self.name) and not self.issues
+
+
+def create_alarm_tone(name: str, notes: tuple[AlarmToneNote, ...]) -> bytes:
+    """Author the common, unambiguous native text format on all seven targets.
+
+    Existing documents are observations and retain their original bytes. This
+    constructor deliberately does not normalize or rewrite an imported file.
+    """
+    if (
+        not name.strip()
+        or name != name.strip()
+        or any(ord(character) < 32 or ord(character) == 127 for character in name)
+    ):
+        raise ValueError(
+            "Enter a tone name without leading spaces or control characters."
+        )
+    if len(name.encode("utf-8")) > 253:
+        raise ValueError("The tone name is too long for the iPod.")
+    if not 1 <= len(notes) <= 1000:
+        raise ValueError("A tone needs between 1 and 1000 notes.")
+    if any(
+        type(note.frequency) is not int
+        or type(note.duration_ms) is not int
+        or not 0 <= note.frequency <= 65535
+        or not 1 <= note.duration_ms <= 65535
+        for note in notes
+    ):
+        raise ValueError(
+            "Tone frequencies and positive durations must fit native 16-bit values."
+        )
+    return (
+        name
+        + "\n"
+        + "".join(f"{note.frequency} {note.duration_ms}\n" for note in notes)
+    ).encode("utf-8")
 
 
 def _decimal_prefix(text: str, signed: bool) -> int:

@@ -318,6 +318,8 @@ class ExtrasCapabilities:
     alarms: FeatureSupport = FeatureSupport.UNKNOWN
     sleep_timer: FeatureSupport = FeatureSupport.UNKNOWN
 
+    custom_tones: FeatureSupport = FeatureSupport.UNKNOWN
+
 
 class AlarmFormat(StrEnum):
     """Selected saved alarm or countdown format, independent of device I/O."""

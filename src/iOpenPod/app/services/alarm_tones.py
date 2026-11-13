@@ -5,8 +5,14 @@ from dataclasses import dataclass
 
 from device_registry import ExtrasSupport, FirmwareTarget
 from iOpenPod.app.display_text import source_text
-from iOpenPod.app.models.extras import AlarmSound
-from iPodDB.alarms import MAX_ALARM_TONE_BYTES, parse_alarm_tone, saved_alarm_tone_name
+from iOpenPod.app.models.extras import AlarmSound, AlarmToneItem
+from iPodDB.alarms import (
+    MAX_ALARM_TONE_BYTES,
+    MAX_CUSTOM_ALARM_TONES,
+    AlarmToneNote,
+    parse_alarm_tone,
+    saved_alarm_tone_name,
+)
 from iPodDB.preferences import NamedPreferencesProfile, PreferencesProfile
 from storage import (
     DeviceEntryKind,
@@ -25,6 +31,15 @@ class CapturedAlarmTones:
     dependencies: tuple[FilePrecondition, ...] = ()
     inventory: tuple[str, ...] | None = None
     issues: tuple[str, ...] = ()
+    items: tuple[AlarmToneItem, ...] = ()
+
+    @property
+    def can_create(self) -> bool:
+        return (
+            self.inventory is not None
+            and len(self.inventory) < MAX_CUSTOM_ALARM_TONES
+            and not self.issues
+        )
 
 
 def tone_inventory(session: FilesystemSession) -> tuple[str, ...]:
@@ -68,37 +83,51 @@ def capture_alarm_tones(
     )
     try:
         checkpoint()
+        language_dependencies: tuple[FilePrecondition, ...] = ()
+        language_issues: tuple[str, ...] = ()
+        default_name = None
         if not session.exists(path):
-            return CapturedAlarmTones(
-                issues=(
-                    "The saved iPod language is unavailable; tone choices could not be verified.",
-                )
+            language_issues = (
+                "The saved iPod language is unavailable; tone choices could not be verified.",
             )
-        source = session.read_snapshot(path, max_bytes=MAX_ALARM_TONE_BYTES)
-        default_name = saved_alarm_tone_name(source.data, profile)
-        if default_name is None:
-            return CapturedAlarmTones(
-                issues=(
+        else:
+            source = session.read_snapshot(path, max_bytes=MAX_ALARM_TONE_BYTES)
+            default_name = saved_alarm_tone_name(source.data, profile)
+            language_dependencies = (FilePrecondition(path, source.fingerprint),)
+            if default_name is None:
+                language_issues = (
                     "The saved iPod language could not be verified for alarm tones.",
                 )
-            )
-        dependencies = [FilePrecondition(path, source.fingerprint)]
+        dependencies = list(language_dependencies)
         beep = AlarmSound(
             AlarmSound.Kind.BEEP, source_text("Beep"), tone_name=default_name
         )
         names = tone_inventory(session)
-        if len(names) > 19:
-            return CapturedAlarmTones(
-                (beep,),
-                tuple(dependencies),
-                issues=(
-                    "Only Beep is available because the iPod's tone collection exceeds the supported inspection limit.",
-                ),
-            )
         custom: list[AlarmSound] = []
+        items = [AlarmToneItem("builtin:beep", source_text("Beep"), builtin=True)]
+        beep_path = DevicePath("iPod_Control/Tones/Beep.tone")
+        if session.exists(beep_path):
+            captured_beep = session.read_snapshot(
+                beep_path, max_bytes=MAX_ALARM_TONE_BYTES
+            )
+            parsed_beep = parse_alarm_tone(captured_beep.data, profile=profile)
+            if parsed_beep.valid:
+                items[0] = AlarmToneItem(
+                    "builtin:beep", source_text("Beep"), parsed_beep.notes, builtin=True
+                )
+        else:
+            items[0] = AlarmToneItem(
+                "builtin:beep",
+                source_text("Beep"),
+                (AlarmToneNote(540, 200), AlarmToneNote(676, 400)) * 4,
+                builtin=True,
+            )
         seen = {default_name, "Beep"}
         ambiguous = False
-        for name in names:
+        # Show individual damaged/overflow entries without qualifying a writer.
+        # The UI inspection cap bounds hostile collections separately from the
+        # native 19-custom-tone capacity.
+        for name in names[:256]:
             checkpoint()
             captured = session.read_snapshot(
                 DevicePath(name), max_bytes=MAX_ALARM_TONE_BYTES
@@ -107,6 +136,14 @@ def capture_alarm_tones(
                 FilePrecondition(DevicePath(name), captured.fingerprint)
             )
             tone = parse_alarm_tone(captured.data, profile=profile)
+            items.append(
+                AlarmToneItem(
+                    name,
+                    tone.name or DevicePath(name).name,
+                    tone.notes if tone.valid else (),
+                    issue=" ".join(tone.issues),
+                )
+            )
             if not tone.selectable or tone.name is None:
                 ambiguous = True
                 continue
@@ -117,15 +154,29 @@ def capture_alarm_tones(
             custom.append(
                 AlarmSound(AlarmSound.Kind.TONE, tone.name, tone_name=tone.name)
             )
+        if language_issues:
+            return CapturedAlarmTones(issues=language_issues, items=tuple(items))
+        if len(names) > MAX_CUSTOM_ALARM_TONES:
+            return CapturedAlarmTones(
+                (beep,),
+                language_dependencies,
+                issues=(
+                    "Only Beep is available because the iPod's tone collection exceeds the supported inspection limit.",
+                ),
+                items=tuple(items),
+            )
         if ambiguous:
             return CapturedAlarmTones(
                 (beep,),
-                (dependencies[0],),
+                language_dependencies,
                 issues=(
                     "Only Beep is available because some saved tone names are ambiguous or unreadable.",
                 ),
+                items=tuple(items),
             )
-        return CapturedAlarmTones((beep, *custom), tuple(dependencies), names)
+        return CapturedAlarmTones(
+            (beep, *custom), tuple(dependencies), names, items=tuple(items)
+        )
     except (StorageError, ValueError) as error:
         if not session.is_active:
             raise

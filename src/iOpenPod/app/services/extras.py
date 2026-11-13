@@ -26,6 +26,7 @@ from iOpenPod.app.models.extras import (
     CreateAlarm,
     CreateCalendar,
     CreateClockAlarm,
+    CreateTone,
     ExtrasCatalog,
     ExtrasChange,
     ExtrasFile,
@@ -45,6 +46,7 @@ from iPodDB.alarms import (
     add_alarm,
     add_clock_alarm,
     clock_city,
+    create_alarm_tone,
     empty_alarm_document,
     empty_clock_document,
     parse_alarms,
@@ -288,6 +290,8 @@ def read_extras(
         if support.alarm_format is AlarmFormat.CLOCK and support.alarm_write
         else (),
         playlist_dependencies,
+        tones.items if tones else (),
+        tones.can_create if tones else False,
     )
 
 
@@ -678,6 +682,35 @@ def prepare_change(
         raise ValueError("Reload Extras before editing this iPod.")
     checkpoint()
     source: ExtrasFile | None = None
+    if isinstance(change, CreateTone):
+        if (
+            support.alarm_format is not AlarmFormat.CLASSIC
+            or not support.alarm_write
+            or not catalog.can_create_tone
+        ):
+            raise ValueError(
+                "A new tone cannot be added to this iPod. Refresh Tones and check the available space."
+            )
+        if change.name in {
+            "Beep",
+            *(sound.tone_name for sound in catalog.alarm_sounds if sound.tone_name),
+        }:
+            raise ValueError(
+                "A tone with this name already exists. Choose another name."
+            )
+        data = create_alarm_tone(change.name, change.notes)
+        path = DevicePath(f"iPod_Control/Tones/iopenpod-{uuid4().hex}.tone")
+        return StorageTransaction(
+            writes=(
+                TransactionWrite(
+                    path,
+                    data,
+                    FileContent(len(data), hashlib.sha256(data).hexdigest()),
+                    expected=None,
+                ),
+            ),
+            dependencies=(*dependencies, *catalog.tone_dependencies),
+        )
     if isinstance(change, SaveTimerSettings):
         return _prepare_timer_change(catalog, change, dependencies)
     if isinstance(change, CreateClockAlarm) or (
