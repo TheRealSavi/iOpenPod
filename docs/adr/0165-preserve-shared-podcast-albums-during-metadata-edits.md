@@ -1,5 +1,8 @@
 # ADR-0165: Preserve shared Podcast albums during metadata edits
 
+> [ADR-0257](0257-continue-writes-after-browse-id-conflicts.md) defines how
+> to assign Albums when source ownership conflicts.
+
 - Status: Accepted
 - Date: 2026-10-21
 - Amends: ADR-0145, ADR-0152, and ADR-0153

@@ -51,6 +51,8 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
         self,
         source: TrackTableModel,
         parent: QObject | None = None,
+        *,
+        require_collection: bool = False,
     ) -> None:
         super().__init__(parent)
         self._source = source
@@ -59,6 +61,7 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
         self._collection_kind: CollectionKind | None = None
         self._collection_key: str | None = None
         self._media_kinds: frozenset[MediaKind] | None = None
+        self._require_collection = require_collection
         self.setSourceModel(source)
         self.setSortRole(TrackRole.SORT_VALUE)
         self.setDynamicSortFilter(True)
@@ -131,7 +134,13 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
         source_row: int,
         source_parent: QModelIndex | QPersistentModelIndex,
     ) -> bool:
-        index = self._source.index(source_row, 0, source_parent)
+        # A Sync detail table has no Track rows until the user opens a card.
+        if (
+            self._require_collection
+            and self._album_key is None
+            and self._collection_key is None
+        ):
+            return False
         track = self._source.track_at(source_row)
         if track is None:
             return False
@@ -144,11 +153,10 @@ class TrackFilterProxyModel(QSortFilterProxyModel):
             != self._collection_key
         ):
             return False
-        if self._album_key is not None:
-            album_key = self._source.data(index, TrackRole.ALBUM_KEY)
-            if album_key != self._album_key:
-                return False
+        if self._album_key is not None and track.album_key != self._album_key:
+            return False
         if self._query:
+            index = self._source.index(source_row, 0, source_parent)
             search_text = self._source.data(index, TrackRole.SEARCH_TEXT)
             return isinstance(search_text, str) and self._query in search_text
         return True
@@ -169,10 +177,8 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
         self._sort_direction = Qt.SortOrder.AscendingOrder
         self._collection_kind: CollectionKind | None = None
         self._collection_key: str | None = None
-        self._group_by_selection = False
         self.setSourceModel(source)
         self.setDynamicSortFilter(True)
-        source.dataChanged.connect(self._selection_data_changed)
         self.sort(0, self._sort_direction)
 
     def set_query(self, query: str) -> None:
@@ -197,13 +203,6 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
             return
         self._sort_direction = direction
         self.sort(0, direction)
-
-    def set_group_by_selection(self, enabled: bool) -> None:
-        if enabled == self._group_by_selection:
-            return
-        self._group_by_selection = enabled
-        self.invalidate()
-        self.sort(0, self._sort_direction)
 
     def album_key_at(self, index: QModelIndex) -> str | None:
         if not index.isValid():
@@ -238,6 +237,8 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
         source_row: int,
         source_parent: QModelIndex | QPersistentModelIndex,
     ) -> bool:
+        if self._collection_kind is None and not self._query:
+            return True
         index = self._source.index(source_row, 0, source_parent)
         if self._collection_kind is CollectionKind.ARTIST:
             artist_key = self._source.data(index, AlbumRole.ARTIST_KEY)
@@ -260,47 +261,15 @@ class AlbumFilterProxyModel(QSortFilterProxyModel):
         left: QModelIndex | QPersistentModelIndex,
         right: QModelIndex | QPersistentModelIndex,
     ) -> bool:
-        selection_order = self._selection_less_than(left, right)
-        if selection_order is not None:
-            return selection_order
-        role = {
-            AlbumSortMode.TITLE: AlbumRole.TITLE,
-            AlbumSortMode.ARTIST: AlbumRole.ARTIST,
-            AlbumSortMode.YEAR: AlbumRole.YEAR,
-        }[self._sort_mode]
-        left_value = self._source.data(left, role)
-        right_value = self._source.data(right, role)
-        if isinstance(left_value, str) and isinstance(right_value, str):
-            return left_value.casefold() < right_value.casefold()
-        if isinstance(left_value, int) and isinstance(right_value, int):
-            return left_value < right_value
-        return str(left_value) < str(right_value)
-
-    def _selection_less_than(
-        self,
-        left: QModelIndex | QPersistentModelIndex,
-        right: QModelIndex | QPersistentModelIndex,
-    ) -> bool | None:
-        if not self._group_by_selection:
-            return None
-        left_rank = _selection_rank(
-            self._source.data(left, Qt.ItemDataRole.CheckStateRole)
-        )
-        right_rank = _selection_rank(
-            self._source.data(right, Qt.ItemDataRole.CheckStateRole)
-        )
-        if left_rank == right_rank:
-            return None
-        return (
-            left_rank < right_rank
-            if self._sort_direction is Qt.SortOrder.AscendingOrder
-            else left_rank > right_rank
-        )
-
-    def _selection_data_changed(self) -> None:
-        if self._group_by_selection:
-            self.invalidate()
-            self.sort(0, self._sort_direction)
+        left_album = self._source.album_at(left.row())
+        right_album = self._source.album_at(right.row())
+        if left_album is not None and right_album is not None:
+            if self._sort_mode is AlbumSortMode.TITLE:
+                return left_album.title.casefold() < right_album.title.casefold()
+            if self._sort_mode is AlbumSortMode.ARTIST:
+                return left_album.artist.casefold() < right_album.artist.casefold()
+            return left_album.year < right_album.year
+        return str(left_album) < str(right_album)
 
 
 class CollectionFilterProxyModel(QSortFilterProxyModel):
@@ -316,10 +285,8 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
         self._query = ""
         self._sort_mode = CollectionSortMode.TITLE
         self._sort_direction = Qt.SortOrder.AscendingOrder
-        self._group_by_selection = False
         self.setSourceModel(source)
         self.setDynamicSortFilter(True)
-        source.dataChanged.connect(self._selection_data_changed)
         self.sort(0, self._sort_direction)
 
     @property
@@ -349,13 +316,6 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
         self._sort_direction = direction
         self.sort(0, direction)
 
-    def set_group_by_selection(self, enabled: bool) -> None:
-        if enabled == self._group_by_selection:
-            return
-        self._group_by_selection = enabled
-        self.invalidate()
-        self.sort(0, self._sort_direction)
-
     def collection_key_at(self, index: QModelIndex) -> str | None:
         if not index.isValid():
             return None
@@ -378,19 +338,6 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
         left: QModelIndex | QPersistentModelIndex,
         right: QModelIndex | QPersistentModelIndex,
     ) -> bool:
-        if self._group_by_selection:
-            left_rank = _selection_rank(
-                self._source.data(left, Qt.ItemDataRole.CheckStateRole)
-            )
-            right_rank = _selection_rank(
-                self._source.data(right, Qt.ItemDataRole.CheckStateRole)
-            )
-            if left_rank != right_rank:
-                return (
-                    left_rank < right_rank
-                    if self._sort_direction is Qt.SortOrder.AscendingOrder
-                    else left_rank > right_rank
-                )
         role = {
             CollectionSortMode.TITLE: CollectionRole.TITLE,
             CollectionSortMode.ITEM_COUNT: CollectionRole.ITEM_COUNT,
@@ -410,16 +357,3 @@ class CollectionFilterProxyModel(QSortFilterProxyModel):
         left_title = self._source.data(left, CollectionRole.TITLE)
         right_title = self._source.data(right, CollectionRole.TITLE)
         return str(left_title).casefold() < str(right_title).casefold()
-
-    def _selection_data_changed(self) -> None:
-        if self._group_by_selection:
-            self.invalidate()
-            self.sort(0, self._sort_direction)
-
-
-def _selection_rank(value: object) -> int:
-    if value == Qt.CheckState.Checked:
-        return 0
-    if value == Qt.CheckState.PartiallyChecked:
-        return 1
-    return 2

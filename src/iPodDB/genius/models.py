@@ -25,16 +25,22 @@ class OpaqueGeniusPayload:
 class GeniusSimilarities:
     """Ordered candidate Genius IDs with independently retained framing suffixes.
 
-    ``payload_tail`` is inside the declared payload length; ``trailing_data`` is
-    outside it. Neither region is discarded when the candidate list is edited.
-    Repeated IDs and zero are representable: relationship validity belongs to the
-    caller's complete graph, not the binary codec.
+    ``payload_tail`` follows the candidate IDs inside the payload. For compressed
+    rows, ``compression_tail`` follows the zlib stream within the declared extent.
+    ``trailing_data`` follows the declared extent. ``compressed_source`` retains
+    the original stream so unchanged content can be written byte-for-byte.
+    Repeated IDs and zero are representable.
     """
 
     candidates: tuple[int, ...]
     payload_tail: bytes = b""
     trailing_data: bytes = b""
     version: int | None = field(default=2, kw_only=True)
+    compression_flag: int = field(default=0, kw_only=True)
+    compression_tail: bytes = field(default=b"", kw_only=True)
+    compressed_source: bytes = field(
+        default=b"", kw_only=True, compare=False, repr=False
+    )
 
 
 @dataclass(frozen=True, slots=True)

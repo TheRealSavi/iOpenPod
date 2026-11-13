@@ -14,12 +14,17 @@ from typing import TYPE_CHECKING, Protocol
 from urllib.parse import quote
 
 from iOpenPod.app.display_text import source_text
+from iOpenPod.app.host_media_folders import HostMediaType
+from iOpenPod.app.host_media_library import HostMediaFileKind, classify_host_media_file
 from iPodDB.library import PhotoRepresentationKind
-from storage import AtomicHostFile, HostPath
+from storage import AtomicHostFile, HostPath, StorageError
+from storage.host_input import LocalHostFile, resolve_host_selection
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import PurePath
 
+    from iOpenPod.app.host_media_folders import HostMediaFolder
     from iOpenPod.app.models.artwork import ArtworkImage
     from iOpenPod.app.models.photos import PhotoImage
     from iPodDB.library import Photo, Track
@@ -65,10 +70,11 @@ class PlaylistFileType(StrEnum):
 
 
 class PlaylistExportMode(StrEnum):
-    """Whether a Playlist targets the mounted iPod or exported media copies."""
+    """Where the exported Playlist's media files are stored."""
 
     DEVICE_REFERENCES = "device_references"
     COPY_TRACKS = "copy_tracks"
+    HOST_REFERENCES = "host_references"
 
 
 class ExportCancelledError(Exception):
@@ -86,6 +92,7 @@ class ExportProgress:
 class ExportResult:
     playlist_file: HostPath | None
     track_files: tuple[HostPath, ...]
+    skipped_occurrences: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +106,10 @@ class TrackExportSource(Protocol):
     """Narrow device-source contract consumed by the export workflow."""
 
     def reference_for_track(self, track: Track) -> HostPath: ...
+
+    def sync_paths_for_tracks(
+        self, tracks: tuple[Track, ...], *, checkpoint: Callable[[], None]
+    ) -> dict[int, str]: ...
 
     def copy_track_to_host(
         self,
@@ -197,41 +208,44 @@ class LibraryExporter:
         file_type: PlaylistFileType,
         mode: PlaylistExportMode,
         *,
+        host_folders: tuple[HostMediaFolder, ...] = (),
         checkpoint: Callable[[], None] | None = None,
         progress: Callable[[ExportProgress], None] | None = None,
     ) -> ExportResult:
         title = name.strip() or "Playlist"
         unique = _unique_tracks(tracks)
-        references = self._references(unique, checkpoint)
         reserved_names: set[str] = set()
-        media_paths = (
-            _media_destinations(directory, unique, references, reserved_names)
-            if mode is PlaylistExportMode.COPY_TRACKS
-            else ()
-        )
+        media_paths: tuple[HostPath, ...] = ()
+        if mode is PlaylistExportMode.HOST_REFERENCES:
+            by_id = self._host_references(unique, host_folders, checkpoint)
+        else:
+            references = self._references(unique, checkpoint)
+            if mode is PlaylistExportMode.COPY_TRACKS:
+                media_paths = _media_destinations(
+                    directory, unique, references, reserved_names
+                )
+                locations = (path.path.name for path in media_paths)
+            else:
+                locations = (os.fspath(path) for path in references)
+            by_id = {
+                track.track_id: location
+                for track, location in zip(unique, locations, strict=True)
+            }
         playlist_path = _available_child(
             directory,
             _safe_stem(title, "Playlist"),
             file_type.extension,
             reserved_names,
         )
-        self._require_taggable(media_paths)
-
         if mode is PlaylistExportMode.COPY_TRACKS:
-            by_id = {
-                track.track_id: os.fspath(path.path.name)
-                for track, path in zip(unique, media_paths, strict=True)
-            }
+            self._require_taggable(media_paths)
             self._copy_tracks(unique, media_paths, checkpoint, progress)
-        else:
-            by_id = {
-                track.track_id: os.fspath(reference.path)
-                for track, reference in zip(unique, references, strict=True)
-            }
 
         _checkpoint(checkpoint)
         entries = tuple(
-            _PlaylistEntry(track, by_id[track.track_id]) for track in tracks
+            _PlaylistEntry(track, location)
+            for track in tracks
+            if (location := by_id.get(track.track_id)) is not None
         )
         content = serialize_playlist(title, entries, file_type)
         AtomicHostFile(Path(os.fspath(playlist_path))).create_bytes(content)
@@ -243,7 +257,61 @@ class LibraryExporter:
                     source_text("Created {name}", name=str(playlist_path.path.name)),
                 )
             )
-        return ExportResult(playlist_path, tuple(media_paths))
+        return ExportResult(playlist_path, media_paths, len(tracks) - len(entries))
+
+    def _host_references(
+        self,
+        tracks: tuple[Track, ...],
+        folders: tuple[HostMediaFolder, ...],
+        checkpoint: Callable[[], None] | None,
+    ) -> dict[int, str]:
+        if not folders or not tracks:
+            return {}
+        paths = self._source.sync_paths_for_tracks(
+            tracks, checkpoint=partial(_checkpoint, checkpoint)
+        )
+        roots: list[tuple[PurePath, HostMediaFolder]] = []
+        for folder in folders:
+            _checkpoint(checkpoint)
+            try:
+                root = (
+                    resolve_host_selection(folder.path)
+                    if folder.follow_symlinks
+                    else folder.path
+                )
+            except (OSError, StorageError):
+                continue
+            roots.append((root.path, folder))
+
+        references: dict[int, str] = {}
+        for track_id, hint in paths.items():
+            _checkpoint(checkpoint)
+            try:
+                path = HostPath(hint)
+                if ".." in path.path.parts:
+                    continue
+                kind = classify_host_media_file(Path(path))
+                if (
+                    kind is not HostMediaFileKind.AUDIO
+                    and kind is not HostMediaFileKind.VIDEO
+                ):
+                    continue
+                media_type = HostMediaType(kind.value)
+                if not any(
+                    media_type in folder.media_types
+                    and (
+                        path.path.parent.is_relative_to(root)
+                        if folder.recurse
+                        else path.path.parent == root
+                    )
+                    for root, folder in roots
+                ):
+                    continue
+                if LocalHostFile.observe(path).size_bytes > 0:
+                    references[track_id] = os.fspath(path)
+            except (OSError, StorageError):
+                continue
+        return references
 
     def _references(
         self,

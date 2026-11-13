@@ -63,7 +63,7 @@ def selection_grid() -> Iterator[tuple[AlbumGridView, ThemeManager]]:
     )
     try:
         browser.load(library)
-        page = browser.page_widgets[PageId.ALBUMS]
+        page = browser.page(PageId.ALBUMS)
         parent.addWidget(page)
         parent.resize(900, 700)
         parent.show()

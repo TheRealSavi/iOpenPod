@@ -175,7 +175,7 @@ def test_sidebar_only_shows_populated_media_pages(
     stack = workspace.findChild(QStackedWidget, "syncLibraryStack")
     assert browser is not None and stack is not None
     first = PageId.ALBUMS if media_type is MediaType.AUDIO else PageId.TRACKS
-    assert stack.currentWidget() is browser.page_widgets[first]
+    assert stack.currentWidget() is browser.page(first)
 
 
 @pytest.mark.parametrize(
@@ -201,7 +201,7 @@ def test_sidebar_handles_non_track_and_empty_scans(
     assert browser is not None and stack is not None
     assert stack.isHidden() is (not expected)
     if expected:
-        assert stack.currentWidget() is browser.page_widgets[next(iter(expected))]
+        assert stack.currentWidget() is browser.page(next(iter(expected)))
 
 
 def test_sidebar_rechecks_scan_content_and_device_support(
@@ -215,17 +215,17 @@ def test_sidebar_rechecks_scan_content_and_device_support(
     browser = workspace.browser
     stack = workspace.findChild(QStackedWidget, "syncLibraryStack")
     assert browser is not None and stack is not None
-    assert stack.currentWidget() is browser.page_widgets[PageId.PODCASTS]
+    assert stack.currentWidget() is browser.page(PageId.PODCASTS)
 
     workspace.selection.set_all_host_media_checked(True)
     workspace.selection.set_all_host_media_checked(False)
-    toolbar = browser.page_widgets[PageId.PODCASTS].findChild(LibraryToolbar)
+    toolbar = browser.page(PageId.PODCASTS).findChild(LibraryToolbar)
     assert toolbar is not None
     toolbar.queryChanged.emit("no matching podcast")
     workspace.retranslate_ui()
     workspace.set_available_pages(workspace.library_page_ids)
     assert _visible_pages(workspace) == {PageId.TRACKS, PageId.PODCASTS}
-    assert stack.currentWidget() is browser.page_widgets[PageId.PODCASTS]
+    assert stack.currentWidget() is browser.page(PageId.PODCASTS)
 
     workspace.set_available_pages(frozenset({PageId.PHOTOS}))
     assert _visible_pages(workspace) == set()
@@ -234,7 +234,7 @@ def test_sidebar_rechecks_scan_content_and_device_support(
     assert not stack.isHidden()
     _reload_snapshot(workspace, _library().snapshot, device)
     assert PageId.PODCASTS not in _visible_pages(workspace)
-    assert stack.currentWidget() is browser.page_widgets[PageId.ALBUMS]
+    assert stack.currentWidget() is browser.page(PageId.ALBUMS)
 
 
 def _comparison(*, all_matched: bool = False) -> SyncPlan:
@@ -264,7 +264,7 @@ def test_toggle_includes_filtered_tracks_and_other_media_pages(
 ) -> None:
     browser = workspace.browser
     assert browser is not None
-    tracks = browser.page_widgets[PageId.TRACKS]
+    tracks = browser.page(PageId.TRACKS)
     toolbar = tracks.findChild(LibraryToolbar)
     table = tracks.findChild(TrackTable)
     assert toolbar is not None and table is not None

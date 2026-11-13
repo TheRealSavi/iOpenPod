@@ -17,9 +17,11 @@ or persistent IDs alone.
 ## Decision
 
 Keep recommendation policy outside iPodDB. Pure `iPodDB.genius` codecs model bounded
-configuration, metadata keys, and candidate lists. Unsupported versions, compressed
-lists, and unknown instructions remain explicit opaque payloads. Understood edits
-preserve suffixes; malformed known framing fails. Dataset-9 CUID remains opaque.
+configuration, metadata keys, and candidate lists. Unsupported versions and
+unknown instructions remain explicit opaque payloads. Understood edits preserve
+suffixes. Malformed known framing fails. Dataset-9 CUID remains opaque. Subsequent
+[firmware evidence](../research/genius-similarity-firmware-2026-11-11.md) qualified
+the zlib framing of compressed candidate lists for supported row versions.
 
 Typed SQLite Genius documents retain source bytes, schemas, unknown tables and
 columns, with exact unchanged serialization. Explicit updates replace known graph

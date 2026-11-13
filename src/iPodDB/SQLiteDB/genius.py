@@ -310,7 +310,11 @@ def prune_genius_data(data: GeniusData, removed_ids: frozenset[int]) -> GeniusDa
                 "Cannot remove Genius Tracks while opaque similarities remain"
             )
         if isinstance(row.payload, GeniusSimilarities):
-            if row.payload.payload_tail or row.payload.trailing_data:
+            if (
+                row.payload.payload_tail
+                or row.payload.compression_tail
+                or row.payload.trailing_data
+            ):
                 raise ValueError(
                     "Cannot remove Genius Tracks with unknown similarity extensions"
                 )

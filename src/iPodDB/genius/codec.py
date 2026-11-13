@@ -1,14 +1,16 @@
-"""Bounded, lossless Genius version-2 blob codecs without SQL or filesystem I/O.
+"""Bounded, lossless Genius blob codecs without SQL or filesystem I/O.
 
 Format evidence: dotm5/Genius-Mix-Research, docs/FORMAT.md at
 57b7ae865a10177f725c90e946e1199c00411e53, plus the local Classic 6.5G and nano
 7G experiments recorded in docs/research/genius-generation-2026-10-24.md.
-Compressed similarities and unsupported versions remain explicitly opaque.
+The firmware reader trace in docs/research/genius-similarity-firmware-2026-11-11.md
+defines the compressed similarity framing.
 """
 
 from __future__ import annotations
 
 import struct
+import zlib
 from typing import TYPE_CHECKING
 
 from iPodDB.genius.models import (
@@ -40,7 +42,8 @@ if TYPE_CHECKING:
 MAX_GENIUS_PAYLOAD_BYTES = 16 * 1024 * 1024
 _WORD = struct.Struct("<I")
 _KEY = struct.Struct("<Q")
-_SIMILARITIES_HEADER = struct.Struct("<III")
+_SIMILARITIES_HEADER = struct.Struct("<II")
+_GRAPH_ROW_VERSIONS = (1, 2)
 _CLUSTER_HEADER = struct.Struct("<QI")
 _SPACING_PARAMETERS = struct.Struct("<IIII")
 _CLUSTER_PARAMETERS = struct.Struct("<II")
@@ -89,36 +92,63 @@ def _read_keys(data: bytes, offset: int, count: int) -> tuple[int, ...]:
     )
 
 
+def _inflate_similarities(data: bytes) -> tuple[bytes, bytes]:
+    limit = MAX_GENIUS_PAYLOAD_BYTES - _SIMILARITIES_HEADER.size
+    inflater = zlib.decompressobj()
+    try:
+        decoded = inflater.decompress(data, limit + 1)
+    except zlib.error as error:
+        raise GeniusFormatError("Malformed Genius similarities zlib stream.") from error
+    if len(decoded) > limit or inflater.unconsumed_tail:
+        raise GeniusFormatError("Inflated Genius similarities exceed the byte limit.")
+    if not inflater.eof:
+        raise GeniusFormatError("Incomplete Genius similarities zlib stream.")
+    return decoded, inflater.unused_data
+
+
 @log_unknown_data("Genius similarities")
 def parse_genius_similarities(
     data: bytes, *, version: int | None = 2
 ) -> GeniusSimilaritiesPayload:
     source = _capture(data, version)
-    if version != 2:
+    if version not in _GRAPH_ROW_VERSIONS:
         return _opaque(
             source, GeniusPayloadKind.SIMILARITIES, version, "unsupported version"
         )
-    flag = _read_values(source, 0, _WORD)[0]
-    if flag != 0:
-        # The nonzero flag selects another representation. Its undocumented
-        # framing must not be validated as if it were the plaintext structure.
-        return _opaque(
-            source,
-            GeniusPayloadKind.SIMILARITIES,
-            version,
-            "compressed or unsupported similarities",
+    flag, payload_size = _read_values(source, 0, _SIMILARITIES_HEADER)
+    start = _SIMILARITIES_HEADER.size
+    end = start + payload_size
+    _require(source, start, payload_size)
+    body = source[start:end]
+    compressed_source = b""
+    compression_tail = b""
+    if flag:
+        body, tail = _inflate_similarities(body)
+        stream_end = end - len(tail)
+        compressed_source = source[start:stream_end]
+        compression_tail = retain_unknown_bytes(
+            source, stream_end, end, "similarities zlib suffix"
         )
-    _, payload_size, count = _read_values(source, 0, _SIMILARITIES_HEADER)
-    payload_end = 2 * _WORD.size + payload_size
-    ids_end = _SIMILARITIES_HEADER.size + count * _KEY.size
-    if payload_size < _WORD.size or ids_end > payload_end:
+    (count,) = _read_values(body, 0, _WORD)
+    ids_end = _WORD.size + count * _KEY.size
+    if ids_end > len(body):
         raise GeniusFormatError("Genius candidate count exceeds its payload length.")
-    _require(source, 0, payload_end)
+    if flag:
+        payload_tail = retain_unknown_bytes(
+            body, ids_end, len(body), "inflated similarities payload tail"
+        )
+    else:
+        payload_tail = retain_unknown_bytes(
+            source, start + ids_end, end, "similarities payload tail"
+        )
     return GeniusSimilarities(
-        _read_keys(source, _SIMILARITIES_HEADER.size, count),
-        retain_unknown_bytes(source, ids_end, payload_end, "similarities payload tail"),
-        retain_unknown_bytes(source, payload_end, len(source), "similarities suffix"),
+        _read_keys(body, _WORD.size, count),
+        payload_tail,
+        retain_unknown_bytes(source, end, len(source), "similarities suffix"),
         version=version,
+        compression_flag=flag,
+        compression_tail=compression_tail,
+        compressed_source=compressed_source,
     )
 
 
@@ -127,7 +157,7 @@ def parse_genius_metadata(
     data: bytes, *, version: int | None = 2
 ) -> GeniusMetadataPayload:
     source = _capture(data, version)
-    if version != 2:
+    if version not in _GRAPH_ROW_VERSIONS:
         return _opaque(
             source, GeniusPayloadKind.METADATA, version, "unsupported version"
         )
@@ -229,9 +259,9 @@ def _pack(layout: struct.Struct, values: Iterable[int], width: int = 32) -> byte
     return layout.pack(*(_integer(value, width) for value in values))
 
 
-def _known_version(version: int | None) -> None:
-    if type(version) is not int or version != 2:
-        raise iPodDBWriteError("Only Genius payload version 2 can be authored.")
+def _check_graph_row_version(version: int | None) -> None:
+    if type(version) is not int or version not in _GRAPH_ROW_VERSIONS:
+        raise iPodDBWriteError("Genius graph rows require version 1 or 2.")
 
 
 def _write_opaque(payload: OpaqueGeniusPayload, kind: GeniusPayloadKind) -> bytes:
@@ -242,19 +272,51 @@ def _write_opaque(payload: OpaqueGeniusPayload, kind: GeniusPayloadKind) -> byte
     return payload.data
 
 
+def _deflate_similarities(body: bytes, source: bytes) -> bytes:
+    if source:
+        _check_size(len(source))
+        try:
+            original, tail = _inflate_similarities(source)
+        except GeniusFormatError as error:
+            raise iPodDBWriteError(
+                "Invalid retained Genius similarities stream."
+            ) from error
+        if tail:
+            raise iPodDBWriteError("Retained Genius similarities stream has a suffix.")
+        if original == body:
+            return source
+    return zlib.compress(body)
+
+
 def serialize_genius_similarities(payload: GeniusSimilaritiesPayload) -> bytes:
     if isinstance(payload, OpaqueGeniusPayload):
         return _write_opaque(payload, GeniusPayloadKind.SIMILARITIES)
-    _known_version(payload.version)
+    _check_graph_row_version(payload.version)
     _check_bytes(payload.payload_tail)
     _check_bytes(payload.trailing_data)
+    _check_bytes(payload.compression_tail)
+    _check_bytes(payload.compressed_source)
+    flag = _integer(payload.compression_flag, 32)
     count = len(payload.candidates)
     size = _WORD.size + count * _KEY.size + len(payload.payload_tail)
-    _check_size(2 * _WORD.size + size + len(payload.trailing_data))
-    return (
-        _pack(_SIMILARITIES_HEADER, (0, size, count))
+    _check_size(_SIMILARITIES_HEADER.size + size)
+    body = (
+        _pack(_WORD, (count,))
         + b"".join(_pack(_KEY, (key,), 64) for key in payload.candidates)
         + payload.payload_tail
+    )
+    if flag:
+        body = _deflate_similarities(body, payload.compressed_source)
+    elif payload.compression_tail or payload.compressed_source:
+        raise iPodDBWriteError(
+            "Uncompressed Genius similarities have compressed framing."
+        )
+    extent = len(body) + len(payload.compression_tail)
+    _check_size(_SIMILARITIES_HEADER.size + extent + len(payload.trailing_data))
+    return (
+        _pack(_SIMILARITIES_HEADER, (flag, extent))
+        + body
+        + payload.compression_tail
         + payload.trailing_data
     )
 
@@ -262,7 +324,7 @@ def serialize_genius_similarities(payload: GeniusSimilaritiesPayload) -> bytes:
 def serialize_genius_metadata(payload: GeniusMetadataPayload) -> bytes:
     if isinstance(payload, OpaqueGeniusPayload):
         return _write_opaque(payload, GeniusPayloadKind.METADATA)
-    _known_version(payload.version)
+    _check_graph_row_version(payload.version)
     _check_bytes(payload.trailing_data)
     if len(payload.trailing_data) >= _KEY.size:
         raise iPodDBWriteError("Metadata suffix would be interpreted as another key.")
@@ -343,7 +405,8 @@ def _write_entry(entry: GeniusConfigEntry) -> bytes:
 def serialize_genius_config(payload: GeniusConfigPayload) -> bytes:
     if isinstance(payload, OpaqueGeniusPayload):
         return _write_opaque(payload, GeniusPayloadKind.CONFIG)
-    _known_version(payload.version)
+    if type(payload.version) is not int or payload.version != 2:
+        raise iPodDBWriteError("Only Genius configuration version 2 can be written.")
     _check_bytes(payload.control_tail)
     _check_size(
         _WORD.size

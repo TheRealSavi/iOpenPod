@@ -288,6 +288,7 @@ def test_real_drop_scan_reaches_sync_selection_with_only_selected_photo(
     context.ipod_media_controller.finished.emit(
         IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
     )
+    wait_for(lambda: sync.stage is SyncStage.SELECT)
     assert sync.isVisible() and sync.stage is SyncStage.SELECT
 
 
@@ -340,6 +341,7 @@ def test_skipped_link_stays_visible_in_empty_selection_and_review(
     context.ipod_media_controller.finished.emit(
         IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
     )
+    wait_for(lambda: sync.stage is SyncStage.SELECT)
     panel = sync.findChild(HostScanIssues)
     assert panel is not None and panel.has_issues and panel.isVisible()
     assert sync.stage is SyncStage.SELECT

@@ -62,6 +62,8 @@ class SyncPlanPage(QWidget):
         self.setObjectName("syncPlanPage")
         self._plan: SyncPlan | None = None
         self._selection: SyncSelection | None = None
+        self._deferred = False
+        self._review_dirty = False
         self._duplicate_dialog: SyncDuplicatesDialog | None = None
         self._duplicate_comparison: SyncPlan | None = None
         self._model = SyncPlanTableModel(self)
@@ -375,9 +377,22 @@ class SyncPlanPage(QWidget):
         if selection is not None:
             selection.changed.connect(self._refresh_review)
 
+    def set_deferred(self, deferred: bool) -> None:
+        """Defer Review model rebuilds while the Review stage is inactive."""
+        if self._deferred == deferred:
+            return
+        self._deferred = deferred
+        if not deferred and self._review_dirty:
+            self._refresh_review()
+
     def _refresh_review(self) -> None:
         if self._selection is None:
+            self._review_dirty = False
             return
+        if self._deferred:
+            self._review_dirty = True
+            return
+        self._review_dirty = False
         if (
             self._duplicate_dialog is not None
             and self._selection.comparison is not self._duplicate_comparison

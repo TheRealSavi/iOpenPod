@@ -480,7 +480,7 @@ def test_podcast_repairs_preserve_noncanonical_unrelated_music_traversal() -> No
 
 
 @pytest.mark.parametrize("conflict", [False, True])
-def test_duplicate_album_preserves_private_bytes_and_rating_or_blocks(
+def test_duplicate_album_preserves_private_bytes_and_rating_when_selecting_id(
     conflict: bool,
 ) -> None:
     source = observed_source(False)
@@ -504,18 +504,15 @@ def test_duplicate_album_preserves_private_bytes_and_rating_or_blocks(
         source.analyze(source.begin_draft(normalize_podcasts=True)),
         WriteResources(pending_playback_sidecars=False),
     )
+    assert result.prepared is not None, result.issues
+    doc = parse_iTunesDB(result.prepared.itunes)
+    albums = {s.chunk.header.album_id: s.chunk for s in doc.find_chunks(MhiaHeader)}
+    album = albums[10]
     if conflict:
-        assert result.prepared is None
-        assert any(
-            "conflicting private header data" in str(i.message) for i in result.issues
-        )
+        assert album.raw_header[0x30] == 0x6A
+        assert albums[30].raw_header[0x30] == 0x7B
+        assert albums[30].header.album_rating == 80
+        assert any("conflicting private header data" in i.detail for i in result.issues)
     else:
-        assert result.prepared is not None, result.issues
-        doc = parse_iTunesDB(result.prepared.itunes)
-        album = next(
-            s.chunk
-            for s in doc.find_chunks(MhiaHeader)
-            if s.chunk.header.album_id == 10
-        )
         assert album.header.album_rating == 80
         assert album.raw_header[0x30] == 0x7B

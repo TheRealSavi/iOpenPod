@@ -13,7 +13,6 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
     QVariantAnimation,
-    Signal,
 )
 from PySide6.QtGui import (
     QColor,
@@ -273,8 +272,6 @@ class SettingsPreview(QWidget):
 class SettingsTab(QScrollArea):
     """Own column sizing and hover/popup lifetime without changing any preference."""
 
-    columnWidthChanged = Signal(int)
-
     def __init__(
         self,
         name: str,
@@ -369,7 +366,6 @@ class SettingsTab(QScrollArea):
                 )
                 self._highlight = None
             self._schedule_refresh()
-        self.columnWidthChanged.emit(width)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)

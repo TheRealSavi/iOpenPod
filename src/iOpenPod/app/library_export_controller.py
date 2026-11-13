@@ -22,6 +22,7 @@ from iOpenPod.app.library_export import (
 
 if TYPE_CHECKING:
     from iOpenPod.app.device_controller import DeviceController
+    from iOpenPod.app.host_media_folders import HostMediaFolder
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
     from iPodDB.library import Photo, Track
     from storage import HostPath
@@ -46,6 +47,7 @@ class _ExportWork(QRunnable):
         playlist_name: str | None = None,
         file_type: PlaylistFileType = PlaylistFileType.M3U8,
         mode: PlaylistExportMode = PlaylistExportMode.COPY_TRACKS,
+        host_folders: tuple[HostMediaFolder, ...] = (),
         photos: tuple[Photo, ...] = (),
         photo_album_name: str | None = None,
     ) -> None:
@@ -58,6 +60,7 @@ class _ExportWork(QRunnable):
         self.playlist_name = playlist_name
         self.file_type = file_type
         self.mode = mode
+        self.host_folders = host_folders
         self.photos = photos
         self.photo_album_name = photo_album_name
         self.cancel_requested = Event()
@@ -95,6 +98,7 @@ class _ExportWork(QRunnable):
                     self.directory,
                     self.file_type,
                     self.mode,
+                    host_folders=self.host_folders,
                     checkpoint=checkpoint,
                     progress=progress,
                 )
@@ -165,6 +169,8 @@ class LibraryExportController(QObject):
         directory: HostPath,
         file_type: PlaylistFileType,
         mode: PlaylistExportMode,
+        *,
+        host_folders: tuple[HostMediaFolder, ...] = (),
     ) -> bool:
         return self._start(
             _ExportWork(
@@ -176,6 +182,7 @@ class LibraryExportController(QObject):
                 playlist_name=name,
                 file_type=file_type,
                 mode=mode,
+                host_folders=host_folders,
             )
         )
 

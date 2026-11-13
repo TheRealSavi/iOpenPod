@@ -528,6 +528,12 @@ def with_stream_selection(
     }:
         raise ValueError("Stream choices require a safely selected Host Track")
     changed = selection_digest(selection) != item.applied_stream_selection_sha256
+    if (
+        not changed
+        and item.stream_selection == selection
+        and not item.stream_selection_changed
+    ):
+        return item
     replacement = changed and item.action is not SyncPlanAction.ADD
     return replace(
         item,

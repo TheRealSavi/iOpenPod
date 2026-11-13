@@ -76,7 +76,7 @@ def test_selection_grids_default_to_grouping_only_in_sync(selection_mode: bool) 
             PageId.MUSIC_VIDEOS,
             PageId.PHOTOS,
         ):
-            page = browser.page_widgets[page_id]
+            page = browser.page(page_id)
             content = page.findChild(LibraryContent)
             if content is not None:
                 for mode in IPodLibraryViewMode:

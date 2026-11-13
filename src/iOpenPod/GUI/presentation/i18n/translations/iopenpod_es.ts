@@ -4289,6 +4289,13 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
         <source>Export Complete</source>
         <translation>Exportación completada</translation>
     </message>
+    <message numerus="yes">
+        <source>Skipped %n playlist track(s) that could not be found on this host.</source>
+        <translation>
+            <numerusform>Se omitió %n pista de la lista de reproducción porque no se encontró en este equipo.</numerusform>
+            <numerusform>Se omitieron %n pistas de la lista de reproducción porque no se encontraron en este equipo.</numerusform>
+        </translation>
+    </message>
     <message>
         <source>Export Failed</source>
         <translation>No se pudo exportar</translation>
@@ -6920,12 +6927,23 @@ Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y
         <translation>Copiar pistas</translation>
     </message>
     <message>
+        <source>Reference Tracks on this Host</source>
+        <translation>Enlazar a las pistas de este equipo</translation>
+    </message>
+    <message>
         <source>Playlist file type</source>
         <translation>Tipo de archivo de la lista</translation>
     </message>
     <message numerus="yes">
-        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <source>Choose where the exported Playlist should find its %n track occurrence(s).</source>
         <translation>
+            <numerusform>Elige dónde debe buscar la lista de reproducción exportada su %n pista.</numerusform>
+            <numerusform>Elige dónde debe buscar la lista de reproducción exportada sus %n pistas.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <translation type="vanished">
             <numerusform>Elige si la lista debe seguir usando las pistas del iPod conectado o incluir copias exportadas de su %n entrada de pista.</numerusform>
             <numerusform>Elige si la lista debe seguir usando las pistas del iPod conectado o incluir copias exportadas de sus %n entradas de pistas.</numerusform>
         </translation>
@@ -6937,6 +6955,10 @@ Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y
     <message>
         <source>Copy Tracks — export self-contained media files with Library metadata and cover artwork beside the Playlist</source>
         <translation>Copiar pistas — exportar archivos independientes con los metadatos de la biblioteca y las portadas junto a la lista</translation>
+    </message>
+    <message>
+        <source>Reference Tracks on this Host — use files in your Sync folders</source>
+        <translation>Enlazar a las pistas de este equipo · Usa los archivos de tus carpetas de sincronización</translation>
     </message>
     <message>
         <source>Choose Folder…</source>
@@ -8493,7 +8515,7 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Global defaults for your iPods. Individual iPod overrides take priority.</source>
-        <translation>Valores globales para tus iPods. Los valores propios de cada iPod tienen prioridad.</translation>
+        <translation type="vanished">Valores globales para tus iPods. Los valores propios de cada iPod tienen prioridad.</translation>
     </message>
     <message>
         <source>Choose an iPod to customize its settings. Unset settings follow the Host automatically.</source>
@@ -8501,15 +8523,15 @@ Usa Editar para revisar sus reglas.</translation>
     </message>
     <message>
         <source>Active iPod</source>
-        <translation>iPod activo</translation>
+        <translation type="vanished">iPod activo</translation>
     </message>
     <message>
         <source>%1 · Settings used by the iPod&apos;s firmware.</source>
-        <translation>%1 · Ajustes que utiliza el firmware del iPod.</translation>
+        <translation type="vanished">%1 · Ajustes que utiliza el firmware del iPod.</translation>
     </message>
     <message>
         <source>%1 · Settings saved on this iPod. Choose Use Host to follow global defaults.</source>
-        <translation>%1 · Configuración guardada en este iPod. Elige Usar Host para seguir los valores globales.</translation>
+        <translation type="vanished">%1 · Configuración guardada en este iPod. Elige Usar Host para seguir los valores globales.</translation>
     </message>
     <message>
         <source>Choose an iPod to view its settings.</source>
@@ -11557,7 +11579,7 @@ Playlists: %3</translation>
     <name>Workflow</name>
     <message>
         <source>A changed native browse record is shared by incompatible groups.</source>
-        <translation>Un registro nativo de navegación modificado está compartido por grupos incompatibles.</translation>
+        <translation type="vanished">Un registro nativo de navegación modificado está compartido por grupos incompatibles.</translation>
     </message>
     <message>
         <source>{title}</source>
@@ -11623,11 +11645,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A changed browse group has repeated native records.</source>
-        <translation>Un grupo de navegación modificado tiene registros nativos repetidos.</translation>
+        <translation type="vanished">Un grupo de navegación modificado tiene registros nativos repetidos.</translation>
     </message>
     <message>
         <source>A changed group references a missing source record.</source>
-        <translation>Un grupo modificado hace referencia a un registro de origen que falta.</translation>
+        <translation type="vanished">Un grupo modificado hace referencia a un registro de origen que falta.</translation>
     </message>
     <message>
         <source>A database field or structure cannot be encoded without data loss.</source>
@@ -12136,6 +12158,10 @@ Playlists: %3</translation>
     <message>
         <source>Committed Library files: {completed} of {total}</source>
         <translation>Archivos de biblioteca guardados: {completed} de {total}</translation>
+    </message>
+    <message>
+        <source>Comparing Host and iPod media…</source>
+        <translation>Comparando los medios del equipo y del iPod…</translation>
     </message>
     <message>
         <source>Comparing the iPod media with its Sync helper…</source>
@@ -13642,6 +13668,10 @@ Playlists: %3</translation>
         <translation>No se pudo completar la instalación. El análisis acústico sigue disponible.</translation>
     </message>
     <message>
+        <source>Several compatible browse records exist. An existing record was selected for the Track.</source>
+        <translation>Hay varios registros de navegación compatibles. Se ha seleccionado un registro existente para la pista.</translation>
+    </message>
+    <message>
         <source>Shared Photo files have conflicting captured content.</source>
         <translation>Los archivos de fotos compartidos tienen contenido capturado incompatible.</translation>
     </message>
@@ -13880,6 +13910,10 @@ Playlists: %3</translation>
     <message>
         <source>Text contains an invalid Unicode character.</source>
         <translation>El texto contiene un carácter Unicode no válido.</translation>
+    </message>
+    <message>
+        <source>The Active iPod changed during Playlist export.</source>
+        <translation>El iPod activo cambió durante la exportación de la lista de reproducción.</translation>
     </message>
     <message>
         <source>The Active iPod changed while the Photo was exported.</source>
@@ -14782,6 +14816,10 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>The iPod timezone is unknown. Dates are interpreted as UTC; unchanged native date bytes are retained.</source>
         <translation>Se desconoce la zona horaria del iPod. Las fechas se interpretan como UTC; las fechas sin modificar conservan sus bytes originales.</translation>
+    </message>
+    <message>
+        <source>The incoming Track has no unambiguous compatible browse record.</source>
+        <translation type="vanished">No se ha podido identificar de forma inequívoca un registro de navegación compatible para la pista que se va a añadir.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>

@@ -649,7 +649,7 @@ def reconcile(
             structural_tracks=structural_tracks,
         )
     if resolved.plan.draft.normalize_podcasts:
-        document = normalize_albums(document)
+        document = normalize_albums(document, issues)
         document = remove_empty_artists(document)
     document = reconcile_album_indexes(
         source_document,

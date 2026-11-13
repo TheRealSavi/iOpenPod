@@ -4289,6 +4289,13 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <source>Export Complete</source>
         <translation>Export abgeschlossen</translation>
     </message>
+    <message numerus="yes">
+        <source>Skipped %n playlist track(s) that could not be found on this host.</source>
+        <translation>
+            <numerusform>%n Titel der Wiedergabeliste wurde übersprungen, weil er auf diesem Computer nicht gefunden wurde.</numerusform>
+            <numerusform>%n Titel der Wiedergabeliste wurden übersprungen, weil sie auf diesem Computer nicht gefunden wurden.</numerusform>
+        </translation>
+    </message>
     <message>
         <source>Export Failed</source>
         <translation>Export fehlgeschlagen</translation>
@@ -6920,12 +6927,23 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
         <translation>Titel kopieren</translation>
     </message>
     <message>
+        <source>Reference Tracks on this Host</source>
+        <translation>Auf Titel auf diesem Computer verweisen</translation>
+    </message>
+    <message>
         <source>Playlist file type</source>
         <translation>Dateityp der Wiedergabeliste</translation>
     </message>
     <message numerus="yes">
-        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <source>Choose where the exported Playlist should find its %n track occurrence(s).</source>
         <translation>
+            <numerusform>Wählen Sie, wo die exportierte Wiedergabeliste ihren %n Titeleintrag finden soll.</numerusform>
+            <numerusform>Wählen Sie, wo die exportierte Wiedergabeliste ihre %n Titeleinträge finden soll.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>Choose whether the Playlist should keep pointing to the mounted iPod or travel with exported copies of its %n track occurrence(s).</source>
+        <translation type="vanished">
             <numerusform>Wählen Sie, ob die Wiedergabeliste weiterhin auf den eingebundenen iPod verweisen oder mit exportierten Kopien ihres %n Titeleintrags verwendet werden soll.</numerusform>
             <numerusform>Wählen Sie, ob die Wiedergabeliste weiterhin auf den eingebundenen iPod verweisen oder mit exportierten Kopien ihrer %n Titeleinträge verwendet werden soll.</numerusform>
         </translation>
@@ -6937,6 +6955,10 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
     <message>
         <source>Copy Tracks — export self-contained media files with Library metadata and cover artwork beside the Playlist</source>
         <translation>Titel kopieren · Mediendateien mit Metadaten der Mediathek und Cover neben der Wiedergabeliste exportieren, um sie unabhängig vom iPod zu verwenden</translation>
+    </message>
+    <message>
+        <source>Reference Tracks on this Host — use files in your Sync folders</source>
+        <translation>Auf Titel auf diesem Computer verweisen · Dateien aus Ihren Synchronisierungsordnern verwenden</translation>
     </message>
     <message>
         <source>Choose Folder…</source>
@@ -8493,7 +8515,7 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Global defaults for your iPods. Individual iPod overrides take priority.</source>
-        <translation>Globale Standardwerte für deine iPods. Eigene Werte einzelner iPods haben Vorrang.</translation>
+        <translation type="vanished">Globale Standardwerte für deine iPods. Eigene Werte einzelner iPods haben Vorrang.</translation>
     </message>
     <message>
         <source>Choose an iPod to customize its settings. Unset settings follow the Host automatically.</source>
@@ -8501,15 +8523,15 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Active iPod</source>
-        <translation>Aktiver iPod</translation>
+        <translation type="vanished">Aktiver iPod</translation>
     </message>
     <message>
         <source>%1 · Settings used by the iPod&apos;s firmware.</source>
-        <translation>%1 · Von der Firmware des iPod verwendete Einstellungen.</translation>
+        <translation type="vanished">%1 · Von der Firmware des iPod verwendete Einstellungen.</translation>
     </message>
     <message>
         <source>%1 · Settings saved on this iPod. Choose Use Host to follow global defaults.</source>
-        <translation>%1 · Einstellungen auf diesem iPod gespeichert. Wähle Host verwenden, um den globalen Standardwerten zu folgen.</translation>
+        <translation type="vanished">%1 · Einstellungen auf diesem iPod gespeichert. Wähle Host verwenden, um den globalen Standardwerten zu folgen.</translation>
     </message>
     <message>
         <source>Choose an iPod to view its settings.</source>
@@ -11557,7 +11579,7 @@ Playlists: %3</translation>
     <name>Workflow</name>
     <message>
         <source>A changed native browse record is shared by incompatible groups.</source>
-        <translation>Ein geänderter nativer Browsing-Datensatz wird von inkompatiblen Gruppen gemeinsam verwendet.</translation>
+        <translation type="vanished">Ein geänderter nativer Browsing-Datensatz wird von inkompatiblen Gruppen gemeinsam verwendet.</translation>
     </message>
     <message>
         <source>{title}</source>
@@ -11623,11 +11645,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A changed browse group has repeated native records.</source>
-        <translation>Eine geänderte Ansichtsgruppe enthält doppelte Originaldatensätze.</translation>
+        <translation type="vanished">Eine geänderte Ansichtsgruppe enthält doppelte Originaldatensätze.</translation>
     </message>
     <message>
         <source>A changed group references a missing source record.</source>
-        <translation>Eine geänderte Gruppe verweist auf einen fehlenden Quelldatensatz.</translation>
+        <translation type="vanished">Eine geänderte Gruppe verweist auf einen fehlenden Quelldatensatz.</translation>
     </message>
     <message>
         <source>A database field or structure cannot be encoded without data loss.</source>
@@ -12136,6 +12158,10 @@ Playlists: %3</translation>
     <message>
         <source>Committed Library files: {completed} of {total}</source>
         <translation>Gespeicherte Mediathek-Dateien: {completed} von {total}</translation>
+    </message>
+    <message>
+        <source>Comparing Host and iPod media…</source>
+        <translation>Medien des Computers und des iPods werden verglichen…</translation>
     </message>
     <message>
         <source>Comparing the iPod media with its Sync helper…</source>
@@ -13642,6 +13668,10 @@ Playlists: %3</translation>
         <translation>Die Einrichtung konnte nicht abgeschlossen werden. Die akustische Analyse bleibt verfügbar.</translation>
     </message>
     <message>
+        <source>Several compatible browse records exist. An existing record was selected for the Track.</source>
+        <translation>Es gibt mehrere kompatible Einträge für die Mediatheksnavigation. Für den Titel wurde ein vorhandener Eintrag ausgewählt.</translation>
+    </message>
+    <message>
         <source>Shared Photo files have conflicting captured content.</source>
         <translation>Gemeinsam genutzte Fotodateien haben widersprüchliche erfasste Inhalte.</translation>
     </message>
@@ -13880,6 +13910,10 @@ Playlists: %3</translation>
     <message>
         <source>Text contains an invalid Unicode character.</source>
         <translation>Der Text enthält ein ungültiges Unicode-Zeichen.</translation>
+    </message>
+    <message>
+        <source>The Active iPod changed during Playlist export.</source>
+        <translation>Der aktive iPod hat sich während des Exports der Wiedergabeliste geändert.</translation>
     </message>
     <message>
         <source>The Active iPod changed while the Photo was exported.</source>
@@ -14782,6 +14816,10 @@ Die akustische Analyse bleibt verfügbar.</translation>
     <message>
         <source>The iPod timezone is unknown. Dates are interpreted as UTC; unchanged native date bytes are retained.</source>
         <translation>Die Zeitzone des iPod ist unbekannt. Datumsangaben werden als UTC interpretiert; unveränderte Datumsangaben behalten ihre ursprünglichen Bytes.</translation>
+    </message>
+    <message>
+        <source>The incoming Track has no unambiguous compatible browse record.</source>
+        <translation type="vanished">Für den hinzuzufügenden Titel lässt sich kein kompatibler Navigationseintrag eindeutig bestimmen.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>

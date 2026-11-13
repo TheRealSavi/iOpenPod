@@ -1,6 +1,8 @@
 """Native Genius tables and cross-companion relationships survive regeneration."""
 
 import sqlite3
+import struct
+import zlib
 from dataclasses import replace
 
 import pytest
@@ -606,11 +608,30 @@ def test_unsigned_genius_identity_keeps_signed_sqlite_storage_and_unsigned_edges
 
 
 @pytest.mark.parametrize("replacement", [False, True])
+@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize("compressed", [False, True])
 def test_removed_or_replaced_tracks_leave_no_genius_edges_or_mix_seeds(
-    replacement: bool,
+    replacement: bool, version: int, compressed: bool
 ) -> None:
     snapshot = _snapshot()
     baseline = _build(snapshot)
+    if version == 1:
+        baseline = replace(
+            baseline,
+            genius=_changed(
+                baseline.genius, "UPDATE genius_similarities SET version=1"
+            ),
+        )
+    if compressed:
+        stream = zlib.compress(struct.pack("<IQ", 1, 1002))
+        encoded = struct.pack("<II", 1, len(stream)) + stream
+        baseline = replace(
+            baseline,
+            genius=_changed(
+                baseline.genius,
+                f"UPDATE genius_similarities SET data=X'{encoded.hex()}' WHERE genius_id=1001",
+            ),
+        )
     desired = (
         snapshot if replacement else replace(snapshot, tracks=(snapshot.tracks[0],))
     )
@@ -624,7 +645,11 @@ def test_removed_or_replaced_tracks_leave_no_genius_edges_or_mix_seeds(
     data = parse_genius_database(result.genius).data
     assert tuple(row.genius_id for row in data.metadata) == (1001,)
     assert data.similarities == (
-        GeniusSimilaritiesRow(1001, 2, GeniusSimilarities(())),
+        GeniusSimilaritiesRow(
+            1001,
+            version,
+            GeniusSimilarities((), version=version, compression_flag=int(compressed)),
+        ),
     )
     assert sqlite_rows(
         result.library,
@@ -683,24 +708,47 @@ def test_unrelated_track_deletion_retains_preexisting_dangling_mix() -> None:
     ) == ((999, "Test Mix"),)
 
 
-def test_track_removal_rejects_opaque_retained_edges() -> None:
+@pytest.mark.parametrize(
+    ("row", "error"),
+    [
+        pytest.param(
+            GeniusSimilaritiesRow(
+                1001,
+                99,
+                OpaqueGeniusPayload(
+                    GeniusPayloadKind.SIMILARITIES, 99, b"opaque", "future"
+                ),
+            ),
+            "opaque similarities",
+            id="unsupported-version",
+        ),
+        pytest.param(
+            GeniusSimilaritiesRow(
+                1001,
+                2,
+                GeniusSimilarities(
+                    (1002,), compression_flag=1, compression_tail=b"extension"
+                ),
+            ),
+            "unknown similarity extensions",
+            id="unknown-zlib-suffix",
+        ),
+    ],
+)
+def test_track_removal_rejects_unknown_data_in_retained_edges(
+    row: GeniusSimilaritiesRow, error: str
+) -> None:
     snapshot = _snapshot()
     baseline = _build(snapshot)
-    opaque = OpaqueGeniusPayload(
-        GeniusPayloadKind.SIMILARITIES, 99, b"opaque", "future"
-    )
     document = parse_genius_database(baseline.genius)
     genius = serialize_genius_database(
         document,
         replace(
             document.data,
-            similarities=(
-                GeniusSimilaritiesRow(1001, 99, opaque),
-                document.data.similarities[1],
-            ),
+            similarities=(row, document.data.similarities[1]),
         ),
     )
-    with pytest.raises(ValueError, match="opaque similarities"):
+    with pytest.raises(ValueError, match=error):
         build_sqlite_databases(
             replace(snapshot, tracks=(snapshot.tracks[0],)),
             database_id=42,

@@ -43,9 +43,15 @@ class PlaylistExportDialog(QDialog):
         self.copy_tracks.setObjectName("copyTrackExport")
         self.copy_tracks.setProperty("exportMode", PlaylistExportMode.COPY_TRACKS.value)
         self.copy_tracks.setChecked(True)
+        self.host_references = QRadioButton(self)
+        self.host_references.setObjectName("hostReferenceExport")
+        self.host_references.setProperty(
+            "exportMode", PlaylistExportMode.HOST_REFERENCES.value
+        )
         modes = QButtonGroup(self)
         modes.addButton(self.device_references)
         modes.addButton(self.copy_tracks)
+        modes.addButton(self.host_references)
 
         self.file_type = AppComboBox(self)
         self.file_type.setObjectName("playlistFileType")
@@ -81,12 +87,15 @@ class PlaylistExportDialog(QDialog):
         layout.addWidget(self._description)
         layout.addWidget(self.device_references)
         layout.addWidget(self.copy_tracks)
+        layout.addWidget(self.host_references)
         layout.addLayout(form)
         layout.addLayout(actions)
         self.retranslate_ui()
 
     @property
     def mode(self) -> PlaylistExportMode:
+        if self.host_references.isChecked():
+            return PlaylistExportMode.HOST_REFERENCES
         return (
             PlaylistExportMode.COPY_TRACKS
             if self.copy_tracks.isChecked()
@@ -102,6 +111,7 @@ class PlaylistExportDialog(QDialog):
         self._title.setText(self.tr("Export Playlist"))
         self.device_references.setAccessibleName(self.tr("Reference Tracks on iPod"))
         self.copy_tracks.setAccessibleName(self.tr("Copy Tracks"))
+        self.host_references.setAccessibleName(self.tr("Reference Tracks on this Host"))
         self.file_type.setAccessibleName(self.tr("Playlist file type"))
         self._file_type_label.setText(self.tr("Playlist file type"))
         for index in range(self.file_type.count()):
@@ -109,8 +119,7 @@ class PlaylistExportDialog(QDialog):
             self.file_type.setItemText(index, self._file_type_text(value))
         self._description.setText(
             self.tr(
-                "Choose whether the Playlist should keep pointing to the mounted "
-                "iPod or travel with exported copies of its %n track occurrence(s).",
+                "Choose where the exported Playlist should find its %n track occurrence(s).",
                 None,
                 self._track_count,
             )
@@ -126,6 +135,9 @@ class PlaylistExportDialog(QDialog):
                 "Copy Tracks — export self-contained media files with Library "
                 "metadata and cover artwork beside the Playlist"
             )
+        )
+        self.host_references.setText(
+            self.tr("Reference Tracks on this Host — use files in your Sync folders")
         )
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._continue.setText(self.tr("Choose Folder…"))

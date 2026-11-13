@@ -10,6 +10,7 @@ import pytest
 
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhip import MhipHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
@@ -274,9 +275,24 @@ def test_album_sort_edit_moves_the_whole_native_album() -> None:
     )
 
 
-def test_track_removal_filters_the_captured_order() -> None:
+@pytest.mark.parametrize("repeated_album_id", [False, True])
+def test_track_removal_filters_the_captured_order(repeated_album_id: bool) -> None:
     source = captured_source()
     removed = 40  # A nonrepresentative Track from the fourth anonymized album.
+    if repeated_album_id:
+        document = parse_iTunesDB(source.serialize().itunes)
+        album_dataset = next(
+            row
+            for row in document.find_chunks(MhsdHeader)
+            if row.chunk.header.dataset_type == 4
+        )
+        container = album_dataset.chunk.children[0]
+        first = document.find_chunks(MhiaHeader)[0].chunk
+        document = document.replace_chunk(
+            album_dataset,
+            replace(album_dataset.chunk, children=(container.append_child(first),)),
+        )
+        source = IPodLibrary(write_iTunesDB(document))
     original = source.serialize().itunes
     desired = replace(
         source.snapshot,

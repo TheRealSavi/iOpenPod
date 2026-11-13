@@ -47,7 +47,7 @@ from iOpenPod.app.device_controller import (
     DeviceOperationFailure,
 )
 from iOpenPod.app.display_text import source_text
-from iOpenPod.app.host_media_folders import HostMediaFolder
+from iOpenPod.app.host_media_folders import HostMediaFolder, load_host_media_folders
 from iOpenPod.app.host_media_library import (
     HostMediaLibrary,
     HostMediaScanProgress,
@@ -57,6 +57,7 @@ from iOpenPod.app.library_export import (
     ExportProgress,
     ExportResult,
     PhotoExportResult,
+    PlaylistExportMode,
 )
 from iOpenPod.app.library_export_controller import LibraryExportController
 from iOpenPod.app.library_sync_helper import (
@@ -76,6 +77,10 @@ from iOpenPod.app.scrobbling.controller import create_scrobbling
 from iOpenPod.app.scrobbling.models import ScrobbleResult
 from iOpenPod.app.scrobbling.settings import configured_accounts
 from iOpenPod.app.services.media_tools import MediaToolSetup
+from iOpenPod.app.sync_comparison_controller import (
+    SyncComparison,
+    SyncComparisonController,
+)
 from iOpenPod.app.sync_controller import SyncController
 from iOpenPod.app.sync_execution import (
     SyncExecutionResult,
@@ -83,7 +88,6 @@ from iOpenPod.app.sync_execution import (
     SyncExecutor,
     review_playlist_sync,
 )
-from iOpenPod.app.sync_plan import prepare_sync_plan
 from iOpenPod.app.synesthesia import AnalysisProgress, TrackAnalysis
 from iOpenPod.app.tag_normalization_controller import TagNormalizationController
 from iOpenPod.app.tag_normalizer import tag_profile
@@ -226,8 +230,12 @@ class MainWindow(QMainWindow):
         self._export_controller.failed.connect(self._export_failed)
         self._export_controller.cancelled.connect(self._export_cancelled)
         self._pending_host_media_library: HostMediaLibrary | None = None
-        self._pending_ipod_media_library: IPodMediaLibrary | None = None
+        self._pending_track_refresh: tuple[ActiveIPod, IPodMediaLibrary] | None = None
+        self._sync_comparison = SyncComparisonController(self)
+        self._sync_comparison.finished.connect(self._sync_comparison_finished)
+        self._sync_comparison.failed.connect(self._media_scan_failed)
         self._review_host: HostMediaLibrary | None = None
+        self._playlist_preview_dirty = False
         self._review_ipod: IPodMediaLibrary | None = None
         self._review_active: ActiveIPod | None = None
         scrobbler, self._scrobbling = create_scrobbling(
@@ -699,6 +707,7 @@ class MainWindow(QMainWindow):
         self._sync_workspace.selection.changed.connect(self._refresh_playlist_preview)
         self._sync_workspace.selection.changed.connect(self._refresh_default_status)
         self._sync_workspace.stageChanged.connect(self._refresh_default_status)
+        self._sync_workspace.stageChanged.connect(self._sync_stage_changed)
         self._sync_workspace.playlistReconciliationChanged.connect(
             self._refresh_playlist_preview
         )
@@ -1309,6 +1318,7 @@ class MainWindow(QMainWindow):
             or context.backup_controller.busy
             or context.host_media_controller.busy
             or context.ipod_media_controller.busy
+            or self._sync_comparison.busy
             or context.podcast_controller.busy
             or context.library_write_controller.state
             in (PreparationState.PREPARING, PreparationState.SAVING)
@@ -1398,6 +1408,7 @@ class MainWindow(QMainWindow):
         self._scrobbling.shutdown()
         self._exit_synesthesia_fullscreen()
         self._sync_controller.shutdown()
+        self._sync_comparison.shutdown()
         self._normalization.shutdown()
         self._export_controller.shutdown()
         self._chaptered_controller.shutdown()
@@ -1413,6 +1424,7 @@ class MainWindow(QMainWindow):
         tracks = _tracks_from_signal(value)
         if tracks is None:
             return
+        active = self._context.device_controller.active_ipod
         if not self._export_controller.can_start:
             self._show_export_unavailable()
             return
@@ -1425,12 +1437,21 @@ class MainWindow(QMainWindow):
             )
             if directory is None:
                 return
+            if self._context.device_controller.active_ipod is not active:
+                self._show_export_unavailable()
+                return
+            mode = dialog.mode
             if self._export_controller.start_playlist(
                 name,
                 tracks,
                 directory,
                 dialog.selected_file_type,
-                dialog.mode,
+                mode,
+                host_folders=(
+                    load_host_media_folders(self._context.settings)
+                    if mode is PlaylistExportMode.HOST_REFERENCES
+                    else ()
+                ),
             ):
                 self._show_export_progress(self.tr("Preparing Playlist export…"))
         finally:
@@ -1607,6 +1628,20 @@ class MainWindow(QMainWindow):
                 )
         elif isinstance(value, ExportResult) and value.playlist_file is not None:
             detail = self.tr("Created %1").replace("%1", value.playlist_file.path.name)
+            if count := value.skipped_occurrences:
+                warning = english_count_fallback(
+                    "Skipped %n playlist track(s) that could not be found on this host.",
+                    self.tr(
+                        "Skipped %n playlist track(s) that could not be found on this host.",
+                        None,
+                        count,
+                    ),
+                    count,
+                )
+                QMessageBox.warning(
+                    self, self.tr("Export Complete"), detail + "\n\n" + warning
+                )
+                return
             if value.track_files:
                 detail += "\n" + english_count_fallback(
                     "Exported %n Track file(s) beside it.",
@@ -1912,6 +1947,7 @@ class MainWindow(QMainWindow):
             and not self._context.library_workspace.locked
             and not self._context.host_media_controller.busy
             and not self._context.ipod_media_controller.busy
+            and not self._sync_comparison.busy
             and not self._sync_controller.busy
             and not self._sync_controller.needs_recovery
             and not self._sync_controller.needs_cleanup
@@ -1950,6 +1986,8 @@ class MainWindow(QMainWindow):
     def _start_host_sync(
         self, folders: tuple[HostMediaFolder, ...], *, files: tuple[HostPath, ...] = ()
     ) -> None:
+        if self._sync_comparison.busy:
+            return
         controller = self._context.host_media_controller
         started = (
             controller.start(folders, files=files)
@@ -1980,7 +2018,7 @@ class MainWindow(QMainWindow):
         cancel_scans = self._sync_workspace.stage is SyncStage.SCANNING
         self._sync_workspace.stop_scan()
         self._pending_host_media_library = None
-        self._pending_ipod_media_library = None
+        self._pending_track_refresh = None
         self._review_host = None
         self._review_ipod = None
         self._review_active = None
@@ -2046,7 +2084,12 @@ class MainWindow(QMainWindow):
                 )
                 return
             self._pending_host_media_library = None
-        self._finish_media_scan(value, None)
+        self._exit_sync_workspace()
+        QMessageBox.information(
+            self,
+            self.tr("Sync Comparison Unavailable"),
+            self.tr("Select an Active iPod before building a Sync selection."),
+        )
 
     def _ipod_media_scan_finished(self, value: object) -> None:
         host, self._pending_host_media_library = (
@@ -2057,86 +2100,77 @@ class MainWindow(QMainWindow):
             return
         active_ipod = self._context.device_controller.active_ipod
         if active_ipod is not None:
-            comparison = prepare_sync_plan(
-                host,
-                value,
-                active_ipod.library,
-                rating_conflict_policy=self._context.settings.get(
-                    RATING_CONFLICT_POLICY
-                )
-                if self._context.settings.get(BACK_SYNC_RATINGS)
-                else None,
-                file_tag_policy=rockbox_tag_policy(active_ipod.profile)
-                if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
-                else None,
+            self._start_sync_comparison(
+                host, value, active_ipod, check_host_details=True
             )
-            paths = frozenset(
-                HostPath(Path(item.host_path))
-                for item in comparison.items
-                if item.metadata_changed
-                and not item.host_size_changed
-                and not item.host_modified_changed
-                and item.host_path is not None
-            )
-            if paths:
-                self._pending_ipod_media_library = value
-                if self._context.host_media_controller.refresh_tracks(host, paths):
-                    self._show_media_scan_progress(
-                        source_text("Checking Host Track details."), host_scan=False
-                    )
-                    return
-                self._pending_ipod_media_library = None
-                self._media_scan_failed("The Host Track details could not be checked.")
-                return
-        self._finish_media_scan(host, value)
 
     def _host_track_refresh_finished(self, value: object) -> None:
-        ipod, self._pending_ipod_media_library = (
-            self._pending_ipod_media_library,
+        pending, self._pending_track_refresh = (
+            self._pending_track_refresh,
             None,
         )
-        if isinstance(value, HostMediaLibrary) and ipod is not None:
-            self._finish_media_scan(value, ipod)
+        if not isinstance(value, HostMediaLibrary) or pending is None:
+            return
+        active, ipod = pending
+        if self._context.device_controller.active_ipod is active:
+            self._start_sync_comparison(value, ipod, active, check_host_details=False)
 
-    def _finish_media_scan(
+    def _start_sync_comparison(
         self,
-        value: HostMediaLibrary,
-        ipod: IPodMediaLibrary | None,
+        host: HostMediaLibrary,
+        ipod: IPodMediaLibrary,
+        active: ActiveIPod,
+        *,
+        check_host_details: bool,
     ) -> None:
-        if ipod is not None:
-            active_ipod = self._context.device_controller.active_ipod
-            if active_ipod is not None:
-                plan = prepare_sync_plan(
-                    value,
-                    ipod,
-                    active_ipod.library,
-                    rating_conflict_policy=self._context.settings.get(
-                        RATING_CONFLICT_POLICY
-                    )
-                    if self._context.settings.get(BACK_SYNC_RATINGS)
-                    else None,
-                    file_tag_policy=rockbox_tag_policy(active_ipod.profile)
-                    if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
-                    else None,
-                )
-                self._sync_workspace.load_comparison(value, plan, active_ipod, ipod)
-                self._review_host = value
-                self._review_ipod = ipod
-                self._review_active = active_ipod
-                self._refresh_playlist_preview()
-                self._refresh_sync_availability()
-                self.retranslate_ui()
-                return
-        self._exit_sync_workspace()
-        QMessageBox.information(
-            self,
-            self.tr("Sync Comparison Unavailable"),
-            self.tr("Select an Active iPod before building a Sync selection."),
+        self._sync_workspace.update_scan(
+            source_text("Comparing Host and iPod media…"), phase="comparison"
         )
+        self._sync_comparison.start(
+            host,
+            ipod,
+            active,
+            rating_conflict_policy=self._context.settings.get(RATING_CONFLICT_POLICY)
+            if self._context.settings.get(BACK_SYNC_RATINGS)
+            else None,
+            file_tag_policy=rockbox_tag_policy(active.profile)
+            if self._context.settings.get(ROCKBOX_METADATA_SUPPORT)
+            else None,
+            check_host_details=check_host_details,
+        )
+
+    def _sync_comparison_finished(self, value: object) -> None:
+        if (
+            not isinstance(value, SyncComparison)
+            or self._workspaces.currentWidget() is not self._sync_workspace
+            or self._sync_workspace.stage is not SyncStage.SCANNING
+            or self._context.device_controller.active_ipod is not value.active
+        ):
+            return
+        if value.refresh_paths:
+            self._pending_track_refresh = (value.active, value.ipod)
+            if self._context.host_media_controller.refresh_tracks(
+                value.host, value.refresh_paths
+            ):
+                self._sync_workspace.update_scan(
+                    source_text("Checking Host Track details."), phase="host-refresh"
+                )
+                return
+            self._media_scan_failed("The Host Track details could not be checked.")
+            return
+        self._sync_workspace.load_comparison(
+            value.host, value.plan, value.active, value.ipod
+        )
+        self._review_host = value.host
+        self._review_ipod = value.ipod
+        self._review_active = value.active
+        self._refresh_playlist_preview()
+        self._refresh_sync_availability()
+        self.retranslate_ui()
 
     def _ipod_media_scan_failed(self, detail: str) -> None:
         self._pending_host_media_library = None
-        self._pending_ipod_media_library = None
+        self._pending_track_refresh = None
         self._exit_sync_workspace()
         QMessageBox.warning(
             self,
@@ -2146,7 +2180,7 @@ class MainWindow(QMainWindow):
 
     def _media_scan_failed(self, detail: str) -> None:
         self._pending_host_media_library = None
-        self._pending_ipod_media_library = None
+        self._pending_track_refresh = None
         self._exit_sync_workspace()
         QMessageBox.warning(
             self,
@@ -2156,15 +2190,33 @@ class MainWindow(QMainWindow):
 
     def _media_scan_cancelled(self) -> None:
         self._pending_host_media_library = None
-        self._pending_ipod_media_library = None
+        self._pending_track_refresh = None
         self._exit_sync_workspace()
 
     def _cancel_media_scans(self) -> None:
+        if self._sync_comparison.cancel():
+            self._media_scan_cancelled()
         self._context.host_media_controller.cancel()
         self._context.ipod_media_controller.cancel()
 
+    def _sync_stage_changed(self) -> None:
+        if (
+            self._sync_workspace.stage is SyncStage.REVIEW
+            and self._playlist_preview_dirty
+        ):
+            self._refresh_playlist_preview()
+
     def _refresh_playlist_preview(self) -> None:
         host, ipod, active = self._review_host, self._review_ipod, self._review_active
+        if (
+            host is not None
+            and ipod is not None
+            and active is not None
+            and self._sync_workspace.stage is not SyncStage.REVIEW
+        ):
+            self._playlist_preview_dirty = True
+            return
+        self._playlist_preview_dirty = False
         changes = (
             review_playlist_sync(
                 self._sync_workspace.selection.selected_plan,
@@ -2172,6 +2224,7 @@ class MainWindow(QMainWindow):
                 ipod,
                 active,
                 self._sync_workspace.playlist_choices,
+                comparison=self._sync_workspace.selection.resolved_comparison,
             )
             if host is not None and ipod is not None and active is not None
             else ()

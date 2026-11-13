@@ -1,6 +1,7 @@
 """Settings illustrations follow layout, hover, and popup lifetime without writes."""
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import (
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import QGraphicsOpacityEffect, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.core.settings.definitions import DarkTheme, LightTheme
+from iOpenPod.GUI.pages import settings_page
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.settings_illustrations import (
     SettingExample,
@@ -26,6 +28,7 @@ from iOpenPod.GUI.presentation.settings_illustrations import (
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
+from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
 from iOpenPod.GUI.widgets.settings_tab import (
     SettingsExampleImage,
     SettingsPreview,
@@ -76,7 +79,9 @@ def _shown_example(preview: SettingsPreview) -> SettingExample | None:
     return preview.example
 
 
-def test_tabs_and_all_categories_share_responsive_width(page: SettingsPage) -> None:
+def test_tabs_span_page_while_categories_keep_responsive_width(
+    page: SettingsPage,
+) -> None:
     tabs = page.findChild(QTabWidget, "settingsTabs")
     assert tabs is not None
     for width in (1000, 1400, 1719, 1720, 2064, 1300, 850):
@@ -90,16 +95,50 @@ def test_tabs_and_all_categories_share_responsive_width(page: SettingsPage) -> N
             _settle()
             tab = tabs.currentWidget()
             assert isinstance(tab, SettingsTab)
-            expected = (
-                960 if width >= 1720 else tab.viewport().width() - 2 * LAYOUT.space_lg
-            )
-            assert tabs.tabBar().width() == expected
+            available = tab.viewport().width() - 2 * LAYOUT.space_lg
+            expected = 960 if width >= 1720 else available
+            bar = tabs.tabBar()
+            assert bar.mapTo(page, bar.rect().topLeft()).x() == 0
+            assert bar.width() == width
             assert tab.preview.isVisible() == (width >= 1720)
-            bar_left = tabs.tabBar().mapTo(page, tabs.tabBar().rect().topLeft()).x()
             for group in tab.findChildren(SettingGroup):
                 if group.isVisible():
                     assert group.width() == expected
-                    assert group.mapTo(page, group.rect().topLeft()).x() == bar_left
+                    assert (
+                        group.mapTo(page, group.rect().topLeft()).x() == LAYOUT.space_lg
+                    )
+
+
+@pytest.mark.parametrize("language", ["en", "de", "es"])
+def test_every_tab_fits_beside_the_example_with_the_linux_tab(
+    monkeypatch: pytest.MonkeyPatch, language: str
+) -> None:
+    monkeypatch.setattr(settings_page, "sys", SimpleNamespace(platform="linux"))
+    context = build_context()
+    context.settings.load_device("one", {})
+    context.i18n_manager.set_language(language)
+    page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
+    try:
+        page.resize(1760, 1000)
+        page.show()
+        _settle()
+        tabs = page.findChild(QTabWidget, "settingsTabs")
+        switcher = page.findChild(SettingsScopeSwitcher)
+        assert tabs is not None and switcher is not None
+        bar = tabs.tabBar()
+        for device in (False, True):
+            switcher.select_device(device)
+            _settle()
+            assert bar.mapTo(page, bar.rect().topLeft()).x() == 0
+            assert bar.width() == page.width()
+            visible = [i for i in range(bar.count()) if bar.isTabVisible(i)]
+            assert bar.tabRect(visible[0]).left() == 0
+            assert bar.tabRect(visible[-1]).right() == bar.width() - 1
+    finally:
+        page.close()
+        page.deleteLater()
+        context.i18n_manager.set_language("en")
+        context.shutdown()
 
 
 def test_dropdown_retains_example_and_highlights_without_saving(

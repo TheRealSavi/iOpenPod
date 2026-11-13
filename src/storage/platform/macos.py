@@ -12,6 +12,7 @@ import subprocess
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
+from xml.parsers.expat import ExpatError
 
 from storage.errors import MountInspectionError
 from storage.models import (
@@ -38,6 +39,10 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 _VOLUMES_DIRECTORY = Path("/Volumes")
+
+# Placeholder identity that DiskArbitration reports for HFS+ Volumes written by
+# older iTunes releases, including several iPod models.
+_ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 _ATTR_CMN_RETURNED_ATTRS = 0x80000000
 _ATTR_VOL_INFO = 0x80000000
 _ATTR_VOL_CAPABILITIES = 0x00020000
@@ -722,13 +727,18 @@ def _require_same_snapshot(
         )
 
 
-def _normalized_uuid(value: str) -> str:
+def _parse_uuid(value: str) -> str:
     try:
         parsed = uuid.UUID(value.strip())
     except (AttributeError, ValueError) as error:
         raise MountInspectionError(
             "diskutil did not provide a valid Volume UUID"
         ) from error
+    return str(parsed).upper()
+
+
+def _normalized_uuid(value: str) -> str:
+    parsed = uuid.UUID(_parse_uuid(value))
     if parsed.int == 0:
         raise MountInspectionError("diskutil returned an all-zero Volume UUID")
     return str(parsed).upper()
@@ -740,7 +750,7 @@ def _fallback_uuid(info: dict[str, object]) -> str:
     )
     if not value:
         raise MountInspectionError("diskutil did not provide a stable Volume identity")
-    return _normalized_uuid(value)
+    return _parse_uuid(value)
 
 
 def _validate_diskutil_fallback(
@@ -773,7 +783,14 @@ def _validate_diskutil_fallback(
             "diskutil described a different Mount Point than statfs"
         )
     fallback_uuid = _fallback_uuid(info)
-    if kernel_uuid is not None and fallback_uuid != _normalized_uuid(kernel_uuid):
+    if kernel_uuid is None:
+        return _normalized_uuid(fallback_uuid)
+    kernel = _normalized_uuid(kernel_uuid)
+    if fallback_uuid != kernel:
+        if fallback_uuid == _ZERO_UUID:
+            # DiskArbitration reports a placeholder for this Volume while the
+            # kernel exposes a real identifier; the kernel is authoritative.
+            return kernel
         raise MountInspectionError(
             "diskutil and the kernel reported different Volume identities"
         )
@@ -797,7 +814,7 @@ def _diskutil_info(target: Path) -> dict[str, object]:
         raise MountInspectionError(detail.strip() or "diskutil info failed")
     try:
         parsed = plistlib.loads(completed.stdout)
-    except (plistlib.InvalidFileException, TypeError, ValueError) as error:
+    except (plistlib.InvalidFileException, ExpatError, TypeError, ValueError) as error:
         raise MountInspectionError(
             f"Could not parse diskutil output: {error}"
         ) from error
@@ -806,22 +823,80 @@ def _diskutil_info(target: Path) -> dict[str, object]:
     return cast("dict[str, object]", parsed)
 
 
-def _ioreg_hardware_index() -> dict[str, HardwareIdentifiers]:
-    """Correlate mounted BSD disks with generic USB hardware observations."""
+type _UsbOwner = tuple[int | None, HardwareIdentifiers]
 
-    media_output = _run_ioreg(["ioreg", "-r", "-c", "IOMedia"])
-    devices_output = _run_ioreg(["ioreg", "-a", "-r", "-c", "IOUSBHostDevice"])
-    if not media_output or not devices_output:
+
+def _ioreg_hardware_index() -> dict[str, HardwareIdentifiers]:
+    """Index whole disks by their owning USB device in one IOService snapshot."""
+
+    # The rooted archive keeps each USB subtree. Include properties on descendants
+    # and class inheritance so storage drivers can expose derived IOMedia nodes.
+    payload = _run_ioreg(["ioreg", "-a", "-i", "-l", "-r", "-c", "IOUSBHostDevice"])
+    if not payload:
         return {}
-    bsd_to_serial = _parse_ioreg_media_serials(
-        media_output.decode("utf-8", errors="replace")
+    try:
+        roots: object = plistlib.loads(payload)
+    except (plistlib.InvalidFileException, ExpatError, TypeError, ValueError) as error:
+        logger.debug("Could not parse the macOS I/O Registry: %s", error)
+        return {}
+    if not isinstance(roots, list):
+        return {}
+
+    owners_by_disk: dict[str, set[_UsbOwner]] = {}
+
+    def visit(nodes: list[object], parent_usb: _UsbOwner | None = None) -> None:
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            properties = cast("dict[str, object]", node)
+            owner = parent_usb
+            if _ioreg_has_class(properties, "IOUSBHostDevice"):
+                entry_id = properties.get("IORegistryEntryID")
+                serial = _first_text(
+                    properties, "USB Serial Number", "kUSBSerialNumberString"
+                )
+                owner = (
+                    entry_id if type(entry_id) is int and entry_id > 0 else None,
+                    HardwareIdentifiers(
+                        usb_vendor_id=_object_identifier(properties.get("idVendor")),
+                        usb_product_id=_object_identifier(properties.get("idProduct")),
+                        transport_serial=_normalized_transport_serial(serial),
+                    ),
+                )
+            bsd_name = properties.get("BSD Name")
+            if (
+                owner is not None
+                and properties.get("Whole") is True
+                and isinstance(bsd_name, str)
+                and re.fullmatch(r"disk[0-9]+", bsd_name)
+                and _ioreg_has_class(properties, "IOMedia")
+            ):
+                owners_by_disk.setdefault(bsd_name, set()).add(owner)
+            children = properties.get("IORegistryEntryChildren")
+            if isinstance(children, list):
+                visit(cast("list[object]", children), owner)
+
+    visit(cast("list[object]", roots))
+    result: dict[str, HardwareIdentifiers] = {}
+    for bsd_name, owners in owners_by_disk.items():
+        if len(owners) != 1:
+            continue
+        entry_id, identifiers = next(iter(owners))
+        if (
+            entry_id is not None
+            and identifiers.usb_vendor_id is not None
+            and identifiers.usb_product_id is not None
+        ):
+            result[bsd_name] = identifiers
+    return result
+
+
+def _ioreg_has_class(properties: dict[str, object], class_name: str) -> bool:
+    inheritance = properties.get("IOObjectInheritance")
+    return properties.get("IOObjectClass") == class_name or (
+        isinstance(inheritance, list)
+        and class_name in cast("list[object]", inheritance)
     )
-    serial_to_identifiers = _parse_ioreg_usb_devices(devices_output)
-    return {
-        bsd_name: identifiers
-        for bsd_name, serial in bsd_to_serial.items()
-        if (identifiers := serial_to_identifiers.get(serial)) is not None
-    }
 
 
 def _run_ioreg(command: list[str]) -> bytes:
@@ -843,73 +918,6 @@ def _run_ioreg(command: list[str]) -> bytes:
         logger.debug("ioreg failed: %s", detail.strip())
         return b""
     return completed.stdout
-
-
-def _parse_ioreg_media_serials(text: str) -> dict[str, str]:
-    """Map each BSD whole disk to its owning USB transport serial."""
-
-    result: dict[str, str] = {}
-    current_serial = ""
-    pending_serial = ""
-    for line in text.splitlines():
-        if "<class IOUSBHostDevice" in line:
-            current_serial = ""
-            pending_serial = ""
-        serial_match = re.search(
-            r'"USB Serial Number"\s*=\s*"([^"]+)"',
-            line,
-        )
-        if serial_match is not None:
-            current_serial = _normalized_transport_serial(serial_match.group(1))
-            continue
-        if "<class IOMedia" in line:
-            pending_serial = current_serial
-            continue
-        bsd_match = re.search(r'"BSD Name"\s*=\s*"(disk\d+)"', line)
-        if bsd_match is not None and pending_serial:
-            result[bsd_match.group(1)] = pending_serial
-            pending_serial = ""
-    return result
-
-
-def _parse_ioreg_usb_devices(payload: bytes) -> dict[str, HardwareIdentifiers]:
-    try:
-        parsed: object = plistlib.loads(payload)
-    except (plistlib.InvalidFileException, TypeError, ValueError):
-        return {}
-
-    result: dict[str, HardwareIdentifiers] = {}
-
-    def collect(node: object) -> None:
-        if isinstance(node, list):
-            for item in cast("list[object]", node):
-                collect(item)
-            return
-        if not isinstance(node, dict):
-            return
-        properties = cast("dict[object, object]", node)
-        serial_value = properties.get("USB Serial Number") or properties.get(
-            "kUSBSerialNumberString"
-        )
-        serial = (
-            _normalized_transport_serial(serial_value)
-            if isinstance(serial_value, str)
-            else ""
-        )
-        vendor_id = _object_identifier(properties.get("idVendor"))
-        product_id = _object_identifier(properties.get("idProduct"))
-        if serial and vendor_id is not None and product_id is not None:
-            result[serial] = HardwareIdentifiers(
-                usb_vendor_id=vendor_id,
-                usb_product_id=product_id,
-                transport_serial=serial,
-            )
-        children = properties.get("IORegistryEntryChildren")
-        if isinstance(children, list):
-            collect(cast("list[object]", children))
-
-    collect(parsed)
-    return result
 
 
 def _bsd_name(value: str) -> str:

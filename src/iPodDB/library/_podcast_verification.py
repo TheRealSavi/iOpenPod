@@ -14,8 +14,7 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.library_index_mhod import (
 )
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
-from iPodDB.library._browse_groups import podcast_groups
-from iPodDB.library._group_verification import group_text
+from iPodDB.library._browse_groups import group_text, podcast_groups
 from iPodDB.library._playlist_datasets import is_master, playlist_rows
 from iPodDB.library._projection import project_tracks
 from iPodDB.library.writing import WriteIssue
@@ -41,11 +40,7 @@ def verify_normalized_podcasts(
             )
         )
 
-    try:
-        groups = podcast_groups(tracks)
-    except ValueError as error:
-        fail(str(error))
-        return tuple(issues)
+    groups = podcast_groups(tracks)
     if not groups:
         return ()
     podcast_ids = {track.track_id for members in groups.values() for track in members}
@@ -57,7 +52,10 @@ def verify_normalized_podcasts(
         s.chunk.header.dataset_type == 4 for s in checked.find_chunks(MhsdHeader)
     )
     albums = [s.chunk for s in checked.find_chunks(MhiaHeader)]
-    for title, members in groups.items():
+    original_albums = {
+        (s.chunk.raw_header, s.chunk.raw_body) for s in original.find_chunks(MhiaHeader)
+    }
+    for (title, feed), members in groups.items():
         if not has_albums:
             continue
         refs = {t.ipod.album_id for t in members if t.ipod}
@@ -76,10 +74,6 @@ def verify_normalized_podcasts(
             )
         if group_text(row, MhodType.ALBUM_ITEM_ALBUM) != title:
             fail(f"Podcast show {title!r} has a mismatched album title.")
-        feed = next(
-            (t.metadata.podcast_rss_url for t in members if t.metadata.podcast_rss_url),
-            "",
-        )
         if feed and group_text(row, MhodType.ALBUM_ITEM_PODCAST_URL) != feed:
             fail(f"Podcast show {title!r} has a mismatched album feed.")
         owner_ids = {t.track_id for t in members}
@@ -92,6 +86,7 @@ def verify_normalized_podcasts(
             r is not row
             and group_text(r, MhodType.ALBUM_ITEM_ALBUM) == title
             and not r.header.album_track_db_id
+            and (r.raw_header, r.raw_body) not in original_albums
             and all(
                 isinstance(c.header, MhodHeader) and c.header.mhod_type == 200
                 for c in r.children

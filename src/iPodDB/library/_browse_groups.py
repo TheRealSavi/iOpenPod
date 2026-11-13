@@ -4,7 +4,26 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
 
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
+    MhodStringPayload,
+)
+from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library.models import MediaKind, Track
+from iPodDB.shared.chunk import ChunkHeader, ParsedChunk
+
+
+def group_text(chunk: ParsedChunk[ChunkHeader], kind: MhodType) -> str:
+    return next(
+        (
+            c.payload.value
+            for c in reversed(chunk.children)
+            if isinstance(c.header, MhodHeader)
+            and c.header.mhod_type == kind
+            and isinstance(c.payload, MhodStringPayload)
+        ),
+        "",
+    )
 
 
 def group_key(track: Track, *, album: bool) -> tuple[str, ...]:
@@ -96,19 +115,21 @@ def native_browse_groups(
     return {key: tuple(members) for key, members in groups.items()}
 
 
-def podcast_groups(tracks: Sequence[Track]) -> dict[str, tuple[Track, ...]]:
-    """Podcast show rows use album titles; conflicting feeds are ambiguous."""
-    groups: dict[str, list[Track]] = defaultdict(list)
+def podcast_groups(tracks: Sequence[Track]) -> dict[tuple[str, str], tuple[Track, ...]]:
+    """Give same-titled Podcast shows separate Albums when feeds differ."""
+    titles: dict[str, list[Track]] = defaultdict(list)
     for track in tracks:
         if track.media_kind is MediaKind.PODCAST or track.metadata.podcast:
-            groups[track.album].append(track)
-    for title, members in groups.items():
+            titles[track.album].append(track)
+    groups: dict[tuple[str, str], list[Track]] = defaultdict(list)
+    for title, members in titles.items():
         feeds = {
             t.metadata.podcast_rss_url for t in members if t.metadata.podcast_rss_url
         }
-        if len(feeds) > 1:
-            raise ValueError(f"Podcast show {title!r} has conflicting feed identities.")
-    return {title: tuple(members) for title, members in groups.items()}
+        default_feed = min(feeds, default="")
+        for track in members:
+            groups[title, track.metadata.podcast_rss_url or default_feed].append(track)
+    return {key: tuple(members) for key, members in groups.items()}
 
 
 @dataclass(frozen=True, slots=True)

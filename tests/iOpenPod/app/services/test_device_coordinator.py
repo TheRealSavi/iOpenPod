@@ -28,6 +28,18 @@ from device_registry import (
 )
 from iOpenPod.app.backups import BackupIdentityClaimKind
 from iOpenPod.app.display_text import SourceText
+from iOpenPod.app.host_media_folders import HostMediaFolder
+from iOpenPod.app.library_export import (
+    LibraryExporter,
+    PlaylistExportMode,
+    PlaylistFileType,
+)
+from iOpenPod.app.library_sync_helper import (
+    LIBRARY_SYNC_HELPER_PATH,
+    SyncDetails,
+    SyncedTrack,
+    publish_sync_helper,
+)
 from iOpenPod.app.library_write import LibraryPreparationRequest
 from iOpenPod.app.models.artwork import ArtworkRequest
 from iOpenPod.app.models.device import DeviceCandidateIssueCode, DeviceReadiness
@@ -2808,6 +2820,74 @@ def test_track_export_references_and_copies_through_the_active_session(
     assert destination.read_bytes() == b"audio payload"
     assert result.bytes_copied == len(b"audio payload")
     coordinator.close()
+
+
+def test_host_playlist_export_reads_committed_sync_details_from_the_active_ipod(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    platform.add_volume(root, label="Classic")
+    coordinator = DeviceCoordinator(Storage(platform))
+    candidate = coordinator.discover_devices().candidates[0]
+    active = coordinator.select_device(candidate.id)
+    track = active.library.tracks[0]
+    source = tmp_path / "Music" / "Original.flac"
+    source.parent.mkdir()
+    source.write_bytes(b"original audio")
+    details = SyncDetails(
+        "2026-09-27T12:00:00+00:00",
+        str(source),
+        source.stat().st_size,
+        source.stat().st_mtime_ns,
+        "flac",
+        "m4a",
+        True,
+    )
+    helper = root / str(LIBRARY_SYNC_HELPER_PATH)
+    exporter = LibraryExporter(coordinator)
+    folders = (HostMediaFolder(HostPath(source.parent)),)
+    try:
+        with coordinator.sync_session(active, access=AccessMode.READ_WRITE) as session:
+            publish_sync_helper(
+                session,
+                active.library,
+                None,
+                (SyncedTrack(DevicePath(track.metadata.location), "", details),),
+                library_sha256=active.database_fingerprint.sha256,
+            )
+        original_helper = helper.read_bytes()
+        result = exporter.export_playlist(
+            "Road Trip",
+            (track, track),
+            HostPath(tmp_path),
+            PlaylistFileType.M3U8,
+            PlaylistExportMode.HOST_REFERENCES,
+            host_folders=folders,
+        )
+        assert result.skipped_occurrences == 0
+        assert result.playlist_file is not None
+        assert (
+            Path(result.playlist_file).read_text(encoding="utf-8").count(str(source))
+            == 2
+        )
+        assert helper.read_bytes() == original_helper
+
+        (root / str(DevicePath(track.metadata.location))).unlink()
+        result = exporter.export_playlist(
+            "Road Trip",
+            (track,),
+            HostPath(tmp_path),
+            PlaylistFileType.M3U8,
+            PlaylistExportMode.HOST_REFERENCES,
+            host_folders=folders,
+        )
+        assert result.skipped_occurrences == 1
+        assert result.playlist_file is not None
+        assert Path(result.playlist_file).read_text(encoding="utf-8") == "#EXTM3U\n"
+        assert helper.read_bytes() == original_helper
+    finally:
+        coordinator.close()
 
 
 def test_playback_source_rejects_media_that_changes_after_opening(

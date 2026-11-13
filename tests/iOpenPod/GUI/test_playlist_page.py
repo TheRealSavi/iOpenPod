@@ -323,7 +323,7 @@ def test_playlist_export_button_requests_the_complete_saved_occurrence_order(
     ]
 
 
-def test_playlist_export_dialog_offers_portable_copy_and_major_formats() -> None:
+def test_playlist_export_dialog_offers_all_path_modes_and_major_formats() -> None:
     dialog = PlaylistExportDialog(4)
     try:
         initial_mode = dialog.mode
@@ -336,6 +336,10 @@ def test_playlist_export_dialog_offers_portable_copy_and_major_formats() -> None
         dialog.device_references.setChecked(True)
         selected_mode = dialog.mode
         assert selected_mode is PlaylistExportMode.DEVICE_REFERENCES
+        dialog.host_references.setChecked(True)
+        assert dialog.mode is PlaylistExportMode.HOST_REFERENCES
+        assert not dialog.device_references.isChecked()
+        assert not dialog.copy_tracks.isChecked()
     finally:
         dialog.deleteLater()
 

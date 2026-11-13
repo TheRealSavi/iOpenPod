@@ -200,7 +200,7 @@ def test_sort_edits_preserve_separate_source_podcast_albums() -> None:
 
 
 @pytest.mark.parametrize("conflict", ["feed", "music"])
-def test_shared_album_with_incompatible_owners_blocks_sort_edits(conflict: str) -> None:
+def test_shared_album_with_incompatible_owners_gets_separate_ids(conflict: str) -> None:
     document = parse_iTunesDB(shared_podcast_source().serialize().itunes)
     second = document.find_chunks(MhitHeader)[1]
     changed = (
@@ -213,8 +213,63 @@ def test_shared_album_with_incompatible_owners_blocks_sort_edits(conflict: str) 
     document = document.replace_chunk(second, changed)
     source = IPodLibrary(write_iTunesDB(document))
     result = source.prepare(source.analyze(source.begin_draft(sorted_podcasts(source))))
-    assert result.prepared is None
+    assert result.prepared is not None, result.issues
+    checked = parse_iTunesDB(result.prepared.itunes)
+    first_id, second_id = [
+        s.chunk.header.album_id for s in checked.find_chunks(MhitHeader)[:2]
+    ]
+    assert first_id != second_id
+    assert first_id not in (0, 10)
     assert any(i.code == "library.ambiguous_group" for i in result.issues)
+
+
+@pytest.mark.parametrize("anomaly", ["missing", "repeated", "feed", "music"])
+def test_podcast_normalization_can_assign_album_ids_with_source_anomalies(
+    anomaly: str,
+) -> None:
+    document = parse_iTunesDB(shared_podcast_source().serialize().itunes)
+    if anomaly in ("missing", "repeated"):
+        dataset = next(
+            s
+            for s in document.find_chunks(MhsdHeader)
+            if s.chunk.header.dataset_type == 4
+        )
+        container = dataset.chunk.children[0]
+        children = (
+            container.children[1:]
+            if anomaly == "missing"
+            else (*container.children, container.children[0])
+        )
+        document = document.replace_chunk(
+            dataset,
+            replace(dataset.chunk, children=(replace(container, children=children),)),
+        )
+    else:
+        second = document.find_chunks(MhitHeader)[1]
+        changed = (
+            edit_text(
+                second.chunk, MhodType.PODCAST_RSS_URL, "https://different.example/feed"
+            )
+            if anomaly == "feed"
+            else replace(
+                second.chunk, header=replace(second.chunk.header, media_type=1)
+            )
+        )
+        document = document.replace_chunk(second, changed)
+    source = IPodLibrary(write_iTunesDB(document))
+
+    result = source.prepare(
+        source.analyze(source.begin_draft(normalize_podcasts=True)),
+        WriteResources(pending_playback_sidecars=False),
+    )
+
+    assert result.prepared is not None, result.issues
+    checked = parse_iTunesDB(result.prepared.itunes)
+    first_id, second_id = [
+        s.chunk.header.album_id for s in checked.find_chunks(MhitHeader)[:2]
+    ]
+    assert first_id not in (0, 10)
+    assert (first_id == second_id) == (anomaly in ("missing", "repeated"))
 
 
 @pytest.mark.parametrize("fault", ["representative", "sort", "show", "season"])

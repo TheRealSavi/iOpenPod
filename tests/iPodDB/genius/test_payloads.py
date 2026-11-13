@@ -1,6 +1,7 @@
 """Independent binary fixtures for the evidenced native Genius blob layouts."""
 
 import struct
+import zlib
 from dataclasses import replace
 
 import pytest
@@ -49,6 +50,20 @@ def test_similarity_framing_retains_distinct_unknown_regions_on_edit() -> None:
     assert reread.trailing_data == payload.trailing_data
 
 
+def test_version_one_similarities_round_trip_and_keep_their_version_on_edit() -> None:
+    source = struct.pack("<III2Q", 0, 20, 2, 1002, 0xFEDCBA9876543210)
+    payload = parse_genius_similarities(source, version=1)
+    assert isinstance(payload, GeniusSimilarities)
+    assert payload == GeniusSimilarities((1002, 0xFEDCBA9876543210), version=1)
+    assert serialize_genius_similarities(payload) == source
+
+    edited = serialize_genius_similarities(replace(payload, candidates=(1002,)))
+    assert edited == struct.pack("<IIIQ", 0, 12, 1, 1002)
+    assert parse_genius_similarities(edited, version=1) == GeniusSimilarities(
+        (1002,), version=1
+    )
+
+
 def test_empty_similarities_preserves_the_count_word() -> None:
     source = struct.pack("<III", 0, 4, 0)
     payload = parse_genius_similarities(source)
@@ -74,22 +89,62 @@ def test_malformed_similarities_are_not_opaque(source: bytes) -> None:
         parse_genius_similarities(source)
 
 
-def test_compressed_similarity_variant_stays_opaque() -> None:
-    source = struct.pack("<I", 1) + b"1.2.3" + b"\0" * 47 + b"compressed bytes"
-    payload = parse_genius_similarities(source)
-    assert isinstance(payload, OpaqueGeniusPayload)
-    assert payload.kind is GeniusPayloadKind.SIMILARITIES
-    assert payload.data == source
+@pytest.mark.parametrize("version", [1, 2])
+def test_compressed_similarities_keep_framing_and_untouched_stream(
+    version: int,
+) -> None:
+    body = struct.pack("<I2Q", 2, 1002, 0xFEDCBA9876543210) + b"inner"
+    stream = zlib.compress(body, level=0)
+    source = struct.pack("<II", 7, len(stream) + 6) + stream + b"stream" + b"outer"
+    payload = parse_genius_similarities(source, version=version)
+    assert isinstance(payload, GeniusSimilarities)
+    assert payload.version == version
+    assert payload.compression_flag == 7
+    assert payload.candidates == (1002, 0xFEDCBA9876543210)
+    assert payload.payload_tail == b"inner"
+    assert payload.compression_tail == b"stream"
+    assert payload.trailing_data == b"outer"
     assert serialize_genius_similarities(payload) == source
+
+    desired = replace(payload, candidates=(1002,))
+    edited = serialize_genius_similarities(desired)
+    flag, size = struct.unpack_from("<II", edited)
+    assert flag == 7
+    assert edited[8 + size - 6 :] == b"streamouter"
+    assert zlib.decompress(edited[8 : 8 + size - 6]) == (
+        struct.pack("<IQ", 1, 1002) + b"inner"
+    )
+    assert parse_genius_similarities(edited, version=version) == desired
+
+
+@pytest.mark.parametrize("payload", [b"not zlib", zlib.compress(b"\x00" * 4)[:-1]])
+def test_malformed_compressed_similarity_stream_is_rejected(payload: bytes) -> None:
+    source = struct.pack("<II", 1, len(payload)) + payload
+    with pytest.raises(GeniusFormatError, match="zlib"):
+        parse_genius_similarities(source)
+
+
+def test_compressed_similarities_obey_the_inflated_byte_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compressed = zlib.compress(b"\x00" * 512)
+    source = struct.pack("<II", 1, len(compressed)) + compressed
+    monkeypatch.setattr("iPodDB.genius.codec.MAX_GENIUS_PAYLOAD_BYTES", 64)
+    with pytest.raises(GeniusFormatError, match="byte limit"):
+        parse_genius_similarities(source)
 
 
 @pytest.mark.parametrize("count", [0, 4, 21])
-def test_metadata_has_variable_key_count_and_preserved_partial_key(count: int) -> None:
+@pytest.mark.parametrize("version", [1, 2])
+def test_metadata_has_variable_key_count_and_preserved_partial_key(
+    count: int, version: int
+) -> None:
     keys = tuple(range(count))
     source = struct.pack(f"<{count}Q", *keys) + b"partial"
-    payload = parse_genius_metadata(source)
+    payload = parse_genius_metadata(source, version=version)
     assert isinstance(payload, GeniusMetadata)
     assert payload.keys == keys
+    assert payload.version == version
     assert payload.trailing_data == b"partial"
     assert serialize_genius_metadata(payload) == source
     edited = serialize_genius_metadata(replace(payload, keys=(0xFFFFFFFFFFFFFFFF,)))
@@ -202,7 +257,7 @@ def test_truncated_config_entries_and_counts_fail(source: bytes) -> None:
         parse_genius_config(source)
 
 
-@pytest.mark.parametrize("version", [None, 0, 1, 3, 20])
+@pytest.mark.parametrize("version", [None, 0, 3, 20])
 def test_unknown_versions_preserve_bytes_without_guessing_layout(
     version: int | None,
 ) -> None:
@@ -255,10 +310,10 @@ def test_wrong_opaque_kind_cannot_be_written_to_another_table() -> None:
 def test_known_writer_cannot_silently_change_version() -> None:
     with pytest.raises(iPodDBWriteError, match="version 2"):
         serialize_genius_config(GeniusConfig((), version=3))
-    with pytest.raises(iPodDBWriteError, match="version 2"):
+    with pytest.raises(iPodDBWriteError, match="version 1 or 2"):
         serialize_genius_metadata(GeniusMetadata((), version=None))
-    with pytest.raises(iPodDBWriteError, match="version 2"):
-        serialize_genius_similarities(GeniusSimilarities((), version=1))
+    with pytest.raises(iPodDBWriteError, match="version 1 or 2"):
+        serialize_genius_similarities(GeniusSimilarities((), version=3))
 
 
 def test_metadata_suffix_cannot_change_interpreted_key_count() -> None:

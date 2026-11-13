@@ -74,7 +74,7 @@ class SelectionGroupingProxyModel(QAbstractProxyModel):
         source.rowsInserted.connect(self._source_changed)
         source.rowsRemoved.connect(self._source_changed)
         source.rowsMoved.connect(self._source_changed)
-        source.dataChanged.connect(self._source_changed)
+        source.dataChanged.connect(self._source_data_changed)
         self._rebuild_rows()
 
     @property
@@ -264,6 +264,20 @@ class SelectionGroupingProxyModel(QAbstractProxyModel):
     ) -> object:
         return self.sourceModel().headerData(section, orientation, role)
 
+    def _source_data_changed(
+        self,
+        top_left: _Index,
+        bottom_right: _Index,
+        roles: list[int] | None = None,
+    ) -> None:
+        if not self._grouping_enabled:
+            mapped_top = self.mapFromSource(top_left)
+            mapped_bottom = self.mapFromSource(bottom_right)
+            if mapped_top.isValid() and mapped_bottom.isValid():
+                self.dataChanged.emit(mapped_top, mapped_bottom, roles or [])
+            return
+        self._source_changed()
+
     def _source_changed(self, *_args: object) -> None:
         self.beginResetModel()
         self._rebuild_rows()
@@ -271,16 +285,18 @@ class SelectionGroupingProxyModel(QAbstractProxyModel):
 
     def _rebuild_rows(self) -> None:
         source = self.sourceModel()
-        buckets: dict[SelectionGroup, list[int]] = {group: [] for group in _GROUP_ORDER}
-        for source_row in range(source.rowCount()):
-            index = source.index(source_row, 0)
-            group = _group_for_check_state(
-                source.data(index, Qt.ItemDataRole.CheckStateRole)
-            )
-            buckets[group].append(source_row)
-
         rows: list[_PresentedRow] = []
         if self._grouping_enabled:
+            buckets: dict[SelectionGroup, list[int]] = {
+                group: [] for group in _GROUP_ORDER
+            }
+            for source_row in range(source.rowCount()):
+                index = source.index(source_row, 0)
+                group = _group_for_check_state(
+                    source.data(index, Qt.ItemDataRole.CheckStateRole)
+                )
+                buckets[group].append(source_row)
+
             for group in _GROUP_ORDER:
                 source_rows = buckets[group]
                 if not source_rows:

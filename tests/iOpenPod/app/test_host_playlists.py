@@ -126,9 +126,9 @@ def test_malformed_and_streaming_documents_fail_closed(
 def test_bad_references_are_reported_without_losing_valid_entries(
     tmp_path: Path,
 ) -> None:
-    payload = (
-        b"https://example.org/remote.mp3\nsmb://server/share/a.mp3\nNUL.mp3\nGood.mp3"
-    )
+    # Reserved names such as NUL.mp3 are only unsafe on Windows; Storage covers
+    # that platform rule. A control character is unsafe on every Host.
+    payload = b"https://example.org/remote.mp3\nsmb://server/share/a.mp3\nBad\x01.mp3\nGood.mp3"
     parsed = parse_host_playlist(
         payload, HostPath(tmp_path / "Mix.m3u8"), checkpoint=lambda: None
     )

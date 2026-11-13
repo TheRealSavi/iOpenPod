@@ -63,7 +63,9 @@ class LibraryPage(QWidget):
             if selection_mode
             else None
         )
-        self._track_proxy = TrackFilterProxyModel(tracks, self)
+        self._track_proxy = TrackFilterProxyModel(
+            tracks, self, require_collection=selection_mode
+        )
         self._track_proxy.set_media_kinds((albums.media_kind,))
 
         self._toolbar = LibraryToolbar(self)
@@ -255,7 +257,6 @@ class LibraryPage(QWidget):
     def _set_selection_grouping(self, enabled: bool) -> None:
         if self._album_grouping is None:
             return
-        self._album_proxy.set_group_by_selection(enabled)
         self._album_grouping.set_grouping_enabled(enabled)
         self._grid.set_sectioned_layout(enabled)
 

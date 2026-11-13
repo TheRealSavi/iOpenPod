@@ -56,6 +56,7 @@ from iOpenPod.app.library_sync_helper import (
     SyncedImage,
     SyncedTrack,
     publish_sync_helper,
+    read_track_sync_paths,
     retain_retagged_sync_details,
 )
 from iOpenPod.app.library_write import WriteItemProgress, WriteProgress
@@ -4226,6 +4227,28 @@ class DeviceCoordinator:
                     error=str(error),
                 )
             ) from error
+
+    def sync_paths_for_tracks(
+        self, tracks: tuple[Track, ...], *, checkpoint: Callable[[], None]
+    ) -> dict[int, str]:
+        """Read committed Host associations from the Active iPod's helper."""
+        with self._lock:
+            active = self._active
+            if active is None:
+                raise DeviceTrackExportError(
+                    source_text("Select an Active iPod before exporting Tracks.")
+                )
+            expected = active.active_ipod
+
+        paths = read_track_sync_paths(active.session, tracks, checkpoint=checkpoint)
+        checkpoint()
+        active.session.stat(library_resources.database_path(expected.database_name))
+        with self._lock:
+            if self._active is not active or active.active_ipod is not expected:
+                raise DeviceTrackExportError(
+                    source_text("The Active iPod changed during Playlist export.")
+                )
+        return paths
 
     def reference_for_track(self, track: Track) -> HostPath:
         """Return the current absolute Host path for one validated iPod Track."""

@@ -234,7 +234,7 @@ def test_host_sync_album_grouping_exposes_selected_mixed_and_deselected() -> Non
 
     try:
         browser.load(library)
-        page = browser.page_widgets[PageId.ALBUMS]
+        page = browser.page(PageId.ALBUMS)
         parent.addWidget(page)
         parent.resize(900, 700)
         parent.show()
@@ -296,7 +296,7 @@ def test_host_sync_album_card_click_and_checkbox_are_separate_actions() -> None:
 
     try:
         browser.load(library)
-        page = browser.page_widgets[PageId.ALBUMS]
+        page = browser.page(PageId.ALBUMS)
         parent.addWidget(page)
         parent.resize(900, 700)
         parent.show()

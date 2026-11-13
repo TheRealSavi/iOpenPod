@@ -105,116 +105,118 @@ class HostLibraryBrowser:
         )
         self.library: HostMediaLibrary | None = None
 
-        albums = LibraryPage(
-            self.track_model,
-            self.album_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            parent,
-            selection_mode=selection is not None,
-            follow_ipod_view_mode=False,
-        )
-        tracks = TrackPage(
-            self.track_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            PageId.TRACKS,
-            "host-tracks",
-            None,
-            parent,
-        )
-        artists = CollectionPage(
-            self.track_model,
-            self.artist_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            page_id=PageId.ARTISTS,
-            table_id="host-artists-tracks",
-            albums=self.album_model,
-            parent=parent,
-            selection_mode=selection is not None,
-            follow_ipod_view_mode=False,
-        )
-        genres = CollectionPage(
-            self.track_model,
-            self.genre_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            page_id=PageId.GENRES,
-            table_id="host-genres-tracks",
-            albums=self.album_model,
-            parent=parent,
-            selection_mode=selection is not None,
-            follow_ipod_view_mode=False,
-        )
-        audiobooks = TrackPage(
-            self.track_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            PageId.AUDIOBOOKS,
-            "host-audiobooks",
-            (MediaKind.AUDIOBOOK,),
-            parent,
-        )
-        movies = TrackPage(
-            self.track_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            PageId.MOVIES,
-            "host-movies",
-            (MediaKind.MOVIE,),
-            parent,
-        )
-        tv_shows = CollectionPage(
-            self.track_model,
-            self.tv_show_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            page_id=PageId.TV_SHOWS,
-            table_id="host-tv-shows-tracks",
-            parent=parent,
-            selection_mode=selection is not None,
-            follow_ipod_view_mode=False,
-        )
-        music_videos = LibraryPage(
-            self.track_model,
-            self.music_video_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            page_id=PageId.MUSIC_VIDEOS,
-            table_id="host-music-videos-tracks",
-            parent=parent,
-            selection_mode=selection is not None,
-            follow_ipod_view_mode=False,
-        )
-        videos = TrackPage(
-            self.track_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            PageId.VIDEOS,
-            "host-videos",
-            (MediaKind.MOVIE, MediaKind.TV_SHOW, MediaKind.MUSIC_VIDEO),
-            parent,
-        )
-        podcasts = TrackPage(
-            self.track_model,
-            settings,
-            theme_manager,
-            self.artwork_provider,
-            PageId.PODCASTS,
-            "host-podcasts",
-            (MediaKind.PODCAST,),
-            parent,
-        )
+        self._page_factories: dict[PageId, Callable[[], _HostLibraryPage]] = {
+            PageId.ALBUMS: lambda: LibraryPage(
+                self.track_model,
+                self.album_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                parent,
+                selection_mode=selection is not None,
+                follow_ipod_view_mode=False,
+            ),
+            PageId.TRACKS: lambda: TrackPage(
+                self.track_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                PageId.TRACKS,
+                "host-tracks",
+                None,
+                parent,
+            ),
+            PageId.ARTISTS: lambda: CollectionPage(
+                self.track_model,
+                self.artist_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                page_id=PageId.ARTISTS,
+                table_id="host-artists-tracks",
+                albums=self.album_model,
+                parent=parent,
+                selection_mode=selection is not None,
+                follow_ipod_view_mode=False,
+            ),
+            PageId.GENRES: lambda: CollectionPage(
+                self.track_model,
+                self.genre_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                page_id=PageId.GENRES,
+                table_id="host-genres-tracks",
+                albums=self.album_model,
+                parent=parent,
+                selection_mode=selection is not None,
+                follow_ipod_view_mode=False,
+            ),
+            PageId.AUDIOBOOKS: lambda: TrackPage(
+                self.track_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                PageId.AUDIOBOOKS,
+                "host-audiobooks",
+                (MediaKind.AUDIOBOOK,),
+                parent,
+            ),
+            PageId.MOVIES: lambda: TrackPage(
+                self.track_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                PageId.MOVIES,
+                "host-movies",
+                (MediaKind.MOVIE,),
+                parent,
+            ),
+            PageId.TV_SHOWS: lambda: CollectionPage(
+                self.track_model,
+                self.tv_show_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                page_id=PageId.TV_SHOWS,
+                table_id="host-tv-shows-tracks",
+                parent=parent,
+                selection_mode=selection is not None,
+                follow_ipod_view_mode=False,
+            ),
+            PageId.MUSIC_VIDEOS: lambda: LibraryPage(
+                self.track_model,
+                self.music_video_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                page_id=PageId.MUSIC_VIDEOS,
+                table_id="host-music-videos-tracks",
+                parent=parent,
+                selection_mode=selection is not None,
+                follow_ipod_view_mode=False,
+            ),
+            PageId.VIDEOS: lambda: TrackPage(
+                self.track_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                PageId.VIDEOS,
+                "host-videos",
+                (MediaKind.MOVIE, MediaKind.TV_SHOW, MediaKind.MUSIC_VIDEO),
+                parent,
+            ),
+            PageId.PODCASTS: lambda: TrackPage(
+                self.track_model,
+                settings,
+                theme_manager,
+                self.artwork_provider,
+                PageId.PODCASTS,
+                "host-podcasts",
+                (MediaKind.PODCAST,),
+                parent,
+            ),
+        }
         self.playlist_page = PlaylistPage(
             self.workspace,
             settings,
@@ -235,56 +237,62 @@ class HostLibraryBrowser:
         if selection is not None:
             self.playlist_page.set_sync_selection(selection)
             self.photo_page.set_sync_selection(selection)
-        self.page_widgets: dict[PageId, _HostLibraryPage] = {
-            PageId.ALBUMS: albums,
-            PageId.ARTISTS: artists,
-            PageId.GENRES: genres,
-            PageId.TRACKS: tracks,
+        self._pages: dict[PageId, _HostLibraryPage] = {
             PageId.PLAYLISTS: self.playlist_page,
             PageId.PHOTOS: self.photo_page,
-            PageId.PODCASTS: podcasts,
-            PageId.AUDIOBOOKS: audiobooks,
-            PageId.MOVIES: movies,
-            PageId.TV_SHOWS: tv_shows,
-            PageId.MUSIC_VIDEOS: music_videos,
-            PageId.VIDEOS: videos,
         }
-        self.pages: tuple[_HostLibraryPage, ...] = tuple(self.page_widgets.values())
+        self._selection = selection
+        self._choose_streams = choose_streams
         self._sync_actions = (
             SyncSelectionActions(selection, parent, choose_streams=choose_streams)
             if selection is not None
             else None
         )
+        self._configure_page(self.playlist_page)
+        self._configure_page(self.photo_page)
 
-        for page in self.pages:
-            if selection is not None:
-                for detail in page.findChildren(CollectionDetailPage):
-                    detail.tracksCheckRequested.connect(selection.set_tracks_checked)
-            for table in page.findChildren(TrackTable):
-                if selection is None:
-                    table.set_library_workspace(self.workspace)
-                else:
-                    table.setDragEnabled(False)
-                    table.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
-                    if choose_streams is not None:
-                        table.chooseStreamsRequested.connect(choose_streams)
-            for grid in (
+    @property
+    def page_ids(self) -> tuple[PageId, ...]:
+        return (*self._page_factories, PageId.PLAYLISTS, PageId.PHOTOS)
+
+    def page(self, page_id: PageId) -> _HostLibraryPage:
+        """Construct the page on first use and retain its browsing state."""
+        page = self._pages.get(page_id)
+        if page is None:
+            page = self._page_factories[page_id]()
+            self._configure_page(page)
+            self._pages[page_id] = page
+        return page
+
+    def _configure_page(self, page: _HostLibraryPage) -> None:
+        if self._selection is not None:
+            for detail in page.findChildren(CollectionDetailPage):
+                detail.tracksCheckRequested.connect(self._selection.set_tracks_checked)
+        for table in page.findChildren(TrackTable):
+            if self._selection is None:
+                table.set_library_workspace(self.workspace)
+            else:
+                table.setDragEnabled(False)
+                table.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
+                if self._choose_streams is not None:
+                    table.chooseStreamsRequested.connect(self._choose_streams)
+        for grid in (
+            *page.findChildren(AlbumGridView),
+            *page.findChildren(CollectionGridView),
+        ):
+            if self._selection is None:
+                grid.set_library_workspace(self.workspace)
+            else:
+                grid.setDragEnabled(False)
+                grid.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
+        if self._sync_actions is not None:
+            for view in (
+                *page.findChildren(TrackTable),
                 *page.findChildren(AlbumGridView),
                 *page.findChildren(CollectionGridView),
+                *page.findChildren(PhotoGridView),
             ):
-                if selection is None:
-                    grid.set_library_workspace(self.workspace)
-                else:
-                    grid.setDragEnabled(False)
-                    grid.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
-            if self._sync_actions is not None:
-                for view in (
-                    *page.findChildren(TrackTable),
-                    *page.findChildren(AlbumGridView),
-                    *page.findChildren(CollectionGridView),
-                    *page.findChildren(PhotoGridView),
-                ):
-                    self._sync_actions.install(view)
+                self._sync_actions.install(view)
 
     def load(self, library: HostMediaLibrary) -> None:
         """Publish a complete scan to every shared Host Library view model."""
@@ -335,7 +343,7 @@ class HostLibraryBrowser:
             self.music_video_model,
         ):
             model.retranslate()
-        for page in self.pages:
+        for page in self._pages.values():
             page.retranslate_ui()
 
     def shutdown(self) -> None:
