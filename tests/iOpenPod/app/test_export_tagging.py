@@ -254,15 +254,11 @@ def test_exported_rating_uses_current_library_value(
 ) -> None:
     from dataclasses import replace
 
-    import mutagen
-
     from iOpenPod.app.media.tags import read_tag_values
 
     path = _fixture(tmp_path, name)
     tagger = ExportMediaTagger()
     tagger.prepare(HostPath(path), replace(_track(), rating=100 - rating), None)
     tagger.prepare(HostPath(path), replace(_track(), rating=rating), None)
-    audio = cast("Any", mutagen.File)(path)
-    assert {t.name: t.value for t in read_tag_values(audio.tags)}["rating"] == str(
-        rating
-    )
+    tags = ID3(path) if path.suffix == ".mp3" else MP4(path).tags  # type: ignore[no-untyped-call]
+    assert {t.name: t.value for t in read_tag_values(tags)}["rating"] == str(rating)

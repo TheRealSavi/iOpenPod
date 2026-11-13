@@ -88,7 +88,7 @@ class _RatingReasonDelegate(QStyledItemDelegate):
         )
         star_format = QTextCharFormat()
         star_format.setForeground(QColor(tokens.warning))
-        formats = []
+        formats: list[QTextLayout.FormatRange] = []
         for match in re.finditer(r"[★☆]+", text):
             span = QTextLayout.FormatRange()
             # Qt counts UTF-16 units, which matters for localized text with emoji.

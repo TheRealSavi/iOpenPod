@@ -648,7 +648,9 @@ class _RatingRecord:
 
 @dataclass(frozen=True, slots=True)
 class _RatingCatalog:
-    records: dict[tuple[str, int], _RatingRecord] = field(default_factory=dict)
+    records: dict[tuple[str, int], _RatingRecord] = field(
+        default_factory=dict[tuple[str, int], _RatingRecord]
+    )
     revision: FileFingerprint | None = None
 
 

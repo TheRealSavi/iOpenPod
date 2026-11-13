@@ -39,8 +39,10 @@ def test_rating_round_trip_preserves_other_tags_and_payload(suffix: str) -> None
         audio = _load_media(stream, suffix)
         if audio.tags is None:
             audio.add_tags()
-        audio.tags.add(cast("Any", TIT2)(encoding=3, text=["Keep title"]))
-        audio.tags.add(cast("Any", POPM)(email="existing", rating=64, count=17))
+        tags = audio.tags
+        assert tags is not None
+        tags.add(cast("Any", TIT2)(encoding=3, text=["Keep title"]))
+        tags.add(cast("Any", POPM)(email="existing", rating=64, count=17))
         audio.save(stream)
     else:
         audio = _load_media(stream, suffix)
@@ -194,9 +196,13 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         if case == "conflict_average" or average_retry
         else "host"
     )
+
+    def fingerprint(*args: object, **kwargs: object) -> str:
+        return "1,2,3"
+
     monkeypatch.setattr(
         "iOpenPod.app.host_media_fingerprint.FpcalcFingerprinter.fingerprint",
-        lambda *args, **kwargs: "1,2,3",
+        fingerprint,
     )
     folder = tmp_path / "host"
     folder.mkdir()

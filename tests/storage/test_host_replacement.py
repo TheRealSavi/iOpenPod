@@ -95,7 +95,10 @@ def test_replacement_keeps_original_when_mtime_cannot_advance(
         temp = next(tmp_path.glob(".track.*.tmp"))
         set_time(temp, ns=(observed.modified_ns, observed.modified_ns))
 
-    monkeypatch.setattr(os, "utime", lambda *args, **kwargs: None)
+    def ignore_timestamp_update(*args: object, **kwargs: object) -> None:
+        pass
+
+    monkeypatch.setattr(os, "utime", ignore_timestamp_update)
     with pytest.raises(OSError, match="did not advance"):
         replace_host_file(observed, collide)
 
