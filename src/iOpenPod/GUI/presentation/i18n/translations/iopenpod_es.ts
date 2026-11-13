@@ -11527,7 +11527,7 @@ Playlists: %3</translation>
     <name>Workflow</name>
     <message>
         <source>A changed native browse record is shared by incompatible groups.</source>
-        <translation>Un registro nativo de navegación modificado está compartido por grupos incompatibles.</translation>
+        <translation type="vanished">Un registro nativo de navegación modificado está compartido por grupos incompatibles.</translation>
     </message>
     <message>
         <source>{title}</source>
@@ -11593,11 +11593,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A changed browse group has repeated native records.</source>
-        <translation>Un grupo de navegación modificado tiene registros nativos repetidos.</translation>
+        <translation type="vanished">Un grupo de navegación modificado tiene registros nativos repetidos.</translation>
     </message>
     <message>
         <source>A changed group references a missing source record.</source>
-        <translation>Un grupo modificado hace referencia a un registro de origen que falta.</translation>
+        <translation type="vanished">Un grupo modificado hace referencia a un registro de origen que falta.</translation>
     </message>
     <message>
         <source>A database field or structure cannot be encoded without data loss.</source>
@@ -13608,6 +13608,10 @@ Playlists: %3</translation>
         <translation>No se pudo completar la instalación. El análisis acústico sigue disponible.</translation>
     </message>
     <message>
+        <source>Several compatible browse records exist. An existing record was selected for the Track.</source>
+        <translation>Hay varios registros de navegación compatibles. Se ha seleccionado un registro existente para la pista.</translation>
+    </message>
+    <message>
         <source>Shared Photo files have conflicting captured content.</source>
         <translation>Los archivos de fotos compartidos tienen contenido capturado incompatible.</translation>
     </message>
@@ -14748,6 +14752,10 @@ El análisis acústico sigue disponible.</translation>
     <message>
         <source>The iPod timezone is unknown. Dates are interpreted as UTC; unchanged native date bytes are retained.</source>
         <translation>Se desconoce la zona horaria del iPod. Las fechas se interpretan como UTC; las fechas sin modificar conservan sus bytes originales.</translation>
+    </message>
+    <message>
+        <source>The incoming Track has no unambiguous compatible browse record.</source>
+        <translation type="vanished">No se ha podido identificar de forma inequívoca un registro de navegación compatible para la pista que se va a añadir.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>
