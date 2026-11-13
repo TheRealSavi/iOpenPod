@@ -72,7 +72,11 @@ def artist_source(
 
 
 def add_track(
-    source: IPodLibrary, artist: str, *, filename: str = "new.mp3"
+    source: IPodLibrary,
+    artist: str,
+    *,
+    filename: str = "new.mp3",
+    retained: tuple[Track, ...] | None = None,
 ) -> LibraryWriteResult:
     first = source.snapshot.tracks[0]
     dependency = FileDependency(f"iPod_Control/Music/F00/{filename}", 1024, "a" * 64)
@@ -87,7 +91,8 @@ def add_track(
             first.metadata, location=dependency.relative_path, sample_rate_hz=44100
         ),
     )
-    desired = replace(source.snapshot, tracks=(*source.snapshot.tracks, added))
+    tracks = source.snapshot.tracks if retained is None else retained
+    desired = replace(source.snapshot, tracks=(*tracks, added))
     return source.prepare(
         source.analyze(source.begin_draft(desired)),
         WriteResources(
@@ -292,7 +297,7 @@ def test_deletion_reconciles_the_remaining_shared_artist(retained: int) -> None:
 
 
 @pytest.mark.parametrize("anomaly", ["missing", "duplicate"])
-def test_shared_artist_split_rejects_missing_or_repeated_source_records(
+def test_shared_artist_split_replaces_missing_or_repeated_source_ids(
     anomaly: str,
 ) -> None:
     document = parse_iTunesDB(artist_source(shared=True).serialize().itunes)
@@ -310,15 +315,14 @@ def test_shared_artist_split_rejects_missing_or_repeated_source_records(
         replace(dataset.chunk, children=(replace(container, children=children),)),
     )
     result = add_track(IPodLibrary(write_iTunesDB(document)), "Paul van Dyk")
-    assert result.prepared is None
+    assert result.prepared is not None, result.issues
+    checked = parse_iTunesDB(result.prepared.itunes)
+    assert_exact_artist_references(checked)
+    links = [s.chunk.header.artist_id_ref for s in checked.find_chunks(MhitHeader)]
+    assert links[0] == links[2] != links[1]
+    assert {0, 6, 9}.isdisjoint(links)
     assert any(
-        i.code
-        == (
-            "library.missing_group"
-            if anomaly == "missing"
-            else "library.ambiguous_group"
-        )
-        and i.field == "artist"
+        i.code == "library.ambiguous_group" and i.field == "artist"
         for i in result.issues
     )
 

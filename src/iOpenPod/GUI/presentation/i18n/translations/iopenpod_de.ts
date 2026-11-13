@@ -11527,7 +11527,7 @@ Playlists: %3</translation>
     <name>Workflow</name>
     <message>
         <source>A changed native browse record is shared by incompatible groups.</source>
-        <translation>Ein geänderter nativer Browsing-Datensatz wird von inkompatiblen Gruppen gemeinsam verwendet.</translation>
+        <translation type="vanished">Ein geänderter nativer Browsing-Datensatz wird von inkompatiblen Gruppen gemeinsam verwendet.</translation>
     </message>
     <message>
         <source>{title}</source>
@@ -11593,11 +11593,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A changed browse group has repeated native records.</source>
-        <translation>Eine geänderte Ansichtsgruppe enthält doppelte Originaldatensätze.</translation>
+        <translation type="vanished">Eine geänderte Ansichtsgruppe enthält doppelte Originaldatensätze.</translation>
     </message>
     <message>
         <source>A changed group references a missing source record.</source>
-        <translation>Eine geänderte Gruppe verweist auf einen fehlenden Quelldatensatz.</translation>
+        <translation type="vanished">Eine geänderte Gruppe verweist auf einen fehlenden Quelldatensatz.</translation>
     </message>
     <message>
         <source>A database field or structure cannot be encoded without data loss.</source>
@@ -13612,8 +13612,8 @@ Playlists: %3</translation>
         <translation>Die Einrichtung konnte nicht abgeschlossen werden. Die akustische Analyse bleibt verfügbar.</translation>
     </message>
     <message>
-        <source>Several compatible browse records exist; an existing record was selected for the incoming Track.</source>
-        <translation>Es gibt mehrere kompatible Einträge für die Mediatheksnavigation. Für den hinzuzufügenden Titel wurde ein vorhandener Eintrag ausgewählt.</translation>
+        <source>Several compatible browse records exist. An existing record was selected for the Track.</source>
+        <translation>Es gibt mehrere kompatible Einträge für die Mediatheksnavigation. Für den Titel wurde ein vorhandener Eintrag ausgewählt.</translation>
     </message>
     <message>
         <source>Shared Photo files have conflicting captured content.</source>
@@ -14759,7 +14759,7 @@ Die akustische Analyse bleibt verfügbar.</translation>
     </message>
     <message>
         <source>The incoming Track has no unambiguous compatible browse record.</source>
-        <translation>Für den hinzuzufügenden Titel lässt sich kein kompatibler Navigationseintrag eindeutig bestimmen.</translation>
+        <translation type="vanished">Für den hinzuzufügenden Titel lässt sich kein kompatibler Navigationseintrag eindeutig bestimmen.</translation>
     </message>
     <message>
         <source>The native Chapter index keeps stored order and stops at the first future start. Editable Chapter metadata is retained.</source>

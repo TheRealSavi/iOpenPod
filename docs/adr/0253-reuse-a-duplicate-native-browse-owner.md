@@ -1,5 +1,10 @@
 # ADR-0253: Preserve native browse links during Track membership edits
 
+> [ADR-0254](0254-reuse-exact-artist-records-during-mixed-edits.md) covers
+> Album Artist edits and shared-record splits in the same Library Draft as Adds.
+> [ADR-0255](0255-preserve-duplicate-browse-owners-during-track-edits.md) covers
+> Artist renames and Album edits involving duplicate native records.
+
 - Status: Accepted
 - Date: 2026-11-11
 - Amends: ADR-0172 for source Album Artist ownership and duplicate browse records

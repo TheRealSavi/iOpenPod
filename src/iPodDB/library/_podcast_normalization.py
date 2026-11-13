@@ -4,7 +4,7 @@ The 12.6 reference supplies relationships and creation defaults, not identities
 to copy or a license to overwrite unrelated/unknown fields. See ADR-0152.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import replace
 
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_itunes_chunk
@@ -29,6 +29,7 @@ from iPodDB.library._playlist_datasets import playlist_rows
 from iPodDB.library._projection import project_tracks
 from iPodDB.library._track_header_expansion import field_fits
 from iPodDB.library._track_writing import edit_text
+from iPodDB.library.writing import IssueSeverity, WriteIssue
 from iPodDB.shared.binary_struct import binary_fields
 from iPodDB.shared.chunk import (
     ChunkHeader,
@@ -159,6 +160,7 @@ def _merge_album(
 
 def normalize_albums(
     document: DatabaseDocument[MhbdHeader],
+    issues: list[WriteIssue],
 ) -> DatabaseDocument[MhbdHeader]:
     """One album per unambiguous Podcast show, with a valid representative."""
     tracks = project_tracks(document)
@@ -176,47 +178,58 @@ def normalize_albums(
     if dataset is None:
         return document  # Album datasets are optional on older devices.
     rows = [s.chunk for s in dataset.find_chunks(MhiaHeader)]
-    by_id = {r.header.album_id: r for r in rows}
-    if len(by_id) != len(rows):
-        raise ValueError(
-            "Podcast album normalization requires unique native album IDs."
-        )
+    row_counts = Counter(r.header.album_id for r in rows)
     owners: dict[int, set[int]] = defaultdict(set)
     for track in tracks:
         if track.ipod:
             owners[track.ipod.album_id].add(track.track_id)
-    allocator = IdentityAllocator(by_id, 32)
-    sql = IdentityAllocator((r.header.sql_id for r in rows), 64)
+    artists = tuple(s.chunk.header for s in document.find_chunks(MhiiHeader))
+    allocator = IdentityAllocator(
+        (
+            *row_counts,
+            *owners,
+            *(r.artist_id for r in artists),
+            *(t.ipod.composer_id for t in tracks if t.ipod),
+        ),
+        32,
+    )
+    sql = IdentityAllocator(
+        (*(r.header.sql_id for r in rows), *(r.sql_id for r in artists)), 64
+    )
     edits: dict[int, ParsedChunk[ChunkHeader] | None] = {}
     additions: list[ParsedChunk[MhiaHeader]] = []
     assigned: dict[int, int] = {}
-    for title, members in groups.items():
+    claimed: set[int] = set()
+    for (title, feed), members in groups.items():
         member_ids = {t.track_id for t in members}
         references = {t.ipod.album_id for t in members if t.ipod and t.ipod.album_id}
-        if any(owners[ref] - member_ids for ref in references):
-            raise ValueError("A Podcast album also belongs to another browse group.")
-        if references - by_id.keys():
-            raise ValueError("A Podcast Track references a missing album record.")
-        feed = next(
-            (t.metadata.podcast_rss_url for t in members if t.metadata.podcast_rss_url),
-            "",
-        )
+        usable = {
+            ref
+            for ref in references
+            if row_counts[ref] == 1 and owners[ref] <= member_ids
+        }
         candidates = [
             r
             for r in rows
-            if r.header.album_id in references
-            or (
-                not owners[r.header.album_id]
-                and album_text(r, MhodType.ALBUM_ITEM_ALBUM) == title
-                and album_text(r, MhodType.ALBUM_ITEM_PODCAST_URL) in ("", feed)
-                and (
-                    album_text(r, MhodType.ALBUM_ITEM_PODCAST_URL)
-                    or all(
-                        isinstance(c.header, MhodHeader) and c.header.mhod_type == 200
-                        for c in r.children
+            if row_counts[r.header.album_id] == 1
+            and r.header.album_id
+            and r.header.album_id not in claimed
+            and (
+                r.header.album_id in usable
+                or (
+                    not owners[r.header.album_id]
+                    and album_text(r, MhodType.ALBUM_ITEM_ALBUM) == title
+                    and album_text(r, MhodType.ALBUM_ITEM_PODCAST_URL) in ("", feed)
+                    and (
+                        album_text(r, MhodType.ALBUM_ITEM_PODCAST_URL)
+                        or all(
+                            isinstance(c.header, MhodHeader)
+                            and c.header.mhod_type == 200
+                            for c in r.children
+                        )
                     )
+                    and not r.header.album_track_db_id
                 )
-                and not r.header.album_track_db_id
             )
         ]
         persistent = {t.ipod.db_track_id for t in members if t.ipod}
@@ -234,11 +247,34 @@ def normalize_albums(
             )
             canonical = candidates[0]
             for other in candidates[1:]:
-                canonical = _merge_album(canonical, other)
-                edits[id(other)] = None
+                try:
+                    canonical = _merge_album(canonical, other)
+                except ValueError as error:
+                    issues.append(
+                        WriteIssue(
+                            "library.ambiguous_group",
+                            "Album or artist group has conflicting source identities.",
+                            severity=IssueSeverity.WARNING,
+                            field="album",
+                            detail=f"{title!r}: kept Album {other.header.album_id}; selected {canonical.header.album_id}. {error}",
+                        )
+                    )
+                else:
+                    edits[id(other)] = None
+            claimed.update(r.header.album_id for r in candidates)
         else:
             canonical = new_itunes_chunk(
                 MHIA, MhiaHeader(album_id=allocator.take(), sql_id=sql.take())
+            )
+        if references - usable:
+            issues.append(
+                WriteIssue(
+                    "library.ambiguous_group",
+                    "Album or artist group has conflicting source identities.",
+                    severity=IssueSeverity.WARNING,
+                    field="album",
+                    detail=f"{title!r}: source Album IDs {sorted(references - usable)!r}; selected {canonical.header.album_id}.",
+                )
             )
         canonical = edit_text(canonical, MhodType.ALBUM_ITEM_ALBUM, title)
         if feed:

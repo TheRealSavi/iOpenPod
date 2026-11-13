@@ -317,3 +317,7 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0250: Prefer device write policy over source signature markers](0250-prefer-device-write-policy-over-source-signature-markers.md)
 - [ADR-0251: Use shared Calendar behavior by model](0251-use-shared-calendar-behavior-by-model.md)
 - [ADR-0253: Preserve native browse links during Track membership edits](0253-reuse-a-duplicate-native-browse-owner.md)
+- [ADR-0254: Reuse exact artist records during mixed edits](0254-reuse-exact-artist-records-during-mixed-edits.md)
+- [ADR-0255: Preserve duplicate browse owners during Track edits](0255-preserve-duplicate-browse-owners-during-track-edits.md)
+- [ADR-0256: Resolve duplicate Album destinations by release](0256-resolve-duplicate-album-destinations-by-release.md)
+- [ADR-0257: Continue writes after browse ID conflicts](0257-continue-writes-after-browse-id-conflicts.md)

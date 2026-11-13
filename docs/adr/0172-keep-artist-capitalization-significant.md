@@ -1,5 +1,10 @@
 # ADR-0172: Keep artist capitalization significant
 
+> [ADR-0254](0254-reuse-exact-artist-records-during-mixed-edits.md) qualifies
+> reuse when a split group has multiple candidate records.
+> [ADR-0257](0257-continue-writes-after-browse-id-conflicts.md) defines
+> allocation when source records cannot be reused.
+
 - Status: Accepted
 - Date: 2026-10-23
 - Amends: ADR-0165 for native artist ownership

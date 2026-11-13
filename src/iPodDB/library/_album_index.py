@@ -128,31 +128,28 @@ class AlbumGroup:
 def groups(
     document: DatabaseDocument[MhbdHeader], tracks: tuple[Track, ...]
 ) -> tuple[AlbumGroup, ...]:
-    representatives: dict[int, int] = {}
+    representatives: dict[int, set[int]] = defaultdict(set)
     for row in document.find_chunks(MhiaHeader):
         header = row.chunk.header
-        if header.album_id in representatives:
-            raise ValueError("Sort 36 requires unambiguous native album records.")
-        representatives[header.album_id] = header.album_track_db_id
+        if header.album_track_db_id:
+            representatives[header.album_id].add(header.album_track_db_id)
     members: dict[AlbumIdentity, list[Track]] = defaultdict(list)
     for track in tracks:
         members[_identity(track)].append(track)
     result: list[AlbumGroup] = []
     for identity, values in members.items():
-        reference = (
-            representatives.get(int(identity[1]), 0) if identity[0] == "native" else 0
+        references: set[int] = (
+            representatives.get(int(identity[1]), set())
+            if identity[0] == "native"
+            else set()
         )
-        representative = next(
-            (
-                t
-                for t in values
-                if reference and t.ipod and t.ipod.db_track_id == reference
+        representative = min(
+            values,
+            key=lambda t: (
+                not (t.ipod and t.ipod.db_track_id in references),
+                *_numbers(t),
             ),
-            None,
         )
-        if reference and representative is None:
-            raise ValueError("Sort 36's album representative is outside its album.")
-        representative = representative or min(values, key=_numbers)
         meta = representative.metadata
         result.append(
             AlbumGroup(

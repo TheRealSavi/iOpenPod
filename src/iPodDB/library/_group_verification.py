@@ -11,6 +11,11 @@ from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhia import MhiaHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhii import MhiiHeader
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod_payloads.string_mhod import (
+    MhodStringPayload,
+    MhodStringPrefix,
+)
 from iPodDB.iTunesDB.shared.chunk_defs.mhsd import MhsdHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.library._artist_groups import native_artist_name
@@ -20,12 +25,102 @@ from iPodDB.library._browse_groups import (
     native_browse_groups,
     unchanged_podcast_album_fields,
 )
-from iPodDB.library._browse_membership import retained_browse_memberships
+from iPodDB.library._browse_membership import (
+    retained_album_representative,
+    retained_browse_memberships,
+    select_browse_id,
+)
 from iPodDB.library._track_header_expansion import optional_field_available
 from iPodDB.library.models import LibrarySnapshot, MediaKind, Track
 from iPodDB.library.writing import IdentityMapping, WriteIssue
-from iPodDB.shared.binary_struct import write_binary_struct_into
+from iPodDB.shared.binary_struct import binary_struct_extent, write_binary_struct_into
 from iPodDB.shared.chunk import ChunkHeader, DatabaseDocument, ParsedChunk
+
+
+def _matches_album_edit(
+    source: ParsedChunk[ChunkHeader],
+    output: ParsedChunk[ChunkHeader],
+    header: MhiaHeader,
+    edits: dict[MhodType, str],
+) -> bool:
+    def text_positions(row: ParsedChunk[ChunkHeader]) -> dict[int, int]:
+        return {
+            child.header.mhod_type: index
+            for index, child in enumerate(row.children)
+            if isinstance(child.header, MhodHeader)
+            and isinstance(child.payload, MhodStringPayload)
+        }
+
+    source_positions = text_positions(source)
+    output_positions = text_positions(output)
+    changed: dict[int, int] = {}
+    inserted: set[int] = set()
+    for mhod, value in edits.items():
+        index = output_positions.get(mhod)
+        if index is None or output.children[index].payload != MhodStringPayload(value):
+            return False
+        if mhod in source_positions:
+            changed[source_positions[mhod]] = index
+        else:
+            inserted.add(index)
+
+    expected_header = bytearray(source.raw_header)
+    write_binary_struct_into(
+        expected_header,
+        replace(
+            source.generic_header,
+            length_or_child_count=output.generic_header.length_or_child_count,
+        ),
+    )
+    write_binary_struct_into(
+        expected_header,
+        replace(header, child_count=len(source.children) + len(inserted)),
+    )
+    if (
+        bytes(expected_header) != output.raw_header
+        or source.raw_trailing_data != output.raw_trailing_data
+    ):
+        return False
+
+    retained = [index for index in range(len(output.children)) if index not in inserted]
+    if len(retained) != len(source.children):
+        return False
+    for source_index, output_index in enumerate(retained):
+        before = source.children[source_index]
+        after = output.children[output_index]
+        if source_index not in changed:
+            if (before.raw_header, before.raw_body) != (
+                after.raw_header,
+                after.raw_body,
+            ):
+                return False
+            continue
+        if changed[source_index] != output_index or not (
+            isinstance(before.prefix, MhodStringPrefix)
+            and isinstance(after.prefix, MhodStringPrefix)
+        ):
+            return False
+        expected_child_header = bytearray(before.raw_header)
+        write_binary_struct_into(
+            expected_child_header,
+            replace(
+                before.generic_header,
+                length_or_child_count=after.generic_header.length_or_child_count,
+            ),
+        )
+        prefix_extent = binary_struct_extent(MhodStringPrefix)
+        before_end = (
+            prefix_extent - len(before.raw_header) + before.prefix.string_length
+        )
+        after_end = prefix_extent - len(after.raw_header) + after.prefix.string_length
+        if (
+            bytes(expected_child_header) != after.raw_header
+            or replace(before.prefix, string_length=after.prefix.string_length)
+            != after.prefix
+            or before.raw_body[before_end:] != after.raw_body[after_end:]
+        ):
+            return False
+    return True
 
 
 def _rows(
@@ -138,17 +233,24 @@ def verify_browse_groups(
             i: c.header.album_id if album else c.header.artist_id_ref
             for i, c in output.items()
         }
-        album_pids: dict[int, int] = {}
-        if album and deleted_pids:
+        prior_album_pids: dict[int, set[int]] = defaultdict(set)
+        album_pids: dict[int, set[int]] = defaultdict(set)
+        if album:
+            for i, owner in source_refs.items():
+                if pid := old_native[i].header.db_track_id:
+                    prior_album_pids[owner].add(pid)
             for i, owner in refs.items():
-                pid = output[i].header.db_track_id
-                album_pids[owner] = min(album_pids.get(owner, pid), pid)
+                album_pids[owner].add(output[i].header.db_track_id)
         verified_records: set[int] = set()
         prior_owners: dict[int, set[int]] = defaultdict(set)
         prior_members: dict[int, list[Track]] = defaultdict(list)
         for identity, reference in source_refs.items():
             prior_owners[reference].add(identity)
             prior_members[reference].append(old_tracks[identity])
+        row_evidence = {
+            identity: (len(matches), None if album else native_artist_name(matches[0]))
+            for identity, matches in source_rows.items()
+        }
         for key, members in groups.items():
             if (
                 album
@@ -163,15 +265,90 @@ def verify_browse_groups(
                 continue
             retained_group = membership[album].get(key)
             if retained_group is not None and kind in kinds:
-                if retained_group.ambiguous:
-                    continue  # Reconciliation has already reported the ambiguity.
                 fresh_artist_id = 0
+                fresh_albums: dict[tuple[int, str], int] = {}
+                new_album_members: dict[tuple[int, str], list[Track]] = defaultdict(
+                    list
+                )
+                for track in members:
+                    if track.track_id in retained_group.new_albums:
+                        new_album_members[
+                            retained_group.new_albums[track.track_id]
+                        ].append(track)
                 for t in members:
                     if t.track_id not in refs:
                         continue
                     expected_id = retained_group.links[t.track_id]
                     actual_id = refs[t.track_id]
                     chunk = output[t.track_id]
+                    if t.track_id in retained_group.new_albums:
+                        album_key = retained_group.new_albums[t.track_id]
+                        matches = rows.get(actual_id, [])
+                        if (
+                            not actual_id
+                            or actual_id in source_browse_ids
+                            or len(matches) != 1
+                            or fresh_albums.setdefault(album_key, actual_id)
+                            != actual_id
+                        ):
+                            fail(
+                                "group_identity",
+                                t.track_id,
+                                field,
+                                f"Expected a new Album ID, actual {actual_id}.",
+                                chunk,
+                            )
+                            continue
+                        if actual_id in verified_records:
+                            continue
+                        verified_records.add(actual_id)
+                        new_row = matches[0]
+                        album_tracks = new_album_members[album_key]
+                        values = album_values(album_tracks)
+                        owners = {track.track_id for track in album_tracks}
+                        album_header = new_row.header
+                        if (
+                            not isinstance(album_header, MhiaHeader)
+                            or not album_header.sql_id
+                            or album_header.sql_id in source_sql_ids
+                            or output_sql_counts[album_header.sql_id] != 1
+                            or {i for i, owner in refs.items() if owner == actual_id}
+                            != owners
+                            or album_header.album_track_db_id
+                            != min(
+                                output[i].header.db_track_id
+                                for i in owners
+                                if i in output
+                            )
+                            or album_header.content_type_flag != values.content_type
+                            or album_header.album_compilation_flag
+                            != int(values.compilation)
+                            or album_header.season_number != values.season
+                            or any(
+                                group_text(new_row, mhod) != value
+                                for mhod, value in (
+                                    (MhodType.ALBUM_ITEM_ALBUM, values.title),
+                                    (MhodType.ALBUM_ITEM_ARTIST, values.artist),
+                                    (
+                                        MhodType.ALBUM_ITEM_SORT_ARTIST,
+                                        values.sort_artist,
+                                    ),
+                                    (
+                                        MhodType.ALBUM_ITEM_PODCAST_URL,
+                                        values.podcast_url,
+                                    ),
+                                    (MhodType.ALBUM_ITEM_SHOW, values.show),
+                                )
+                            )
+                        ):
+                            fail(
+                                "group_metadata",
+                                t.track_id,
+                                field,
+                                f"New Album {actual_id} does not match its Tracks.",
+                                new_row,
+                            )
+                        continue
                     if expected_id or t.track_id in source_refs:
                         if actual_id != expected_id:
                             fail(
@@ -189,26 +366,37 @@ def verify_browse_groups(
                             source_rows.get(actual_id, []),
                             rows.get(actual_id, []),
                         )
-                        expected_rows: list[tuple[bytes, bytes]] = []
-                        for original_row in source_matches:
+                        matches_expected = len(matches) == len(source_matches)
+                        for original_row, output_row in zip(
+                            source_matches, matches, strict=False
+                        ):
                             header = bytearray(original_row.raw_header)
                             native_header = original_row.header
-                            if (
-                                len(source_matches) == 1
-                                and isinstance(native_header, MhiaHeader)
-                                and native_header.album_track_db_id in deleted_pids
+                            if len(source_matches) == 1 and isinstance(
+                                native_header, MhiaHeader
                             ):
-                                write_binary_struct_into(
-                                    header,
-                                    replace(
-                                        native_header,
-                                        album_track_db_id=album_pids.get(actual_id, 0),
-                                    ),
+                                representative = retained_album_representative(
+                                    native_header.album_track_db_id,
+                                    prior_album_pids[actual_id],
+                                    album_pids[actual_id],
+                                    deleted_pids,
                                 )
-                            expected_rows.append((bytes(header), original_row.raw_body))
-                        if [
-                            (row.raw_header, row.raw_body) for row in matches
-                        ] != expected_rows:
+                                updated_header = replace(
+                                    native_header, album_track_db_id=representative
+                                )
+                                edits = retained_group.album_text_edits.get(actual_id)
+                                if edits:
+                                    matches_expected &= _matches_album_edit(
+                                        original_row, output_row, updated_header, edits
+                                    )
+                                    continue
+                                if representative != native_header.album_track_db_id:
+                                    write_binary_struct_into(header, updated_header)
+                            matches_expected &= (
+                                bytes(header),
+                                original_row.raw_body,
+                            ) == (output_row.raw_header, output_row.raw_body)
+                        if not matches_expected:
                             fail(
                                 "group_metadata",
                                 t.track_id,
@@ -291,23 +479,27 @@ def verify_browse_groups(
                 ):
                     candidates = previous_refs - {0}
             if split_artist:
-                split_sources = artist_changes[members[0].artist]
-                candidates = {
-                    i
-                    for i in split_sources
-                    if len(source_rows.get(i, [])) == 1
-                    and native_artist_name(source_rows[i][0]) == members[0].artist
+                candidates = set(artist_changes[members[0].artist])
+            shared_ids: set[int] = (
+                {
+                    source_refs[t.track_id]
+                    for t in prior
+                    if prior_owners[source_refs[t.track_id]]
+                    - {p.track_id for p in prior}
                 }
-                if len(split_sources) != 1 or any(
-                    len(source_rows.get(i, [])) != 1 for i in split_sources
-                ):
-                    fail(
-                        "group_identity",
-                        first_id,
-                        field,
-                        "A split artist must have one unambiguous source record.",
-                        output[first_id],
-                    )
+                if album
+                else set()
+            )
+            selected_id = select_browse_id(
+                candidates if not album or len(candidates) <= 1 else set(),
+                row_evidence,
+                prior_owners,
+                member_ids,
+                excluded=shared_ids,
+                artist=members[0].artist
+                if split_artist or (not album and len(candidates) > 1)
+                else None,
+            )
             if not album and len(artist_owners[identity]) != 1:
                 fail(
                     "shared_artist",
@@ -316,14 +508,14 @@ def verify_browse_groups(
                     f"Artist {identity} is shared by distinct exact names.",
                     output[first_id],
                 )
-            if (candidates and candidates != {identity}) or (
-                not candidates and identity in source_browse_ids
+            if (selected_id and selected_id != identity) or (
+                not selected_id and identity in source_browse_ids
             ):
                 fail(
                     "group_identity",
                     first_id,
                     field,
-                    f"Dataset {kind}: expected retained IDs {sorted(candidates)} or a new identity when empty, actual {identity}.",
+                    f"Dataset {kind}: expected retained ID {selected_id} or a new identity when zero, actual {identity}.",
                     output[first_id],
                 )
             matched = rows.get(identity, [])
