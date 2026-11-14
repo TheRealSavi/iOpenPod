@@ -36,13 +36,11 @@ from iOpenPod.app.models.extras import (
     RenameCalendar,
     SaveAlarm,
     SaveCalendar,
-    SaveTimerSettings,
     SkipCalendarOccurrence,
 )
 from iOpenPod.app.services.alarm_tones import capture_alarm_tones
 from iPodDB.alarms import (
     CLOCK_CITIES,
-    CountdownTimerSnapshot,
     add_alarm,
     add_clock_alarm,
     clock_city,
@@ -51,9 +49,7 @@ from iPodDB.alarms import (
     empty_clock_document,
     parse_alarms,
     parse_clock_alarms,
-    parse_countdown_timer,
     parse_preferences_alarm,
-    patch_countdown_timer,
     patch_preferences_alarm,
     remove_alarm,
     remove_clock_alarm,
@@ -76,7 +72,6 @@ from iPodDB.calendar import (
     update_entry,
 )
 from iPodDB.library import AlarmPlaylistCatalog, AlarmPlaylistLayout
-from iPodDB.preferences import NamedPreferencesProfile
 from storage import (
     DeviceEntryKind,
     DevicePath,
@@ -97,8 +92,6 @@ CALENDAR_ROOT = DevicePath("Calendars")
 ALARM_PATH = DevicePath("iPod_Control/Device/alarms")
 PREFERENCES_PATH = DevicePath("iPod_Control/Device/Preferences")
 CLOCK_PATH = DevicePath("iPod_Control/Device/clock")
-SETTINGS_PATH = DevicePath("iPod_Control/Device/iPodSettings.xml")
-TIMER_PATH = DevicePath("iPod_Control/Device/iPodTimerSettings.xml")
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_CALENDAR_FILES = 256
 MAX_CALENDAR_BYTES = 16 * 1024 * 1024
@@ -193,12 +186,9 @@ def read_extras(
             raise
         issues.append(f"Calendars: {error}")
     alarms: tuple[AlarmItem, ...] = ()
-    timer: CountdownTimerSnapshot | None = None
     can_create_alarm = False
     path = _alarm_path(support.alarm_format)
-    if support.alarm_format is AlarmFormat.TIMER:
-        timer = _read_timer(session, support, files, issues, checkpoint)
-    elif support.alarm_format is not AlarmFormat.NONE:
+    if support.alarm_format is not AlarmFormat.NONE:
         checkpoint()
         try:
             if session.exists(path):
@@ -279,7 +269,6 @@ def read_extras(
         support,
         tuple(files),
         tuple(groups.values()),
-        timer,
         can_create_alarm,
         sounds,
         alarm_playlists,
@@ -465,114 +454,6 @@ def _alarm_path(format: AlarmFormat) -> DevicePath:
     return PREFERENCES_PATH
 
 
-def _read_timer(
-    session: FilesystemSession,
-    support: ExtrasSupport,
-    files: list[ExtrasFile],
-    issues: list[str],
-    checkpoint: Callable[[], None],
-) -> CountdownTimerSnapshot | None:
-    profile = _timer_profile(support)
-    if profile is None:
-        return None
-    captured_files: dict[DevicePath, bytes] = {}
-    paths = (
-        (SETTINGS_PATH, TIMER_PATH)
-        if profile is NamedPreferencesProfile.NANO_6_1_2
-        else (SETTINGS_PATH,)
-    )
-    for path in paths:
-        checkpoint()
-        try:
-            if session.exists(path):
-                captured = session.read_snapshot(path, max_bytes=MAX_FILE_BYTES)
-                files.append(ExtrasFile(str(path), captured.data, captured.fingerprint))
-                captured_files[path] = captured.data
-        except (StorageError, ValueError) as error:
-            if not session.is_active:
-                raise
-            issues.append(f"Timer: {error}")
-    timer = parse_countdown_timer(
-        captured_files.get(SETTINGS_PATH),
-        profile=profile,
-        timer_settings=captured_files.get(TIMER_PATH),
-    )
-    issues.extend(timer.issues)
-    return timer
-
-
-def _timer_profile(support: ExtrasSupport) -> NamedPreferencesProfile | None:
-    profiles = {
-        FirmwareTarget.NANO_6_1_2: NamedPreferencesProfile.NANO_6_1_2,
-        FirmwareTarget.NANO_7_1_0_4: NamedPreferencesProfile.NANO_7_1_0_4,
-        FirmwareTarget.NANO_UPDATER_39_1_1_2: NamedPreferencesProfile.NANO_UPDATER_39_1_1_2,
-    }
-    return profiles.get(support.alarm_firmware) if support.alarm_firmware else None
-
-
-def timer_preconditions(catalog: ExtrasCatalog) -> tuple[FilePrecondition, ...]:
-    """Bind an explicit timer edit, including no-ops, to its captured stores."""
-    return tuple(
-        FilePrecondition(DevicePath(file.key), file.fingerprint)
-        for file in catalog.files
-        if file.key in (str(SETTINGS_PATH), str(TIMER_PATH))
-    )
-
-
-def _prepare_timer_change(
-    catalog: ExtrasCatalog,
-    change: SaveTimerSettings,
-    dependencies: tuple[FilePrecondition, ...],
-) -> StorageTransaction | None:
-    support = catalog.support
-    if (
-        support is None
-        or not support.timer_settings_write
-        or support.alarm_format is not AlarmFormat.TIMER
-        or catalog.timer is None
-        or (profile := _timer_profile(support)) is None
-    ):
-        raise ValueError("Saved timer editing is unavailable for this iPod.")
-    sources = {file.key: file for file in catalog.files}
-    settings = sources.get(str(SETTINGS_PATH))
-    timer = sources.get(str(TIMER_PATH))
-    changed = patch_countdown_timer(
-        settings.data if settings else None,
-        profile=profile,
-        changes=change.changes,
-        timer_settings=timer.data if timer else None,
-    )
-    writes: list[TransactionWrite] = []
-    for source, data in (
-        (settings, changed.settings),
-        (timer, changed.timer_settings),
-    ):
-        if source is None or data is None or source.data == data:
-            continue
-        if len(data) > MAX_FILE_BYTES:
-            raise ValueError("The timer settings file exceeds the supported size.")
-        writes.append(
-            TransactionWrite(
-                DevicePath(source.key),
-                data,
-                FileContent(len(data), hashlib.sha256(data).hexdigest()),
-                expected=source.fingerprint,
-            )
-        )
-    return (
-        StorageTransaction(
-            writes=tuple(writes),
-            dependencies=tuple(
-                dependency
-                for dependency in dependencies
-                if dependency.path not in {write.path for write in writes}
-            ),
-        )
-        if writes
-        else None
-    )
-
-
 def _alarm_items(
     data: bytes, support: ExtrasSupport
 ) -> tuple[tuple[AlarmItem, ...], tuple[str, ...]]:
@@ -711,8 +592,6 @@ def prepare_change(
             ),
             dependencies=(*dependencies, *catalog.tone_dependencies),
         )
-    if isinstance(change, SaveTimerSettings):
-        return _prepare_timer_change(catalog, change, dependencies)
     if isinstance(change, CreateClockAlarm) or (
         isinstance(change, RemoveAlarm) and support.alarm_format is AlarmFormat.CLOCK
     ):

@@ -30,9 +30,8 @@ broader than the edit allowlist: partial meanings, raw values and bounded Unknow
 Data summaries remain visible without authorizing writes. Exact identity and
 file framing qualify each interpretation and editor. Nano 5/6/7 use the separate
 `iPodSettings.xml` model; earlier targets use binary Preferences. Nano 4's
-extensionless named store and Nano 6's timer store are read-only in the
-Preferences catalog. The Alarms workflow separately edits qualified saved
-Countdown Timer fields under ADR-0260.
+extensionless named store is read-only in the Preferences catalog. Nano 6/7
+Countdown Timer support has been removed by user direction (ADR-0267).
 Optional legacy Nano binary state does not gate XML edits. Clock uncertainty
 remains nonblocking, and unrelated bytes remain preserved. Changes use
 source-checked Storage Transactions. Successful file publication is distinct from
@@ -77,9 +76,8 @@ the persistent per-city Clock Alarms, including city creation/removal, manual DS
 Beep and native Playlist choices; their Preferences projection is not edited.
 Nano 2 1.1.3 follows Nano 1's city editor by explicit user-directed compatibility
 policy (ADR-0261, extended by ADR-0263);
-its encrypted firmware remains unverified. Nano 6/7 edit saved
-countdown duration and ending action while observing saved deadlines. No saved value
-is presented as live timer status. Unknown data remains preserved; optional
+its encrypted firmware remains unverified. Nano 6/7 have no Alarms route or
+Countdown Timer workflow. Unknown data remains preserved; optional
 Extras failures never block Library loading. Library writes leave saved Alarm
 selections unchanged, including when Playlist positions change or selected Playlists
 are deleted (ADR-0262). Publication uses
@@ -558,8 +556,8 @@ submission, with original evidence retained separately while pending (ADR-0102).
 
 iPodDB also provides lossless typed readers/writers for firmware Preferences,
 qualified named settings in `iPodSettings.xml`, and binary iTunesPrefs. Pure
-inspectors additionally expose exact-profile saved fields, named Nano stores and
-nonblocking timer observations, with raw values and explicit limits. Observation
+inspectors additionally expose exact-profile saved fields and named Nano stores,
+with raw values and explicit limits. Observation
 catalogs do not grant editing authority. Unknown Data remains retained;
 model-specific fields require explicit caller assertions, and layout recognition
 remains separate from Device Identity. Companion plist modeling and physical

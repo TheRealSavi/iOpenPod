@@ -82,9 +82,6 @@ def resolve_extras_support(
         FirmwareTarget.NANO_3_1_1_3: AlarmFormat.CLASSIC,
         FirmwareTarget.NANO_4_1_0_4: AlarmFormat.CLASSIC,
         FirmwareTarget.NANO_5_1_0_2: AlarmFormat.CLASSIC,
-        FirmwareTarget.NANO_6_1_2: AlarmFormat.TIMER,
-        FirmwareTarget.NANO_7_1_0_4: AlarmFormat.TIMER,
-        FirmwareTarget.NANO_UPDATER_39_1_1_2: AlarmFormat.TIMER,
         FirmwareTarget.CLASSIC_6_1_1_2: AlarmFormat.CLASSIC,
         FirmwareTarget.CLASSIC_120GB_2_0_1: AlarmFormat.CLASSIC,
         FirmwareTarget.CLASSIC_UPDATER_35_2_0_4: AlarmFormat.CLASSIC,
@@ -107,12 +104,9 @@ def resolve_extras_support(
             AlarmFormat.CLOCK,
         },
         sleep_timer=sleep,
-        timer_settings_write=target is AlarmFormat.TIMER,
         reason=(
             "Clock Alarm editing is unavailable for this iPod."
             if target is AlarmFormat.NONE
-            else "Saved timer duration and ending action can be edited; live countdown control is separate."
-            if target is AlarmFormat.TIMER
             else "Saved alarms use Nano 1 compatibility behavior for this iPod."
             if firmware is FirmwareTarget.NANO_2_1_1_3
             else "Saved alarm editing is supported for this firmware."

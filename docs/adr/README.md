@@ -330,3 +330,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0263: Author Clock cities and native Alarm Playlist selections](0263-author-clock-cities-and-native-alarm-playlist-selections.md)
 - [ADR-0264: Require fpcalc in supported installations](0264-require-fpcalc-in-supported-installations.md)
 - [ADR-0265: Author Alarm Tones from local melody arrangements](0265-author-alarm-tones-from-local-melody-arrangements.md)
+- [ADR-0267: Remove Nano Countdown Timer support](0267-remove-nano-countdown-timer-support.md)

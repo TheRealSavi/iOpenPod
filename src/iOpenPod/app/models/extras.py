@@ -9,8 +9,6 @@ from device_registry import ExtrasSupport
 from iPodDB.alarms import (
     AlarmToneNote,
     ClockCity,
-    CountdownTimerChanges,
-    CountdownTimerSnapshot,
 )
 from iPodDB.calendar import (
     CalendarComponent,
@@ -111,7 +109,6 @@ class ExtrasCatalog:
     support: ExtrasSupport | None = None
     files: tuple[ExtrasFile, ...] = ()
     calendars: tuple[CalendarGroup, ...] = ()
-    timer: CountdownTimerSnapshot | None = None
     can_create_alarm: bool = False
     alarm_sounds: tuple[AlarmSound, ...] = ()
     alarm_playlists: AlarmPlaylistCatalog | None = None
@@ -217,11 +214,6 @@ class CreateClockAlarm:
     sound: AlarmSound | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class SaveTimerSettings:
-    changes: CountdownTimerChanges
-
-
 type ExtrasChange = (
     SaveCalendar
     | RemoveCalendar
@@ -232,7 +224,6 @@ type ExtrasChange = (
     | RenameCalendar
     | CreateAlarm
     | RemoveAlarm
-    | SaveTimerSettings
     | CreateClockAlarm
     | CreateTone
 )

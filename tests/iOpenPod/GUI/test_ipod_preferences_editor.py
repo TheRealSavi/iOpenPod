@@ -399,13 +399,13 @@ def test_read_only_details_and_raw_xml_are_literal_and_accessible() -> None:
     controller.view = IPodPreferencesCatalog(
         sections=(
             IPodPreferenceSection(
-                "timer",
-                "Timer settings",
+                "device",
+                "Device settings",
                 PreferenceFileStatus.AVAILABLE,
                 (
                     IPodPreference(
-                        "Timer.DateTime",
-                        "Timer deadline",
+                        "Vendor.UnknownField",
+                        "Unknown field",
                         "<b>invalid date</b>",
                         detail="Calendar meaning is unresolved; source is retained.",
                         raw_value='<img src="file:///private">',
@@ -417,7 +417,7 @@ def test_read_only_details_and_raw_xml_are_literal_and_accessible() -> None:
     )
     view = IPodPreferencesView(controller=controller)
     try:
-        value = _find(view, QLabel, "ipodPreference_timer_Timer.DateTime")
+        value = _find(view, QLabel, "ipodPreference_device_Vendor.UnknownField")
         assert value.text() == "<b>invalid date</b>"
         assert value.textFormat() is Qt.TextFormat.PlainText
         assert "&lt;img" in value.toolTip() and "<img" not in value.toolTip()

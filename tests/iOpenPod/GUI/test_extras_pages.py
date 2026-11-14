@@ -55,6 +55,7 @@ from iOpenPod.app.models.extras import (
     CalendarItem,
     ExtrasCatalog,
 )
+from iOpenPod.GUI.dialogs.calendar_picker import CalendarPickerDialog
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId, page_supported
 from iOpenPod.GUI.pages.alarms_page import AlarmEditor, AlarmsPage
@@ -439,12 +440,20 @@ def test_calendar_busy_and_errors_remain_page_local() -> None:
         page.close()
 
 
-def test_sleep_timer_explains_device_control_without_a_host_timer() -> None:
+def test_alarms_page_shows_content_without_sleep_timer_or_tabs() -> None:
     page = AlarmsPage(ExtrasTestController())
     try:
-        text = find_widget(page, QLabel, "sleepTimerInstructions").text()
-        assert "on your iPod" in text and "cannot read or change" in text
-        assert page.findChild(QPushButton, "startSleepTimer") is None
+        page.show()
+        assert page.findChild(QTabWidget) is None
+        assert page.findChild(QLabel, "sleepTimerInstructions") is None
+        assert page.findChild(QPushButton, "alarmsRefresh") is None
+        assert not any(
+            label.text() == "Saved alarms" or "Times follow" in label.text()
+            for label in page.findChildren(QLabel)
+        )
+        assert find_widget(page, QLabel, "alarmsEmpty").isVisible()
+        assert find_widget(page, QPushButton, "alarmEdit").isVisible()
+        assert page.findChild(QPushButton, "timerEdit") is None
     finally:
         page.close()
 
@@ -884,7 +893,10 @@ def test_calendar_selector_includes_empty_groups_and_filters_entries() -> None:
         events = find_widget(page, QTreeWidget, "calendarEvents")
         assert selector.count() == 4
         assert events.topLevelItemCount() == 2
+        rename = find_widget(page, QPushButton, "calendarRename")
+        assert rename.isHidden()
         selector.setCurrentIndex(1)
+        assert not rename.isHidden()
         assert events.topLevelItemCount() == 1
         row = events.topLevelItem(0)
         assert row is not None
@@ -895,11 +907,20 @@ def test_calendar_selector_includes_empty_groups_and_filters_entries() -> None:
         selector.setCurrentIndex(3)
         assert events.topLevelItemCount() == 0
         assert find_widget(page, QPushButton, "calendarRename").isEnabled()
+        controller.working = True
+        controller.changed.emit()
+        assert rename.isHidden()
+        controller.working = False
+        controller.changed.emit()
+        assert not rename.isHidden()
+        selector.setCurrentIndex(0)
+        assert rename.isHidden()
         controller.current = None
         controller.view = ExtrasCatalog()
         controller.changed.emit()
         assert selector.count() == 1
         assert not find_widget(page, QPushButton, "calendarRename").isEnabled()
+        assert rename.isHidden()
     finally:
         page.close()
 
@@ -946,7 +967,11 @@ def test_create_and_rename_calendar_use_the_selected_group(
 
     monkeypatch.setattr(QInputDialog, "getText", get_text)
     try:
-        find_widget(page, QPushButton, "calendarCreate").click()
+        create = find_widget(page, QToolButton, "calendarCreate")
+        assert not create.text() and not create.icon().isNull()
+        assert create.accessibleName() == create.toolTip() == "New calendar…"
+        assert page.findChild(QPushButton, "calendarRefresh") is None
+        create.click()
         selector = find_widget(page, AppComboBox, "calendarSelector")
         selector.setCurrentIndex(1)
         find_widget(page, QPushButton, "calendarRename").click()
@@ -987,11 +1012,11 @@ def test_destination_picker_cannot_open_an_editor_for_a_new_connection(
     )
     page = CalendarPage(controller)
 
-    def choose(*args: object) -> tuple[str, bool]:
+    def choose(picker: CalendarPickerDialog) -> int:
         controller.current = make_active_ipod()
-        return "Work", True
+        return picker.DialogCode.Accepted
 
-    monkeypatch.setattr(QInputDialog, "getItem", choose)
+    monkeypatch.setattr(CalendarPickerDialog, "exec", choose)
     try:
         find_widget(page, QPushButton, "calendarNew").click()
         assert page.findChild(CalendarEditor) is None
@@ -1336,3 +1361,33 @@ def test_existing_timezone_picker_uses_the_entries_own_file_and_keeps_clock_time
     finally:
         page.close()
         APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("model", ["MC525", "MD480", "MKN22"])
+def test_touch_nano_has_no_alarm_route_in_either_navigation_style(model: str) -> None:
+    active = make_active_ipod()
+    profile = next(
+        p for p in DEFAULT_DEVICE_REGISTRY.profiles if p.model_number == model
+    )
+    nano = replace(
+        active, profile=profile, candidate=replace(active.candidate, profile=profile)
+    )
+    sidebar, compact = Sidebar(), CompactTopBar(playlists=LibraryWorkspace())
+    try:
+        sidebar.set_active_ipod(nano)
+        compact.set_active_ipod(nano)
+        assert not page_supported(PageId.ALARMS, profile)
+        alarm = next(
+            button
+            for button in sidebar.findChildren(QPushButton)
+            if button.property("pageId") == PageId.ALARMS.value
+        )
+        assert alarm.isHidden()
+        assert find_widget(compact, QPushButton, "compactExtras").isHidden()
+        sidebar.set_active_ipod(active)
+        compact.set_active_ipod(active)
+        assert not alarm.isHidden()
+        assert not find_widget(compact, QPushButton, "compactExtras").isHidden()
+    finally:
+        sidebar.close()
+        compact.close()

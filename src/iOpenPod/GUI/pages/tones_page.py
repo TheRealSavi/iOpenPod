@@ -8,24 +8,22 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QEvent, QLocale, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QLocale, Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
-    QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from iOpenPod.app.tone_preview import TonePreview
+from iOpenPod.GUI.delegates.extras_delegate import ToneDelegate
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
+from iOpenPod.GUI.widgets.extras_collection import ExtrasCollection
+from iOpenPod.GUI.widgets.themed_buttons import ActionButton
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QHideEvent
@@ -46,72 +44,46 @@ class TonesPage(QWidget):
         self._preview = TonePreview(self)
         self._items: tuple[AlarmToneItem, ...] = ()
         self._header = PageHeader(self)
-        self._refresh = ActionButton(
-            parent=self._header, kind=ActionButtonKind.QUIET, glyph="refresh"
-        )
-        self._refresh.setObjectName("tonesRefresh")
-        self._header.add_action(self._refresh)
         content = QWidget(self)
-        content.setMaximumWidth(960)
-        self._hint = QLabel(content)
-        self._hint.setWordWrap(True)
-        self._hint.setProperty("extrasMuted", True)
+        content.setMaximumWidth(LAYOUT.extras_collection_width)
         self._status = QLabel(content)
         self._status.setWordWrap(True)
         self._status.setTextFormat(Qt.TextFormat.PlainText)
-        self._list = QTreeWidget(content)
+        panel = ExtrasCollection(content)
+        panel.setObjectName("tonesCollection")
+        self._list = panel.view
         self._list.setObjectName("tonesList")
         self._list.setColumnCount(3)
-        self._list.setRootIsDecorated(False)
-        self._list.setFrameShape(QFrame.Shape.NoFrame)
-        self._list.setProperty("extrasList", True)
-        self._list.setAlternatingRowColors(False)
-        self._list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._list.setAllColumnsShowFocus(True)
-        self._list.setUniformRowHeights(True)
-        self._list.header().setStretchLastSection(False)
-        self._list.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self._list.header().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._list.header().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._empty = QLabel(content)
+        self._list.hideColumn(1)
+        self._list.hideColumn(2)
+        self._list.setItemDelegate(ToneDelegate(self._list))
+        self._empty = panel.empty
         self._empty.setObjectName("tonesEmpty")
-        self._empty.setWordWrap(True)
-        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty.setProperty("extrasEmpty", True)
-        self._play = ActionButton(parent=content, glyph="play")
+        self._play = ActionButton(parent=panel, glyph="play")
         self._play.setObjectName("tonePreview")
-        self._count = QLabel(content)
+        self._count = QLabel(panel)
         self._count.setProperty("extrasMuted", True)
-        actions = QHBoxLayout()
-        actions.addWidget(self._play)
-        actions.addStretch(1)
-        actions.addWidget(self._count)
+        panel.action_layout.addWidget(self._play)
+        panel.action_layout.addStretch(1)
+        panel.action_layout.addWidget(self._count)
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(LAYOUT.space_md)
+        layout.addWidget(self._status)
+        layout.addWidget(panel)
+        layout.addStretch(1)
+        centered = QHBoxLayout()
+        centered.setContentsMargins(
             LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
         )
-        layout.setSpacing(LAYOUT.space_md)
-        layout.addWidget(self._hint)
-        layout.addWidget(self._status)
-        layout.addWidget(self._list, 1)
-        layout.addWidget(self._empty, 1)
-        layout.addLayout(actions)
-        centered = QHBoxLayout()
-        centered.setContentsMargins(0, 0, 0, 0)
         centered.addStretch(1)
-        centered.addWidget(content, 6)
+        centered.addWidget(content)
         centered.addStretch(1)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
         root.addWidget(self._header)
         root.addLayout(centered, 1)
-        self._refresh.clicked.connect(controller.refresh)
         self._play.clicked.connect(self._toggle_preview)
         self._list.itemSelectionChanged.connect(self._selection_changed)
         self._list.itemActivated.connect(self._toggle_preview)
@@ -146,8 +118,15 @@ class TonesPage(QWidget):
                         else "—",
                     ]
                 )
-                row.setToolTip(0, item.issue or item.name)
-                row.setSizeHint(0, QSize(0, LAYOUT.control_height_large))
+                row.setToolTip(
+                    0,
+                    "\n".join(
+                        filter(
+                            None, (row.text(0), row.text(1), row.text(2), item.issue)
+                        )
+                    ),
+                )
+                row.setData(0, Qt.ItemDataRole.AccessibleTextRole, row.toolTip(0))
                 self._list.addTopLevelItem(row)
                 if item.key == key:
                     self._list.setCurrentItem(row)
@@ -159,16 +138,13 @@ class TonesPage(QWidget):
         self._empty.setText(
             self.tr("Loading tones…")
             if self._controller.busy
-            else self.tr("No tones to show. Refresh to read this iPod's tones.")
+            else self.tr("No tones to show.")
         )
         self._status.setText(
             self._controller.message
             or "\n".join(issue for issue in catalog.issues if "tone" in issue.lower())
         )
         self._status.setVisible(bool(self._status.text()))
-        self._refresh.setEnabled(
-            not self._controller.busy and self._controller.active_ipod is not None
-        )
         self._count.setText(
             self.tr("%1 of 19 custom tones").replace(
                 "%1", str(sum(not item.builtin for item in self._items))
@@ -203,12 +179,7 @@ class TonesPage(QWidget):
 
     def _retranslate(self) -> None:
         self._header.set_title(self.tr("Tones"))
-        self._refresh.setText(self.tr("Refresh"))
-        self._hint.setText(
-            self.tr(
-                "Make a short melody from a song: right-click a music track and choose Convert to tone. Saved tones are available in the alarm's Sound menu."
-            )
-        )
+        self._list.setAccessibleName(self.tr("Tones"))
         self._list.setHeaderLabels(
             [self.tr("Tone"), self.tr("Type"), self.tr("Duration")]
         )

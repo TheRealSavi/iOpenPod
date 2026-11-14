@@ -7,12 +7,13 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QSpinBox,
-    QTimeEdit,
     QWidget,
 )
 from whenever import Date, Instant, PlainDateTime
 
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.app_date_edit import AppDateEdit
+from iOpenPod.GUI.widgets.app_time_edit import AppTimeEdit
 from iOpenPod.GUI.widgets.calendar_repeat_editor import (
     CalendarDateList,
     CalendarRepeatEditor,
@@ -141,9 +142,8 @@ class CalendarOptions(QWidget):
         self.reminder_date = self._date_picker(
             civil.date() if civil else initial_date, "calendarReminderDate"
         )
-        self.reminder_time = QTimeEdit(self)
+        self.reminder_time = AppTimeEdit(self)
         self.reminder_time.setObjectName("calendarReminderTime")
-        self.reminder_time.setDisplayFormat("HH:mm:ss")
         self.reminder_time.setTime(
             QTime(civil.hour, civil.minute, civil.second) if civil else QTime(9, 0)
         )
@@ -187,9 +187,8 @@ class CalendarOptions(QWidget):
         self.retranslate_ui()
 
     def _date_picker(self, day: Date, name: str) -> QDateEdit:
-        picker = QDateEdit(self)
+        picker = AppDateEdit(self)
         picker.setObjectName(name)
-        picker.setCalendarPopup(True)
         picker.setDateRange(QDate(100, 1, 1), QDate(9999, 12, 31))
         picker.setDate(QDate(day.year, day.month, day.day))
         return picker

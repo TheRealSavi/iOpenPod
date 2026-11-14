@@ -4,11 +4,10 @@ from PySide6.QtCore import (
     QEvent,
     QModelIndex,
     QPersistentModelIndex,
-    QPointF,
     QSize,
     Qt,
 )
-from PySide6.QtGui import QPainter, QPainterPath, QPaintEvent, QPalette, QPen
+from PySide6.QtGui import QPainter, QPaintEvent, QPalette, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QListView,
@@ -19,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.GUI.presentation.dropdown_indicator import paint_dropdown_indicator
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 
@@ -68,10 +68,6 @@ def _is_separator(index: QModelIndex | QPersistentModelIndex) -> bool:
 class AppComboBox(QComboBox):
     """Provide the default iOpenPod drop-down treatment over native behavior."""
 
-    _CHEVRON_HALF_WIDTH = 5.0
-    _CHEVRON_HALF_HEIGHT = 2.5
-    _CHEVRON_STROKE_WIDTH = 1.75
-
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setProperty("themedIndicator", True)
@@ -97,49 +93,7 @@ class AppComboBox(QComboBox):
             QStyle.SubControl.SC_ComboBoxArrow,
             self,
         )
-        if indicator_rect.isEmpty():
-            return
-
-        color_group = (
-            QPalette.ColorGroup.Active
-            if self.isEnabled()
-            else QPalette.ColorGroup.Disabled
-        )
-        color_role = (
-            QPalette.ColorRole.Accent
-            if self.hasFocus() or self.view().isVisible()
-            else QPalette.ColorRole.ButtonText
-        )
-        center = indicator_rect.center()
-        direction = -1.0 if self.view().isVisible() else 1.0
-        path = QPainterPath(
-            QPointF(
-                center.x() - self._CHEVRON_HALF_WIDTH,
-                center.y() - (direction * self._CHEVRON_HALF_HEIGHT),
-            )
-        )
-        path.lineTo(
-            QPointF(
-                center.x(),
-                center.y() + (direction * self._CHEVRON_HALF_HEIGHT),
-            )
-        )
-        path.lineTo(
-            QPointF(
-                center.x() + self._CHEVRON_HALF_WIDTH,
-                center.y() - (direction * self._CHEVRON_HALF_HEIGHT),
-            )
-        )
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        pen = QPen(self.palette().color(color_group, color_role))
-        pen.setWidthF(self._CHEVRON_STROKE_WIDTH)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(path)
+        paint_dropdown_indicator(self, indicator_rect, expanded=self.view().isVisible())
 
     def showPopup(self) -> None:
         super().showPopup()

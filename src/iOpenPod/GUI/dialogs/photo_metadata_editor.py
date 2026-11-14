@@ -4,12 +4,12 @@ from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QScrollArea,
     QStackedWidget,
     QTreeWidget,
     QTreeWidgetItem,
@@ -79,7 +79,7 @@ class PhotoMetadataEditorDialog(QDialog):
                 "Edit %n Photo(s)", self.tr("Edit %n Photo(s)", "", count), count
             )
         )
-        self.resize(820, 620)
+        self.resize(820, 720)
         self.setMinimumSize(700, 520)
         self.rows: dict[str, FieldEditor] = {}
 
@@ -193,18 +193,13 @@ class PhotoMetadataEditorDialog(QDialog):
                 (self.rows["original_date"], self.rows["taken_date"]),
             )
         )
-        note = QLabel(
-            self.tr(
-                "Dates accept an ISO timestamp or Unix seconds. Leave a date blank "
-                "to clear it; enter 0 to clear mixed dates."
-            ),
-            page,
-        )
-        note.setObjectName("metadataGroupDescription")
-        note.setWordWrap(True)
-        layout.addWidget(note)
         layout.addStretch(1)
-        self._pages.addWidget(page)
+        scroll = QScrollArea(self._pages)
+        scroll.setObjectName("metadataPageScroll")
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        self._pages.addWidget(scroll)
         self._nav.addItem(QListWidgetItem(self.tr("Metadata")))
 
     def _add_technical_page(self) -> None:
@@ -278,15 +273,8 @@ class PhotoMetadataEditorDialog(QDialog):
         title = QLabel(title_text, panel)
         title.setObjectName("metadataSectionTitle")
         layout.addWidget(title)
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
-        for index, row in enumerate(rows):
-            grid.addWidget(row, index // 2, index % 2)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
-        layout.addLayout(grid)
+        for row in rows:
+            layout.addWidget(row)
         return panel
 
     def _selection_summary(self) -> str:

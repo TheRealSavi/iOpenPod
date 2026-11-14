@@ -716,68 +716,6 @@ def test_nano4_extensionless_secondary_store_is_readonly_and_independent(
 
 
 @pytest.mark.parametrize(
-    "deadline,display",
-    [
-        ("20260230023000", "20260230023000"),
-        ("not a datetime", "not a datetime"),
-        ("{bad}", "{bad}"),
-        ("20260308023000", "2026-03-08T02:30:00"),
-        ("20261101013000", "2026-11-01T01:30:00"),
-    ],
-)
-def test_nano6_separate_timer_deadlines_are_readonly_and_never_block_edits(
-    tmp_path: Path, deadline: str, display: str
-) -> None:
-    binary, coordinator = build_preferences_device(
-        tmp_path,
-        source=b"malformed legacy clock",
-        model_number="MC525",
-        updater_family=36,
-        version="1.2",
-    )
-    path = binary.with_name("iPodSettings.xml")
-    path.write_bytes(TOUCH_SOURCE)
-    timer = binary.with_name("iPodTimerSettings.xml")
-    timer_source = (
-        '<iPodSettings version="1.0"><Timer><DateTime>'
-        + deadline
-        + "</DateTime><SleepiPod>1</SleepiPod><SoundIndex>25</SoundIndex>"
-        "</Timer></iPodSettings>"
-    ).encode()
-    timer.write_bytes(timer_source)
-    try:
-        active = coordinator.active_ipod
-        assert active is not None and active.library.tracks
-        catalog = coordinator.load_preferences(active, Event())
-        rows = _rows(catalog, "timer")
-        assert rows["Timer.DateTime"].value == display
-        assert rows["Timer.DateTime"].raw_value == deadline
-        assert "Host timezone" in rows["Timer.DateTime"].detail
-        assert rows["Timer.SleepiPod"].value == "On"
-        assert rows["Timer.SoundIndex"].raw_value == "25"
-        assert "Outside registered bounds" in rows["Timer.SoundIndex"].detail
-        assert all(row.edit is None for row in rows.values())
-        with pytest.raises(ValueError, match="not available for editing"):
-            coordinator.save_preferences(
-                active,
-                catalog,
-                (IPodPreferenceEdit("timer", "Timer.SleepiPod", 0),),
-                Event(),
-            )
-        # This optional observation is not a publication dependency for XML.
-        changed_timer = timer_source + b"\n<!-- native timer updated -->"
-        timer.write_bytes(changed_timer)
-        result = coordinator.save_preferences(active, catalog, EDIT, Event())
-        assert path.read_bytes() == TOUCH_SOURCE.replace(b">0<", b">1<")
-        assert timer.read_bytes() == changed_timer
-        assert binary.read_bytes() == b"malformed legacy clock"
-        assert _rows(result, "timer")["Timer.DateTime"].raw_value == deadline
-        assert coordinator.active_ipod is active
-    finally:
-        coordinator.close()
-
-
-@pytest.mark.parametrize(
     "model,family,version",
     [
         ("MC027", 34, "1.0.2"),
@@ -835,8 +773,16 @@ def test_named_eq_edits_do_not_require_or_author_legacy_binary_preferences(
         coordinator.close()
 
 
-@pytest.mark.parametrize("timer_source", (None, b"", b"<iPodSettings>{bad}"))
-def test_nano6_optional_timer_file_errors_do_not_block_primary_publication(
+@pytest.mark.parametrize(
+    "timer_source",
+    (
+        None,
+        b"",
+        b"<iPodSettings>{bad}",
+        b'<iPodSettings version="1.0"><Timer><SleepiPod>1</SleepiPod></Timer></iPodSettings>',
+    ),
+)
+def test_nano6_timer_file_is_ignored_during_preferences_edits(
     tmp_path: Path, timer_source: bytes | None
 ) -> None:
     binary, coordinator = build_preferences_device(
@@ -855,16 +801,7 @@ def test_nano6_optional_timer_file_errors_do_not_block_primary_publication(
         active = coordinator.active_ipod
         assert active is not None and active.library.tracks
         catalog = coordinator.load_preferences(active, Event())
-        section = next(
-            section for section in catalog.sections if section.key == "timer"
-        )
-        assert section.status is (
-            PreferenceFileStatus.MISSING
-            if timer_source is None
-            else PreferenceFileStatus.UNKNOWN
-        )
-        assert section.rows == ()
-        assert section.detail
+        assert all(section.key != "timer" for section in catalog.sections)
         coordinator.save_preferences(active, catalog, EDIT, Event())
         assert path.read_bytes() == TOUCH_SOURCE.replace(b">0<", b">1<")
         if timer_source is None:

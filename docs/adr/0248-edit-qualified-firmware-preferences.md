@@ -1,6 +1,7 @@
 # ADR-0248: Edit qualified firmware Preferences
 
 - Status: Accepted
+- Nano timer support superseded by: [ADR-0267](0267-remove-nano-countdown-timer-support.md)
 - Date: 2026-11-07
 - Extends: ADR-0097, ADR-0240 and ADR-0247
 

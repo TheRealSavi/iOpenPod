@@ -81,7 +81,6 @@ from iOpenPod.app.models.extras import (
     CreateTone,
     RemoveAlarm,
     SaveAlarm,
-    SaveTimerSettings,
 )
 from iOpenPod.app.models.photos import (
     FULL_RESOLUTION_REQUEST_ID,
@@ -1448,7 +1447,6 @@ class DeviceCoordinator:
                     | CreateClockAlarm
                     | RemoveAlarm
                     | SaveAlarm
-                    | SaveTimerSettings
                     | CreateTone,
                 ):
                     previous_support = support
@@ -1470,8 +1468,6 @@ class DeviceCoordinator:
                         raise DeviceChangedError(
                             "The iPod firmware evidence changed. Reload Extras."
                         )
-                if isinstance(change, SaveTimerSettings):
-                    dependencies += extras.timer_preconditions(catalog)
                 dependencies += extras.alarm_sound_preconditions(catalog, change)
                 transaction = extras.prepare_change(
                     catalog, change, dependencies=dependencies, checkpoint=checkpoint

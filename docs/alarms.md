@@ -1,10 +1,11 @@
-# Alarms and countdown timers
+# Alarms
 
 iOpenPod manages saved Clock Alarms through **Extras → Alarms** in compact
 navigation and **Alarms** in the sidebar. Exact firmware evidence qualifies
 editing independently of native feature availability. Nano 2 uses the explicit
 compatibility policy documented below. Merely opening this page
-does not write to the device.
+does not write to the device. The page shows saved Clock Alarms directly, without
+internal tabs. Nano 6/7 have no Alarms route or Countdown Timer support in iOpenPod.
 
 ## Firmware coverage
 
@@ -27,8 +28,8 @@ Earlier full-size iPods have no images in this corpus and gain no guessed writer
 | Classic 6 | 1.1.2 / 24 | Dated `Device/alarms` | Create/remove; date/time, repeat, label, enable, tones and Playlists |
 | Classic 120 GB | 2.0.1 / 33 | Dated `Device/alarms` | Create/remove; date/time, repeat, label, enable, tones and Playlists |
 | Classic 7 | 2.0.4 / 35; 2.0.5 / 38 | Dated `Device/alarms` | Create/remove; date/time, repeat, label, enable, tones and Playlists |
-| Nano 6 | 1.2 / 36 | Two named XML stores | Saved duration, 25 ending sounds and Sleep iPod; deadline observation |
-| Nano 7 / refresh | 1.0.4 / 37; 1.1.2 / 39 | `iPodSettings.xml` | Saved duration, 25 ending sounds and Sleep iPod; deadline observation |
+| Nano 6 | 1.2 / 36 | Device-only Countdown Timer | None |
+| Nano 7 / refresh | 1.0.4 / 37; 1.1.2 / 39 | Device-only Countdown Timer | None |
 
 Strongest-authority RetailOS and updater-family evidence selects the format.
 Contradictory or missing required evidence leaves editing unavailable. A matching
@@ -96,8 +97,6 @@ These settings are persisted, not RAM-only:
 | Mini | `iPod_Control/Device/Preferences`: mode bits at `0xb18`, u64 Playlist ID at `0xb24` (low word first) |
 | Video / Nano 1 | `iPod_Control/Device/clock`: per-city current kind (tag 7), selected sound mode (tag `0x1f`), signed Playlist index (tag 8) |
 | Classic / Nano 3–5 | `iPod_Control/Device/alarms`: control word (tag 7), Playlist selector (tag 8), tone name (tag `0x3c`) |
-| Nano 6 | `iPodSettings.xml` `Timer.Hours/Minutes`; `iPodTimerSettings.xml` `Timer.SleepiPod/SoundIndex/DateTime` |
-| Nano 7 / refresh | All five timer values in `iPod_Control/Device/iPodSettings.xml` |
 
 Mini Beep selection writes the Master Playlist ID and mode 0. Video/Nano 1 Beep
 writes mode 0 and selector -1; Playlist selection writes mode 4 and a positive
@@ -183,33 +182,16 @@ civil epoch, not the media database's 1904 epoch. Native unknown/sentinel values
 survive unrelated edits. The page does not calculate a purported next firing
 time from the Host clock, DST rules or a recurrence approximation.
 
-## Countdown and Sleep Timer
+## Device-only timers
 
-Touch Nano uses a Countdown Timer. The page shows its saved duration preset,
-ending action and valid civil deadline, when available. It never labels these
-as remaining time or running status. Nano 6 has a separate
-`iPodTimerSettings.xml` store for deadline/action; Nano 7 keeps them in ordinary
-`iPodSettings.xml`. Missing fields stay unknown rather than inheriting firmware
-constructor defaults. Unsupported XML, duplicate fields and invalid dates remain
-nonblocking observations.
+Countdown Timer on Nano 6/7 and Sleep Timer remain device-only features.
+iOpenPod has no timer page, saved-preset editor, dedicated timer inspection or
+start/stop commands. Nano 6/7 do not expose the Alarms route. See
+[ADR-0267](adr/0267-remove-nano-countdown-timer-support.md).
 
-The editor changes existing unique scalar fields only. Sound selection clears
-SleepiPod; Sleep iPod preserves the retained sound index. Nano 6 changes to both
-stores publish in one transaction. The saved deadline remains byte-identical.
-All three firmwares load these settings during application initialization, and an
-active countdown's restore routine exits before reading saved state. The UI
-therefore identifies restart adoption and leaves start/stop on the iPod.
-
-The [reload and delivery investigation](research/timer-reload-and-delivery-2026-11-13.md)
-traces post-import retained-settings saves separately from initialization.
-Nano 7/refresh also have a delayed dirty-save task; Nano 6 saves its timer store
-separately. A clean flush does nothing, but pending/native changes can overwrite
-Host edits. Eject alone does not prove adoption. Delivery guards can consume an
-expired timer and clear its saved deadline even when sound/sleep is suppressed.
-
-Start, stop, pause and cancel remain on-device. Classic, Mini and click-wheel
-Nano show their native Sleep Timer navigation instructions. No mounted-file
-start/stop protocol is established, and iOpenPod does not substitute a Host timer.
+The historical firmware investigations below remain available as research.
+Ordinary Preferences edits preserve unrelated timer values as Unknown Data;
+the separate Nano 6 timer file is not accessed.
 
 ## Publication and safety
 
@@ -222,7 +204,6 @@ reread before presentation. Device changes close stale editors and stop work.
 Playlist choices bind to the captured binary Library fingerprint or both Nano 5
 SQLite companion fingerprints; tone choices bind to
 the saved language, tone file fingerprints and a rechecked directory inventory.
-Timer edits bind both captured stores, including no-op requests.
 
 Publication changes saved files. It does not prove that currently running firmware
 has adopted them: an in-memory owner can later save its own state. Check the alarm
@@ -264,7 +245,8 @@ still require device acceptance testing. No physical iPod was changed in this wo
 - [ADR-0259](adr/0259-manage-native-alarm-collections-and-countdown-observations.md)
   records the boundary and publication decisions.
 - [ADR-0260](adr/0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md)
-  extends that contract with source-qualified sound edits and saved timer settings.
+  extends that contract with source-qualified sound edits. Its timer support is
+  superseded by [ADR-0267](adr/0267-remove-nano-countdown-timer-support.md).
 - [ADR-0263](adr/0263-author-clock-cities-and-native-alarm-playlist-selections.md)
   includes city authoring and the binary/SQLite Playlist selection flows.
 
@@ -279,6 +261,6 @@ Codec tests cover native vectors, unknown-byte preservation, malformed and
 ambiguous sources, control transitions and explicit authoring. Virtual Storage
 tests cover missing-file creation, stale source rejection, removal and separation
 from Preferences projections. GUI tests cover native field choices, saved
-timer-setting edits and stale editor/device lifecycle. Hallmark refinement uses the existing
+Alarm editing and stale editor/device lifecycle. Hallmark refinement uses the existing
 semantic palettes, typography, controls and keyboard model, with rendered
 light/dark and narrow/wide verification.

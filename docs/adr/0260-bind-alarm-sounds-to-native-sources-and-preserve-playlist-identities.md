@@ -1,6 +1,7 @@
 # ADR-0260: Bind Alarm sounds to native sources and preserve Playlist identities
 
 - Status: Accepted
+- Nano timer support superseded by: [ADR-0267](0267-remove-nano-countdown-timer-support.md)
 - Date: 2026-11-13
 - Extends: ADR-0247 and ADR-0259
 - Partly superseded by: ADR-0262 for Library-write Alarm preservation

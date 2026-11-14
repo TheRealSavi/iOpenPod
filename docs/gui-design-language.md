@@ -533,6 +533,35 @@ Text expansion is expected. Layouts must survive longer translations, right-to-l
 direction, larger Host fonts, and 200% display scaling without clipped labels or
 fixed text widths.
 
+Date fields use App Date Edit over Qt's native date editor. Its chevron is painted
+by the same helper as App Combo Box, with matching indicator space, focus, disabled
+and expanded states. The popup keeps native day hit testing, keyboard navigation,
+date ranges and localized input, while using an opaque rounded surface, themed
+month selector, editable year and previous/next actions. Selected days use accent
+fill, Today has a quiet outline, and weekends retain the ordinary text roles.
+Unavailable dates and navigation respect each field's range. Choosing a day or
+Today accepts it; Escape restores the date from when the popup opened. Escape in
+the nested month menu closes only that menu. Alarm, Calendar, recurrence, exception
+and reminder date fields all use this shared control.
+
+Track and Photo metadata timestamps pair App Date Edit with a themed time input
+in a compact group at the leading edge, sized to their contents. Set date stays
+directly below the field label; Clear sits beside the controls and Reset beside
+the label. Mixed-value guidance sits below the action. The time input follows the
+shared 12-hour AM/PM format and exposes seconds. Unset and mixed values have explicit
+Set date and Clear date actions;
+Reset restores the original state. Unchanged dates retain the exact saved
+instant, including repeated daylight-saving hours. Only edited civil fields are
+interpreted in the Host zone, using the existing metadata input policy.
+
+All editable time fields use App Time Edit: the same rounded surface, focus and
+disabled treatments, 12-hour AM/PM display and no spinner arrows. Calendar event,
+To Do, reminder and recurrence times retain seconds; Alarm inputs retain their
+minute-level display. Locale or language changes do not switch inputs back to a
+24-hour clock. Native typing and keyboard section adjustment remain available.
+The new-entry Calendar destination dialog uses App Combo Box and shared action
+buttons, including the themed dropdown indicator and popup.
+
 ## Settings examples
 
 Settings tabs sit directly below the Page Header and span the full page width.
@@ -577,24 +606,46 @@ image is feathered before crossfading so interrupted blends retain their edges.
 It never runs workflows or reads editable field contents to make an example.
 See the [capture notes](../src/iOpenPod/assets/settings/README.md).
 
-## Calendar and Alarms
+## Calendar, Alarms and Tones
 
 Extras uses the shared Page Header, semantic Action Buttons, Search Field, and
 App Combo Box. Calendar pairs a native keyboard-navigable month grid with a day
 agenda; narrow panes stack the two. Painted cell previews mark saved date ranges,
 including exclusive all-day ends. Imported timezone identifiers stay attached to
-their civil dates, and repeating entries show saved dates without speculative
-expansion. All events keeps undated or unreadable entries reachable. Search spans
-dates; clearing it restores the selected day. New events start on that day. To Dos
+their civil dates, and supported repeat rules project occurrences while unsupported
+patterns retain their saved dates. All saved entries keeps undated or unreadable
+entries reachable. Search spans dates; clearing it restores the selected day. New events start on that day. To Dos
 offer an explicit completion action that preserves their other fields.
 
+Day selection crossfades the outgoing and incoming highlights over 200 ms with
+InOutCubic easing. The Calendar/To Dos selector uses the same sliding treatment
+and timing as the Settings Host/iPod selector. The content below it swipes over
+280 ms: To Dos enters from the left as Calendar exits right; Calendar enters from
+the right as To Dos exits left. Navigation commits immediately. Rapid changes
+retarget from the visible highlight or content frame. Content snapshots consume
+pointer input while moving, with the selector still available for reversal; they
+are released on completion, resize, hide, theme changes or device updates. The
+Host's disabled widget-animation preference makes all three transitions immediate.
+
+Alarms and Tones share a rounded collection surface, capped at 960 logical pixels
+and aligned near the top of the workspace. Short lists size to their saved rows;
+longer lists scroll within the available height, with at most six rows preferred.
+The attached action bar remains reachable in short windows. Depth comes from the
+canvas, content and alternate action-bar surfaces, with one quiet outer border.
+Empty and loading states keep the same panel width and show one concise message.
+Informative device and error messages remain outside the list.
+
 Alarm rows emphasize localized times, with names and repeat settings beneath them.
-Both pages paint list rows through one delegate, without persistent per-row widgets.
+Rounded selections and compact enable-state labels use semantic palette roles.
+Tone rows lead with the name, place the type underneath and align duration at the
+right. Listen and the native custom-tone capacity stay together in the action bar.
+All three pages paint list rows through delegates, without persistent per-row widgets;
+hidden metadata remains available in tooltips and accessible row descriptions.
 Selection reveals contextual editing; device changes dismiss stale editors.
-Sleep Timer has a separate, quiet instruction surface for the selected iPod.
-Enable switches, sound choices, new-alarm controls, and running countdowns are not
-presented without a qualified device operation. All colors, fonts and interaction
-states derive from the existing theme, including Light and Dark appearances.
+Alarms has no internal tabs; New alarm lives in its Page Header. Sleep Timer and
+Nano 6/7 Countdown Timer controls are absent. Alarm enable states, sound choices
+and creation follow their qualified device operations. All colors, fonts and
+interaction states derive from the existing theme, including Light and Dark appearances.
 
 ## Ownership
 

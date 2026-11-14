@@ -56,10 +56,15 @@ read-only saved time may be disabled or out of date. Unknown times remain
 nonblocking observations. A future per-city editor
 requires its own lossless `clock` record contract and coupled persistence model.
 
-Sleep Timer native support is displayed with device-specific on-device guidance.
+Sleep Timer native support was initially displayed with device-specific on-device guidance.
 No qualified mounted-file command currently starts/stops it. Do not substitute a
 Host countdown or imply that changing an Alarm file arms a running hardware timer.
 Physical wake and sound acceptance remain outstanding.
+
+**November 13 presentation update:** by user direction, remove the device-only
+Sleep Timer tab and the internal Alarms tab navigation. The page directly shows
+saved Clock Alarms. The subsequent [ADR-0267](0267-remove-nano-countdown-timer-support.md)
+removes Nano 6/7 Countdown Timer support altogether.
 
 ## Calendar identity and naming, 2026-11-08
 

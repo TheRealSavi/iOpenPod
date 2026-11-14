@@ -164,7 +164,7 @@ def test_nano_2_compatibility_still_requires_matching_identity(
     "generation,firmware,updater",
     (("6th Gen", "1.2", 36), ("7th Gen", "1.0.4", 37), ("7th Gen", "1.1.2", 39)),
 )
-def test_touch_nano_qualifies_saved_timer_settings_independently(
+def test_touch_nano_has_no_qualified_alarm_format(
     generation: str, firmware: str, updater: int
 ) -> None:
     support = resolve_extras_support(
@@ -175,10 +175,10 @@ def test_touch_nano_qualifies_saved_timer_settings_independently(
     )
     assert not support.calendar_write
     assert not support.alarm_write
-    assert support.alarm_format is AlarmFormat.TIMER
+    assert support.alarm_format is AlarmFormat.NONE
+    assert support.alarm_firmware is None
     assert support.sleep_timer is FeatureSupport.SUPPORTED
     assert not support.sleep_timer_write
-    assert support.timer_settings_write
 
 
 @pytest.mark.parametrize(

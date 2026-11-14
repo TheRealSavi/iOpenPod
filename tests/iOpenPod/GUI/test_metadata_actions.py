@@ -6,7 +6,15 @@ from dataclasses import replace
 from time import monotonic, sleep
 
 import pytest
-from PySide6.QtCore import QItemSelectionModel, QPoint, Qt, QThreadPool, QTimer
+from PySide6.QtCore import (
+    QDate,
+    QItemSelectionModel,
+    QPoint,
+    Qt,
+    QThreadPool,
+    QTime,
+    QTimer,
+)
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QStandardItemModel
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -35,6 +43,7 @@ from tests.iOpenPod.lyrics_test_support import (
     media,
 )
 
+from iOpenPod.app.core.dates import HostDateZone, parse_iso_instant
 from iOpenPod.app.core.settings.definitions import NAVIGATION_STYLE, NavigationStyle
 from iOpenPod.app.models.track_table_model import TrackColumn
 from iOpenPod.app.tag_normalization_controller import TagNormalizationController
@@ -50,6 +59,7 @@ from iOpenPod.GUI.widgets import track_actions
 from iOpenPod.GUI.widgets.album_grid import AlbumGridView
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.collection_grid import CollectionGridView
+from iOpenPod.GUI.widgets.metadata_date_edit import MetadataDateEdit
 from iOpenPod.GUI.widgets.sidebar import DeviceCard, Sidebar
 from iOpenPod.GUI.widgets.star_rating import StarRating
 from iOpenPod.GUI.widgets.track_actions import TrackActions, TrackSelection
@@ -73,6 +83,47 @@ _TRACKS = (
     Track(2, "Two", "Artist A", "First", 130_000),
     Track(3, "Three", "Artist B", "Second", 150_000),
 )
+
+
+def test_track_metadata_date_picker_applies_date_and_time_without_touching_other_dates() -> (
+    None
+):
+    context = build_context()
+    workspace = context.library_workspace
+    tracks = tuple(
+        replace(
+            track, metadata=replace(track.metadata, date_added=1_700_001_234 + index)
+        )
+        for index, track in enumerate(_TRACKS)
+    )
+    workspace.load(LibrarySnapshot(tracks))
+    dialog = MetadataEditorDialog(workspace, (1, 2))
+    try:
+        row = dialog.rows["metadata.release_date"]
+        edit = row.editor
+        assert isinstance(edit, MetadataDateEdit)
+        assert isinstance(dialog.rows["year"].editor, QLineEdit)
+        set_date = edit.findChild(QPushButton, "metadataDateSet")
+        assert set_date is not None
+        set_date.click()
+        edit.date.setDate(QDate(2026, 12, 13))
+        edit.time.setTime(QTime(8, 15, 42))
+        expected = parse_iso_instant(
+            "2026-12-13T08:15:42", naive_zone=HostDateZone.SYSTEM
+        ).timestamp()
+        dialog.accept()
+        assert dialog.result() == QDialog.DialogCode.Accepted
+        for before, after in zip(tracks, workspace.tracks, strict=True):
+            assert after == (
+                replace(
+                    before, metadata=replace(before.metadata, release_date=expected)
+                )
+                if before.track_id in (1, 2)
+                else before
+            )
+    finally:
+        dialog.close()
+        context.shutdown()
 
 
 def test_editor_lazily_displays_file_lyrics_without_editing_the_library() -> None:

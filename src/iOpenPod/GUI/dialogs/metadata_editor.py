@@ -48,6 +48,7 @@ from iOpenPod.GUI.presentation.i18n.text import (
     english_count_fallback,
 )
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
+from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.metadata_field_editor import ChapterEditor, FieldEditor
 from iOpenPod.GUI.widgets.themed_buttons import (
@@ -661,9 +662,15 @@ class MetadataEditorDialog(QDialog):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
+        if all(row.spec.kind is FieldKind.DATE for row in rows):
+            grid.setVerticalSpacing(LAYOUT.space_2xs)
         position = 0
         for row in rows:
-            wide = row.spec.kind in (FieldKind.LONG_TEXT, FieldKind.CHAPTERS)
+            wide = row.spec.kind in (
+                FieldKind.LONG_TEXT,
+                FieldKind.CHAPTERS,
+                FieldKind.DATE,
+            )
             if wide and position % 2:
                 position += 1
             grid.addWidget(

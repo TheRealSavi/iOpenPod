@@ -57,7 +57,6 @@ from storage import (
 PREFERENCES_PATH = DevicePath("iPod_Control/Device/Preferences")
 NAMED_PREFERENCES_PATH = DevicePath("iPod_Control/Device/iPodSettings.xml")
 _NANO4_NAMED_PATH = DevicePath("iPod_Control/Device/iPodSettings")
-_TIMER_PATH = DevicePath("iPod_Control/Device/iPodTimerSettings.xml")
 _NAMED_TARGETS = frozenset(
     (
         "nano_5_1_0_2",
@@ -218,18 +217,6 @@ def _read_named_catalog(
                 "\n".join(inspection.issues),
             ),
         )
-    if profile is NamedPreferencesProfile.NANO_6_1_2:
-        timer = capture_inspection_file(
-            session,
-            key="timer",
-            title=source_text("Timer settings"),
-            path=_TIMER_PATH,
-            inspect=lambda data: inspect_named_preferences(
-                data, profile=profile, timer=True
-            ),
-            checkpoint=checkpoint,
-        )
-        sections += (timer.section,)
     checkpoint()
     return IPodPreferencesCatalog(sections, support, document, captured.fingerprint)
 

@@ -1,6 +1,7 @@
 # ADR-0259: Manage native Alarm collections and countdown observations
 
 - Status: Accepted
+- Nano timer support superseded by: [ADR-0267](0267-remove-nano-countdown-timer-support.md)
 - Date: 2026-11-13
 - Extends: ADR-0247 and ADR-0248
 - Sound and timer restrictions extended by: [ADR-0260](0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md)

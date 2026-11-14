@@ -27,7 +27,6 @@ from iOpenPod.app.models.extras import (
     RenameCalendar,
     SaveAlarm,
     SaveCalendar,
-    SaveTimerSettings,
     SkipCalendarOccurrence,
 )
 from iOpenPod.app.services.device_coordinator import SyncRecoveryRequiredError
@@ -39,7 +38,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.device_controller import DeviceController
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
-    from iPodDB.alarms import AlarmToneNote, ClockCity, CountdownTimerChanges
+    from iPodDB.alarms import AlarmToneNote, ClockCity
     from iPodDB.calendar import CalendarEntryChanges, CalendarEntryDraft
 
 _LOGGER = logging.getLogger(__name__)
@@ -278,15 +277,6 @@ class ExtrasController(QObject):
             and item in self._catalog.alarms
             and item.editable
             and self._write(RemoveAlarm(item))
-        )
-
-    def save_timer_settings(self, changes: CountdownTimerChanges) -> bool:
-        support = self._catalog.support
-        return bool(
-            support
-            and support.timer_settings_write
-            and self._catalog.timer is not None
-            and self._write(SaveTimerSettings(changes))
         )
 
     def create_tone(self, name: str, notes: tuple[AlarmToneNote, ...]) -> bool:

@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLineEdit, QPushButton, QTreeWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton, QTreeWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 from tests.iOpenPod.GUI.extras_test_support import ExtrasTestController, find_widget
 
@@ -106,6 +106,10 @@ def test_page_displays_saved_content_names_and_preview_state(
     try:
         page.show()
         APPLICATION.processEvents()
+        assert page.findChild(QPushButton, "tonesRefresh") is None
+        assert not any(
+            "Make a short melody" in label.text() for label in page.findChildren(QLabel)
+        )
         tree = find_widget(page, QTreeWidget, "tonesList")
         assert tree.topLevelItemCount() == 2
         custom = tree.topLevelItem(1)
@@ -132,6 +136,11 @@ def test_conversion_review_validates_name_and_saves_only_explicitly() -> None:
         APPLICATION.processEvents()
         save = find_widget(dialog, QPushButton, "toneSave")
         name = find_widget(dialog, QLineEdit, "toneName")
+        status = find_widget(dialog, QLabel, "toneConversionStatus")
+        assert not status.isVisible()
+        assert not any(
+            "A short melody" in label.text() for label in dialog.findChildren(QLabel)
+        )
         assert save.isEnabled() and not extras.created
         name.setText("Beep")
         assert not save.isEnabled()
@@ -139,6 +148,7 @@ def test_conversion_review_validates_name_and_saves_only_explicitly() -> None:
         QTest.mouseClick(save, Qt.MouseButton.LeftButton)
         assert extras.created == [("Morning", NOTES)]
         assert not save.isEnabled()
+        assert status.isVisible() and status.text() == "Saving tone…"
         QTest.keyClick(dialog, Qt.Key.Key_Escape)
         assert dialog.isVisible()
         extras.view = replace(

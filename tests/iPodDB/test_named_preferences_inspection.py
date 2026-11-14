@@ -13,7 +13,6 @@ from iPodDB.preferences import (
 from iPodDB.preferences._named_catalog import (
     FIELDS_BY_PROFILE,
     FIRMWARE_CITIES,
-    NANO6_TIMER_FIELDS,
 )
 from iPodDB.preferences.inspection_models import PreferenceObservation
 from iPodDB.preferences.named_inspection import (
@@ -32,13 +31,11 @@ def _xml(body: str) -> bytes:
 
 
 def _fields(
-    source: bytes, profile: NamedPreferencesProfile = N7, *, timer: bool = False
+    source: bytes, profile: NamedPreferencesProfile = N7
 ) -> dict[str, PreferenceObservation]:
     return {
         row.key: row
-        for row in inspect_named_preferences(
-            source, profile=profile, timer=timer
-        ).observations
+        for row in inspect_named_preferences(source, profile=profile).observations
     }
 
 
@@ -47,9 +44,9 @@ def _fields(
     [
         (NamedPreferencesProfile.NANO_4_1_0_4, 6),
         (N5, 53),
-        (N6, 89),
-        (N7, 102),
-        (REFRESH, 102),
+        (N6, 87),
+        (N7, 97),
+        (REFRESH, 97),
     ],
 )
 def test_catalog_coverage_is_exact_per_store_and_all_present_fields_are_read(
@@ -75,7 +72,6 @@ def test_catalog_coverage_is_exact_per_store_and_all_present_fields_are_read(
         write_named_preferences(parse_named_preferences(source, profile=profile))
         == source
     )
-    assert len(NANO6_TIMER_FIELDS) == 4
 
 
 def test_native_strings_keep_case_sensitive_unknown_values_and_entity_spelling() -> (
@@ -252,55 +248,6 @@ def test_language_and_explicit_clock_choice_remain_distinct_saved_values() -> No
     ].known  # Not a Nano 6 UI language.
 
 
-def test_nano6_timer_store_is_distinct_from_ordinary_named_store() -> None:
-    source = _xml(
-        "<Settings><SoftwareVersion>1.2</SoftwareVersion></Settings><Timer>"
-        "<DateTime>20261101013000</DateTime><SleepiPod>1</SleepiPod>"
-        "<SoundIndex>24</SoundIndex><Hours>3</Hours></Timer>"
-    )
-    timer_rows = _fields(source, N6, timer=True)
-    ordinary_rows = _fields(source, N6)
-    assert timer_rows["Timer.DateTime"].value == "2026-11-01T01:30:00"
-    assert timer_rows["Timer.DateTime"].known
-    assert "not converted" in timer_rows["Timer.DateTime"].detail
-    assert not ordinary_rows["Timer.DateTime"].known
-    assert not timer_rows["Timer.Hours"].known
-    assert ordinary_rows["Timer.Hours"].value == "3 hours"
-    assert "-1" in timer_rows["Timer.SleepiPod"].detail
-    assert inspect_named_preferences(source, profile=N7, timer=True).issues
-
-
-@pytest.mark.parametrize("stamp", ["20260308023000", "20261101013000"])
-def test_valid_civil_timer_values_remain_valid_across_host_dst(stamp: str) -> None:
-    result = inspect_named_preferences(
-        _xml(f"<Timer><DateTime>{stamp}</DateTime></Timer>"), profile=N7
-    )
-    assert not result.issues
-    assert result.observations[0].known
-
-
-@pytest.mark.parametrize(
-    "stamp",
-    ["20260230020000", "00000101000000", "20261105010260", "2026-11-05", "9" * 5000],
-    ids=["day", "year", "second", "spelling", "huge"],
-)
-def test_invalid_timer_values_are_nonblocking_raw_observations(stamp: str) -> None:
-    source = _xml(f"<Timer><DateTime>{stamp}</DateTime></Timer>")
-    result = inspect_named_preferences(source, profile=N7)
-    assert result.issues
-    assert not result.observations[0].known
-    assert result.observations[0].raw_value.startswith(stamp[:512])
-    assert (
-        write_named_preferences(parse_named_preferences(source, profile=N7)) == source
-    )
-
-
-def test_empty_timer_is_not_interpreted_as_an_epoch() -> None:
-    row = _fields(_xml("<Timer><DateTime/></Timer>"))["Timer.DateTime"]
-    assert row.known
-    assert row.value == "No saved deadline"
-
-
 def test_duplicate_and_complex_values_expose_raw_without_choosing_winner() -> None:
     source = _xml(
         "<General><Brightness>30</Brightness><Brightness>70</Brightness></General>"
@@ -404,3 +351,23 @@ def test_unqualified_binary_does_not_block_independent_xml_inspection() -> None:
     assert _fields(_xml("<General><Brightness>40</Brightness></General>"))[
         "brightness"
     ].known
+
+
+@pytest.mark.parametrize("profile", [N6, N7, REFRESH])
+def test_removed_timer_fields_remain_uninterpreted_and_byte_preserved(
+    profile: NamedPreferencesProfile,
+) -> None:
+    source = _xml(
+        "<Timer><Hours>3</Hours><Minutes>15</Minutes><SleepiPod>1</SleepiPod><SoundIndex>24</SoundIndex><DateTime>invalid date</DateTime></Timer>"
+    )
+    result = inspect_named_preferences(source, profile=profile)
+    assert len(result.observations) == 5
+    assert not result.issues
+    assert all(
+        not row.known and row.value == row.raw_value for row in result.observations
+    )
+    assert all(not spec.key.startswith("Timer.") for spec in FIELDS_BY_PROFILE[profile])
+    assert (
+        write_named_preferences(parse_named_preferences(source, profile=profile))
+        == source
+    )

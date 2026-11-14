@@ -1,6 +1,5 @@
 """Alarm controls submit explicit native edits and expire with their device."""
 
-from dataclasses import replace
 from itertools import pairwise
 
 import pytest
@@ -12,14 +11,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
-    QTabWidget,
     QTimeEdit,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 from tests.iOpenPod.GUI.extras_test_support import ExtrasTestController, find_widget
 from whenever import PlainDateTime
 
-from device_registry import DEFAULT_DEVICE_REGISTRY, AlarmFormat, ExtrasSupport
+from device_registry import AlarmFormat, ExtrasSupport
 from iOpenPod.app.models.extras import AlarmItem, AlarmSound, ExtrasCatalog
 from iOpenPod.GUI.pages.alarms_page import AlarmEditor, AlarmsPage
 from iOpenPod.GUI.presentation.theme.stylesheet import render_stylesheet
@@ -30,7 +28,7 @@ from iOpenPod.GUI.presentation.theme.tokens import (
     resolve_typography,
 )
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
-from iPodDB.alarms import CountdownTimerSnapshot
+from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 
 SUPPORT = ExtrasSupport(alarm_format=AlarmFormat.CLASSIC, alarm_write=True)
 
@@ -164,9 +162,15 @@ def test_create_alarm_exposes_native_fields_and_submits_only_on_save() -> None:
     page = AlarmsPage(controller)
     try:
         page.show()
-        find_widget(page, QPushButton, "alarmNew").click()
+        header = find_widget(page, PageHeader, "pageHeader")
+        new = find_widget(header, QPushButton, "alarmNew")
+        assert new.isVisible() and new.isEnabled()
+        new.click()
         editor = page.findChild(AlarmEditor)
         assert editor is not None and editor.windowTitle() == "New alarm"
+        assert not any(
+            "Times follow" in label.text() for label in editor.findChildren(QLabel)
+        )
         assert not controller.created_alarms
         find_widget(editor, QDateEdit, "alarmDate").setDate(QDate(2027, 2, 3))
         find_widget(editor, QTimeEdit, "alarmTime").setTime(QTime(6, 45))
@@ -251,36 +255,5 @@ def test_remove_requires_current_catalog_after_confirmation(
         monkeypatch.setattr(QMessageBox, "question", change_device)
         find_widget(page, QPushButton, "alarmRemove").click()
         assert not controller.removed_alarms
-    finally:
-        page.close()
-
-
-def test_touch_nano_shows_saved_timer_without_alarm_authoring() -> None:
-    controller = ExtrasTestController(
-        ExtrasCatalog(
-            support=ExtrasSupport(alarm_format=AlarmFormat.TIMER),
-            timer=CountdownTimerSnapshot(
-                saved_hours=1,
-                saved_minutes=15,
-                sleep_ipod=True,
-                deadline=PlainDateTime(2026, 11, 13, 22, 30),
-            ),
-        )
-    )
-    assert controller.current is not None
-    profile = next(
-        p
-        for p in DEFAULT_DEVICE_REGISTRY.profiles
-        if (p.family, p.generation) == ("iPod Nano", "6th Gen")
-    )
-    controller.current = replace(controller.current, profile=profile)
-    page = AlarmsPage(controller)
-    try:
-        tabs = find_widget(page, QTabWidget, "alarmsTabs")
-        assert not tabs.isTabVisible(0) and tabs.currentIndex() == 1
-        assert find_widget(page, QLabel, "timerSavedDuration").text() == "1 h 15 min"
-        text = find_widget(page, QLabel, "sleepTimerInstructions").text()
-        assert "Sleep iPod" in text and "whether the timer is running" in text
-        assert not find_widget(page, QPushButton, "alarmNew").isEnabled()
     finally:
         page.close()

@@ -2,6 +2,57 @@
   {
     "date": "2026-11-13",
     "scope": "app",
+    "macrostructure": "Content-sized Alarms and Tones collections with attached action bars",
+    "theme": "preserved iOpenPod semantic theme",
+    "enrichment": "none",
+    "brief": "Bring Alarms and Tones into the Calendar design system with rounded surfaces, stronger row hierarchy and restrained depth",
+    "validation": "294 focused GUI tests pass. Rendered Original, Porcelain and Slate at 760/1000/1440/2560 logical pixels and 100/200% scaling, including German, empty and full collections. Verified keyboard selection, short-window scrolling, persistent action visibility, stable empty-panel width and accessible hidden metadata. Existing native app typography, tokens and navigation override web-specific Hallmark gates.",
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-11-13",
+    "scope": "component",
+    "macrostructure": "Existing Calendar workspace with day crossfade, sliding tab selector and directional content swipe",
+    "theme": "preserved iOpenPod semantic theme",
+    "enrichment": "none",
+    "brief": "Animate day selection and Calendar/To Dos navigation with Settings scope selector timing",
+    "validation": "303 focused GUI tests pass; Ruff, Mypy, Rumdl and lock checks pass. Rendered transition midpoints in Original and Porcelain at 100/200% scaling. Tested swipe direction, rapid reversal, keyboard input, hidden and resized widgets, theme changes, device replacement and disabled Host motion.",
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-11-13",
+    "scope": "page",
+    "macrostructure": "Month workspace with bounded agenda rail and adaptive calendar toolbar",
+    "theme": "preserved iOpenPod semantic theme",
+    "enrichment": "none",
+    "brief": "Polish Calendar with rounded panels, stronger month typography, compact filters and day-only agenda heading",
+    "validation": "278 focused GUI tests; Ruff, Mypy, Rumdl and lock checks pass. Rendered Original, Porcelain and Slate at 760/1000/1440/2560 logical pixels and 100/200% scaling, including German, populated and empty states. Native keyboard navigation retained; short cells keep event indicators. Existing app typography, controls and theme system override web-specific Hallmark gates.",
+    "critique": {
+      "philosophy": 5,
+      "hierarchy": 5,
+      "execution": 4,
+      "specificity": 5,
+      "restraint": 5,
+      "variety": 4
+    }
+  },
+  {
+    "date": "2026-11-13",
+    "scope": "app",
     "macrostructure": "Existing Extras list with listen-name-save conversion dialog",
     "theme": "preserved iOpenPod semantic theme",
     "enrichment": "none",
@@ -191,32 +242,5 @@
     "vibe": "editorial premium podcast library",
     "enrichment": "real feed and device artwork",
     "brief": "Artwork-led Podcast show shelf, selected-show masthead, editorial episode stream, and visual discovery dialog"
-  },
-  {
-    "date": "2026-08-31",
-    "macrostructure": "Balanced Player Rail",
-    "theme": "custom",
-    "theme_axes": "light and dark / native sans / cool blue",
-    "vibe": "soft exact desktop media controls",
-    "enrichment": "none",
-    "brief": "Centered three-zone Player with runtime-only Queue and newest-first History pane"
-  },
-  {
-    "date": "2026-08-28",
-    "macrostructure": "Split Rail Library",
-    "theme": "custom",
-    "theme_axes": "light and dark / native sans / cool blue",
-    "vibe": "quiet compact desktop music library",
-    "enrichment": "Tier-A deterministic placeholder artwork",
-    "brief": "Draggable Track context search, single-line Browser headers, evenly distributed album grid, and semantic cursors"
-  },
-  {
-    "date": "2026-08-28",
-    "macrostructure": "Ecosystem Index",
-    "theme": "custom",
-    "theme_axes": "light and dark / native sans / cool blue",
-    "vibe": "calm technical desktop music utility",
-    "enrichment": "Tier-A deterministic placeholder artwork",
-    "brief": "Original-informed iOpenPod application shell with virtualized Library views"
   }
 ]

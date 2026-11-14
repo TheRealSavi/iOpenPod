@@ -18,13 +18,14 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QCheckBox,
     QComboBox,
-    QDateEdit,
     QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -33,9 +34,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QScrollArea,
+    QSizePolicy,
     QSplitter,
-    QTabWidget,
-    QTimeEdit,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -44,13 +44,22 @@ from PySide6.QtWidgets import (
 from whenever import SYSTEM_TZ, Date, Instant, PlainDateTime, Time
 
 from iOpenPod.GUI.delegates.extras_delegate import ExtrasDelegate
+from iOpenPod.GUI.dialogs.calendar_picker import CalendarPickerDialog
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.app_date_edit import AppDateEdit
+from iOpenPod.GUI.widgets.app_time_edit import AppTimeEdit
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.calendar_month import CalendarMarker, CalendarMonth
 from iOpenPod.GUI.widgets.calendar_options import CalendarOptions
+from iOpenPod.GUI.widgets.calendar_tabs import CalendarTabs
 from iOpenPod.GUI.widgets.search_field import SearchField
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
+from iOpenPod.GUI.widgets.themed_buttons import (
+    ActionButton,
+    ActionButtonKind,
+    IconButton,
+    IconButtonKind,
+)
 from iPodDB.calendar import (
     UNCHANGED,
     CalendarDateForm,
@@ -212,16 +221,15 @@ class _DateInput(QWidget):
         self.include = QCheckBox(self)
         self.include.setObjectName(name + "Enabled")
         self.include.setChecked(value is not None)
-        self.date = QDateEdit(self)
+        self.date = AppDateEdit(self)
         self.date.setObjectName(name + "Date")
         self.date.setDateRange(QDate(100, 1, 1), QDate(9999, 12, 31))
-        self.date.setCalendarPopup(True)
         self.date.setDate(
             QDate(local.year, local.month, local.day)
             if isinstance(local, (Date, PlainDateTime))
             else QDate(today.year, today.month, today.day)
         )
-        self.time = QTimeEdit(self)
+        self.time = AppTimeEdit(self)
         self.time.setObjectName(name + "Time")
         self.time.setTime(
             QTime(local.hour, local.minute, local.second)
@@ -698,7 +706,6 @@ class CalendarEditor(QDialog):
             widget.date.setDisplayFormat(
                 QLocale().dateFormat(QLocale.FormatType.ShortFormat)
             )
-            widget.time.setDisplayFormat("HH:mm:ss")
         self._refresh_timing_note()
 
     def changeEvent(self, event: QEvent) -> None:
@@ -744,15 +751,16 @@ class CalendarPage(QWidget):
         self._import.setObjectName("calendarImport")
         self._new = ActionButton(parent=self._header, kind=ActionButtonKind.PRIMARY)
         self._new.setObjectName("calendarNew")
-        self._refresh_button = ActionButton(
-            parent=self._header, kind=ActionButtonKind.QUIET
-        )
-        self._refresh_button.setObjectName("calendarRefresh")
-        for button in (self._refresh_button, self._import, self._new):
+        for button in (self._import, self._new):
             self._header.add_action(button)
         self._calendar_filter = AppComboBox(self)
         self._calendar_filter.setObjectName("calendarSelector")
-        self._create_calendar = ActionButton(parent=self, kind=ActionButtonKind.QUIET)
+        self._calendar_filter.setMaximumWidth(LAYOUT.calendar_filter_width)
+        self._calendar_filter.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self._calendar_filter.setMinimumContentsLength(8)
+        self._create_calendar = IconButton("plus", "", self, kind=IconButtonKind.QUIET)
         self._create_calendar.setObjectName("calendarCreate")
         self._rename_calendar = ActionButton(parent=self, kind=ActionButtonKind.QUIET)
         self._rename_calendar.setObjectName("calendarRename")
@@ -760,25 +768,23 @@ class CalendarPage(QWidget):
         self._status.setObjectName("calendarStatus")
         self._status.setWordWrap(True)
         self._status.setTextFormat(Qt.TextFormat.PlainText)
-        self._tabs = QTabWidget(self)
+        self._tabs = CalendarTabs(self)
         self._tabs.setObjectName("calendarTabs")
         self._tabs.setProperty("extrasTabs", True)
+        self._tabs.tabBar().setDrawBase(False)
         self._month = CalendarMonth(self, today=_today_for_widget)
         self._agenda_title = QLabel(self)
         self._agenda_title.setObjectName("calendarAgendaTitle")
         self._agenda_title.setProperty("extrasHeading", True)
+        self._agenda_title.setWordWrap(True)
         self._scope = AppComboBox(self)
         self._scope.setObjectName("calendarScope")
         self._scope.addItems(["", ""])
         self._search = SearchField(self)
         self._search.setObjectName("calendarSearch")
-        self._search.setFixedWidth(220)
-        search_corner = QWidget(self._tabs)
-        search_layout = QHBoxLayout(search_corner)
-        search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.addWidget(self._search)
-        self._tabs.setCornerWidget(search_corner, Qt.Corner.TopRightCorner)
+        self._search.setFixedWidth(LAYOUT.calendar_search_width)
         self._trees: list[QTreeWidget] = []
+        self._list_layouts: list[QGridLayout] = []
         for name in ("calendarEvents", "calendarTodos"):
             tree = _CalendarEntryList(self._tabs)
             tree.setObjectName(name)
@@ -797,45 +803,84 @@ class CalendarPage(QWidget):
             tree.entryMenuRequested.connect(self._show_entry_menu)
             tree.itemActivated.connect(self._activate_entry)
             self._trees.append(tree)
-        agenda = QWidget(self)
-        self._agenda_layout = QVBoxLayout(agenda)
-        self._agenda_layout.setContentsMargins(LAYOUT.space_md, 0, 0, 0)
-        self._agenda_layout.setSpacing(LAYOUT.space_sm)
+        self._agenda = QFrame(self)
+        self._agenda.setObjectName("calendarAgenda")
+        self._agenda.setMinimumWidth(LAYOUT.calendar_agenda_minimum_width)
+        self._agenda.setMaximumWidth(LAYOUT.calendar_agenda_maximum_width)
+        self._agenda_layout = QVBoxLayout(self._agenda)
+        self._agenda_layout.setContentsMargins(
+            LAYOUT.space_md, LAYOUT.space_lg, LAYOUT.space_md, LAYOUT.space_md
+        )
+        self._agenda_layout.setSpacing(LAYOUT.space_md)
         self._agenda_layout.addWidget(self._agenda_title)
         self._agenda_layout.addWidget(self._scope)
-        self._agenda_layout.addWidget(self._trees[0], 1)
+        list_hosts: list[QWidget] = []
+        for entry_tree in self._trees:
+            content = QWidget(self)
+            content_layout = QGridLayout(content)
+            content_layout.setContentsMargins(0, 0, 0, 0)
+            content_layout.addWidget(entry_tree, 0, 0)
+            list_hosts.append(content)
+            self._list_layouts.append(content_layout)
+        self._agenda_layout.addWidget(list_hosts[0], 1)
         self._splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self._splitter.setObjectName("calendarSplit")
         self._splitter.setChildrenCollapsible(False)
+        # Let the page cross its stacking breakpoint before the horizontal
+        # children's combined minimum width clamps the containing window.
+        self._splitter.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
+        )
+        self._splitter.setHandleWidth(LAYOUT.space_md)
         self._splitter.addWidget(self._month)
-        self._splitter.addWidget(agenda)
-        self._splitter.setStretchFactor(0, 3)
-        self._splitter.setStretchFactor(1, 2)
-        self._splitter.setSizes([640, 320])
+        self._splitter.addWidget(self._agenda)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 0)
+        self._splitter.setSizes([640, LAYOUT.calendar_agenda_width])
         self._tabs.addTab(self._splitter, "")
-        todos = QWidget(self)
+        todos = QFrame(self)
+        todos.setObjectName("calendarTodoPanel")
         self._todo_layout = QVBoxLayout(todos)
-        self._todo_layout.setContentsMargins(0, 0, 0, 0)
-        self._todo_layout.addWidget(self._trees[1], 1)
+        self._todo_layout.setContentsMargins(
+            LAYOUT.space_md, LAYOUT.space_md, LAYOUT.space_md, LAYOUT.space_md
+        )
+        self._todo_layout.addWidget(list_hosts[1], 1)
         self._tabs.addTab(todos, "")
         self._empty = QLabel(self)
         self._empty.setObjectName("calendarEmpty")
         self._empty.setWordWrap(True)
         self._empty.setProperty("extrasMuted", True)
-        self._agenda_layout.addWidget(self._empty)
+        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty.setMinimumWidth(
+            LAYOUT.calendar_agenda_minimum_width - 2 * LAYOUT.space_md
+        )
+        self._empty.setMaximumWidth(LAYOUT.calendar_agenda_width - 2 * LAYOUT.space_lg)
+        self._empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._list_layouts[0].addWidget(self._empty, 0, 0, Qt.AlignmentFlag.AlignCenter)
         self._note = QLabel(self)
         self._note.setWordWrap(True)
         self._note.setProperty("extrasMuted", True)
         body = QVBoxLayout()
         body.setContentsMargins(
-            LAYOUT.space_lg, LAYOUT.space_sm, LAYOUT.space_lg, LAYOUT.space_lg
+            LAYOUT.space_lg, LAYOUT.space_md, LAYOUT.space_lg, LAYOUT.space_lg
         )
         body.setSpacing(LAYOUT.space_sm)
-        calendar_actions = QHBoxLayout()
-        calendar_actions.addWidget(self._calendar_filter, 1)
-        calendar_actions.addWidget(self._create_calendar)
-        calendar_actions.addWidget(self._rename_calendar)
-        body.addLayout(calendar_actions)
+        self._calendar_controls = QWidget(self)
+        self._calendar_controls.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        controls = QHBoxLayout(self._calendar_controls)
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(LAYOUT.space_xs)
+        controls.addWidget(self._calendar_filter, 1)
+        controls.addWidget(self._create_calendar)
+        controls.addWidget(self._rename_calendar)
+        controls.addStretch(1)
+        self._calendar_actions = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self._calendar_actions.setSpacing(LAYOUT.space_xs)
+        self._calendar_actions.addWidget(self._calendar_controls, 1)
+        self._calendar_actions.addWidget(self._search)
+        body.addLayout(self._calendar_actions)
         body.addWidget(self._status)
         body.addWidget(self._tabs, 1)
         body.addWidget(self._note)
@@ -849,11 +894,11 @@ class CalendarPage(QWidget):
         self._rename_calendar.clicked.connect(self._rename_named_calendar)
         self._new.clicked.connect(lambda: self._open_editor())
         self._import.clicked.connect(self._import_file)
-        self._refresh_button.clicked.connect(controller.refresh)
         self._tabs.currentChanged.connect(self._tab_changed)
         self._month.selected.connect(self._refresh)
         self._scope.currentIndexChanged.connect(self._refresh)
         self._search.queryChanged.connect(self._refresh)
+        controller.changed.connect(self._tabs.cancel_transition)
         controller.changed.connect(self._refresh)
         self._refresh()
 
@@ -903,11 +948,12 @@ class CalendarPage(QWidget):
             self._controller.rename_calendar(group, name)
 
     def _tab_changed(self) -> None:
-        # The empty message follows its list rather than occupying the month grid.
-        if self._tabs.currentIndex() == 0:
-            self._agenda_layout.addWidget(self._empty)
-        else:
-            self._todo_layout.addWidget(self._empty)
+        # Overlay the empty message inside the active list's own surface.
+        for layout in self._list_layouts:
+            layout.removeWidget(self._empty)
+        self._list_layouts[self._tabs.currentIndex()].addWidget(
+            self._empty, 0, 0, Qt.AlignmentFlag.AlignCenter
+        )
         self._note.setVisible(
             self._tabs.currentIndex() == 0
             and any(
@@ -918,17 +964,27 @@ class CalendarPage(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        stacked = self.width() < 780
+        toolbar_width = (
+            self._calendar_controls.minimumSizeHint().width()
+            + self._search.width()
+            + LAYOUT.space_xs
+            + 2 * LAYOUT.space_lg
+        )
+        self._calendar_actions.setDirection(
+            QBoxLayout.Direction.TopToBottom
+            if self.width() < toolbar_width
+            else QBoxLayout.Direction.LeftToRight
+        )
+        stacked = self.width() < LAYOUT.calendar_stacked_breakpoint
         orientation = Qt.Orientation.Vertical if stacked else Qt.Orientation.Horizontal
         if self._splitter.orientation() != orientation:
             self._splitter.setOrientation(orientation)
-            self._agenda_layout.setContentsMargins(
-                0 if stacked else LAYOUT.space_md,
-                LAYOUT.space_sm if stacked else 0,
-                0,
-                0,
+            self._agenda.setMaximumWidth(
+                16777215 if stacked else LAYOUT.calendar_agenda_maximum_width
             )
-            self._splitter.setSizes([380, 240] if stacked else [640, 320])
+            self._splitter.setSizes(
+                [380, 240] if stacked else [640, LAYOUT.calendar_agenda_width]
+            )
 
     def _writable(self) -> bool:
         support = self._controller.catalog.support
@@ -1044,6 +1100,7 @@ class CalendarPage(QWidget):
         self._rename_calendar.setEnabled(
             bool(self._writable() and selected_group and selected_group.editable)
         )
+        self._rename_calendar.setVisible(self._rename_calendar.isEnabled())
         visible_items = tuple(
             item
             for item in self._controller.catalog.calendar
@@ -1237,14 +1294,15 @@ class CalendarPage(QWidget):
                     f"{label} ({index + 1})" if labels.count(label) > 1 else label
                     for index, label in enumerate(labels)
                 ]
-                chosen, accepted = QInputDialog.getItem(
-                    self, self.tr("New entry"), self.tr("Calendar:"), labels, 0, False
-                )
+                picker = CalendarPickerDialog(tuple(labels), self)
+                accepted = picker.exec() == QDialog.DialogCode.Accepted
+                selected = picker.selected_index()
+                picker.deleteLater()
                 if not accepted:
                     return
                 if active is not self._controller.active_ipod or not self._writable():
                     return
-                destination = groups[labels.index(chosen)]
+                destination = groups[selected]
         if destination is not None and not destination.editable:
             return
         zones = destination.zones if destination else ()
@@ -1333,7 +1391,8 @@ class CalendarPage(QWidget):
 
     def retranslate_ui(self) -> None:
         self._header.set_title(self.tr("Calendar"))
-        self._create_calendar.setText(self.tr("New calendar…"))
+        self._create_calendar.setAccessibleName(self.tr("New calendar…"))
+        self._create_calendar.setToolTip(self._create_calendar.accessibleName())
         self._rename_calendar.setText(self.tr("Rename calendar…"))
         self._calendar_filter.setAccessibleName(self.tr("Calendar to show"))
         self._calendar_filter.setItemText(0, self.tr("All calendars"))
@@ -1351,9 +1410,6 @@ class CalendarPage(QWidget):
             [self.tr("Title"), self.tr("Due"), self.tr("Location"), self.tr("Status")]
         )
         self._import.setText(self.tr("Import Calendar…"))
-        self._refresh_button.setText(
-            QCoreApplication.translate("CommonActions", "Refresh")
-        )
         self._search.setPlaceholderText(self.tr("Search entries"))
         self._search.setAccessibleName(self.tr("Search Calendar and To Dos"))
         self._scope.setItemText(0, self.tr("Selected day"))
@@ -1362,7 +1418,7 @@ class CalendarPage(QWidget):
         self._agenda_title.setText(
             self.tr("Search results")
             if self._search.text().strip()
-            else QLocale().toString(self._month.grid.selectedDate(), "dddd, d MMMM")
+            else QLocale().toString(self._month.grid.selectedDate(), "dddd, d")
             if self._scope.currentIndex() == 0
             else self.tr("All saved entries")
         )
@@ -1380,9 +1436,6 @@ class CalendarPage(QWidget):
         group = self._selected_calendar()
         self._new.setEnabled(
             bool(self._writable() and (group is None or group.editable))
-        )
-        self._refresh_button.setEnabled(
-            self._controller.active_ipod is not None and not self._controller.busy
         )
         active = self._controller.active_ipod
         support = self._controller.catalog.support

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QCoreApplication, QEvent, QLocale, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -54,13 +54,11 @@ class ToneConversionDialog(QDialog):
         self._title.setTextFormat(Qt.TextFormat.PlainText)
         self._title.setProperty("extrasHeading", True)
         self._title.setWordWrap(True)
-        self._intro = QLabel(self)
-        self._intro.setWordWrap(True)
-        self._intro.setProperty("extrasMuted", True)
         self._progress = QProgressBar(self)
         self._progress.setRange(0, 0)
         self._progress.setTextVisible(False)
         self._detail = QLabel(self)
+        self._detail.setObjectName("toneConversionStatus")
         self._detail.setWordWrap(True)
         self._detail.setTextFormat(Qt.TextFormat.PlainText)
         self._name_label = QLabel(self)
@@ -92,7 +90,6 @@ class ToneConversionDialog(QDialog):
         layout.setSpacing(LAYOUT.space_md)
         for widget in (
             self._title,
-            self._intro,
             self._progress,
             self._detail,
             self._name_label,
@@ -138,17 +135,9 @@ class ToneConversionDialog(QDialog):
             self._detail.setText(self.tr("Saving tone…"))
         elif self._conversion.busy:
             self._detail.setText(workflow_text(self._conversion.message))
-        elif result is not None:
-            self._detail.setText(
-                self.tr("%1 seconds · from %2 in the track")
-                .replace("%1", QLocale().toString(result.duration_ms / 1000, "f", 1))
-                .replace(
-                    "%2",
-                    f"{int(result.source_start_seconds) // 60}:{int(result.source_start_seconds) % 60:02d}",
-                )
-            )
         else:
             self._detail.setText("")
+        self._detail.setVisible(bool(self._detail.text()))
         self._validate()
         if self._conversion.error:
             self._show_error(self._conversion.error)
@@ -177,7 +166,7 @@ class ToneConversionDialog(QDialog):
                 error = workflow_text(str(failure))
             if not self._extras.busy and not self._extras.catalog.can_create_tone:
                 error = self.tr(
-                    "A tone cannot be added. Refresh Tones and check that fewer than 19 custom tones are saved."
+                    "A tone cannot be added. Reopen Tones and check that fewer than 19 custom tones are saved."
                 )
         self._error.setText(workflow_text(error))
         self._error.setVisible(bool(error))
@@ -230,11 +219,6 @@ class ToneConversionDialog(QDialog):
 
     def _retranslate(self) -> None:
         self.setWindowTitle(self.tr("Convert to tone"))
-        self._intro.setText(
-            self.tr(
-                "A short melody for your iPod's alarms. Listen to the arrangement before saving; the iPod's speaker will sound different."
-            )
-        )
         self._name_label.setText(self.tr("Tone name"))
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._save.setText(self.tr("Save tone"))

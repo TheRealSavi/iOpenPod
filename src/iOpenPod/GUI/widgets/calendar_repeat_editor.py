@@ -12,13 +12,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QSpinBox,
-    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
 from whenever import Date, Time
 
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+from iOpenPod.GUI.widgets.app_date_edit import AppDateEdit
+from iOpenPod.GUI.widgets.app_time_edit import AppTimeEdit
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
 from iPodDB.calendar import (
     CalendarDayRule,
@@ -39,7 +40,6 @@ def _date(picker: QDateEdit) -> Date:
 
 
 def _setup_date_picker(picker: QDateEdit, date: Date) -> None:
-    picker.setCalendarPopup(True)
     picker.setDateRange(QDate(1, 1, 1), QDate(2999, 12, 31))
     picker.setDate(QDate(date.year, date.month, date.day))
 
@@ -148,7 +148,7 @@ class CalendarDateList(_RepeatList[Date]):
     def __init__(
         self, name: str, date: Date, values: tuple[Date, ...], parent: QWidget
     ) -> None:
-        self._picker = QDateEdit(parent)
+        self._picker = AppDateEdit(parent)
         self._picker.setObjectName(name + "Picker")
         _setup_date_picker(self._picker, date)
         super().__init__(
@@ -201,12 +201,11 @@ class CalendarRepeatEditor(QWidget):
         self.count.setRange(1, 10000)
         self.count.setValue(3)
         until = rule.until if rule else None
-        self.until = QDateEdit(self)
+        self.until = AppDateEdit(self)
         self.until.setObjectName(name + "Until")
         _setup_date_picker(self.until, until.date() if until else date)
-        self.until_time = QTimeEdit(self)
+        self.until_time = AppTimeEdit(self)
         self.until_time.setObjectName(name + "UntilTime")
-        self.until_time.setDisplayFormat("HH:mm:ss")
         self.until_time.setTime(
             QTime(until.hour, until.minute, until.second)
             if until

@@ -6,8 +6,7 @@ particular, firmware's unknown-string/invalid-EQ fallbacks are not normalization
 rules for iOpenPod. Inspection never serializes or changes the input bytes.
 
 The ordinary named store is extensionless on Nano 4 and .xml on Nano 5/6/7.
-Nano 6 alone has a second timer store, still rooted at ``iPodSettings``. Callers
-must select an exact firmware profile and the actual captured store. A filename
+Callers must select an exact firmware profile and the actual captured store. A filename
 or matching XML keys cannot establish a device identity.
 
 Evidence and limitations: preferences-nano567-complete-2026-11-07.md,
@@ -20,12 +19,9 @@ import re
 import struct
 from collections import Counter
 
-from whenever import PlainDateTime
-
 from iPodDB.preferences._named_catalog import (
     FIELDS_BY_PROFILE,
     FIRMWARE_CITIES,
-    NANO6_TIMER_FIELDS,
     NamedFieldSpec,
 )
 from iPodDB.preferences._named_xml import NamedNode, parse_named_xml, unsigned_decimal
@@ -38,7 +34,6 @@ from iPodDB.preferences.inspection_models import (
 _MAX_ROWS = 512
 _MAX_TEXT = 512
 _MAX_ISSUES = 64
-_TIMER = re.compile(r"[0-9]{14}\Z")
 _AUTHORABLE_KEYS = {
     "General.Brightness": "brightness",
     "Playback.SoundCheck": "sound_check",
@@ -53,8 +48,6 @@ _LABELS = {
     "General.Brightness": "Brightness",
     "Playback.EQ": "Equalizer",
     "Playback.SoundCheck": "Sound Check",
-    "Timer.DateTime": "Timer deadline (local calendar)",
-    "Timer.SleepiPod": "Sleep iPod when timer ends",
     "Trainer.PedometerActivty": "Pedometer activity",
 }
 _CATEGORIES = {
@@ -115,11 +108,6 @@ _DETAILS = {
     ),
     "Radio.LivePause": "Saved Nano 5 radio live-pause flag; buffering details remain unresolved.",
     "General.RadioLivePause": "Saved radio live-pause flag; buffering details remain unresolved.",
-    "Timer.SleepiPod": (
-        "When true the consumer uses an internal sound sentinel -1. That is "
-        "not permission to save -1 in Timer.SoundIndex."
-    ),
-    "Timer.SoundIndex": "Registered timer sound index 0..24; the complete index-to-sound mapping remains unresolved.",
     "Photos.TimePerSlide": (
         "Stored duration selector, not seconds. Later firmware can force five "
         "seconds when transition 7 (Ken Burns) is selected."
@@ -175,38 +163,6 @@ def _city(value: int, profile: NamedPreferencesProfile) -> tuple[str, str, bool]
     return label, detail, True
 
 
-def _timer(text: str) -> tuple[str, str, bool]:
-    detail = (
-        "Native YYYYMMDDhhmmss civil calendar value, without a zone or UTC "
-        "offset. It is not converted using the Host timezone or resolved across DST."
-    )
-    if text == "":
-        return "No saved deadline", detail, True
-    if not _TIMER.fullmatch(text):
-        return (
-            _preview(text),
-            detail + " Unrecognized deadline spelling is retained.",
-            False,
-        )
-    try:
-        civil = PlainDateTime(
-            int(text[:4]),
-            int(text[4:6]),
-            int(text[6:8]),
-            int(text[8:10]),
-            int(text[10:12]),
-            int(text[12:14]),
-        )
-    except (ValueError, OverflowError):
-        return (
-            text,
-            detail
-            + " Invalid calendar components are retained without blocking loading.",
-            False,
-        )
-    return civil.format_iso(), detail, True
-
-
 def _interpret(
     spec: NamedFieldSpec, text: str, profile: NamedPreferencesProfile
 ) -> tuple[str, str, bool]:
@@ -217,8 +173,6 @@ def _interpret(
     choices = dict(spec.choices)
     if key == "Photos.Transitions" and profile is NamedPreferencesProfile.NANO_6_1_2:
         detail += " Nano 6's legacy label switch also names non-menu values; its current menu contains only 2, 7, 9, 4, 10."
-    if key == "Timer.DateTime":
-        return _timer(text)
     if spec.kind == "string":
         if text in choices:
             return choices[text], detail, True
@@ -290,13 +244,6 @@ def _interpret(
         return choices[str(signed)], detail, True
     if key == "General.Brightness":
         return f"{signed}/100", detail, True
-    if key in ("Timer.Hours", "Timer.Minutes"):
-        unit = "hours" if key.endswith("Hours") else "minutes"
-        return (
-            f"{signed} {unit}",
-            "Saved timer duration component; not an absolute clock value.",
-            True,
-        )
     if key == "Trainer.PedometerStepGoal":
         return (
             f"{signed} steps",
@@ -314,14 +261,13 @@ def _interpret(
 
 
 def inspect_named_preferences(
-    data: bytes, *, profile: NamedPreferencesProfile, timer: bool = False
+    data: bytes, *, profile: NamedPreferencesProfile
 ) -> PreferenceInspection:
     """Describe present scalar fields without granting writes or inventing defaults.
 
-    Every currently registered key is recognized per exact profile/store. Unknown
+    Qualified registered keys are recognized per exact profile/store. Unknown
     keys and values remain observations, with bounded display text. Structural
-    ambiguity is reported without selecting a duplicate's winning value. Timer
-    and calendar interpretation failures are always nonblocking issues.
+    ambiguity is reported without selecting a duplicate's winning value.
     """
     if type(profile) is not NamedPreferencesProfile:
         return PreferenceInspection(
@@ -331,14 +277,7 @@ def inspect_named_preferences(
         return PreferenceInspection(
             issues=("Named Preferences inspection requires captured bytes.",)
         )
-    if timer and profile is not NamedPreferencesProfile.NANO_6_1_2:
-        return PreferenceInspection(
-            issues=("This profile has no qualified separate timer store.",)
-        )
-    specs = {
-        item.key: item
-        for item in (NANO6_TIMER_FIELDS if timer else FIELDS_BY_PROFILE[profile])
-    }
+    specs = {item.key: item for item in FIELDS_BY_PROFILE[profile]}
     root, issues_tuple = parse_named_xml(data)
     if root is None:
         return PreferenceInspection(issues=issues_tuple)
@@ -385,10 +324,6 @@ def inspect_named_preferences(
             )
         else:
             value, detail, known = _interpret(spec, text, profile)
-            if key == "Timer.DateTime" and not known:
-                issues.append(
-                    "Timer.DateTime is retained without interpreting an invalid or unknown calendar value."
-                )
         if len(raw) > _MAX_TEXT or len(key) > _MAX_TEXT:
             issues.append(
                 f"Display text for {_preview(key)} is truncated; captured bytes are unchanged."

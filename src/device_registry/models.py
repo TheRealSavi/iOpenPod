@@ -322,14 +322,13 @@ class ExtrasCapabilities:
 
 
 class AlarmFormat(StrEnum):
-    """Selected saved alarm or countdown format, independent of device I/O."""
+    """Selected saved alarm format, independent of device I/O."""
 
     NONE = "none"
     CLASSIC = "classic"
     MINI = "mini"
     MINI_1 = "mini1"
     CLOCK = "clock"
-    TIMER = "timer"
 
 
 class FirmwareTarget(StrEnum):
@@ -373,8 +372,6 @@ class ExtrasSupport:
     Unknown modes and clock synchronization are never implicitly authorized.
     sleep_timer describes native support; sleep_timer_write describes whether
     a host control protocol is established. These are deliberately separate.
-    timer_settings_write permits saved countdown preset/action edits, independent
-    of live start/stop commands and without changing its retained deadline.
     """
 
     calendar_write: bool = False
@@ -384,7 +381,6 @@ class ExtrasSupport:
     sleep_timer: FeatureSupport = FeatureSupport.UNKNOWN
     sleep_timer_write: bool = False
     reason: str = "The connected firmware is not qualified for Extras editing."
-    timer_settings_write: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

@@ -50,8 +50,8 @@ Device Registry describes Extras availability and qualifies Clock Alarm layouts
 using firmware evidence, with an explicit Nano 1-compatible Clock policy for
 Nano 2 1.1.3 by user direction (ADR-0261).
 `iPodDB.calendar` retains and edits Calendar bytes, and `iPodDB.alarms` owns
-qualified Mini settings, per-city Clock records, dated Alarm collections and
-countdown snapshots and saved preset edits. The Application Layer owns background capture,
+qualified Mini settings, per-city Clock records and dated Alarm collections.
+The Application Layer owns background capture,
 connection/revision checks and Storage Transactions. GUI pages only submit typed
 intents. Sleep Timer has no qualified mounted-file control protocol. See
 [ADR-0247](adr/0247-manage-extras-through-qualified-lossless-file-edits.md).
@@ -67,10 +67,11 @@ SQLite Library/Dynamic companions. Source import, native collation and native
 selector numbering remain iPodDB concerns. Sound and Mini enable intents bind to captured source
 identities. Library saves leave Alarm bytes unchanged and do not depend on Alarm
 files, even when Playlists move or disappear (ADR-0262).
-Tone catalogs bind native names and saved language to Storage captures. Nano 6/7
-saved duration/action writes reuse bounded named-settings parsing and preserve
-deadlines; no Host countdown or live timer command is added. See
+Tone catalogs bind native names and saved language to Storage captures. See
 [ADR-0260](adr/0260-bind-alarm-sounds-to-native-sources-and-preserve-playlist-identities.md).
+Nano 6/7 Countdown Timer support is removed under
+[ADR-0267](adr/0267-remove-nano-countdown-timer-support.md); native Sleep Timer
+availability does not make the Alarms route available.
 This distinction does not restrict Video Calendar editing or Library workflows.
 
 Classic and Nano 3–5 expose a separate Tones page and a single-Track conversion
@@ -114,12 +115,10 @@ native sizes or version words. See the [source ownership map](ipod-preferences.m
 
 Nano 5/6/7 named settings use a separate lossless `iPodSettings.xml` document and
 source precondition. Their optional legacy binary blob does not authorize or block
-XML edits. Nano 4's extensionless `iPodSettings` and Nano 6's
-`iPodTimerSettings.xml` are independently captured read-only stores in the
-Preferences workflow. The Alarms workflow separately owns qualified timer-setting
-edits under ADR-0260. Timer calendar
-components use Whenever without inventing a timezone or resolving DST; malformed
-dates remain nonblocking observations. Saved bytes and live firmware adoption
+XML edits. Nano 4's extensionless `iPodSettings` is independently captured as a
+read-only store in the Preferences workflow. Nano 6's `iPodTimerSettings.xml` is
+not captured. Timer fields in the shared named store retain generic Unknown Data
+handling without dedicated interpretation or editors. Saved bytes and live firmware adoption
 remain distinct. See
 [ADR-0248](adr/0248-edit-qualified-firmware-preferences.md).
 

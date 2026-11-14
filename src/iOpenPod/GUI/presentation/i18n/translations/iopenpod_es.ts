@@ -144,11 +144,11 @@
     </message>
     <message>
         <source>The alarm uses this city&apos;s local time. Daylight saving time is set manually.</source>
-        <translation>La alarma usa la hora local de esta ciudad. El horario de verano se ajusta manualmente.</translation>
+        <translation type="vanished">La alarma usa la hora local de esta ciudad. El horario de verano se ajusta manualmente.</translation>
     </message>
     <message>
         <source>Times follow the iPod&apos;s clock. Check the alarm on your iPod after ejecting.</source>
-        <translation>Las horas siguen el reloj del iPod. Comprueba la alarma en tu iPod después de expulsarlo.</translation>
+        <translation type="vanished">Las horas siguen el reloj del iPod. Comprueba la alarma en tu iPod después de expulsarlo.</translation>
     </message>
     <message>
         <source>Times follow the iPod&apos;s clock. Check the saved alarm and its sound on the iPod after ejecting.</source>
@@ -211,23 +211,23 @@
     </message>
     <message>
         <source>Timer</source>
-        <translation>Temporizador</translation>
+        <translation type="vanished">Temporizador</translation>
     </message>
     <message>
         <source>Sleep Timer</source>
-        <translation>Temporizador de reposo</translation>
+        <translation type="vanished">Temporizador de reposo</translation>
     </message>
     <message>
         <source>{count} saved</source>
-        <translation>{count} guardadas</translation>
+        <translation type="vanished">{count} guardadas</translation>
     </message>
     <message>
         <source>Times follow the saved clock on your iPod. Changes are saved to the device; check them after ejecting.</source>
-        <translation>Las horas siguen el reloj guardado del iPod. Los cambios se guardan en el dispositivo; compruébalos después de expulsarlo.</translation>
+        <translation type="vanished">Las horas siguen el reloj guardado del iPod. Los cambios se guardan en el dispositivo; compruébalos después de expulsarlo.</translation>
     </message>
     <message>
         <source>Countdown timer</source>
-        <translation>Cuenta atrás</translation>
+        <translation type="vanished">Cuenta atrás</translation>
     </message>
     <message>
         <source>Saved duration preset. Start or stop the timer on your iPod.</source>
@@ -247,7 +247,7 @@
     </message>
     <message>
         <source>Some timer settings could not be read. Available settings are shown below.</source>
-        <translation>No se pudieron leer algunos ajustes del temporizador. Los ajustes disponibles se muestran a continuación.</translation>
+        <translation type="vanished">No se pudieron leer algunos ajustes del temporizador. Los ajustes disponibles se muestran a continuación.</translation>
     </message>
     <message>
         <source>No saved alarms. Create an alarm to get started.</source>
@@ -255,7 +255,7 @@
     </message>
     <message>
         <source>When timer ends: Sleep iPod</source>
-        <translation>Al finalizar: Poner el iPod en reposo</translation>
+        <translation type="vanished">Al finalizar: Poner el iPod en reposo</translation>
     </message>
     <message>
         <source>When timer ends: Play a sound</source>
@@ -263,19 +263,19 @@
     </message>
     <message>
         <source>Saved end time: {time}</source>
-        <translation>Hora de fin guardada: {time}</translation>
+        <translation type="vanished">Hora de fin guardada: {time}</translation>
     </message>
     <message>
         <source>No saved timer settings are available.</source>
-        <translation>No hay ajustes guardados del temporizador disponibles.</translation>
+        <translation type="vanished">No hay ajustes guardados del temporizador disponibles.</translation>
     </message>
     <message>
         <source>Saved settings do not show whether the timer is running.</source>
-        <translation>Los ajustes guardados no indican si el temporizador está en marcha.</translation>
+        <translation type="vanished">Los ajustes guardados no indican si el temporizador está en marcha.</translation>
     </message>
     <message>
         <source>Open Clock on your iPod, then Timer. Choose a duration and sound, or Sleep iPod, then tap Start.</source>
-        <translation>Abre Reloj en tu iPod y luego Temporizador. Elige una duración y un sonido, o Poner el iPod en reposo, y toca Iniciar.</translation>
+        <translation type="vanished">Abre Reloj en tu iPod y luego Temporizador. Elige una duración y un sonido, o Poner el iPod en reposo, y toca Iniciar.</translation>
     </message>
     <message>
         <source>Edit time…</source>
@@ -335,19 +335,19 @@
     </message>
     <message>
         <source>Each city has its own alarm. Times follow that city&apos;s clock on your iPod.</source>
-        <translation>Cada ciudad tiene su propia alarma. Las horas siguen el reloj de esa ciudad en el iPod.</translation>
+        <translation type="vanished">Cada ciudad tiene su propia alarma. Las horas siguen el reloj de esa ciudad en el iPod.</translation>
     </message>
     <message>
         <source>Fall asleep to your music</source>
-        <translation>Duérmete con tu música</translation>
+        <translation type="vanished">Duérmete con tu música</translation>
     </message>
     <message>
         <source>Saved duration and ending action.</source>
-        <translation>Duración guardada y acción al finalizar.</translation>
+        <translation type="vanished">Duración guardada y acción al finalizar.</translation>
     </message>
     <message>
         <source>Let your iPod stop playback after a little while. Set a Sleep Timer directly on the device.</source>
-        <translation>Haz que el iPod detenga la reproducción al cabo de un rato. Configura el temporizador de reposo directamente en el dispositivo.</translation>
+        <translation type="vanished">Haz que el iPod detenga la reproducción al cabo de un rato. Configura el temporizador de reposo directamente en el dispositivo.</translation>
     </message>
     <message>
         <source>Edit alarm…</source>
@@ -363,11 +363,11 @@
     </message>
     <message>
         <source>Edit timer settings…</source>
-        <translation>Editar ajustes del temporizador…</translation>
+        <translation type="vanished">Editar ajustes del temporizador…</translation>
     </message>
     <message>
         <source>{hours} h {minutes} min</source>
-        <translation>{hours} h {minutes} min</translation>
+        <translation type="vanished">{hours} h {minutes} min</translation>
     </message>
     <message>
         <source>{model} · Firmware {firmware}
@@ -388,12 +388,16 @@ No se pueden editar las alarmas porque no se ha podido confirmar la compatibilid
         <translation>No hay ciudades guardadas. Añade una ciudad para configurar su alarma.</translation>
     </message>
     <message>
+        <source>No saved alarms were found.</source>
+        <translation>No se han encontrado alarmas guardadas.</translation>
+    </message>
+    <message>
         <source>When timer ends: {sound}</source>
-        <translation>Al finalizar: {sound}</translation>
+        <translation type="vanished">Al finalizar: {sound}</translation>
     </message>
     <message>
         <source>Play a sound</source>
-        <translation>Reproducir un sonido</translation>
+        <translation type="vanished">Reproducir un sonido</translation>
     </message>
     <message>
         <source>This read-only snapshot is the iPod&apos;s saved alarm time. It may be disabled or out of date. Manage saved alarms on the iPod.</source>
@@ -425,39 +429,39 @@ No se pueden editar las alarmas porque no se ha podido confirmar la compatibilid
     </message>
     <message>
         <source>No saved alarms were found. Create an alarm on the iPod, then refresh this page.</source>
-        <translation>No se han encontrado alarmas guardadas. Crea una alarma en el iPod y después actualiza esta página.</translation>
+        <translation type="vanished">No se han encontrado alarmas guardadas. Crea una alarma en el iPod y después actualiza esta página.</translation>
     </message>
     <message>
         <source>Choose an iPod to see its sleep-timer instructions.</source>
-        <translation>Elige un iPod para ver las instrucciones de su temporizador de reposo.</translation>
+        <translation type="vanished">Elige un iPod para ver las instrucciones de su temporizador de reposo.</translation>
     </message>
     <message>
         <source>Open Extras, then Alarms, then Sleep Timer.</source>
-        <translation>Abre Extras, después Alarmas y luego Temporizador de reposo.</translation>
+        <translation type="vanished">Abre Extras, después Alarmas y luego Temporizador de reposo.</translation>
     </message>
     <message>
         <source>Open Extras, then Clock, then Sleep Timer.</source>
-        <translation>Abre Extras, después Reloj y luego Temporizador de reposo.</translation>
+        <translation type="vanished">Abre Extras, después Reloj y luego Temporizador de reposo.</translation>
     </message>
     <message>
         <source>Open Extras, then Clock. Select a clock if prompted, then choose Sleep Timer.</source>
-        <translation>Abre Extras y después Reloj. Selecciona un reloj si se te pide y luego elige Temporizador de reposo.</translation>
+        <translation type="vanished">Abre Extras y después Reloj. Selecciona un reloj si se te pide y luego elige Temporizador de reposo.</translation>
     </message>
     <message>
         <source>Start the timer on your iPod.</source>
-        <translation>Inicia el temporizador en tu iPod.</translation>
+        <translation type="vanished">Inicia el temporizador en tu iPod.</translation>
     </message>
     <message>
         <source>Select how long the iPod should play before sleeping.
 
 iOpenPod cannot read or change it over this connection.</source>
-        <translation>Selecciona cuánto tiempo debe reproducir el iPod antes de entrar en reposo.
+        <translation type="vanished">Selecciona cuánto tiempo debe reproducir el iPod antes de entrar en reposo.
 
 iOpenPod no puede leer ni cambiar el temporizador a través de esta conexión.</translation>
     </message>
     <message>
         <source>Sleep-timer support has not been confirmed for this iPod.</source>
-        <translation>No se ha confirmado la compatibilidad del temporizador de reposo con este iPod.</translation>
+        <translation type="vanished">No se ha confirmado la compatibilidad del temporizador de reposo con este iPod.</translation>
     </message>
 </context>
 <context>
@@ -2396,6 +2400,10 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
         <source>Deselect All</source>
         <translation>Deseleccionar todo</translation>
     </message>
+    <message>
+        <source>OK</source>
+        <translation>Aceptar</translation>
+    </message>
 </context>
 <context>
     <name>CompactTopBar</name>
@@ -3236,7 +3244,7 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
     </message>
     <message>
         <source>ISO date or Unix seconds; blank to clear</source>
-        <translation>Fecha ISO o segundos Unix; deja en blanco para borrar</translation>
+        <translation type="vanished">Fecha ISO o segundos Unix; deja en blanco para borrar</translation>
     </message>
     <message>
         <source>Reset</source>
@@ -4990,6 +4998,41 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
     </message>
 </context>
 <context>
+    <name>MetadataDateEdit</name>
+    <message>
+        <source>Mixed values — unchanged</source>
+        <translation>Valores distintos — sin cambios</translation>
+    </message>
+    <message>
+        <source>Date unavailable</source>
+        <translation>Fecha no disponible</translation>
+    </message>
+    <message>
+        <source>Not set</source>
+        <translation>Sin establecer</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Fecha</translation>
+    </message>
+    <message>
+        <source>Time</source>
+        <translation>Hora</translation>
+    </message>
+    <message>
+        <source>Hours, minutes, seconds</source>
+        <translation>Horas, minutos, segundos</translation>
+    </message>
+    <message>
+        <source>Set date…</source>
+        <translation>Establecer fecha…</translation>
+    </message>
+    <message>
+        <source>Clear date</source>
+        <translation>Borrar fecha</translation>
+    </message>
+</context>
+<context>
     <name>MetadataEditorDialog</name>
     <message>
         <source>Metadata</source>
@@ -6249,7 +6292,7 @@ Elige Descargar e instalar para descargar Python, las bibliotecas de análisis y
     </message>
     <message>
         <source>Dates accept an ISO timestamp or Unix seconds. Leave a date blank to clear it; enter 0 to clear mixed dates.</source>
-        <translation>Las fechas admiten un valor ISO o segundos Unix. Deja la fecha en blanco para borrarla; introduce 0 para borrar fechas distintas.</translation>
+        <translation type="vanished">Las fechas admiten un valor ISO o segundos Unix. Deja la fecha en blanco para borrarla; introduce 0 para borrar fechas distintas.</translation>
     </message>
     <message>
         <source>Metadata</source>
@@ -10797,39 +10840,39 @@ Playlists: %3</translation>
     <name>TimerEditor</name>
     <message>
         <source>Timer settings</source>
-        <translation>Ajustes del temporizador</translation>
+        <translation type="vanished">Ajustes del temporizador</translation>
     </message>
     <message>
         <source>Hours</source>
-        <translation>Horas</translation>
+        <translation type="vanished">Horas</translation>
     </message>
     <message>
         <source>Minutes</source>
-        <translation>Minutos</translation>
+        <translation type="vanished">Minutos</translation>
     </message>
     <message>
         <source>Unchanged</source>
-        <translation>Sin cambios</translation>
+        <translation type="vanished">Sin cambios</translation>
     </message>
     <message>
         <source>When timer ends</source>
-        <translation>Al finalizar</translation>
+        <translation type="vanished">Al finalizar</translation>
     </message>
     <message>
         <source>Sleep iPod</source>
-        <translation>Poner el iPod en reposo</translation>
+        <translation type="vanished">Poner el iPod en reposo</translation>
     </message>
     <message>
         <source>Keep current setting</source>
-        <translation>Mantener el ajuste actual</translation>
+        <translation type="vanished">Mantener el ajuste actual</translation>
     </message>
     <message>
         <source>Your iPod loads these settings on restart. Start and stop the timer on the iPod.</source>
-        <translation>Tu iPod carga estos ajustes al reiniciarse. Inicia y detén el temporizador en el iPod.</translation>
+        <translation type="vanished">Tu iPod carga estos ajustes al reiniciarse. Inicia y detén el temporizador en el iPod.</translation>
     </message>
     <message>
         <source>Save</source>
-        <translation>Guardar</translation>
+        <translation type="vanished">Guardar</translation>
     </message>
 </context>
 <context>
@@ -10844,7 +10887,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>%1 seconds · from %2 in the track</source>
-        <translation>%1 segundos · desde %2 de la pista</translation>
+        <translation type="vanished">%1 segundos · desde %2 de la pista</translation>
     </message>
     <message>
         <source>A tone with this name already exists. Choose another name.</source>
@@ -10852,7 +10895,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A tone cannot be added. Refresh Tones and check that fewer than 19 custom tones are saved.</source>
-        <translation>No se puede añadir el tono. Actualiza Tonos y comprueba que haya menos de 19 tonos personalizados guardados.</translation>
+        <translation type="vanished">No se puede añadir el tono. Actualiza Tonos y comprueba que haya menos de 19 tonos personalizados guardados.</translation>
+    </message>
+    <message>
+        <source>A tone cannot be added. Reopen Tones and check that fewer than 19 custom tones are saved.</source>
+        <translation>No se puede añadir el tono. Vuelve a abrir Tonos y comprueba que haya menos de 19 tonos personalizados guardados.</translation>
     </message>
     <message>
         <source>The iPod is busy. Try saving again when it is ready.</source>
@@ -10872,7 +10919,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>A short melody for your iPod&apos;s alarms. Listen to the arrangement before saving; the iPod&apos;s speaker will sound different.</source>
-        <translation>Una melodía breve para las alarmas del iPod. Escucha el resultado antes de guardarlo; el altavoz del iPod sonará diferente.</translation>
+        <translation type="vanished">Una melodía breve para las alarmas del iPod. Escucha el resultado antes de guardarlo; el altavoz del iPod sonará diferente.</translation>
     </message>
     <message>
         <source>Tone name</source>
@@ -10906,8 +10953,12 @@ Playlists: %3</translation>
         <translation>Cargando tonos…</translation>
     </message>
     <message>
+        <source>No tones to show.</source>
+        <translation>No hay tonos para mostrar.</translation>
+    </message>
+    <message>
         <source>No tones to show. Refresh to read this iPod&apos;s tones.</source>
-        <translation>No hay tonos para mostrar. Actualiza para leer los tonos de este iPod.</translation>
+        <translation type="vanished">No hay tonos para mostrar. Actualiza para leer los tonos de este iPod.</translation>
     </message>
     <message>
         <source>%1 of 19 custom tones</source>
@@ -10927,11 +10978,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Refresh</source>
-        <translation>Actualizar</translation>
+        <translation type="vanished">Actualizar</translation>
     </message>
     <message>
         <source>Make a short melody from a song: right-click a music track and choose Convert to tone. Saved tones are available in the alarm&apos;s Sound menu.</source>
-        <translation>Crea una melodía breve a partir de una canción: haz clic derecho en una pista de música y elige Convertir en tono. Los tonos guardados estarán disponibles en el menú Sonido de la alarma.</translation>
+        <translation type="vanished">Crea una melodía breve a partir de una canción: haz clic derecho en una pista de música y elige Convertir en tono. Los tonos guardados estarán disponibles en el menú Sonido de la alarma.</translation>
     </message>
     <message>
         <source>Tone</source>
@@ -12375,7 +12426,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Ascending</source>
-        <translation>Ascendente</translation>
+        <translation type="vanished">Ascendente</translation>
     </message>
     <message>
         <source>Ask</source>
@@ -12403,7 +12454,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Bark</source>
-        <translation>Ladrido</translation>
+        <translation type="vanished">Ladrido</translation>
     </message>
     <message>
         <source>Bass Booster</source>
@@ -12419,7 +12470,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Bell Tower</source>
-        <translation>Campanario</translation>
+        <translation type="vanished">Campanario</translation>
     </message>
     <message>
         <source>Birthday</source>
@@ -12427,11 +12478,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Blues</source>
-        <translation>Blues</translation>
+        <translation type="vanished">Blues</translation>
     </message>
     <message>
         <source>Boing</source>
-        <translation>Boing</translation>
+        <translation type="vanished">Boing</translation>
     </message>
     <message>
         <source>Boolean conditions do not accept a value.</source>
@@ -12803,7 +12854,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Crickets</source>
-        <translation>Grillos</translation>
+        <translation type="vanished">Grillos</translation>
     </message>
     <message>
         <source>Cross Fade</source>
@@ -12887,7 +12938,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Digital</source>
-        <translation>Digital</translation>
+        <translation type="vanished">Digital</translation>
     </message>
     <message>
         <source>Dinner</source>
@@ -12903,7 +12954,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Doorbell</source>
-        <translation>Timbre</translation>
+        <translation type="vanished">Timbre</translation>
     </message>
     <message>
         <source>Downloading Podcast Episode…</source>
@@ -12927,7 +12978,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Duck</source>
-        <translation>Pato</translation>
+        <translation type="vanished">Pato</translation>
     </message>
     <message>
         <source>Electronic</source>
@@ -13127,7 +13178,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Harp</source>
-        <translation>Arpa</translation>
+        <translation type="vanished">Arpa</translation>
     </message>
     <message>
         <source>Headphones</source>
@@ -13359,7 +13410,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Marimba</source>
-        <translation>Marimba</translation>
+        <translation type="vanished">Marimba</translation>
     </message>
     <message>
         <source>Master Playlist membership does not match the resulting library.</source>
@@ -13403,7 +13454,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Motorcycle</source>
-        <translation>Motocicleta</translation>
+        <translation type="vanished">Motocicleta</translation>
     </message>
     <message>
         <source>Multiple playlist datasets have the same type; their ownership is ambiguous.</source>
@@ -14127,7 +14178,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Robot</source>
-        <translation>Robot</translation>
+        <translation type="vanished">Robot</translation>
     </message>
     <message>
         <source>Rock</source>
@@ -14223,7 +14274,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Sci-Fi</source>
-        <translation>Ciencia ficción</translation>
+        <translation type="vanished">Ciencia ficción</translation>
     </message>
     <message>
         <source>Secondary library identifier</source>
@@ -14391,7 +14442,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Sonar</source>
-        <translation>Sonar</translation>
+        <translation type="vanished">Sonar</translation>
     </message>
     <message>
         <source>Songs</source>
@@ -14447,7 +14498,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Strum</source>
-        <translation>Rasgueo</translation>
+        <translation type="vanished">Rasgueo</translation>
     </message>
     <message>
         <source>Supply exactly the Photo assets requested by this draft.</source>
@@ -15439,11 +15490,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Old Car Horn</source>
-        <translation>Bocina antigua</translation>
+        <translation type="vanished">Bocina antigua</translation>
     </message>
     <message>
         <source>Old Phone</source>
-        <translation>Teléfono antiguo</translation>
+        <translation type="vanished">Teléfono antiguo</translation>
     </message>
     <message>
         <source>On (raw {value})</source>
@@ -15475,7 +15526,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Piano Riff</source>
-        <translation>Melodía de piano</translation>
+        <translation type="vanished">Melodía de piano</translation>
     </message>
     <message>
         <source>Pick-Up</source>
@@ -15483,7 +15534,7 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Pinball</source>
-        <translation>Pinball</translation>
+        <translation type="vanished">Pinball</translation>
     </message>
     <message>
         <source>Playlist datasets do not match the authoritative dataset 3.</source>
@@ -15693,11 +15744,11 @@ El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>Timba</source>
-        <translation>Timba</translation>
+        <translation type="vanished">Timba</translation>
     </message>
     <message>
         <source>Time Passing</source>
-        <translation>Paso del tiempo</translation>
+        <translation type="vanished">Paso del tiempo</translation>
     </message>
     <message>
         <source>Time per slide</source>
@@ -15709,7 +15760,7 @@ El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>Timer settings</source>
-        <translation>Ajustes del temporizador</translation>
+        <translation type="vanished">Ajustes del temporizador</translation>
     </message>
     <message>
         <source>Timezone used for library dates</source>
@@ -15733,7 +15784,7 @@ El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>Trill</source>
-        <translation>Trino</translation>
+        <translation type="vanished">Trino</translation>
     </message>
     <message>
         <source>Turning the melody into notes…</source>
@@ -15917,7 +15968,7 @@ El análisis acústico sigue disponible.</translation>
     </message>
     <message>
         <source>Xylophone</source>
-        <translation>Xilófono</translation>
+        <translation type="vanished">Xilófono</translation>
     </message>
     <message>
         <source>Zoom</source>
@@ -16362,6 +16413,33 @@ Firmware verificado para la familia de actualización {family}: {firmware}.</tra
     <message>
         <source>Updated Host rating from {old} to {new} stars.</source>
         <translation>Valoración del equipo actualizada de {old} a {new} estrellas.</translation>
+    </message>
+</context>
+<context>
+    <name>_DateCalendar</name>
+    <message>
+        <source>Month</source>
+        <translation>Mes</translation>
+    </message>
+    <message>
+        <source>Year</source>
+        <translation>Año</translation>
+    </message>
+    <message>
+        <source>Previous month</source>
+        <translation>Mes anterior</translation>
+    </message>
+    <message>
+        <source>Next month</source>
+        <translation>Mes siguiente</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>Hoy</translation>
+    </message>
+    <message>
+        <source>Choose date</source>
+        <translation>Elegir fecha</translation>
     </message>
 </context>
 <context>

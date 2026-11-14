@@ -94,7 +94,6 @@ def page_supported(page_id: PageId, profile: DeviceProfile | None) -> bool:
     if page_id is PageId.ALARMS:
         return profile is not None and (
             profile.capabilities.extras.alarms is FeatureSupport.SUPPORTED
-            or profile.capabilities.extras.sleep_timer is FeatureSupport.SUPPORTED
         )
     return True
 

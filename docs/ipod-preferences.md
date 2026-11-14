@@ -7,7 +7,6 @@
 | `iPod_Control/Device/Preferences` | `parse_preferences` / `write_preferences` | `PreferencesDocument` |
 | `iPod_Control/Device/iPodSettings.xml` | `parse_named_preferences` / `write_named_preferences` | `NamedPreferencesDocument` |
 | `iPod_Control/Device/iPodSettings` (Nano 4) | `inspect_named_preferences` / no edits | `PreferenceInspection` |
-| `iPod_Control/Device/iPodTimerSettings.xml` (Nano 6) | `inspect_named_preferences(timer=True)` / no edits | `PreferenceInspection` |
 | `iPod_Control/iTunes/iTunesPrefs` | `parse_itunes_preferences` / `write_itunes_preferences` | `ITunesPreferencesDocument` |
 | `iPod_Control/Device/dst` | `parse_dst_table` / captured bytes only | `DSTTableDocument` |
 
@@ -291,7 +290,7 @@ Every row also has the read-only observations qualified for that exact target.
 | Nano 3 / 1.1.3, updater 26 | `Preferences`, 2,952 bytes / `0x3C` | EQ, Brightness, Clicker, Backlight Timer, Contact Sort, Photo controls, TV Out, TV Signal, TV Screen, Fit to Screen, Alternate Audio |
 | Nano 4 / 1.0.4, updater 31 | `Preferences`, 2,960 bytes / `0x3E`; extensionless `iPodSettings` read-only | EQ, Brightness, Clicker, Backlight Timer, Contact Sort, Photo controls, TV Out, TV Signal, TV Screen, Fit to Screen, Alternate Audio |
 | Nano 5 / 1.0.2, updater 34 | `iPodSettings.xml` | Brightness, Sound Check, EQ |
-| Nano 6 / 1.2, updater 36 | `iPodSettings.xml`; `iPodTimerSettings.xml` read-only | Brightness, Sound Check, EQ |
+| Nano 6 / 1.2, updater 36 | `iPodSettings.xml` | Brightness, Sound Check, EQ |
 | Nano 7 / 1.0.4, updater 37 | `iPodSettings.xml` | Brightness, Sound Check, EQ |
 | Nano 7 refresh / 1.1.2, updater 39 | `iPodSettings.xml` | Brightness, Sound Check, EQ |
 | Video 5 / 1.3, updaters 13/20 | `Preferences`, 2,924 bytes / `0x39` | Clicker, Backlight Timer, Audiobook Speed, Contact Sort and Display, slideshow Repeat and Shuffle, Widescreen, Voice Memo Quality |
@@ -356,7 +355,7 @@ qualified on all four images. See the [Nano 3/4 consumer evidence](research/pref
 [Classic structure evidence](research/preferences-classic-structures-2026-11-07.md),
 and [Video consumer evidence](research/preferences-video-deep-followup-2026-11-07.md).
 
-## Named settings and the separate Nano timer store
+## Named settings
 
 The newer Nano 4 investigation also finds named settings in the distinct path
 `iPod_Control/Device/iPodSettings`, without the `.xml` suffix. Energy Saver,
@@ -404,13 +403,11 @@ visible. A valid city index refers to that firmware's own catalog, not an IANA
 index; it does not establish the device's current location or historical offset.
 Unusual firmware city bindings remain documented rather than silently corrected.
 
-Nano 6's separate `iPodTimerSettings.xml` is rooted at `iPodSettings` and is
-inspected using `timer=True`. Its saved deadline is a `YYYYMMDDhhmmss` civil
-calendar value without a timezone or UTC offset. Whenever validates and formats
-the components; no Host timezone or DST resolution is applied. Empty, malformed
-or impossible dates remain nonblocking observations. Timer duration, sound index
-and Sleep iPod state are read-only; this does not establish a mounted-file Sleep
-Timer control protocol.
+Nano 6's separate `iPodTimerSettings.xml` is not captured or inspected. Timer
+fields within `iPodSettings.xml` remain uninterpreted Unknown Data and survive
+unrelated edits byte-for-byte. Dedicated timer observations, duration/action
+editors and codecs have been removed by user direction; see
+[ADR-0267](adr/0267-remove-nano-countdown-timer-support.md).
 
 The XML source fingerprint governs both changed and no-op publication. The
 neighboring legacy binary Preferences blob is optional evidence and is

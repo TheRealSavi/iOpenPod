@@ -1,8 +1,8 @@
 """Qualified saved-field catalogs, not authoring permission or live state.
 
 Extracted from the 2026-11-07 Nano firmware research; no lab runtime dependency.
-The inventory contains every currently discovered registration, not proof that
-indirect/factory registration discovery is complete. Bounds describe constructor
+The inventory excludes Countdown Timer registrations by user direction (ADR-0267);
+it is not proof that indirect/factory registration discovery is complete. Bounds describe constructor
 contracts, not complete UI or parser domains. Choices are independently recovered
 UI labels and consumers; an absent choice must stay unresolved.
 
@@ -452,8 +452,6 @@ NANO6_FIELDS: tuple[NamedFieldSpec, ...] = (
     NamedFieldSpec("Resume.TrackMS", "int32", -2147483648, 2147483647, ()),
     NamedFieldSpec("Settings.SoftwareVersion", "string", None, None, ()),
     NamedFieldSpec("Temp.BacklightTimer", "int32", -2147483648, 2147483647, ()),
-    NamedFieldSpec("Timer.Hours", "int32", 0, 23, ()),
-    NamedFieldSpec("Timer.Minutes", "int32", 0, 59, ()),
     NamedFieldSpec(
         "Trainer.BodyLocation",
         "int32",
@@ -756,11 +754,6 @@ NANO7_FIELDS: tuple[NamedFieldSpec, ...] = (
     NamedFieldSpec("Resume.TrackMS", "int32", -2147483648, 2147483647, ()),
     NamedFieldSpec("Settings.SoftwareVersion", "string", None, None, ()),
     NamedFieldSpec("Temp.BacklightTimer", "int32", -2147483648, 2147483647, ()),
-    NamedFieldSpec("Timer.DateTime", "string", None, None, ()),
-    NamedFieldSpec("Timer.Hours", "int32", 0, 23, ()),
-    NamedFieldSpec("Timer.Minutes", "int32", 0, 59, ()),
-    NamedFieldSpec("Timer.SleepiPod", "boolean", None, None, ()),
-    NamedFieldSpec("Timer.SoundIndex", "int32", 0, 24, ()),
     NamedFieldSpec(
         "Trainer.BodyLocation",
         "int32",
@@ -821,13 +814,6 @@ NANO7_FIELDS: tuple[NamedFieldSpec, ...] = (
     NamedFieldSpec("Video.TvScreenAspect", "int32", 0, 1, ()),
     NamedFieldSpec("Video.TvScreenFitToScreen", "boolean", None, None, ()),
     NamedFieldSpec("Video.TvSignal", "int32", 0, 1, ()),
-)
-
-NANO6_TIMER_FIELDS: tuple[NamedFieldSpec, ...] = (
-    NamedFieldSpec("Settings.SoftwareVersion", "string", None, None, ()),
-    NamedFieldSpec("Timer.DateTime", "string", None, None, ()),
-    NamedFieldSpec("Timer.SleepiPod", "boolean", None, None, ()),
-    NamedFieldSpec("Timer.SoundIndex", "int32", 0, 24, ()),
 )
 
 NANO4_FIELDS: tuple[NamedFieldSpec, ...] = (

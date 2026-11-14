@@ -89,6 +89,17 @@ class LayoutTokens:
     sync_result_maximum_width: int = 960
     sync_result_details_height: int = 220
     page_header_height: int = 56
+    calendar_agenda_width: int = 360
+    calendar_agenda_minimum_width: int = 280
+    calendar_agenda_maximum_width: int = 440
+    calendar_stacked_breakpoint: int = 900
+    calendar_filter_width: int = 260
+    calendar_search_width: int = 240
+    calendar_page_slide_ms: int = 280
+    extras_collection_width: int = 960
+    extras_visible_rows: int = 6
+    date_picker_width: int = 360
+    date_picker_height: int = 360
     album_card_padding: int = 6
     album_caption_gap: int = 6
     album_artwork_size: int = 168

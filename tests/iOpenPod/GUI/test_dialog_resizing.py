@@ -56,13 +56,11 @@ from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.podcast_login import PodcastLoginDialog
 from iOpenPod.GUI.dialogs.podcast_search import PodcastSearchDialog
 from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
-from iOpenPod.GUI.dialogs.timer_editor import TimerEditor
 from iOpenPod.GUI.dialogs.tone_conversion import ToneConversionDialog
 from iOpenPod.GUI.pages.alarms_page import AlarmEditor
 from iOpenPod.GUI.pages.calendar_page import CalendarEditor
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
-from iPodDB.alarms import CountdownTimerSnapshot
 from iPodDB.calendar import CalendarEntryKind
 from iPodDB.library import PlaylistKind
 
@@ -136,7 +134,6 @@ def _assert_form_anchored(dialog: QDialog) -> None:
         lambda: PlaylistEditorDialog(PlaylistKind.PLAYLIST),
         lambda: PlaylistEditorDialog(PlaylistKind.FOLDER),
         lambda: AlarmEditor(AlarmItem(0, "Alarm", Time(7), None, True)),
-        lambda: TimerEditor(CountdownTimerSnapshot(saved_hours=0, saved_minutes=15)),
     ],
     ids=[
         "genius-settings",
@@ -144,7 +141,6 @@ def _assert_form_anchored(dialog: QDialog) -> None:
         "playlist",
         "playlist-folder",
         "alarm",
-        "timer",
     ],
 )
 def test_small_editor_anchors(factory: Callable[[], QDialog]) -> None:

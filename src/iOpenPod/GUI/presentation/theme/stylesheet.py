@@ -233,10 +233,74 @@ QCalendarWidget#calendarMonthGrid QAbstractItemView {{
     outline: none;
 }}
 
-QFrame#sleepTimerPanel {{
+/* Hallmark · genre: modern-minimal · structure: month workspace with agenda rail
+ * system: existing iOpenPod tokens · enrichment: none · native keyboard controls
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ */
+QFrame#calendarMonth,
+QFrame#calendarAgenda,
+QFrame#calendarTodoPanel {{
+    color: {tokens.text};
     background-color: {tokens.surface};
     border: 1px solid {tokens.border};
     border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QLabel#calendarMonthTitle {{
+    color: {tokens.text};
+    font-family: "{typography.display}";
+    font-size: {typography.title_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#calendarAgendaTitle {{
+    color: {tokens.text};
+    font-family: "{typography.display}";
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 700;
+}}
+
+QLabel#calendarEmpty {{
+    color: {tokens.text_secondary};
+    padding: {LAYOUT.space_md}px;
+}}
+
+QTabWidget#calendarTabs::pane {{
+    border: none;
+    padding-top: {LAYOUT.space_md}px;
+}}
+
+QTabWidget#calendarTabs QTabBar::tab {{
+    color: {tokens.text_secondary};
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: {LAYOUT.radius_control}px;
+    padding: 0 {LAYOUT.space_lg}px;
+    min-height: {LAYOUT.control_height_large}px;
+}}
+
+QTabWidget#calendarTabs QTabBar::tab:selected {{
+    color: {tokens.text};
+    background-color: transparent;
+    font-weight: 600;
+}}
+
+QTabWidget#calendarTabs QTabBar::tab:hover {{
+    color: {tokens.text};
+    background-color: transparent;
+}}
+
+QTabWidget#calendarTabs QTabBar::tab:focus {{
+    border-color: transparent;
+}}
+
+QSplitter#calendarSplit::handle {{
+    background: transparent;
+}}
+
+QTreeWidget#calendarEvents,
+QTreeWidget#calendarTodos {{
+    background: transparent;
 }}
 
 QTimeEdit#alarmTime {{
@@ -244,15 +308,28 @@ QTimeEdit#alarmTime {{
     font-size: {typography.title_pt:g}pt;
 }}
 
-/* Hallmark · Alarms · preserved iOpenPod system · time-led working list
- * primary creation above; selected-record actions below; explicit saved state
+/* Hallmark · modern-minimal · Alarms and Tones collection workspace
+ * system: existing iOpenPod tokens · content-sized lists and attached action bars
+ * depth: surface contrast and quiet borders · enrichment: none
  * pre-emit critique: P5 H5 E4 S5 R5 V4 · native keyboard and palette states
  */
-QLabel#timerSavedDuration {{
-    color: {tokens.text};
-    font-family: "{typography.display}";
-    font-size: {typography.title_pt * 1.6:g}pt;
-    font-weight: 600;
+QFrame[extrasCollection="true"] {{
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QFrame[extrasCollectionActions="true"] {{
+    background-color: {tokens.surface_alt};
+    border: none;
+    border-top: 1px solid {tokens.border};
+    border-bottom-left-radius: {LAYOUT.radius_panel - 1}px;
+    border-bottom-right-radius: {LAYOUT.radius_panel - 1}px;
+}}
+
+QTreeWidget[extrasCollectionList="true"] {{
+    background: transparent;
+    padding: {LAYOUT.space_xs}px;
 }}
 
 QLabel#pageDescription,
@@ -356,8 +433,8 @@ QDialog#onboardingDialog,
 QDialog#helpSupportDialog,
 QDialog#playlistEditor,
 QDialog#calendarEditor,
+QDialog#calendarPicker,
 QDialog#alarmEditor,
-QDialog#timerEditor,
 QDialog#toneConversionDialog,
 QDialog#metadataEditor,
 QDialog#artworkCropDialog,
@@ -1200,6 +1277,7 @@ QLabel#metadataFieldLabel {{
 QLabel#metadataSectionTitle,
 QLabel#metadataEditorSubtitle,
 QLabel#metadataGroupDescription,
+QLabel#metadataDateStatus,
 QLabel#metadataChangeSummary {{
     color: {tokens.text_secondary};
 }}
@@ -1221,6 +1299,16 @@ QFrame#metadataFieldRow {{
 QFrame#metadataFieldRow[modified="true"] {{
     background-color: {tokens.surface_selected};
     border-color: {tokens.accent};
+}}
+
+/* Hallmark · component: metadata date/time fields · genre: modern-minimal
+ * theme: iOpenPod · native typography · compact leading-edge control group
+ * states: shared input/button states; synchronous edits, quiet success
+ * pre-emit critique: P4 H4 E4 S5 R4 V3
+ */
+QPushButton#metadataFieldReset[metadataDateReset="true"] {{
+    min-height: {LAYOUT.icon_size + LAYOUT.space_2xs}px;
+    padding: 0 {LAYOUT.space_xs}px;
 }}
 
 QLabel#metadataArtworkImage {{
@@ -2361,13 +2449,11 @@ QFrame[viewModes="true"] QToolButton[iconButton="true"]:checked {{
 }}
 
 QLineEdit,
+QDateEdit[themedDatePicker="true"],
+QTimeEdit[themedTimeInput="true"],
+QSpinBox#datePickerYear,
 QSpinBox[ipodPreferenceEditor="true"],
-QDialog#calendarEditor QSpinBox,
-QDialog#calendarEditor QDateEdit,
-QDialog#calendarEditor QTimeEdit,
-QDialog#alarmEditor QDateEdit,
-QDialog#alarmEditor QTimeEdit,
-QDialog#timerEditor QSpinBox {{
+QDialog#calendarEditor QSpinBox {{
     min-height: {LAYOUT.control_height}px;
     padding: 0 {LAYOUT.space_sm}px;
     color: {tokens.text};
@@ -2379,24 +2465,20 @@ QDialog#timerEditor QSpinBox {{
 }}
 
 QLineEdit:hover,
+QDateEdit[themedDatePicker="true"]:hover,
+QTimeEdit[themedTimeInput="true"]:hover,
+QSpinBox#datePickerYear:hover,
 QSpinBox[ipodPreferenceEditor="true"]:hover,
-QDialog#calendarEditor QSpinBox:hover,
-QDialog#calendarEditor QDateEdit:hover,
-QDialog#calendarEditor QTimeEdit:hover,
-QDialog#alarmEditor QDateEdit:hover,
-QDialog#alarmEditor QTimeEdit:hover,
-QDialog#timerEditor QSpinBox:hover {{
+QDialog#calendarEditor QSpinBox:hover {{
     border-color: {tokens.text_secondary};
 }}
 
 QLineEdit:focus,
+QDateEdit[themedDatePicker="true"]:focus,
+QTimeEdit[themedTimeInput="true"]:focus,
+QSpinBox#datePickerYear:focus,
 QSpinBox[ipodPreferenceEditor="true"]:focus,
-QDialog#calendarEditor QSpinBox:focus,
-QDialog#calendarEditor QDateEdit:focus,
-QDialog#calendarEditor QTimeEdit:focus,
-QDialog#alarmEditor QDateEdit:focus,
-QDialog#alarmEditor QTimeEdit:focus,
-QDialog#timerEditor QSpinBox:focus {{
+QDialog#calendarEditor QSpinBox:focus {{
     border: 1px solid {tokens.focus};
 }}
 
@@ -2445,7 +2527,8 @@ QComboBox:disabled {{
     border-color: {tokens.border};
 }}
 
-QComboBox[themedIndicator="true"]::drop-down {{
+QComboBox[themedIndicator="true"]::drop-down,
+QDateEdit[themedDatePicker="true"]::drop-down {{
     subcontrol-origin: padding;
     subcontrol-position: top right;
     width: {LAYOUT.combo_indicator_width}px;
@@ -2453,14 +2536,63 @@ QComboBox[themedIndicator="true"]::drop-down {{
     border: none;
 }}
 
-QComboBox[themedIndicator="true"]:right-to-left::drop-down {{
+QComboBox[themedIndicator="true"]:right-to-left::drop-down,
+QDateEdit[themedDatePicker="true"]:right-to-left::drop-down {{
     subcontrol-position: top left;
 }}
 
-QComboBox[themedIndicator="true"]::down-arrow {{
+QComboBox[themedIndicator="true"]::down-arrow,
+QDateEdit[themedDatePicker="true"]::down-arrow {{
     width: 0;
     height: 0;
     image: none;
+}}
+
+/* Hallmark · date picker · native editing with the shared dropdown indicator
+ * system: iOpenPod semantic tokens · compact month/year header and rounded days
+ * pre-emit critique: P5 H5 E4 S5 R5 V4 · no decorative motion
+ */
+QDateEdit[themedDatePicker="true"] {{
+    padding: 0 {LAYOUT.combo_indicator_width}px 0 {LAYOUT.space_sm}px;
+}}
+
+QDateEdit[themedDatePicker="true"]:right-to-left {{
+    padding: 0 {LAYOUT.space_sm}px 0 {LAYOUT.combo_indicator_width}px;
+}}
+
+QDateEdit[themedDatePicker="true"]:disabled,
+QTimeEdit[themedTimeInput="true"]:disabled {{
+    color: {tokens.text_disabled};
+    background-color: {tokens.surface_alt};
+    border-color: {tokens.border};
+}}
+
+QWidget#datePickerPopup {{
+    background-color: transparent;
+    border: none;
+}}
+
+QCalendarWidget#datePickerCalendar {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    border: 1px solid {tokens.border_strong};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QCalendarWidget#datePickerCalendar QAbstractItemView {{
+    color: {tokens.text};
+    background-color: {tokens.surface};
+    alternate-background-color: {tokens.surface};
+    selection-background-color: {tokens.surface_selected};
+    selection-color: {tokens.text};
+    border: none;
+    outline: none;
+    padding: 0;
+}}
+
+QComboBox#datePickerMonth,
+QSpinBox#datePickerYear {{
+    font-weight: 600;
 }}
 
 QListView[themedComboPopup="true"] {{

@@ -1,7 +1,6 @@
 """Alarm authoring publishes source-checked files through virtual Storage."""
 
 import plistlib
-from dataclasses import replace
 from pathlib import Path
 from threading import Event
 
@@ -204,16 +203,9 @@ def test_per_city_edit_preserves_other_city_and_never_writes_preferences(
         assert path.read_bytes() == GOLDEN
 
 
-@pytest.mark.parametrize(
-    "firmware,separate",
-    [
-        (FirmwareTarget.NANO_6_1_2, True),
-        (FirmwareTarget.NANO_7_1_0_4, False),
-        (FirmwareTarget.NANO_UPDATER_39_1_1_2, False),
-    ],
-)
-def test_timer_read_is_optional_and_never_authorizes_alarm_writes(
-    tmp_path: Path, firmware: FirmwareTarget, separate: bool
+@pytest.mark.parametrize("separate", [True, False])
+def test_touch_nano_extras_does_not_read_timer_files_or_authorize_alarms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, separate: bool
 ) -> None:
     device = tmp_path / "iPod_Control/Device"
     device.mkdir(parents=True)
@@ -229,27 +221,20 @@ def test_timer_read_is_optional_and_never_authorizes_alarm_writes(
     settings.write_bytes(xml(duration if separate else duration + action))
     if separate:
         (device / "iPodTimerSettings.xml").write_bytes(xml(action))
-    support = ExtrasSupport(alarm_format=AlarmFormat.TIMER, alarm_firmware=firmware)
+    support = ExtrasSupport()
     storage = virtual_storage(tmp_path)
     with storage.open_session(
         storage.discover().volumes[0], access=AccessMode.READ_ONLY
     ) as session:
+
+        def reject_read(*_args: object, **_kwargs: object) -> None:
+            pytest.fail("Extras must not read Nano countdown settings.")
+
+        monkeypatch.setattr(type(session), "read_snapshot", reject_read)
         catalog = read_extras(session, support, lambda: None)
-        assert (
-            not catalog.alarms and not catalog.can_create_alarm and not catalog.issues
-        )
-        assert catalog.timer is not None
-        assert (
-            catalog.timer.saved_hours,
-            catalog.timer.saved_minutes,
-            catalog.timer.sleep_ipod,
-        ) == (1, 15, True)
-        assert catalog.timer.deadline == PlainDateTime(2026, 11, 13, 2, 30)
+        assert not catalog.alarms and not catalog.can_create_alarm
+        assert not catalog.files and not catalog.issues
         with pytest.raises(ValueError, match="unavailable"):
             prepare_change(
                 catalog, CreateAlarm(PlainDateTime(2027, 1, 1)), checkpoint=lambda: None
             )
-        unknown = read_extras(
-            session, replace(support, alarm_format=AlarmFormat.NONE), lambda: None
-        )
-        assert unknown.timer is None
