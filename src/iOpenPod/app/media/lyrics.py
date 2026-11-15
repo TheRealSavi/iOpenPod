@@ -34,6 +34,12 @@ class _MediaFactory(Protocol):
     def __call__(self, filething: BinaryIO, **kwargs: Any) -> _TaggedMedia: ...
 
 
+class _MutagenFileReader(Protocol):
+    def __call__(
+        self, *, fileobj: BinaryIO, filename: str
+    ) -> mutagen.FileType | None: ...
+
+
 class _ID3Version(Protocol):
     @property
     def version(self) -> tuple[int, ...]: ...
@@ -67,7 +73,12 @@ def read_lyrics_stream(stream: BinaryIO, file_name: str) -> str:
             return next(
                 (tag.value for tag in read_tag_values(tags) if tag.name == "lyrics"), ""
             )
-        parsed = mutagen.File(fileobj=stream, filename=file_name)
+        # Mutagen's loadfile decorator supplies these keyword arguments at runtime.
+        read_file = cast(
+            "_MutagenFileReader",
+            mutagen.File,  # pyright: ignore[reportUnknownMemberType]
+        )
+        parsed = read_file(fileobj=stream, filename=file_name)
         if parsed is None:
             raise ValueError("Could not identify media for lyrics preservation.")
         return embedded_lyrics(parsed)
