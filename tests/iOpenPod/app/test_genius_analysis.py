@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from iOpenPod.app import genius_analysis_cache
+from iOpenPod.app import genius_analysis, genius_analysis_cache
 from iOpenPod.app.genius_analysis import (
     FFmpegGeniusPCMDecoder,
     GeniusAnalysisActivity,
@@ -387,65 +387,117 @@ def test_only_final_eligible_music_is_analyzed(tmp_path: Path) -> None:
     assert result.issues[0].track_id == 5
 
 
-def test_analysis_runs_two_tracks_at_once_with_bounded_progress(tmp_path: Path) -> None:
-    root, _, session, snapshot = _device(tmp_path)
-    tracks = [snapshot.tracks[0]]
-    for track_id in (2, 3):
+def _with_device_tracks(
+    root: Path, snapshot: LibrarySnapshot, track_ids: tuple[int, ...]
+) -> LibrarySnapshot:
+    tracks = list(snapshot.tracks)
+    for track_id in track_ids:
         name = f"song-{track_id}.mp3"
         (root / name).write_bytes(b"audio")
         tracks.append(
             replace(
-                tracks[0],
+                snapshot.tracks[0],
                 track_id=track_id,
                 metadata=TrackMetadata(location=name),
                 ipod=IPodTrackDetails(db_track_id=100 + track_id),
             )
         )
-    snapshot = replace(snapshot, tracks=tuple(tracks))
-    started = Event()
-    release = Event()
-    lock = Lock()
-    active = 0
-    peak = 0
-    calls: list[DevicePath] = []
+    return replace(snapshot, tracks=tuple(tracks))
 
-    class BlockingDecoder:
-        def decode(
-            self,
-            source: HostPath | DevicePath,
-            *,
-            input_suffix: str,
-            session: FilesystemSession,
-            checkpoint: Callable[[], None],
-        ) -> bytes:
-            nonlocal active, peak
-            assert isinstance(source, DevicePath)
-            assert input_suffix == ".mp3"
-            assert session.is_active
-            with lock:
-                calls.append(source)
-                active += 1
-                peak = max(peak, active)
-                if active == 2:
-                    started.set()
-            try:
-                assert release.wait(5)
-                checkpoint()
-                return b"\x01\x00\x00\x00"
-            finally:
-                with lock:
-                    active -= 1
 
+def _with_staged_tracks(
+    tmp_path: Path, snapshot: LibrarySnapshot, track_ids: tuple[int, ...]
+) -> tuple[LibrarySnapshot, tuple[LibraryMediaSource, ...]]:
+    tracks = list(snapshot.tracks)
+    sources: list[LibraryMediaSource] = []
+    for track_id in track_ids:
+        location = f"new-{track_id}.mp3"
+        host = tmp_path / f"staged-{track_id}.mp3"
+        host.write_bytes(f"staged {track_id}".encode())
+        with capture_host_file(HostPath(host), checkpoint=_checkpoint) as captured:
+            fingerprint = captured.fingerprint
+        sources.append(
+            LibraryMediaSource(
+                HostPath(host),
+                fingerprint,
+                prepared_audio(
+                    track_id,
+                    FileDependency(location, fingerprint.size, fingerprint.sha256),
+                    AudioEncoding.MP3,
+                ),
+            )
+        )
+        tracks.append(
+            replace(
+                snapshot.tracks[0],
+                track_id=track_id,
+                metadata=TrackMetadata(location=location),
+                ipod=IPodTrackDetails(db_track_id=100 + track_id),
+            )
+        )
+    return replace(snapshot, tracks=tuple(tracks)), tuple(sources)
+
+
+class _GatedDecoder:
+    """Hold every decode until released while recording concurrent sources."""
+
+    def __init__(self, target: int) -> None:
+        self.target = target
+        self.reached = Event()
+        self.release = Event()
+        self.lock = Lock()
+        self.active: list[HostPath | DevicePath] = []
+        self.calls: list[HostPath | DevicePath] = []
+        self.peak = 0
+        self.peak_device = 0
+
+    def decode(
+        self,
+        source: HostPath | DevicePath,
+        *,
+        input_suffix: str,
+        session: FilesystemSession,
+        checkpoint: Callable[[], None],
+    ) -> bytes:
+        assert input_suffix == ".mp3"
+        assert session.is_active
+        with self.lock:
+            self.calls.append(source)
+            self.active.append(source)
+            self.peak = max(self.peak, len(self.active))
+            self.peak_device = max(
+                self.peak_device,
+                sum(isinstance(item, DevicePath) for item in self.active),
+            )
+            if len(self.active) == self.target:
+                self.reached.set()
+        try:
+            assert self.release.wait(5)
+            checkpoint()
+            return b"\x01\x00\x00\x00"
+        finally:
+            with self.lock:
+                self.active.remove(source)
+
+
+def test_device_reads_stay_bounded_with_spare_workers_and_report_progress(
+    tmp_path: Path,
+) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2, 3))
+    decoder = _GatedDecoder(target=2)
     progress: list[tuple[int, int]] = []
     active_snapshots: list[tuple[GeniusAnalysisActivity, ...]] = []
     progress_threads: set[object] = set()
+    reported = Event()
 
     def on_progress(value: GeniusAnalysisProgress) -> None:
         progress_threads.add(current_thread())
         progress.append((value.completed, value.total))
         active_snapshots.append(value.active)
+        reported.set()
 
-    service = GeniusAnalysisService(decoder=BlockingDecoder(), profiler=_profile)
+    service = GeniusAnalysisService(decoder=decoder, profiler=_profile, workers=4)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(
             service.analyze,
@@ -455,21 +507,172 @@ def test_analysis_runs_two_tracks_at_once_with_bounded_progress(tmp_path: Path) 
             progress=on_progress,
         )
         try:
-            assert started.wait(5)
-            assert len(calls) == 2
+            assert decoder.reached.wait(5)
+            assert reported.wait(5)
+            # The third device read cannot start until a device slot is released.
+            assert len(decoder.calls) == 2
             assert active_snapshots[0] == (
                 GeniusAnalysisActivity(1, "Song"),
                 GeniusAnalysisActivity(2, "Song"),
             )
         finally:
-            release.set()
+            decoder.release.set()
         result = future.result(timeout=10)
-    assert peak == 2
-    assert len(calls) == 3
+    assert decoder.peak == 2
+    assert len(decoder.calls) == 3
     assert tuple(result.profiles) == (1, 2, 3)
-    assert progress == [(0, 3), (1, 3), (2, 3), (2, 3), (3, 3)]
+    assert progress[0] == (0, 3)
+    assert progress[-1] == (3, 3)
+    completed = [value for value, _ in progress]
+    assert completed == sorted(completed)
+    assert all(len(active) <= 2 for active in active_snapshots)
     assert active_snapshots[-1] == ()
     assert len(progress_threads) == 1
+
+
+def test_staged_host_sources_use_every_worker(tmp_path: Path) -> None:
+    _, _, session, snapshot = _device(tmp_path)
+    snapshot, media = _with_staged_tracks(tmp_path, snapshot, (2, 3, 4, 5))
+    snapshot = replace(snapshot, tracks=snapshot.tracks[1:])
+    decoder = _GatedDecoder(target=4)
+    service = GeniusAnalysisService(decoder=decoder, profiler=_profile, workers=4)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            service.analyze, snapshot, session, media=media, checkpoint=_checkpoint
+        )
+        try:
+            assert decoder.reached.wait(5)
+        finally:
+            decoder.release.set()
+        result = future.result(timeout=10)
+    assert decoder.peak == 4
+    assert decoder.peak_device == 0
+    assert tuple(result.profiles) == (2, 3, 4, 5)
+
+
+def test_waiting_device_reads_do_not_hold_back_later_staged_sources(
+    tmp_path: Path,
+) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2, 3))
+    snapshot, media = _with_staged_tracks(tmp_path, snapshot, (4, 5))
+    decoder = _GatedDecoder(target=4)
+    service = GeniusAnalysisService(decoder=decoder, profiler=_profile, workers=4)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            service.analyze, snapshot, session, media=media, checkpoint=_checkpoint
+        )
+        try:
+            assert decoder.reached.wait(5)
+            with decoder.lock:
+                active = set(decoder.active)
+        finally:
+            decoder.release.set()
+        result = future.result(timeout=10)
+    assert active == {
+        DevicePath("song.mp3"),
+        DevicePath("song-2.mp3"),
+        HostPath(tmp_path / "staged-4.mp3"),
+        HostPath(tmp_path / "staged-5.mp3"),
+    }
+    assert decoder.peak_device == 2
+    assert tuple(result.profiles) == (1, 2, 3, 4, 5)
+
+
+def test_slow_track_does_not_hold_back_later_admission(tmp_path: Path) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2, 3))
+    third_started = Event()
+
+    class SlowFirstDecoder(_Decoder):
+        def decode(
+            self,
+            source: HostPath | DevicePath,
+            *,
+            input_suffix: str,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            if source == DevicePath("song-3.mp3"):
+                third_started.set()
+            elif source == DevicePath("song.mp3"):
+                # A pairwise batch would never start Track 3 while this waits.
+                assert third_started.wait(5)
+            return super().decode(
+                source,
+                input_suffix=input_suffix,
+                session=session,
+                checkpoint=checkpoint,
+            )
+
+    result = GeniusAnalysisService(
+        decoder=SlowFirstDecoder(), profiler=_profile, workers=2
+    ).analyze(snapshot, session, checkpoint=_checkpoint)
+    assert third_started.is_set()
+    assert tuple(result.profiles) == (1, 2, 3)
+
+
+@pytest.mark.parametrize("workers", [0, 1, 7])
+def test_worker_count_is_bounded(workers: int) -> None:
+    with pytest.raises(ValueError, match="between 2 and 6"):
+        GeniusAnalysisService(workers=workers)
+
+
+@pytest.mark.parametrize(("threads", "expected"), [(1, 2), (4, 2), (8, 4), (16, 6)])
+def test_default_workers_follow_physical_cores_within_bounds(
+    monkeypatch: pytest.MonkeyPatch, threads: int, expected: int
+) -> None:
+    monkeypatch.setattr(genius_analysis, "available_compute_threads", lambda: threads)
+    assert genius_analysis._default_analysis_workers() == expected  # pyright: ignore[reportPrivateUsage]
+
+
+def test_skip_requested_from_admission_progress_starts_no_reads(
+    tmp_path: Path,
+) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2,))
+    snapshot, media = _with_staged_tracks(tmp_path, snapshot, (3,))
+    skip = Event()
+    decoding = Event()
+
+    class SignallingDecoder(_Decoder):
+        def decode(
+            self,
+            source: HostPath | DevicePath,
+            *,
+            input_suffix: str,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            decoding.set()
+            return super().decode(
+                source,
+                input_suffix=input_suffix,
+                session=session,
+                checkpoint=checkpoint,
+            )
+
+    def progress(value: GeniusAnalysisProgress) -> None:
+        assert value.completed == 0
+        assert len(value.active) == 3
+        # Admitted Tracks must not start before their progress is reported.
+        assert not decoding.wait(0.3)
+        skip.set()
+
+    decoder = SignallingDecoder()
+    result = GeniusAnalysisService(
+        decoder=decoder, profiler=_profile, workers=4
+    ).analyze(
+        snapshot,
+        session,
+        media=media,
+        checkpoint=_checkpoint,
+        progress=progress,
+        skip_requested=skip.is_set,
+    )
+    assert decoder.sources == []
+    assert dict(result.profiles) == {}
+    assert not result.issues
 
 
 def test_skip_stops_active_and_waiting_work_and_keeps_completed_profiles(

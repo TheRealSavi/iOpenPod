@@ -334,3 +334,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0268: Sync opt-in ListenBrainz recording feedback](0268-sync-opt-in-listenbrainz-recording-feedback.md)
 - [ADR-0269: Share rating scrobbling with Last.fm loved status](0269-share-rating-scrobbling-with-lastfm-loved-status.md)
 - [ADR-0270: Keep lyrics out of MHOD 10](0270-keep-lyrics-out-of-mhod-10.md)
+- [ADR-0271: Scale Genius analysis of staged Host audio](0271-scale-genius-analysis-of-staged-host-audio.md)
