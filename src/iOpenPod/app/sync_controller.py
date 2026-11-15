@@ -23,7 +23,11 @@ from iOpenPod.app.core.settings.definitions import (
 from iOpenPod.app.core.settings.transcoding import read_transcoder_settings
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.models.device import DeviceCandidateIssueCode
-from iOpenPod.app.scrobbling.settings import SCROBBLE_DURING_SYNC, configured_accounts
+from iOpenPod.app.scrobbling.settings import (
+    SCROBBLE_DURING_SYNC,
+    SCROBBLE_RATINGS,
+    configured_accounts,
+)
 from iOpenPod.app.services.device_coordinator import (
     SyncCleanupCompletedError,
     SyncRecoveryDeclinedError,
@@ -434,6 +438,7 @@ class SyncController(QObject):
                 options=SyncOptions(
                     compute_missing_bpm=self._settings.get(COMPUTE_MISSING_BPM),
                     scrobble=self._settings.get(SCROBBLE_DURING_SYNC),
+                    scrobble_ratings=self._settings.get(SCROBBLE_RATINGS),
                     analyze_for_genius=self._settings.get(ANALYZE_FOR_GENIUS),
                     compute_sound_check=self._settings.get(COMPUTE_SOUND_CHECK),
                     normalize_tags=self._settings.get(NORMALIZE_TAGS_AFTER_SYNC),

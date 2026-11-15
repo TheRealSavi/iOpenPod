@@ -11,6 +11,7 @@ from iPodDB.library import MediaKind
 from storage import HostResourceLease
 
 from ._json import integer, is_array, is_object, text
+from .feedback import RatingFeedback, load_feedback
 from .models import Account, Listen, ScrobbleError, Service
 
 if TYPE_CHECKING:
@@ -47,6 +48,9 @@ class QueueState:
     pending: list[PendingListen] = field(default_factory=list[PendingListen])
     # Latest allocated second per account, including acknowledged submissions.
     lastfm_reserved_through: dict[str, int] = field(default_factory=dict[str, int])
+    feedback: dict[str, RatingFeedback] = field(
+        default_factory=dict[str, RatingFeedback]
+    )
 
 
 class ScrobbleQueue:
@@ -62,7 +66,7 @@ class ScrobbleQueue:
             if raw is None:
                 return QueueState()
             data: object = json.loads(raw)
-            if not is_object(data) or integer(data.get("version")) not in (1, 2):
+            if not is_object(data) or integer(data.get("version")) not in (1, 2, 3, 4):
                 raise ValueError
             version = integer(data["version"])
             raw_cursors, pending = data["cursors"], data["pending"]
@@ -107,7 +111,7 @@ class ScrobbleQueue:
                     or not listen.title.strip()
                 ):
                     raise ValueError
-                adjusted = item.get("submission_timestamp") if version == 2 else None
+                adjusted = item.get("submission_timestamp") if version >= 2 else None
                 submission_timestamp = None if adjusted is None else _date(adjusted)
                 if submission_timestamp is not None and (
                     not account.startswith(f"{Service.LASTFM.value}:")
@@ -121,7 +125,7 @@ class ScrobbleQueue:
             if len({entry.identity for entry in entries}) != len(entries):
                 raise ValueError
             reserved: dict[str, int] = {}
-            if version == 2:
+            if version >= 2:
                 raw_reserved = data["lastfm_reserved_through"]
                 if not is_object(raw_reserved):
                     raise ValueError
@@ -130,7 +134,12 @@ class ScrobbleQueue:
                     not key.startswith(f"{Service.LASTFM.value}:") for key in reserved
                 ):
                     raise ValueError
-            return QueueState(cursors, entries, reserved)
+            feedback = (
+                load_feedback(data["feedback"], lastfm=version >= 4)
+                if version >= 3
+                else {}
+            )
+            return QueueState(cursors, entries, reserved, feedback)
         except (ValueError, KeyError, TypeError, UnicodeError):
             raise ScrobbleError(
                 "The saved scrobble queue is unreadable. It was preserved; restore it before scrobbling to avoid duplicates."
@@ -140,10 +149,11 @@ class ScrobbleQueue:
         self.host_file.replace_bytes(
             json.dumps(
                 {
-                    "version": 2,
+                    "version": 4,
                     "cursors": state.cursors,
                     "pending": [asdict(item) for item in state.pending],
                     "lastfm_reserved_through": state.lastfm_reserved_through,
+                    "feedback": [asdict(item) for item in state.feedback.values()],
                 },
                 ensure_ascii=False,
             ).encode("utf-8")

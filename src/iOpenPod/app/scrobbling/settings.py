@@ -8,6 +8,9 @@ from .models import Account, Service
 SCROBBLE_DURING_SYNC = SettingDefinition(
     "sync/scrobble", bool, True, device_overridable=True
 )
+SCROBBLE_RATINGS = SettingDefinition(
+    "sync/scrobble-ratings", bool, False, device_overridable=True
+)
 LASTFM_USERNAME = SettingDefinition("scrobbling/lastfm-username", str, "")
 LISTENBRAINZ_USERNAME = SettingDefinition("scrobbling/listenbrainz-username", str, "")
 

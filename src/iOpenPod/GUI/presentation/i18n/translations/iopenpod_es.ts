@@ -10408,6 +10408,14 @@ Playlists: %3</translation>
         <translation>Sincronizar valoraciones con archivos del equipo</translation>
     </message>
     <message>
+        <source>Scrobble Ratings</source>
+        <translation>Enviar valoraciones con los scrobbles</translation>
+    </message>
+    <message>
+        <source>When scrobbling, send 4-5 stars as Love to connected accounts. Send 1-2 stars as Unlove to Last.fm and Hate to ListenBrainz. Three stars and unrated Tracks leave feedback unchanged. Off by default; independent of Host file rating sync.</source>
+        <translation>Al enviar scrobbles, envía 4-5 estrellas como «Love» a las cuentas conectadas. Con 1-2 estrellas, quita «Love» en Last.fm y envía «Hate» a ListenBrainz. Tres estrellas y las pistas sin valorar no cambian la opinión registrada. Desactivado de forma predeterminada; independiente de la sincronización de valoraciones con los archivos del equipo.</translation>
+    </message>
+    <message>
         <source>Write changed ratings to paired Host files after verified Sync. Off by default.</source>
         <translation>Escribe las valoraciones modificadas en los archivos vinculados del equipo tras verificar la sincronización. Desactivado por defecto.</translation>
     </message>

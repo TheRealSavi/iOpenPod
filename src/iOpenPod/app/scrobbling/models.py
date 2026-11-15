@@ -70,11 +70,20 @@ class ScrobbleResult:
     cancelled: bool = False
     adjusted: int = 0
     notices: tuple[str, ...] = ()
+    feedback_accepted: int = 0
+    feedback_pending: int = 0
+    feedback_skipped: int = 0
 
     @property
     def summary(self) -> str:
         adjusted = f", {self.adjusted} dates adjusted" if self.adjusted else ""
+        feedback = (
+            f" Star ratings: {self.feedback_accepted} accepted, "
+            f"{self.feedback_pending} pending, {self.feedback_skipped} unmatched."
+            if self.feedback_accepted or self.feedback_pending or self.feedback_skipped
+            else ""
+        )
         return (
             f"Scrobbling: {self.accepted} accepted, {self.pending} pending, "
-            f"{self.skipped} Tracks skipped{adjusted}."
+            f"{self.skipped} Tracks skipped{adjusted}.{feedback}"
         )

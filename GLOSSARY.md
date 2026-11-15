@@ -255,6 +255,8 @@ normal lowercase conventions while retaining the same domain term.
 | --- | --- | --- |
 | **Scrobble** | One music play submitted to a connected listening service account with Track metadata and a UTC Unix start timestamp. iPod starts are estimated from retained playback evidence; Last.fm submission dates outside its backdating window are adjusted under ADR-0102. | play count, Playback Entry |
 | **Scrobble Queue** | The durable Host record of pending account deliveries, original playback estimates, optional Last.fm submission dates, and capture cursors, scoped to Volume Identity and persistent Track identity. It survives Track removal and stores each service/account's delivery state independently. | Listening History, Playback History, Unscrobbled Plays counter |
+| **Rating Feedback** | An account-scoped change derived from committed iPod star ratings: Love or Unlove on Last.fm, or Recording Feedback on ListenBrainz. The default-off Scrobble Ratings setting controls both services. Observations and pending deliveries have independent receipts in the Scrobble Queue; they do not represent plays or Host-file rating writes. | Scrobble, play count, Back Sync |
+| **Recording Feedback** | A ListenBrainz account's Love or Hate assignment to a MusicBrainz recording. This service-specific form of Rating Feedback maps 4-5 iPod stars to Love and 1-2 stars to Hate. Last.fm Unlove instead removes a loved status and does not express Hate. | Scrobble, Last.fm loved status |
 
 ## Application updates
 

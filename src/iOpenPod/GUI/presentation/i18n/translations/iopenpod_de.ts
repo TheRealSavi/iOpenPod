@@ -10408,6 +10408,14 @@ Playlists: %3</translation>
         <translation>Sternebewertungen mit Dateien auf dem Computer synchronisieren</translation>
     </message>
     <message>
+        <source>Scrobble Ratings</source>
+        <translation>Bewertungen scrobbeln</translation>
+    </message>
+    <message>
+        <source>When scrobbling, send 4-5 stars as Love to connected accounts. Send 1-2 stars as Unlove to Last.fm and Hate to ListenBrainz. Three stars and unrated Tracks leave feedback unchanged. Off by default; independent of Host file rating sync.</source>
+        <translation>Übermittelt beim Scrobbeln 4-5 Sterne als „Love“ an verbundene Konten. Bei 1-2 Sternen wird „Love“ auf Last.fm entfernt und „Hate“ an ListenBrainz gesendet. Drei Sterne und unbewertete Titel lassen das Feedback unverändert. Standardmäßig deaktiviert; unabhängig von der Synchronisierung der Bewertungen mit Dateien auf dem Computer.</translation>
+    </message>
+    <message>
         <source>Write changed ratings to paired Host files after verified Sync. Off by default.</source>
         <translation>Geänderte Bewertungen nach überprüfter Synchronisierung in zugeordnete Dateien auf dem Computer schreiben. Standardmäßig aus.</translation>
     </message>

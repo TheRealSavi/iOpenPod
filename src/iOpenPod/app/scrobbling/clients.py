@@ -10,10 +10,12 @@ from typing import TYPE_CHECKING, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
+from xml.etree import ElementTree
 
 import certifi
 
 from iOpenPod.app.core.version import get_version
+from iOpenPod.app.media.recording_id import recording_mbid
 
 from ._json import is_array, is_object
 from .models import (
@@ -59,6 +61,35 @@ class _NoRedirect(HTTPRedirectHandler):
     ) -> None:
         # Credentials must never follow a redirect to another origin.
         return None
+
+
+class _NoDoctype(ElementTree.TreeBuilder):
+    def doctype(self, name: str, pubid: str | None, system: str | None) -> None:
+        raise ValueError("Service XML must not declare a DTD.")
+
+
+def _lastfm_status(raw: bytes) -> dict[str, object]:
+    """Read the documented empty write acknowledgement, rejecting ambiguous replies."""
+    try:
+        root = ElementTree.fromstring(
+            raw, parser=ElementTree.XMLParser(target=_NoDoctype())
+        )
+        if root.tag == "lfm":
+            if (
+                root.get("status") == "ok"
+                and not len(root)
+                and not (root.text or "").strip()
+            ):
+                return {"status": "ok"}
+            if (
+                root.get("status") == "failed"
+                and len(root) == 1
+                and root[0].tag == "error"
+            ):
+                return {"error": int(root[0].get("code", ""))}
+    except (ElementTree.ParseError, ValueError, LookupError):
+        pass
+    raise ScrobbleError("Last.fm returned an invalid rating acknowledgement.")
 
 
 class HttpTransport:
@@ -107,6 +138,8 @@ class HttpTransport:
             raise ScrobbleError(
                 "Could not reach the service. Check your connection and retry."
             ) from None
+        if headers.get("Accept") == "application/xml":
+            return Response(_lastfm_status(raw), delay)
         try:
             result: object = json.loads(raw)
         except (ValueError, UnicodeError):
@@ -183,7 +216,12 @@ class LastFmClient:
         self.transport = transport or HttpTransport()
 
     def _call(
-        self, values: dict[str, str], secret: str, *, post: bool = False
+        self,
+        values: dict[str, str],
+        secret: str,
+        *,
+        post: bool = False,
+        xml: bool = False,
     ) -> dict[str, object]:
         # Last.fm requires MD5 for api_sig; a stronger hash breaks its protocol.
         # https://www.last.fm/api/authspec (section 8). See docs/scrobbling.md
@@ -192,13 +230,16 @@ class LastFmClient:
         params = {
             **values,
             "api_sig": hashlib.md5(signature.encode("utf-8")).hexdigest(),
-            "format": "json",
+            "format": "xml" if xml else "json",
         }
         encoded = urlencode(params).encode("utf-8")
         result = self.transport.request(
             LASTFM_URL if post else LASTFM_URL + "?" + encoded.decode("ascii"),
             encoded if post else None,
-            {"Content-Type": "application/x-www-form-urlencoded"},
+            {
+                "Content-Type": "application/x-www-form-urlencoded",
+                **({"Accept": "application/xml"} if xml else {}),
+            },
         ).data
         if "error" in result:
             code = result["error"]
@@ -235,6 +276,28 @@ class LastFmClient:
         return Credentials(
             _text(session, "name"), _text(session, "key"), api_key, secret
         )
+
+    def set_loved(
+        self, artist: str, title: str, loved: bool, credentials: Credentials
+    ) -> None:
+        if not artist.strip() or not title.strip() or type(loved) is not bool:
+            raise ScrobbleError("Invalid Last.fm loved status.")
+        # Request the explicit <lfm status="ok"> acknowledgement documented
+        # for these empty write responses.
+        response = self._call(
+            {
+                "method": "track.love" if loved else "track.unlove",
+                "artist": artist,
+                "track": title,
+                "api_key": credentials.api_key,
+                "sk": credentials.token,
+            },
+            credentials.api_secret,
+            post=True,
+            xml=True,
+        )
+        if response.get("status") != "ok":
+            raise ScrobbleError("Last.fm did not acknowledge the loved status.")
 
     def submit(
         self, entries: tuple[Listen, ...], credentials: Credentials
@@ -309,6 +372,39 @@ class ListenBrainzClient:
         if result.get("valid") is not True:
             raise ScrobbleError("ListenBrainz rejected this user token.")
         return Credentials(_text(result, "user_name"), token)
+
+    def lookup_recording(
+        self, artist: str, title: str, credentials: Credentials
+    ) -> str:
+        response = self.transport.request(
+            LISTENBRAINZ_URL
+            + "metadata/lookup/?"
+            + urlencode({"artist_name": artist, "recording_name": title}),
+            None,
+            {"Authorization": f"Token {credentials.token}"},
+        )
+        self.retry_after = response.retry_after
+        if not response.data:
+            return ""
+        mbid = recording_mbid(response.data.get("recording_mbid"))
+        if not mbid:
+            raise ScrobbleError("ListenBrainz returned an invalid recording lookup.")
+        return mbid
+
+    def submit_feedback(self, mbid: str, score: int, credentials: Credentials) -> None:
+        if not recording_mbid(mbid) or type(score) is not int or score not in (-1, 1):
+            raise ScrobbleError("Invalid ListenBrainz recording feedback.")
+        response = self.transport.request(
+            LISTENBRAINZ_URL + "feedback/recording-feedback",
+            json.dumps({"recording_mbid": mbid, "score": score}).encode("utf-8"),
+            {
+                "Authorization": f"Token {credentials.token}",
+                "Content-Type": "application/json",
+            },
+        )
+        self.retry_after = response.retry_after
+        if response.data.get("status") != "ok":
+            raise ScrobbleError("ListenBrainz did not acknowledge recording feedback.")
 
     def submit(
         self, entries: tuple[Listen, ...], credentials: Credentials

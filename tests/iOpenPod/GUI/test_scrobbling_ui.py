@@ -1,14 +1,26 @@
 """Manual scrobbling entry point, persisted option, and real sign-in UI signals."""
 
+from dataclasses import replace
 from pathlib import Path
 
+import pytest
 from PySide6.QtTest import QSignalSpy
-from PySide6.QtWidgets import QDialog, QLineEdit, QPlainTextEdit, QPushButton, QWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QWidget,
+)
+from tests.iOpenPod.app.services.test_library_resources import build_device
 from tests.iOpenPod.app.test_library_write_controller import wait_for
+from tests.iOpenPod.app.test_listenbrainz_feedback import MBID, FeedbackTransport
 from tests.iOpenPod.app.test_scrobbling import MemoryCredentials
 from tests.iOpenPod.app.test_scrobbling_clients import TransportStub
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
+from iOpenPod.app.core.settings.definitions import BACK_SYNC_RATINGS
 from iOpenPod.app.scrobbling.clients import LastFmClient, ListenBrainzClient
 from iOpenPod.app.scrobbling.controller import ScrobbleController
 from iOpenPod.app.scrobbling.models import ScrobbleResult, Service
@@ -18,10 +30,12 @@ from iOpenPod.app.scrobbling.settings import (
     LASTFM_USERNAME,
     LISTENBRAINZ_USERNAME,
     SCROBBLE_DURING_SYNC,
+    SCROBBLE_RATINGS,
 )
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
+from iOpenPod.GUI.widgets.settings_editor import SettingsEditor
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings
 from storage import AtomicHostFile
@@ -88,6 +102,105 @@ def test_maintenance_button_is_an_action_and_sync_option_persists() -> None:
     finally:
         parent.close()
         context.shutdown()
+
+
+def test_scrobble_rating_setting_is_opt_in_independent_and_device_overridable() -> None:
+    context = build_context()
+    parent = QWidget()
+    editor = SettingsEditor(context.settings, parent)
+    try:
+        settings = context.settings
+        widget = SyncSettings(settings, parent, editor=editor)
+        combo = widget.findChild(AppComboBox, "scrobbleRatings")
+        assert combo is not None and combo.currentData() is False
+        assert (
+            sum(
+                label.text() == "Scrobble Ratings"
+                for label in widget.findChildren(QLabel)
+            )
+            == 1
+        )
+        assert widget.findChild(AppComboBox, "listenbrainzRatings") is None
+        assert widget.findChild(AppComboBox, "lastfmRatings") is None
+        settings.set_global(SCROBBLE_DURING_SYNC, False)
+        combo.setCurrentIndex(combo.findData(True))
+        assert settings.get(SCROBBLE_RATINGS)
+        assert not settings.get(BACK_SYNC_RATINGS)
+        assert not settings.get(SCROBBLE_DURING_SYNC)
+        changes = QSignalSpy(settings.settingChanged)
+        widget.retranslate_ui()
+        assert changes.count() == 0
+        settings.load_device("one", {SCROBBLE_RATINGS.key: False})
+        assert not settings.get(SCROBBLE_RATINGS)
+        editor.set_device(True)
+        assert combo.currentData() is False
+        editor.set_device(False)
+        assert combo.currentData() is True
+        rebuilt = SyncSettings(settings, parent)
+        saved = rebuilt.findChild(AppComboBox, "scrobbleRatings")
+        assert saved is not None and saved.currentData() is True
+    finally:
+        parent.close()
+        context.shutdown()
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_manual_scrobbling_uses_rating_setting_even_when_sync_scrobbling_is_off(
+    tmp_path: Path, enabled: bool
+) -> None:
+    device = build_device(tmp_path)
+    context = build_context(device_coordinator=device.coordinator)
+    library = device.active.library
+    device.save(
+        device.prepare(
+            replace(
+                library,
+                tracks=tuple(
+                    replace(song, rating=100, artist="Artist", title="Song")
+                    for song in library.tracks
+                ),
+            )
+        )
+    )
+    context.device_controller.finish_library_save(device.active)
+    context.settings.set_global(LISTENBRAINZ_USERNAME, "alice")
+    context.settings.set_global(LASTFM_USERNAME, "alice")
+    context.settings.set_global(SCROBBLE_RATINGS, enabled)
+    context.settings.set_global(SCROBBLE_DURING_SYNC, False)
+    transport = FeedbackTransport()
+    lastfm_transport = FeedbackTransport()
+    for _ in library.tracks:
+        transport.responses.extend([{"recording_mbid": MBID}, {"status": "ok"}])
+        lastfm_transport.responses.append({"status": "ok"})
+    credentials = MemoryCredentials()
+    service = ScrobbleService(
+        device.coordinator,
+        ScrobbleQueue(AtomicHostFile(tmp_path / "queue.json")),
+        credentials,
+        clients=lambda service: (
+            LastFmClient(lastfm_transport)
+            if service is Service.LASTFM
+            else ListenBrainzClient(transport)
+        ),
+    )
+    controller = ScrobbleController(
+        service, credentials, context.settings, context.device_controller
+    )
+    try:
+        assert controller.scrobble_now()
+        # A worker uses the captured choice, independent of later settings edits.
+        context.settings.set_global(SCROBBLE_RATINGS, not enabled)
+        wait_for(lambda: not controller.busy)
+        assert controller.last_result is not None
+        assert controller.last_result.feedback_accepted == (
+            2 * len(library.tracks) if enabled else 0
+        )
+        assert bool(transport.calls) == enabled
+        assert bool(lastfm_transport.calls) == enabled
+    finally:
+        controller.shutdown()
+        context.shutdown()
+        device.coordinator.close()
 
 
 def test_service_sign_in_credentials_are_masked_validated_and_disconnected(

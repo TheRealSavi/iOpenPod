@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from threading import Lock
 from typing import TYPE_CHECKING, Protocol
 
 from whenever import Instant
 
-from .clients import client_for, wait_between_batches
+from iOpenPod.app.media.recording_id import embedded_recording_mbid
+from iOpenPod.app.media.tag_reader import read_embedded_media
+from iOpenPod.app.playback.backend import PlaybackSourceError
+
+from .clients import LastFmClient, ListenBrainzClient, client_for, wait_between_batches
+from .feedback import FeedbackCancelledError, capture_feedback
 from .models import LASTFM_MAX_AGE, ScrobbleError, ScrobbleResult, Service
 from .queue import MIN_TIMESTAMP, capture
 from .reporting import adjustment_report, rejection_report
@@ -18,6 +24,8 @@ if TYPE_CHECKING:
     from threading import Event
 
     from iOpenPod.app.models.device import ActiveIPod
+    from iOpenPod.app.playback.backend import PlaybackSourceProvider
+    from iPodDB.library import Track
 
     from .clients import Submitter
     from .credentials import CredentialStore
@@ -45,12 +53,14 @@ class ScrobbleService:
         *,
         clients: Callable[[Service], Submitter] = client_for,
         clock: Callable[[], float] = _unix_now,
+        media: PlaybackSourceProvider | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._queue = queue
         self._credentials = credentials
         self._clients = clients
         self._clock = clock
+        self._media = media
         self._lock = Lock()
 
     def run(
@@ -59,6 +69,8 @@ class ScrobbleService:
         accounts: tuple[Account, ...],
         cancelled: Event,
         progress: Callable[[str], None],
+        *,
+        ratings: bool = False,
     ) -> ScrobbleResult:
         if not accounts:
             return ScrobbleResult(
@@ -70,7 +82,7 @@ class ScrobbleService:
             raise ScrobbleError("Scrobbling is already running.")
         try:
             with self._queue.lease():
-                return self._run(active, accounts, cancelled, progress)
+                return self._run(active, accounts, cancelled, progress, ratings=ratings)
         finally:
             self._lock.release()
 
@@ -80,6 +92,8 @@ class ScrobbleService:
         accounts: tuple[Account, ...],
         cancelled: Event,
         progress: Callable[[str], None],
+        *,
+        ratings: bool,
     ) -> ScrobbleResult:
         if cancelled.is_set():
             return ScrobbleResult(cancelled=True)
@@ -87,6 +101,16 @@ class ScrobbleService:
         state = self._queue.load()
         now = int(self._clock())
         skipped = capture(state, device, active.library, accounts, now)
+        if ratings:
+            progress("Capturing iPod star ratings…")
+            capture_feedback(
+                state,
+                device,
+                active.library,
+                accounts,
+                lambda track: self._recording_mbid(track, cancelled, checkpoint),
+                cancelled,
+            )
         issues: list[str] = []
         notices: list[str] = []
         adjusted = 0
@@ -111,6 +135,8 @@ class ScrobbleService:
         # Persist chosen submission dates before any request, including uncertain replies.
         self._queue.save(state)
         accepted = 0
+        feedback_accepted = 0
+        feedback_skipped = 0
         for account in accounts:
             if cancelled.is_set():
                 break
@@ -128,7 +154,15 @@ class ScrobbleService:
                 ),
                 key=lambda item: (item.submission.timestamp, item.identity),
             )
-            if not entries:
+            feedback = [
+                item
+                for item in state.feedback.values()
+                if ratings
+                and item.pending
+                and item.device == device
+                and item.account == account.identity
+            ]
+            if not entries and not feedback:
                 continue
             rejections: list[RejectedListen] = []
             try:
@@ -170,6 +204,50 @@ class ScrobbleService:
                         client, cancelled, checkpoint
                     ):
                         break
+                if feedback and not isinstance(
+                    client, (LastFmClient, ListenBrainzClient)
+                ):
+                    raise ScrobbleError("This client does not support rating feedback.")
+                if isinstance(client, (LastFmClient, ListenBrainzClient)):
+                    for index, item in enumerate(feedback):
+                        if not wait_between_batches(client, cancelled, checkpoint):
+                            break
+                        checkpoint()
+                        progress(
+                            f"Sending {account.service.label} ratings: {index} / {len(feedback)}…"
+                        )
+                        if (
+                            isinstance(client, ListenBrainzClient)
+                            and not item.recording_mbid
+                        ):
+                            mbid = client.lookup_recording(
+                                item.artist, item.title, credentials
+                            )
+                            if not mbid:
+                                state.feedback[item.identity] = replace(
+                                    item, pending=False
+                                )
+                                self._queue.save(state)
+                                feedback_skipped += 1
+                                continue
+                            item = replace(item, recording_mbid=mbid)
+                            state.feedback[item.identity] = item
+                            # Keep the resolved identity across failed or uncertain POSTs.
+                            self._queue.save(state)
+                            if not wait_between_batches(client, cancelled, checkpoint):
+                                break
+                            checkpoint()
+                        if isinstance(client, LastFmClient):
+                            client.set_loved(
+                                item.artist, item.title, item.score == 1, credentials
+                            )
+                        else:
+                            client.submit_feedback(
+                                item.recording_mbid, item.score, credentials
+                            )
+                        state.feedback[item.identity] = replace(item, pending=False)
+                        self._queue.save(state)
+                        feedback_accepted += 1
             except ScrobbleError as error:
                 issues.append(f"{account.service.label}: {error}")
             if rejections:
@@ -187,6 +265,17 @@ class ScrobbleService:
         pending = sum(
             item.device == device and item.account in targets for item in state.pending
         )
+        feedback_pending = sum(
+            ratings
+            and item.pending
+            and item.device == device
+            and item.account in targets
+            for item in state.feedback.values()
+        )
+        if feedback_skipped:
+            issues.append(
+                f"ListenBrainz: {feedback_skipped} ratings skipped because no recording matched."
+            )
         return ScrobbleResult(
             accepted,
             pending,
@@ -195,4 +284,28 @@ class ScrobbleService:
             cancelled.is_set(),
             adjusted=adjusted,
             notices=tuple(notices),
+            feedback_accepted=feedback_accepted,
+            feedback_pending=feedback_pending,
+            feedback_skipped=feedback_skipped,
         )
+
+    def _recording_mbid(
+        self, track: Track, cancelled: Event, checkpoint: Callable[[], None]
+    ) -> str:
+        def check() -> None:
+            if cancelled.is_set():
+                raise FeedbackCancelledError
+            checkpoint()
+
+        check()
+        if self._media is None:
+            return ""
+        try:
+            source = self._media.open_playback_source(track)
+            parsed = read_embedded_media(source, checkpoint=check)
+        except (PlaybackSourceError, ValueError, OSError):
+            # Optional tag failures allow lookup; an invalid session still stops work.
+            check()
+            return ""
+        check()
+        return embedded_recording_mbid(parsed)

@@ -25,6 +25,13 @@ from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 from tests.iOpenPod.GUI.extras_test_support import ExtrasTestController, find_widget
 
 from iOpenPod.GUI.pages.calendar_page import CalendarPage
+from iOpenPod.GUI.presentation.theme.stylesheet import render_stylesheet
+from iOpenPod.GUI.presentation.theme.tokens import (
+    DARK_TOKENS,
+    LIGHT_TOKENS,
+    ThemeTokens,
+    resolve_typography,
+)
 from iOpenPod.GUI.widgets.calendar_month import MonthGrid
 from iOpenPod.GUI.widgets.calendar_tabs import CalendarTabs
 
@@ -123,16 +130,25 @@ class _ColorPage(QWidget):
         painter.fillRect(self.rect(), self.color)
 
 
-@pytest.fixture
-def tabs() -> Iterator[CalendarTabs]:
+@pytest.fixture(params=[LIGHT_TOKENS, DARK_TOKENS], ids=["light", "dark"])
+def tabs(request: pytest.FixtureRequest) -> Iterator[CalendarTabs]:
+    tokens = request.param
+    assert isinstance(tokens, ThemeTokens)
     tabs = CalendarTabs()
+    # Match CalendarPage so focus uses the Calendar's fixed-width borders,
+    # rather than generic tab styling that changes the viewport mid-swipe.
+    tabs.setObjectName("calendarTabs")
+    tabs.setProperty("extrasTabs", True)
+    tabs.setStyleSheet(render_stylesheet(tokens, resolve_typography()))
     tabs.addTab(_ColorPage("red"), "Calendar")
     tabs.addTab(_ColorPage("blue"), "To Dos")
     tabs.resize(700, 450)
     tabs.show()
     APPLICATION.processEvents()
-    yield tabs
-    tabs.close()
+    try:
+        yield tabs
+    finally:
+        tabs.close()
 
 
 @pytest.mark.parametrize("target", [1, 0])

@@ -14,6 +14,15 @@ then beyond it.
 
 ## Current stage
 
+Settings > Sync offers default-off **Scrobble Ratings** for connected Last.fm and
+ListenBrainz accounts. During manual scrobbling or the enabled Sync scrobble step,
+committed music ratings map 4-5 stars to Love on both services and 1-2 stars to
+Last.fm Unlove or ListenBrainz Hate. Neutral ratings leave remote feedback unchanged.
+Last.fm uses artist/title; ListenBrainz prefers embedded recording IDs before
+artist/title lookup. Failed feedback retries independently of each account's
+accepted plays and Host-file rating Back Sync. See
+[Scrobbling](docs/scrobbling.md#scrobble-ratings), ADR-0268 and ADR-0269.
+
 Native star ratings in MP4, FLAC/Vorbis, APE and ASF now reach scanned Tracks.
 Settings > Sync offers default-off rating Back Sync to paired Host files, with
 Host/iPod/average conflict choices and separate rating baselines. Host tag writes

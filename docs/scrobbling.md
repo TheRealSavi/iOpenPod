@@ -79,18 +79,69 @@ This Host's receipts do not deduplicate another computer's submissions. A respon
 lost after remote acceptance is inherently uncertain; exactly-once delivery is
 not guaranteed. See [ADR-0101](adr/0101-retain-account-scoped-scrobble-delivery-on-the-host.md).
 
-## API contracts checked on 2026-10-01
+## Scrobble Ratings
+
+**Settings → Sync → Sync behavior → Scrobble Ratings** is off by default. This one
+setting applies to all connected Last.fm and ListenBrainz accounts during
+**Scrobble now** and the enabled **Scrobble during Sync** step. It is independent
+of **Sync star ratings to Host files**; no Host media files or iPod files are changed
+by feedback work. The setting can also be overridden for an individual iPod.
+
+- **4-5 stars:** Love on both services.
+- **1-2 stars:** Unlove on Last.fm; Hate (score -1) on ListenBrainz.
+- **3 stars, unrated, or unknown native values:** leave remote feedback unchanged.
+
+Enabling the option includes existing rated Music and Music Video Tracks with
+persistent identity and artist/title. New plays or usable playback dates are not
+required. It uses committed iPod ratings after Playback Sidecar reconciliation,
+before Sync changes or removes Tracks. Unsaved Library edits are not submitted.
+
+Last.fm uses artist and title with the existing authorized session. Unlove removes
+the track's loved status, including a Love previously set outside iOpenPod; it does
+not express dislike. No MusicBrainz lookup or media-tag reads are needed for Last.fm.
+
+For ListenBrainz, one valid embedded MusicBrainz recording ID takes precedence. Supported native tags
+include ID3's MusicBrainz UFID and MP4's MusicBrainz Track Id. Release-track IDs are
+not recording IDs. Missing, malformed, or conflicting IDs fall back to authenticated
+artist/title lookup. An unmatched recording is skipped for that observed rating
+and metadata; a later changed observation can try again. Matching is supplied by
+ListenBrainz and can be imperfect.
+
+Feedback has separate pending deliveries and receipts for each service/account in
+version 4 of `scrobbles-v2.json`; versions 1-3 migrate without losing play history
+or ListenBrainz feedback receipts. A failed feedback request never replays
+acknowledged listens or another service's accepted feedback. Failed lookup and submission
+requests remain pending, including after Track removal or restart. Unchanged
+ratings do not resend; changed rating ranges replace pending intent.
+Neutral ratings cancel unsent feedback without clearing the service's assignment.
+Turning the setting off pauses both capture and delivery; account disconnection
+also preserves pending work. Reconnecting the same account resumes it.
+
+Reports show feedback accepted, pending and unmatched counts separately from
+listens. Local receipts do not reconcile later website edits or other computers.
+See [ADR-0268](adr/0268-sync-opt-in-listenbrainz-recording-feedback.md) and
+[ADR-0269](adr/0269-share-rating-scrobbling-with-lastfm-loved-status.md).
+
+## API contracts
+
+Core submission contracts were checked on 2026-10-01; recording feedback, lookup
+and Last.fm loved status were checked on 2026-11-14.
 
 - [Last.fm desktop authentication](https://www.last.fm/api/desktopauth): signed
   `auth.getToken`, browser approval, and `auth.getSession`. Parameters are sorted
   by name, UTF-8 encoded, and signed with MD5 plus the application shared secret.
-  `format=json` is excluded from the signature.
+  The `format` parameter is excluded from the signature.
 - [Last.fm track.scrobble](https://www.last.fm/api/show/track.scrobble): HTTPS form
   POSTs with UTC Unix start times, at most 50 entries, and per-entry
   `ignoredMessage.code` acknowledgements. HTTP success alone is insufficient.
   Acknowledgements are matched by echoed playback timestamp and uncorrected
   artist/title, never by response-array position. Unmatched or ambiguous responses
   retain the pending queue rather than clearing the wrong listens.
+- [Last.fm track.love](https://www.last.fm/api/show/track.love) and
+  [track.unlove](https://www.last.fm/api/show/track.unlove): signed HTTPS form POSTs
+  with `artist`, `track`, `api_key` and session key `sk`. Rating requests select XML
+  to require the documented empty `<lfm status="ok">` acknowledgement. Missing,
+  malformed or failed acknowledgements leave feedback pending. DTDs are rejected.
 - [Last.fm support: importing listening history](https://support.last.fm/t/importing-listening-history-spotify-apple-music-and-itunes-wmp/1424/3):
   old scrobbles have a 14-day backdating limit. iOpenPod adjusts those Last.fm
   submission dates as described above. Requests are paced and API errors stop
@@ -103,6 +154,12 @@ not guaranteed. See [ADR-0101](adr/0101-retain-account-scoped-scrobble-delivery-
 - [ListenBrainz rate limits](https://listenbrainz.readthedocs.io/en/latest/users/api/index.html):
   pause when the remaining allowance reaches zero using `X-RateLimit-Reset-In`;
   retain pending work on HTTP 429 or a pause longer than one minute.
+- [ListenBrainz recording feedback](https://listenbrainz.readthedocs.io/en/latest/users/api/recordings.html):
+  `POST /1/feedback/recording-feedback` sends one `recording_mbid` and `score`, using
+  the connected account token. The client requires `status=ok` acknowledgement.
+- [ListenBrainz metadata lookup](https://listenbrainz.readthedocs.io/en/latest/users/api/metadata.html):
+  `GET /1/metadata/lookup/` with `artist_name` and `recording_name` now requires
+  authentication. An empty object means no match; malformed IDs remain retryable.
 
 HTTP responses are bounded, credential-bearing redirects are refused, and network
 and keyring operations run outside the Qt GUI thread. Tests use deterministic HTTP

@@ -2105,6 +2105,16 @@ and serializes its writers; lower boundaries have no network-service knowledge.
 Last.fm date adjustment is delivery state, persisted before submission separately
 from original playback evidence. See [Scrobbling](scrobbling.md), ADR-0101, and ADR-0102.
 
+Optional Rating Feedback shares that queue and workflow but has independent
+observations and receipts for each service/account. One default-off Scrobble Ratings
+setting controls Last.fm Love/Unlove and ListenBrainz Recording Feedback. Capture
+coalesces the latest committed music rating before Sync removals, even without new
+plays. Last.fm sends artist/title directly. For ListenBrainz, bounded read-only
+media access supplies embedded recording IDs; the service client resolves missing
+IDs. Resolved identities and acknowledgements are persisted separately from listens
+in queue version 4, retaining older queue history. The setting is independent of
+Host-file rating Back Sync. See ADR-0268 and ADR-0269.
+
 Contains the non-visual application layer.
 
 ```text

@@ -331,3 +331,5 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0264: Require fpcalc in supported installations](0264-require-fpcalc-in-supported-installations.md)
 - [ADR-0265: Author Alarm Tones from local melody arrangements](0265-author-alarm-tones-from-local-melody-arrangements.md)
 - [ADR-0267: Remove Nano Countdown Timer support](0267-remove-nano-countdown-timer-support.md)
+- [ADR-0268: Sync opt-in ListenBrainz recording feedback](0268-sync-opt-in-listenbrainz-recording-feedback.md)
+- [ADR-0269: Share rating scrobbling with Last.fm loved status](0269-share-rating-scrobbling-with-lastfm-loved-status.md)

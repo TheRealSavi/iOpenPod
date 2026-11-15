@@ -200,6 +200,7 @@ class SyncOptions:
     rockbox_metadata: bool = False
     scrobble: bool = True
     compute_missing_bpm: bool = False
+    scrobble_ratings: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,6 +352,7 @@ class SyncExecutor:
                         lambda message: progress(
                             WriteProgress("sync.scrobble", message)
                         ),
+                        ratings=request.options.scrobble_ratings,
                     )
                 except (ScrobbleError, OSError, StorageError) as error:
                     return SyncExecutionResult(

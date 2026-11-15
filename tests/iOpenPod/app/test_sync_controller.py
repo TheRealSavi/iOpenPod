@@ -42,7 +42,11 @@ from iOpenPod.app.models.track_table_model import TrackColumn, TrackTableModel
 from iOpenPod.app.playlist_sync import PlaylistSyncChoice
 from iOpenPod.app.podcasts.models import PodcastSnapshot
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
-from iOpenPod.app.scrobbling.settings import LASTFM_USERNAME, SCROBBLE_DURING_SYNC
+from iOpenPod.app.scrobbling.settings import (
+    LASTFM_USERNAME,
+    SCROBBLE_DURING_SYNC,
+    SCROBBLE_RATINGS,
+)
 from iOpenPod.app.services.device_coordinator import (
     DeviceCoordinator,
     SyncCleanupCompletedError,
@@ -95,6 +99,7 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
     settings.set_global(COMPUTE_MISSING_BPM, True)
     settings.set_global(ANALYZE_FOR_GENIUS, False)
     settings.set_global(SCROBBLE_DURING_SYNC, True)
+    settings.set_global(SCROBBLE_RATINGS, True)
     settings.set_global(LASTFM_USERNAME, "listener")
     service = SyncExecutionStub()
     controller = SyncController(service, workspace, devices, settings)
@@ -108,6 +113,7 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         settings.set_global(COMPUTE_MISSING_BPM, False)
         settings.set_global(ANALYZE_FOR_GENIUS, True)
         settings.set_global(SCROBBLE_DURING_SYNC, False)
+        settings.set_global(SCROBBLE_RATINGS, False)
         assert (
             service.request is not None and service.request.options.compute_sound_check
         )
@@ -115,6 +121,7 @@ def test_execution_reserves_workspace_and_uses_immutable_settings(
         assert service.request.options.compute_missing_bpm
         assert service.request.playlist_choices == choices
         assert service.request.options.scrobble
+        assert service.request.options.scrobble_ratings
         assert service.request.scrobble_accounts[0].username == "listener"
         assert not controller.start(*_inputs(), active)
         controller.skip_genius_analysis()

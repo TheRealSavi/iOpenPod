@@ -15,7 +15,7 @@ from .credentials import SystemCredentialStore
 from .models import ScrobbleError, ScrobbleResult, Service
 from .queue import ScrobbleQueue
 from .service import ScrobbleService
-from .settings import account_setting, configured_accounts
+from .settings import SCROBBLE_RATINGS, account_setting, configured_accounts
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -213,11 +213,16 @@ class ScrobbleController(QObject):
             return False
         self._reserved = True
         self._cancelled.clear()
+        ratings = self._settings.get(SCROBBLE_RATINGS)
 
         def submit() -> ScrobbleResult:
             assert self._job is not None
             return self._service.run(
-                active, accounts, self._cancelled, self._job.signals.progress.emit
+                active,
+                accounts,
+                self._cancelled,
+                self._job.signals.progress.emit,
+                ratings=ratings,
             )
 
         self._start(submit)
@@ -300,5 +305,6 @@ def create_scrobbling(
         coordinator,
         ScrobbleQueue(Storage().host_config_file("iOpenPod", "scrobbles-v2.json")),
         credentials,
+        media=coordinator,
     )
     return service, ScrobbleController(service, credentials, settings, devices, parent)

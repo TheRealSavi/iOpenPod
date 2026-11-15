@@ -46,7 +46,10 @@ from iOpenPod.app.podcasts.settings import (
     read_default_podcast_sync_settings,
     save_default_podcast_sync_settings,
 )
-from iOpenPod.app.scrobbling.settings import SCROBBLE_DURING_SYNC
+from iOpenPod.app.scrobbling.settings import (
+    SCROBBLE_DURING_SYNC,
+    SCROBBLE_RATINGS,
+)
 from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
@@ -125,8 +128,12 @@ class SyncSettings(QWidget):
         self._scrobble = _Choice(
             scope, SCROBBLE_DURING_SYNC, "scrobbleDuringSync", self
         )
+        self._scrobble_ratings = _Choice(
+            scope, SCROBBLE_RATINGS, "scrobbleRatings", self
+        )
         self._rows = (
             self._scrobble,
+            self._scrobble_ratings,
             self._genius,
             self._bpm,
             self._ratings,
@@ -176,6 +183,15 @@ class SyncSettings(QWidget):
                 "Analyze music and refresh native Genius recommendations during Sync "
                 "on supported iPods. Off skips Genius generation and keeps existing "
                 "Genius data where possible."
+            ),
+        )
+        self._scrobble_ratings.set_copy(
+            self.tr("Scrobble Ratings"),
+            self.tr(
+                "When scrobbling, send 4-5 stars as Love to connected accounts. "
+                "Send 1-2 stars as Unlove to Last.fm and Hate to ListenBrainz. "
+                "Three stars and unrated Tracks leave feedback unchanged. "
+                "Off by default; independent of Host file rating sync."
             ),
         )
         self._ratings.set_copy(
