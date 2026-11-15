@@ -117,8 +117,9 @@ def test_sync_converts_classic_lyrics_tags_without_changing_host_or_audio(
             track = next(
                 track
                 for track in result.active.library.tracks
-                if track.metadata.lyrics == words
+                if track.metadata.has_lyrics
             )
+            assert track.metadata.lyrics == ""
             assert track.metadata.has_lyrics
             output = (device.root / track.metadata.location).read_bytes()
             assert track.size_bytes == len(output)

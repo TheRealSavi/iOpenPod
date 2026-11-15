@@ -1,6 +1,7 @@
 """Lyrics flags and file sizes require evidence of the embedded text."""
 
 import hashlib
+import sqlite3
 from dataclasses import replace
 
 import pytest
@@ -9,6 +10,7 @@ from tests.iPodDB.library.test_writing import library
 from iPodDB.iTunesDB.builder.build_iTunesDB import new_string_mhod
 from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
 from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.shared.chunk_defs.mhod import MhodHeader
 from iPodDB.iTunesDB.shared.constants import MhodType
 from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library import (
@@ -45,7 +47,11 @@ def lyrics_source(*, flag: int = 0, text: str = "", size_2: int = 100) -> IPodLi
                         MhodType.LOCATION,
                         f":iPod_Control:Music:F00:{chunk.header.track_id}.mp3",
                     ),
-                    *((new_string_mhod(MhodType.LYRICS, text),) if text else ()),
+                    *(
+                        (new_string_mhod(MhodType.UNKNOWN_TEXT_10, text),)
+                        if text
+                        else ()
+                    ),
                 ),
             ),
         )
@@ -76,7 +82,10 @@ def test_lyrics_require_file_evidence_and_update_only_affected_size_and_flag(
     before, second = source.snapshot.tracks
     changed = replace(before, metadata=replace(before.metadata, lyrics=new))
     plan = source.analyze(
-        source.begin_draft(replace(source.snapshot, tracks=(changed, second)))
+        source.begin_draft(
+            replace(source.snapshot, tracks=(changed, second)),
+            lyrics_updates=(before.track_id,),
+        )
     )
     assert plan.required_lyrics == (before.track_id,)
     assert not plan.required_media
@@ -88,7 +97,7 @@ def test_lyrics_require_file_evidence_and_update_only_affected_size_and_flag(
     assert result.prepared is not None, result.issues
     assert result.prepared.snapshot.tracks[1] == second
     after = result.prepared.snapshot.tracks[0]
-    assert after.metadata.lyrics == new
+    assert after.metadata.lyrics == ""
     assert after.metadata.has_lyrics == bool(new)
     assert after.size_bytes == evidence.file.size
     assert after.ipod is not None
@@ -181,7 +190,10 @@ def test_authored_lyrics_edits_replace_noncanonical_flags_with_zero_or_one(
     before, second = source.snapshot.tracks
     changed = replace(before, metadata=replace(before.metadata, lyrics=new))
     plan = source.analyze(
-        source.begin_draft(replace(source.snapshot, tracks=(changed, second)))
+        source.begin_draft(
+            replace(source.snapshot, tracks=(changed, second)),
+            lyrics_updates=(before.track_id,),
+        )
     )
     result = source.prepare(plan, WriteResources(lyrics=(lyrics_resource(changed),)))
     assert result.prepared is not None, result.issues
@@ -312,3 +324,76 @@ def test_unsupported_lyrics_target_skips_lyrics_preparation_and_mhod_10() -> Non
         for selection in parse_iTunesDB(result.prepared.itunes).find_chunks(MhitHeader)
     }
     assert headers[written.track_id].lyrics_flag == 0
+
+
+@pytest.mark.parametrize("supported", [False, True])
+@pytest.mark.parametrize("text", ["", "Full lyrics\n" * 20000], ids=["clear", "long"])
+def test_explicit_lyrics_never_author_type_10_and_preserve_unknown_text(
+    supported: bool, text: str
+) -> None:
+    source = lyrics_source(flag=3, text="Unidentified native text")
+    original = source.serialize().itunes
+    assert all(track.metadata.lyrics == "" for track in source.snapshot.tracks)
+    assert IPodLibrary(original).serialize().itunes == original
+    first, second = source.snapshot.tracks
+    edited = replace(first, metadata=replace(first.metadata, lyrics=text))
+    plan = source.analyze(
+        source.begin_draft(
+            replace(source.snapshot, tracks=(edited, second)),
+            lyrics_updates=(first.track_id,),
+        ),
+        WriteTarget(supports_lyrics=supported),
+    )
+    assert plan.required_lyrics == (first.track_id,)
+    result = source.prepare(plan, WriteResources(lyrics=(lyrics_resource(edited),)))
+    assert result.prepared is not None, result.issues
+
+    def unknown_records(data: bytes) -> tuple[tuple[bytes, bytes], ...]:
+        return tuple(
+            (selection.chunk.raw_header, selection.chunk.raw_body)
+            for selection in parse_iTunesDB(data).find_chunks(MhodHeader)
+            if selection.chunk.header.mhod_type == 10
+        )
+
+    assert unknown_records(result.prepared.itunes) == unknown_records(original)
+    assert len(result.prepared.itunes) == len(original)
+    assert result.prepared.snapshot.tracks[0].metadata.has_lyrics == (
+        supported and bool(text)
+    )
+
+
+@pytest.mark.parametrize("supported", [False, True])
+def test_new_lyrics_stay_out_of_binary_database(supported: bool) -> None:
+    source = lyrics_source()
+    first, second = source.snapshot.tracks
+    edited = replace(first, metadata=replace(first.metadata, lyrics="Lyrics\n" * 20000))
+    plan = source.analyze(
+        source.begin_draft(replace(source.snapshot, tracks=(edited, second))),
+        WriteTarget(supports_lyrics=supported),
+    )
+    result = source.prepare(plan, WriteResources(lyrics=(lyrics_resource(edited),)))
+    assert result.prepared is not None, result.issues
+    assert not any(
+        selection.chunk.header.mhod_type == 10
+        for selection in parse_iTunesDB(result.prepared.itunes).find_chunks(MhodHeader)
+    )
+    assert len(result.prepared.itunes) == len(source.serialize().itunes)
+
+
+def test_sqlite_lyrics_use_verified_media_without_type_10() -> None:
+    source = lyrics_source()
+    first, second = source.snapshot.tracks
+    edited = replace(first, metadata=replace(first.metadata, lyrics="Verified text"))
+    plan = source.analyze(
+        source.begin_draft(replace(source.snapshot, tracks=(edited, second))),
+        WriteTarget(sqlite_database=True),
+    )
+    result = source.prepare(plan, WriteResources(lyrics=(lyrics_resource(edited),)))
+    assert result.prepared is not None, result.issues
+    assert result.prepared.sqlite is not None
+    assert result.prepared.snapshot.tracks[0].metadata.lyrics == ""
+    with sqlite3.connect(":memory:") as extras:
+        extras.deserialize(result.prepared.sqlite.extras)
+        assert extras.execute("SELECT lyrics FROM lyrics").fetchall() == [
+            ("Verified text",)
+        ]

@@ -1057,11 +1057,15 @@ devices use an optimized grayscale JPEG fitting within 120x120 pixels. Unrelated
 edits preserve file-only lyrics, and incoming music reads embedded lyrics into its
 draft. Preparation exceeding the whole-media memory budget uses private Host disk
 staging, preserving complete media and lyrics without a warning for normal overflow.
-Sync Add/Update preparation prefers nonempty lyrics in the captured Host file
-over older reviewed text and publishes matching media tags and iTunesDB text.
-This applies with Rockbox Metadata Support on or off. Sync does not inspect
-unchanged iPod media for lyric differences.
-See ADR-0075 and `docs/research/itunesdb-lyrics.md`.
+Sync prepares lyrics when the Device Profile supports native display or Rockbox
+Metadata Support is enabled. Explicit Library lyrics edits remain available on
+every target. Text is published in media tags; the native presence flag is enabled
+only on capable devices. iTunesDB no longer stores or projects a lyrics cache in
+MHOD 10, whose unidentified retained records remain lossless. Lazy media reads
+supply the Player and editor, and explicit clearing remains draft intent even
+when no text was loaded from the database. Unrelated tag edits preserve file-only
+lyrics. Sync does not inspect unchanged iPod media for lyric differences.
+See ADR-0075, ADR-0270, and `docs/research/itunesdb-lyrics.md`.
 
 Artwork capture, generated artwork, and Photo batches also use private Host disk
 staging when preparation memory budgets are reached. Large valid batches continue

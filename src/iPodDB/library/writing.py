@@ -104,6 +104,8 @@ class LibraryDraft:
     # Incoming or retained files whose tags will be finalized. Require lyrics/file
     # evidence even when the text itself is unchanged, to derive the final size.
     retag_tracks: tuple[int, ...] = field(default=(), kw_only=True)
+    # Explicit file-only lyrics edits, including clearing text not loaded in DB.
+    lyrics_updates: tuple[int, ...] = field(default=(), kw_only=True)
     # Explicit firmware-projection refresh; retained binary artifacts stay
     # byte-exact when the desired Library itself is unchanged.
     regenerate_sqlite: bool = field(default=False, kw_only=True)

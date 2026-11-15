@@ -6,7 +6,6 @@ import logging
 import re
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
-from functools import partial
 from typing import TYPE_CHECKING
 
 from whenever import Instant
@@ -14,7 +13,7 @@ from whenever import Instant
 from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.export_tagging import ExportMediaTagger
 from iOpenPod.app.library_write import LibraryFileChange
-from iOpenPod.app.media.lyrics import rewrite_lyrics_stream
+from iOpenPod.app.media.lyrics import read_lyrics_stream, rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
 from iOpenPod.app.services.video_metadata import capture_video_metadata
 from iPodDB.library import (
@@ -71,6 +70,7 @@ if TYPE_CHECKING:
         LibraryWritePlan,
         PhotoRepresentation,
         PreparedLibrary,
+        Track,
     )
     from storage import FilesystemSession
 
@@ -100,16 +100,43 @@ SQLITE_DATABASE_PATHS = tuple(
 )
 
 
-def _tag_and_verify_native_lyrics(
-    stream: BinaryIO,
-    *,
-    tag: Callable[[BinaryIO], None],
-    file_name: str,
-    lyrics: str,
-) -> None:
-    """Check the tagger's final bytes in the same private staging file."""
-    tag(stream)
-    rewrite_lyrics_stream(stream, file_name, lyrics, native_compatibility=True)
+@dataclass
+class _FileTagPreparation:
+    """Retain verified file-only text alongside a private stream transformation."""
+
+    track: Track
+    file_name: str
+    artwork: ArtworkPixels | None
+    full_metadata: bool
+    preserve_artwork: bool
+    preserve_lyrics: bool
+    native_lyrics: bool
+
+    def __call__(self, stream: BinaryIO) -> None:
+        if self.preserve_lyrics:
+            self.track = replace(
+                self.track,
+                metadata=replace(
+                    self.track.metadata,
+                    lyrics=read_lyrics_stream(stream, self.file_name),
+                ),
+            )
+        if self.full_metadata:
+            ExportMediaTagger().prepare_stream(
+                stream,
+                file_name=self.file_name,
+                track=self.track,
+                artwork=self.artwork,
+                preserve_artwork=self.preserve_artwork,
+            )
+        if not self.full_metadata or self.native_lyrics:
+            # Check final bytes even after the full tagger; it is another writer.
+            rewrite_lyrics_stream(
+                stream,
+                self.file_name,
+                self.track.metadata.lyrics,
+                native_compatibility=self.native_lyrics,
+            )
 
 
 def database_path(database_name: str) -> DevicePath:
@@ -1061,33 +1088,21 @@ def _capture_file_tags(
                         )
                     artwork = covers[track.artwork_id]
                 native_lyrics = request.source.profile.family == "iPod Classic"
-                transform = (
-                    partial(
-                        rewrite_lyrics_stream,
-                        file_name=str(path),
-                        lyrics=track.metadata.lyrics,
-                        native_compatibility=native_lyrics,
-                    )
-                    if update is None
-                    else partial(
-                        ExportMediaTagger().prepare_stream,
-                        file_name=str(path),
-                        track=track,
-                        artwork=artwork,
-                        preserve_artwork=update.preserve_artwork,
-                    )
+                transform = _FileTagPreparation(
+                    track,
+                    str(path),
+                    artwork,
+                    full_metadata=update is not None,
+                    preserve_artwork=update.preserve_artwork if update else False,
+                    preserve_lyrics=(
+                        update is not None
+                        and identity not in request.lyrics_updates
+                        and not track.metadata.lyrics
+                    ),
+                    native_lyrics=native_lyrics,
                 )
-                if native_lyrics and update is not None:
-                    # Full metadata/artwork tagging is another writer. Verify
-                    # the final bytes and repair a lyrics-only encoding mismatch
-                    # before issuing PreparedLyrics evidence for this file.
-                    transform = partial(
-                        _tag_and_verify_native_lyrics,
-                        tag=transform,
-                        file_name=str(path),
-                        lyrics=track.metadata.lyrics,
-                    )
                 output = workspace.transform_stream(private_source, transform)
+                track = transform.track
                 content = FileContent.from_fingerprint(output.fingerprint)
                 if content.size <= remaining:
                     payload = LocalHostFile.observe(output.snapshot).read_bytes(

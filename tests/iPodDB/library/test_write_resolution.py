@@ -336,7 +336,9 @@ def test_resolution_exposes_derived_flags_and_quantization_before_writing() -> N
     }
     result = source.prepare(plan, WriteResources(lyrics=(lyrics_resource(resolved),)))
     assert result.prepared is not None, result.issues
-    assert result.prepared.snapshot.tracks[0].metadata == resolved.metadata
+    assert result.prepared.snapshot.tracks[0].metadata == replace(
+        resolved.metadata, lyrics=""
+    )
     assert sum(i.code == "track.quantized" for i in result.issues) == 1
 
 

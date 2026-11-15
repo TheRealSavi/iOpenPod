@@ -94,6 +94,8 @@ def verify_native_tracks(
         expected_fields = track_field_expectations(
             original_chunk, prior_track, track, device_time, database_version
         )
+        if tagged is not None:
+            expected_fields["lyrics_flag"] = int(track.metadata.has_lyrics)
         dates = date_updates.get(track.track_id)
         if dates is not None:
             for field in ("last_played", "last_skipped"):

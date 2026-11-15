@@ -15217,6 +15217,10 @@ Playlists: %3</translation>
         <translation>No se pudo leer la configuración del iPod. Vuelve a cargar el iPod para intentarlo de nuevo. {detail}</translation>
     </message>
     <message>
+        <source>Lyrics edits require one existing draft Track identity.</source>
+        <translation>Los cambios de letras requieren un identificador de pista existente en el borrador.</translation>
+    </message>
+    <message>
         <source>lyrics verification requires an ID3v2.2, v2.3 or v2.4 tag.</source>
         <translation>la verificación de la letra requiere una etiqueta ID3v2.2, v2.3 o v2.4.</translation>
     </message>

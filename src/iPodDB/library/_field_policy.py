@@ -33,7 +33,6 @@ METADATA_TEXT = {
         "location",
         "comment",
         "category",
-        "lyrics",
         "composer",
         "grouping",
         "description",

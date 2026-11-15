@@ -38,10 +38,14 @@ def validate_lyrics(
                 )
             track = tracks[item.track_id]
             validated_path(item.file.relative_path)
+            preserve_file_text = (
+                item.track_id in plan.draft.retag_tracks
+                and item.track_id not in plan.draft.lyrics_updates
+                and not track.metadata.lyrics
+            )
             if (
-                item.lyrics != track.metadata.lyrics
-                or item.file.relative_path != track.metadata.location
-            ):
+                not preserve_file_text and item.lyrics != track.metadata.lyrics
+            ) or item.file.relative_path != track.metadata.location:
                 raise ValueError(
                     "Embedded lyrics do not match the requested text and Track location."
                 )

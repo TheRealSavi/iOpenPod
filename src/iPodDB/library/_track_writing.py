@@ -485,8 +485,8 @@ def edit_track(
                     field="metadata." + attr,
                 )
             )
-    if meta.lyrics != prior.lyrics:
-        values["lyrics_flag"] = int(bool(meta.lyrics))
+    if lyrics is not None or meta.lyrics != prior.lyrics:
+        values["lyrics_flag"] = int(meta.has_lyrics)
     indicators = bytearray(header.sort_mhod_indicators)
     if (
         _SORT_INDICATORS.offset

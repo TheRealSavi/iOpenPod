@@ -314,6 +314,7 @@ class IPodLibrary:
         replace_media: tuple[int, ...] = (),
         replace_photos: tuple[int, ...] = (),
         retag_tracks: tuple[int, ...] = (),
+        lyrics_updates: tuple[int, ...] = (),
         regenerate_sqlite: bool = False,
         rebuild_album_indexes: bool = False,
         repair_podcast_links: bool = False,
@@ -330,6 +331,8 @@ class IPodLibrary:
         requires matching Prepared Media; it does not publish any files.
         ``retag_tracks`` requests verified file-tag rewrites at retained locations;
         PreparedLyrics evidence derives the final size without new codec facts.
+        ``lyrics_updates`` explicitly replaces file-only lyrics, including an
+        empty value when no text is available in the database projection.
         ``regenerate_sqlite`` requests a fresh firmware projection even when the
         desired Library is unchanged. It does not authorize file publication.
         ``rebuild_album_indexes`` repairs retained Albums browse indexes without
@@ -355,6 +358,7 @@ class IPodLibrary:
             replace_media=tuple(replace_media),
             replace_photos=tuple(replace_photos),
             retag_tracks=tuple(retag_tracks),
+            lyrics_updates=tuple(lyrics_updates),
             regenerate_sqlite=regenerate_sqlite,
             rebuild_album_indexes=rebuild_album_indexes,
             repair_podcast_links=repair_podcast_links,

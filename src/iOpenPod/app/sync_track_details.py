@@ -11,7 +11,13 @@ from iOpenPod.app.track_conversion import media_type_choices
 from iPodDB.library import MediaType, metadata_edit_issues
 
 if TYPE_CHECKING:
+    from device_registry import DeviceProfile
     from iPodDB.library import Track, WriteIssue
+
+
+def sync_lyrics_enabled(profile: DeviceProfile, *, rockbox_metadata: bool) -> bool:
+    """Native display and optional Rockbox tagging can each require Sync lyrics."""
+    return profile.capabilities.audio.supports_lyrics or rockbox_metadata
 
 
 TRACK_TAG_FIELDS = (

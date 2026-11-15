@@ -132,6 +132,8 @@ class ExportTagger(Protocol):
         destination: HostPath,
         track: Track,
         artwork: ArtworkImage | None,
+        *,
+        preserve_lyrics: bool = False,
     ) -> None: ...
 
 
@@ -190,6 +192,7 @@ class LibraryExporter:
         *,
         checkpoint: Callable[[], None] | None = None,
         progress: Callable[[ExportProgress], None] | None = None,
+        lyrics_updates: frozenset[int] = frozenset(),
     ) -> ExportResult:
         unique = _unique_tracks(tracks)
         if not unique:
@@ -197,7 +200,7 @@ class LibraryExporter:
         references = self._references(unique, checkpoint)
         destinations = _media_destinations(directory, unique, references, set())
         self._require_taggable(destinations)
-        self._copy_tracks(unique, destinations, checkpoint, progress)
+        self._copy_tracks(unique, destinations, checkpoint, progress, lyrics_updates)
         return ExportResult(None, tuple(destinations))
 
     def export_playlist(
@@ -211,6 +214,7 @@ class LibraryExporter:
         host_folders: tuple[HostMediaFolder, ...] = (),
         checkpoint: Callable[[], None] | None = None,
         progress: Callable[[ExportProgress], None] | None = None,
+        lyrics_updates: frozenset[int] = frozenset(),
     ) -> ExportResult:
         title = name.strip() or "Playlist"
         unique = _unique_tracks(tracks)
@@ -239,7 +243,7 @@ class LibraryExporter:
         )
         if mode is PlaylistExportMode.COPY_TRACKS:
             self._require_taggable(media_paths)
-            self._copy_tracks(unique, media_paths, checkpoint, progress)
+            self._copy_tracks(unique, media_paths, checkpoint, progress, lyrics_updates)
 
         _checkpoint(checkpoint)
         entries = tuple(
@@ -330,6 +334,7 @@ class LibraryExporter:
         destinations: tuple[HostPath, ...],
         checkpoint: Callable[[], None] | None,
         progress: Callable[[ExportProgress], None] | None,
+        lyrics_updates: frozenset[int],
     ) -> None:
         total = len(tracks)
         for index, (track, destination) in enumerate(
@@ -354,6 +359,10 @@ class LibraryExporter:
                     self._tagger.prepare,
                     track=track,
                     artwork=artwork,
+                    preserve_lyrics=(
+                        not track.metadata.lyrics
+                        and track.track_id not in lyrics_updates
+                    ),
                 ),
             )
 

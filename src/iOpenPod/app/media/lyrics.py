@@ -9,7 +9,7 @@ from typing import Any, BinaryIO, Protocol, cast
 import mutagen
 import mutagen.id3 as id3_frames
 from mutagen.aiff import AIFF
-from mutagen.id3 import ID3
+from mutagen.id3 import ID3, ID3NoHeaderError
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
 from mutagen.wave import WAVE
@@ -53,6 +53,28 @@ def embedded_lyrics(parsed: Any) -> str:
         ),
         "",
     )
+
+
+def read_lyrics_stream(stream: BinaryIO, file_name: str) -> str:
+    """Read text from a caller-owned private media stream without closing it."""
+    stream.seek(0)
+    try:
+        if PurePosixPath(file_name).suffix.casefold() in {".aac", ".adif", ".adts"}:
+            try:
+                tags = cast("Any", ID3)(stream)
+            except ID3NoHeaderError:
+                return ""
+            return next(
+                (tag.value for tag in read_tag_values(tags) if tag.name == "lyrics"), ""
+            )
+        parsed = mutagen.File(fileobj=stream, filename=file_name)
+        if parsed is None:
+            raise ValueError("Could not identify media for lyrics preservation.")
+        return embedded_lyrics(parsed)
+    except mutagen.MutagenError as error:
+        raise ValueError(f"Could not read embedded lyrics: {error}") from error
+    finally:
+        stream.seek(0)
 
 
 def rewrite_lyrics(

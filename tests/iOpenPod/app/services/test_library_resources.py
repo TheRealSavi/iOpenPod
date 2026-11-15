@@ -64,7 +64,12 @@ class Device:
         return active
 
     def prepare(
-        self, snapshot: LibrarySnapshot, *, cover: bool = False, delete: bool = False
+        self,
+        snapshot: LibrarySnapshot,
+        *,
+        cover: bool = False,
+        delete: bool = False,
+        lyrics_updates: tuple[int, ...] = (),
     ) -> LibraryReview:
         return self.coordinator.prepare_library(
             LibraryPreparationRequest(
@@ -74,6 +79,7 @@ class Device:
                 1,
                 artwork=(BLUE,) if cover else (),
                 delete_omissions=delete,
+                lyrics_updates=lyrics_updates,
             ),
             lambda _: None,
             Event(),

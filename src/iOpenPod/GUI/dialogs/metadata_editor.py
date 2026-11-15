@@ -406,7 +406,8 @@ class MetadataEditorDialog(QDialog):
             else None
         )
         if original is not None and (
-            original.metadata.lyrics != track.metadata.lyrics
+            track.track_id in self._workspace.lyrics_updates
+            or original.metadata.lyrics != track.metadata.lyrics
             or (original.metadata.has_lyrics and not track.metadata.has_lyrics)
         ):
             return

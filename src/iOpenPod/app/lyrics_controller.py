@@ -47,8 +47,10 @@ class LyricsController(QObject):
         self._active = False
         self._closed = False
         self._text = ""
+        self._draft_lyrics_active = False
         self._state = LyricsState.NO_TRACK
         playback.currentTrackChanged.connect(self._track_changed)
+        workspace.tracksChanged.connect(self._draft_tracks_changed)
         self._track_changed()
 
     @property
@@ -71,16 +73,36 @@ class LyricsController(QObject):
         self._cancel_jobs()
         self._token += 1
         track = self._playback.current_track
+        self._draft_lyrics_active = track is not None and self._lyrics_edited(track)
         self._text = "" if track is None else track.metadata.lyrics
         self._state = (
             LyricsState.NO_TRACK
             if track is None
             else LyricsState.READY
-            if self._lyrics_edited(track)
+            if self._draft_lyrics_active
             else LyricsState.NOT_LOADED
         )
         self.changed.emit()
         self._load_if_needed()
+
+    @Slot(object)
+    def _draft_tracks_changed(self, _tracks: object) -> None:
+        # Clearing file-only lyrics can leave the projected Track equal to its
+        # original value, so playback reconciliation need not emit a change.
+        if self._closed:
+            return
+        track = self._playback.current_track
+        if track is not None and track.track_id in self._workspace.lyrics_updates:
+            self._draft_lyrics_active = True
+            self._cancel_jobs()
+            self._token += 1
+            edited = self._workspace.track(track.track_id)
+            if edited is not None:
+                self._text = edited.metadata.lyrics
+                self._state = LyricsState.READY
+                self.changed.emit()
+        elif self._draft_lyrics_active:
+            self._track_changed()
 
     def _lyrics_edited(self, track: Track) -> bool:
         snapshot = self._workspace.snapshot
@@ -90,7 +112,8 @@ class LyricsController(QObject):
             (item for item in snapshot.tracks if item.track_id == track.track_id), None
         )
         return original is not None and (
-            original.metadata.lyrics != track.metadata.lyrics
+            track.track_id in self._workspace.lyrics_updates
+            or original.metadata.lyrics != track.metadata.lyrics
             or (original.metadata.has_lyrics and not track.metadata.has_lyrics)
         )
 

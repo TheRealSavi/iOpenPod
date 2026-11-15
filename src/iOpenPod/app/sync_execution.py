@@ -113,6 +113,7 @@ from iOpenPod.app.sync_plan import (
 )
 from iOpenPod.app.sync_track_details import (
     apply_track_tags,
+    sync_lyrics_enabled,
     track_tag_edit_issues,
     track_tag_sha256,
 )
@@ -223,6 +224,12 @@ class SyncExecutionRequest:
     phase_analysis_skip: Event = field(
         default_factory=Event, compare=False, repr=False, kw_only=True
     )
+
+    @property
+    def include_lyrics(self) -> bool:
+        return sync_lyrics_enabled(
+            self.source.profile, rockbox_metadata=self.options.rockbox_metadata
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1559,10 +1566,7 @@ class SyncExecutor:
                     apply_track_tags(
                         old_track,
                         host_track,
-                        include_lyrics=(
-                            request.source.profile.capabilities.audio.supports_lyrics
-                            or request.options.rockbox_metadata
-                        ),
+                        include_lyrics=request.include_lyrics,
                     )
                     if item.metadata_changed
                     else old_track
@@ -2349,10 +2353,7 @@ def _validate_plan(request: SyncExecutionRequest) -> SyncPlan:
             request.source.library,
             file_tag_policy=request.plan.file_tag_policy,
             rating_conflict_policy=request.plan.rating_conflict_policy,
-            supports_lyrics=(
-                request.source.profile.capabilities.audio.supports_lyrics
-                or request.options.rockbox_metadata
-            ),
+            include_lyrics=request.include_lyrics,
         ),
         request.plan.duplicate_resolutions,
     )
@@ -2496,14 +2497,7 @@ def _song(
             ),
             date_added=Instant.now().timestamp(),
             artwork_count=0,
-            lyrics=(
-                host.metadata.lyrics
-                if (
-                    request.source.profile.capabilities.audio.supports_lyrics
-                    or request.options.rockbox_metadata
-                )
-                else ""
-            ),
+            lyrics=(host.metadata.lyrics if request.include_lyrics else ""),
             has_lyrics=False,
         ),
     )
@@ -2589,6 +2583,7 @@ def _draft(
     artwork_ids: dict[int, int] = {}
     metadata_updates = [] if metadata_updates is None else metadata_updates
     rockbox_media: list[RockboxMediaUpdate] = []
+    lyrics_updates: list[int] = []
 
     def cover_identity(pixels: ArtworkPixels | None) -> int:
         if pixels is None:
@@ -2670,15 +2665,23 @@ def _draft(
         identity = item.ipod_id
         old = tracks[identity]
         host_track = host_tracks_by_path[host_path_identity(item.host_path or "")]
+        if (
+            request.include_lyrics
+            and item.metadata_changed
+            and (
+                request.options.rockbox_metadata
+                or old.metadata.has_lyrics
+                or old.metadata.lyrics
+                or host_track.metadata.lyrics
+            )
+        ):
+            lyrics_updates.append(identity)
         cover_id = cover_identity(update.artwork) if item.artwork_changed else 0
         track = (
             apply_track_tags(
                 old,
                 host_track,
-                include_lyrics=(
-                    request.source.profile.capabilities.audio.supports_lyrics
-                    or request.options.rockbox_metadata
-                ),
+                include_lyrics=request.include_lyrics,
             )
             if item.metadata_changed
             else old
@@ -2864,6 +2867,7 @@ def _draft(
             if repair.dependency is not None
         ),
         replace_media=tuple(replaced),
+        lyrics_updates=tuple(lyrics_updates),
         rockbox_media=tuple(rockbox_media),
         rockbox_metadata=request.options.rockbox_metadata,
         compute_missing_bpm=request.options.compute_missing_bpm,
@@ -2981,10 +2985,7 @@ def _retained_playlist_mapping(
                 request.source.library,
                 file_tag_policy=request.plan.file_tag_policy,
                 rating_conflict_policy=request.plan.rating_conflict_policy,
-                supports_lyrics=(
-                    request.source.profile.capabilities.audio.supports_lyrics
-                    or request.options.rockbox_metadata
-                ),
+                include_lyrics=request.include_lyrics,
             ),
             request.plan.duplicate_resolutions,
         )

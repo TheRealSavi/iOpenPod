@@ -105,7 +105,9 @@ def test_add_replace_and_clear_publish_with_database_and_restore(
         original = dict(device.original)
         for text in (WORDS, "Replacement", ""):
             before = path.read_bytes()
-            review = device.prepare(desired_lyrics(device, text))
+            review = device.prepare(
+                desired_lyrics(device, text), lyrics_updates=(first.track_id,)
+            )
             assert review.result.prepared is not None, review.result.issues
             assert not any(
                 issue.code == "resources.lyrics_disk_staging"
@@ -124,7 +126,7 @@ def test_add_replace_and_clear_publish_with_database_and_restore(
             assert media_payload(data, ".m4a") == original_payload
             track = saved.active.library.tracks[0]
             assert track.metadata.has_lyrics == bool(text)
-            assert track.metadata.lyrics == text
+            assert track.metadata.lyrics == ""
             assert track.size_bytes == len(data)
             assert saved.active.library.tracks[1] == second
             if text == WORDS:

@@ -36,7 +36,12 @@ def prepare(
 ) -> LibraryReview:
     return device.coordinator.prepare_library(
         LibraryPreparationRequest(
-            snapshot, device.active, 1, 1, rockbox_metadata=rockbox
+            snapshot,
+            device.active,
+            1,
+            1,
+            rockbox_metadata=rockbox,
+            lyrics_updates=(snapshot.tracks[0].track_id,),
         ),
         lambda _: None,
         Event(),
@@ -86,7 +91,7 @@ def test_classic_publishes_exact_utf8_byte_limit_without_truncating_media(
         published = (device.root / track.metadata.location).read_bytes()
         assert read_lyrics(published) == BOUNDARY_TEXT
         assert len(read_lyrics(published).encode("utf-8")) == 10240
-        assert track.metadata.lyrics == BOUNDARY_TEXT
+        assert track.metadata.lyrics == ""
         assert track.metadata.has_lyrics
         assert media_payload(published, ".m4a") == media_payload(original, ".m4a")
     finally:
@@ -128,7 +133,7 @@ def test_explicit_clear_removes_existing_oversized_lyrics(tmp_path: Path) -> Non
         device.coordinator.select_device(
             device.coordinator.discover_devices().candidates[0].id
         )
-        assert device.active.library.tracks[0].metadata.lyrics == OVERSIZED_TEXT
+        assert device.active.library.tracks[0].metadata.lyrics == ""
         review = prepare(device, desired_lyrics(device, ""))
         assert review.result.prepared is not None, review.result.issues
         device.assert_original()
@@ -175,7 +180,7 @@ def test_description_precedence_warns_without_discarding_lyrics(
         track = saved.active.library.tracks[0]
         published = (device.root / track.metadata.location).read_bytes()
         assert read_lyrics(published) == text
-        assert track.metadata.lyrics == text and track.metadata.has_lyrics
+        assert track.metadata.lyrics == "" and track.metadata.has_lyrics
         assert track.metadata.description == description
         assert media_payload(published, ".m4a") == media_payload(original, ".m4a")
     finally:

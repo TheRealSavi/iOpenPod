@@ -1674,13 +1674,13 @@ def test_prepare_sync_plan_ignores_lyrics_differences_when_unsupported(
         _host_library((host_track,), (), (host_source,)),
         _ipod_library((ipod_source,)),
         ipod_snapshot,
-        supports_lyrics=True,
+        include_lyrics=True,
     )
     without_lyrics = prepare_sync_plan(
         _host_library((host_track,), (), (host_source,)),
         _ipod_library((ipod_source,)),
         ipod_snapshot,
-        supports_lyrics=False,
+        include_lyrics=False,
     )
     assert with_lyrics.items[0].action is SyncPlanAction.UPDATE
     assert with_lyrics.items[0].metadata_changed is True

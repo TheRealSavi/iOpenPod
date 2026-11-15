@@ -2,6 +2,7 @@
 
 import base64
 import io
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -15,12 +16,34 @@ from PIL import Image
 from device_registry import DEFAULT_DEVICE_REGISTRY
 from iOpenPod.app.artwork_policy import rockbox_artwork
 from iOpenPod.app.export_tagging import ExportMediaTagger
+from iOpenPod.app.media.lyrics import read_lyrics_stream
 from iOpenPod.app.models.artwork import ArtworkImage
 from iPodDB.library import ArtworkPixels, ContentAdvisory, Track, TrackMetadata
 from storage import HostPath
 
 _FIXTURES = Path(__file__).parents[2] / "fixtures" / "media"
 _ID3_READER: Any = ID3
+
+
+@pytest.mark.parametrize("name", ["tone.mp3", "tone.m4a", "tone.wav", "track.aac"])
+@pytest.mark.parametrize("preserve", [False, True])
+def test_export_can_preserve_file_only_lyrics_or_explicitly_clear(
+    tmp_path: Path, name: str, preserve: bool
+) -> None:
+    path = tmp_path / name
+    if name.endswith(".aac"):
+        path.write_bytes(b"\xff\xf1" + b"retained AAC payload" * 20)
+    else:
+        path = _fixture(tmp_path, name)
+    tagger = ExportMediaTagger()
+    track = _track()
+    tagger.prepare(HostPath(path), track, None)
+    projected = replace(track, metadata=replace(track.metadata, lyrics=""))
+    tagger.prepare(HostPath(path), projected, None, preserve_lyrics=preserve)
+    with path.open("rb") as stream:
+        assert read_lyrics_stream(stream, name) == (
+            track.metadata.lyrics if preserve else ""
+        )
 
 
 class _ArtworkFrame(Protocol):

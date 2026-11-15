@@ -111,6 +111,7 @@ class LibraryWorkspace(QObject):
         self._tracks: dict[int, Track] = {}
         self._artwork_assets: dict[int, ArtworkAsset | TimedArtworkAsset] = {}
         self._media_sources: dict[int, LibraryMediaSource] = {}
+        self._lyrics_updates: set[int] = set()
         self._genius_mix_additions: tuple[str, ...] = ()
         self._genius_collection_removals: tuple[str, ...] = ()
         self._photos: PhotoLibrary | None = None
@@ -817,7 +818,15 @@ class LibraryWorkspace(QObject):
                 for track_id, track in replacements.items()
             }
 
-        if any(track != self._tracks[key] for key, track in replacements.items()):
+        lyrics_updates = {
+            update.track_id
+            for update in updates
+            if any(edit.field == "metadata.lyrics" for edit in update.edits)
+        }
+        if lyrics_updates or any(
+            track != self._tracks[key] for key, track in replacements.items()
+        ):
+            self._lyrics_updates.update(lyrics_updates)
             self._tracks.update(replacements)
             if new_asset is not None:
                 self._artwork_assets[new_asset.artwork_id] = new_asset
@@ -883,7 +892,13 @@ class LibraryWorkspace(QObject):
             or self._photos != snapshot.photos
             or bool(self._genius_mix_additions)
             or bool(self._genius_collection_removals)
+            or bool(self.lyrics_updates)
         )
+
+    @property
+    def lyrics_updates(self) -> tuple[int, ...]:
+        """Explicit file text edits remain intent even when the DB text is empty."""
+        return tuple(sorted(self._lyrics_updates.intersection(self._tracks)))
 
     @property
     def genius_mix_additions(self) -> tuple[str, ...]:
@@ -948,6 +963,7 @@ class LibraryWorkspace(QObject):
         self._snapshot = snapshot
         self._artwork_assets.clear()
         self._media_sources.clear()
+        self._lyrics_updates.clear()
         self._genius_mix_additions = ()
         self._genius_collection_removals = ()
         self._delete_omissions = False
@@ -1345,6 +1361,7 @@ class LibraryWorkspace(QObject):
         self._tracks = {track.track_id: track for track in snapshot.tracks}
         self._artwork_assets.clear()
         self._media_sources.clear()
+        self._lyrics_updates.clear()
         self._genius_mix_additions = ()
         self._genius_collection_removals = ()
         self._delete_omissions = False
