@@ -9,9 +9,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from threading import Event, Lock, current_thread
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
+from threadpoolctl import threadpool_info
 
 from iOpenPod.app import genius_analysis, genius_analysis_cache
 from iOpenPod.app.genius_analysis import (
@@ -624,6 +625,38 @@ def test_default_workers_follow_physical_cores_within_bounds(
 ) -> None:
     monkeypatch.setattr(genius_analysis, "available_compute_threads", lambda: threads)
     assert genius_analysis._default_analysis_workers() == expected  # pyright: ignore[reportPrivateUsage]
+
+
+def _blas_threads() -> int:
+    return min(
+        cast("int", pool["num_threads"])
+        for pool in threadpool_info()
+        if pool["user_api"] == "blas"
+    )
+
+
+def test_blas_threads_are_limited_during_analysis_and_then_restored(
+    tmp_path: Path,
+) -> None:
+    import numpy as np
+
+    np.dot(np.ones((2, 2)), np.ones((2, 2)))  # Load NumPy's BLAS before inspecting it.
+    before = _blas_threads()
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2, 3))
+    observed: list[int] = []
+
+    def profile(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        observed.append(_blas_threads())
+        return _profile(pcm, sample_rate_hz=sample_rate_hz, checkpoint=checkpoint)
+
+    GeniusAnalysisService(decoder=_Decoder(), profiler=profile, workers=2).analyze(
+        snapshot, session, checkpoint=_checkpoint
+    )
+    assert observed == [1] * 3
+    assert _blas_threads() == before
 
 
 def test_skip_requested_from_admission_progress_starts_no_reads(

@@ -82,3 +82,9 @@ resolved when called, with explicit signatures that both checkers can use on mac
 The development environment includes PyInstaller so packaging hook imports also
 resolve. These annotations do not add native APIs to macOS; native behavior still
 requires tests on the corresponding operating system.
+
+## threadpoolctl
+
+`threadpoolctl.pyi` is a hand-written stub. threadpoolctl 3.6 ships no type
+information, so the stub declares only `threadpool_limits` and `threadpool_info`,
+the API iOpenPod uses (ADR-0272). Extend it when using more of the library.
