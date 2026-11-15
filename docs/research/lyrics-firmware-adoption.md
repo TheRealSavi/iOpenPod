@@ -31,6 +31,11 @@ proof of all native container-reader routes. Encrypted-media support is unchange
 
 ## Preservation and authoring policy
 
+[ADR-0270](../adr/0270-keep-lyrics-out-of-mhod-10.md) removes MHOD 10 lyrics
+authoring and projection on every device while preserving existing records.
+Native display capability gates automatic Sync preparation; explicit edits,
+Rockbox tagging, and Host exports preserve their independent file-tag behavior.
+
 New ID3 tags retain the existing v2.3 UTF-16 policy. Compatible v2.3/v2.4 tags keep
 their version, with unknown and unrelated frames retained by focused edits.
 When an explicit native preparation finds equal text in an incompatible encoding,
@@ -59,6 +64,12 @@ confirms Classic skips type 10 and the current captured payloads contain podcast
 description HTML. Native verification of media tags does not make that legacy
 database mapping correct. Removing it requires preserving unclassified records
 and distinguishing any application-authored cache from other data.
+
+The [Mini 2 issue-333 investigation](mini2-mhod10-memory-2026-11-15.md) extends
+that evidence: Mini firmware imports type-10 text into a growing pool rather than
+skipping it. This strengthens the case against new application-cache emission,
+while preserving the distinction between unidentified records and proven lyrics.
+Classic's skip behavior must not be generalized to Mini firmware.
 
 The low-bit database interpretation is verified for the shared Classic format.
 The native authoring gate applies to Classic Device Profiles; other families keep
