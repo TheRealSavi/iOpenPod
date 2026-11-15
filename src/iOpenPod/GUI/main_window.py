@@ -51,6 +51,7 @@ from iOpenPod.app.host_media_folders import HostMediaFolder, load_host_media_fol
 from iOpenPod.app.host_media_library import (
     HostMediaLibrary,
     HostMediaScanProgress,
+    HostMediaScanStage,
     PlaylistExternalReference,
 )
 from iOpenPod.app.library_export import (
@@ -2203,7 +2204,9 @@ class MainWindow(QMainWindow):
                 value.host, value.refresh_paths
             ):
                 self._sync_workspace.update_scan(
-                    source_text("Checking Host Track details."), phase="host-refresh"
+                    source_text("Checking Host Track details."),
+                    total=len(value.refresh_paths),
+                    phase=f"HostMediaScanProgress:{HostMediaScanStage.REFRESHING.value}",
                 )
                 return
             self._media_scan_failed("The Host Track details could not be checked.")

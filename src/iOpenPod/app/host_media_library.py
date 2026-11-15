@@ -219,6 +219,7 @@ class HostArtworkKind(StrEnum):
 class HostMediaScanStage(StrEnum):
     DISCOVERING = "discovering"
     READING = "reading"
+    REFRESHING = "refreshing"
     EXTERNAL = "external"
     FINALIZING = "finalizing"
     COMPLETE = "complete"
@@ -1349,59 +1350,51 @@ class HostMediaScanner:
         paths: frozenset[HostPath],
         *,
         checkpoint: CancellationCheck,
+        progress: ProgressCallback | None = None,
     ) -> HostMediaLibrary:
         """Reread Host tags when current iPod details disagree with cached tags."""
 
         if not paths:
             return library
+        checkpoint()
         records = {
             _path_identity(record.path.path): record
             for record in library.cached_records
         }
         cached_records, folder_artwork = self._load_cache()
-        refreshed_paths: set[str] = set()
+        refresh_artwork = dict(folder_artwork)
+        for source in library.artwork_sources:
+            if source.kind is HostArtworkKind.FOLDER:
+                refresh_artwork.setdefault(
+                    _path_identity(source.path.path.parent),
+                    _ArtworkReference(
+                        HostArtworkKind.FOLDER,
+                        source.path,
+                        source.size_bytes,
+                        source.modified_ns,
+                        source.content_sha256,
+                    ),
+                )
+        selected: dict[str, _CachedTrackRecord] = {}
         for path in sorted(paths, key=lambda item: _path_identity(item.path)):
             checkpoint()
             identity = _path_identity(path.path)
             record = records.get(identity)
             if not isinstance(record, _CachedTrackRecord):
                 raise HostMediaScanError("The Host Track is no longer in the scan.")
-            folder = folder_artwork.get(_path_identity(path.path.parent))
-            if folder is None:
-                folder = next(
-                    (
-                        _ArtworkReference(
-                            HostArtworkKind.FOLDER,
-                            source.path,
-                            source.size_bytes,
-                            source.modified_ns,
-                            source.content_sha256,
-                        )
-                        for source in library.artwork_sources
-                        if source.kind is HostArtworkKind.FOLDER
-                        and _path_identity(source.path.path.parent)
-                        == _path_identity(path.path.parent)
-                    ),
-                    None,
-                )
-            observation = _Observation(
-                record.path, record.kind, record.size_bytes, record.modified_ns
-            )
-            try:
-                refreshed = _inspect_track(observation, folder, checkpoint=checkpoint)
-            except (OSError, StorageError, ValueError, mutagen.MutagenError) as error:
-                raise HostMediaScanError(
-                    "The Host Track could not be reread. Run Sync again."
-                ) from error
-            if refreshed.warning:
-                raise HostMediaScanError(
-                    "The Host Track details could not be verified. Run Sync again."
-                )
-            records[identity] = replace(
-                refreshed,
-                acoustic_fingerprint=record.acoustic_fingerprint,
-            )
-            refreshed_paths.add(identity)
+            selected[identity] = record
+        refreshed = _refresh_track_records(
+            tuple(selected.values()),
+            folder_artwork=refresh_artwork,
+            max_workers=self._max_workers,
+            checkpoint=checkpoint,
+            progress=progress,
+        )
+        checkpoint()
+        refreshed_paths = {_path_identity(record.path.path) for record in refreshed}
+        records.update(
+            (_path_identity(record.path.path), record) for record in refreshed
+        )
         updated = _build_library(
             tuple(records.values()),
             library.issues,
@@ -1428,8 +1421,10 @@ class HostMediaScanner:
                 )
             ),
         )
+        checkpoint()
         cached_records.update(records)
         self._store_cache(cached_records.values(), folder_artwork.values())
+        checkpoint()
         return updated
 
     def _scan_fingerprinter(self) -> _AcousticFingerprinter:
@@ -2357,6 +2352,97 @@ def _track_with_folder_artwork(
         artwork_modified_ns=0 if current is None else current.modified_ns,
         artwork_content_sha256="" if current is None else current.content_sha256,
     )
+
+
+def _refresh_track_records(
+    records: tuple[_CachedTrackRecord, ...],
+    *,
+    folder_artwork: dict[str, _ArtworkReference],
+    max_workers: int,
+    checkpoint: CancellationCheck,
+    progress: ProgressCallback | None,
+) -> tuple[_CachedTrackRecord, ...]:
+    """Reread bounded independent Tracks; publish progress on the owning thread."""
+
+    stopped = Event()
+    refreshed: list[_CachedTrackRecord] = []
+    total = len(records)
+    last_progress = -math.inf
+
+    def refresh_checkpoint() -> None:
+        checkpoint()
+        if stopped.is_set():
+            raise HostMediaScanCancelledError("Host Track refresh stopped")
+
+    def inspect(record: _CachedTrackRecord) -> _CachedTrackRecord:
+        refresh_checkpoint()
+        observation = _Observation(
+            record.path, record.kind, record.size_bytes, record.modified_ns
+        )
+        folder = folder_artwork.get(_path_identity(record.path.path.parent))
+        try:
+            result = _inspect_track(observation, folder, checkpoint=refresh_checkpoint)
+        except (OSError, StorageError, ValueError, mutagen.MutagenError) as error:
+            raise HostMediaScanError(
+                "The Host Track could not be reread. Run Sync again."
+            ) from error
+        refresh_checkpoint()
+        if result.warning:
+            raise HostMediaScanError(
+                "The Host Track details could not be verified. Run Sync again."
+            )
+        return replace(result, acoustic_fingerprint=record.acoustic_fingerprint)
+
+    checkpoint()
+    _emit(
+        progress,
+        HostMediaScanStage.REFRESHING,
+        0,
+        total,
+        source_text("Checking Host Track details."),
+    )
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix="host-track-refresh"
+    ) as executor:
+        pending: set[Future[_CachedTrackRecord]] = set()
+        index = 0
+        try:
+            while index < total or pending:
+                checkpoint()
+                while index < total and len(pending) < max_workers:
+                    checkpoint()
+                    pending.add(executor.submit(inspect, records[index]))
+                    index += 1
+                finished, _ = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
+                checkpoint()
+                for future in finished:
+                    checkpoint()
+                    pending.remove(future)
+                    record = future.result()
+                    refreshed.append(record)
+                    now = perf_counter()
+                    if (
+                        len(refreshed) == total
+                        or now - last_progress >= _READING_PROGRESS_INTERVAL
+                    ):
+                        last_progress = now
+                        _emit(
+                            progress,
+                            HostMediaScanStage.REFRESHING,
+                            len(refreshed),
+                            total,
+                            source_text(
+                                "Read file {index} of {total}…",
+                                index=f"{len(refreshed):,}",
+                                total=f"{total:,}",
+                            ),
+                            path=record.path,
+                        )
+        finally:
+            stopped.set()
+            for future in pending:
+                future.cancel()
+    return tuple(sorted(refreshed, key=lambda record: _path_identity(record.path.path)))
 
 
 def _inspect_selected_files(

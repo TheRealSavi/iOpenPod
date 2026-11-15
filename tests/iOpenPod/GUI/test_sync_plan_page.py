@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QTableView,
     QToolButton,
@@ -36,6 +37,8 @@ from iOpenPod.app.host_media_library import (
     HostMediaFileKind,
     HostMediaLibrary,
     HostMediaScanIssue,
+    HostMediaScanProgress,
+    HostMediaScanStage,
     HostMediaSource,
 )
 from iOpenPod.app.library_sync_helper import (
@@ -68,6 +71,7 @@ from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.sync_plan_page import SyncPlanPage
 from iOpenPod.GUI.sync_workspace import SyncStage, SyncWorkspace
+from iOpenPod.GUI.widgets.eta_label import EtaLabel
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.sync_review_group import SyncReviewGroup
 from iOpenPod.GUI.widgets.sync_storage_bar import SyncStorageBar
@@ -1084,6 +1088,23 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         wait_for(lambda: bool(refresh_calls))
         assert refresh_calls == [(host, frozenset({host_path}))]
         assert workspace.stage is SyncStage.SCANNING
+        progress_bar = workspace.findChild(QProgressBar, "syncScanProgress")
+        detail = workspace.findChild(QLabel, "syncScanDetail")
+        eta = workspace.findChild(EtaLabel, "syncScanEta")
+        assert progress_bar is not None and detail is not None and eta is not None
+        assert progress_bar.maximum() == 1 and progress_bar.value() == 0
+        context.host_media_controller.progressChanged.emit(
+            HostMediaScanProgress(
+                HostMediaScanStage.REFRESHING,
+                1,
+                1,
+                "Read file 1 of 1…",
+                host_path,
+            )
+        )
+        assert progress_bar.maximum() == progress_bar.value() == 1
+        assert host_path.path.name in detail.text()
+        assert eta.text() == "Finishing this stage…"
 
         if interrupt == "disconnect":
             current_active[0] = None

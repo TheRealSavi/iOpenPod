@@ -232,6 +232,16 @@ iPod tags differ from their committed baseline but Host file facts appear
 unchanged, it refreshes the affected Host metadata before presenting the plan.
 Changing or disconnecting the Active iPod invalidates that handoff.
 
+This targeted refresh uses the Host scanner's existing limit of up to eight
+inspection workers. Each completed read frees a slot for another Track, so an
+earlier slow file does not hold up later results. Progress reports the completed
+Track count, total, and most recently completed filename; rapid updates are
+coalesced while preserving the first and final counts. The progress bar and ETA
+cover these reads, with completion shown while the Library and cache are finalized.
+Acoustic Fingerprints are reused. Source validation remains in Storage, and
+cancellation or failure stops admission and joins the workers before returning.
+Only a fully successful refresh reaches the Library rebuild and cache update.
+
 Select Media and Review show diagnostics from both scans. iPod-only removal
 candidates start unselected; a partial Host scan therefore does not automatically
 delete the iPod files it could not see. Deselecting an already correlated Host

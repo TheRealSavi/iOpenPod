@@ -145,7 +145,10 @@ class _RefreshTracks(QRunnable):
 
         try:
             result = self.scanner.refresh_tracks(
-                self.library, self.paths, checkpoint=checkpoint
+                self.library,
+                self.paths,
+                checkpoint=checkpoint,
+                progress=lambda value: self.signals.progress.emit(self.token, value),
             )
         except HostMediaScanCancelledError:
             self.signals.completed.emit(self.token, None, "")
