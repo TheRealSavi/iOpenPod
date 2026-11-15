@@ -823,7 +823,11 @@ class CalendarPage(QWidget):
             list_hosts.append(content)
             self._list_layouts.append(content_layout)
         self._agenda_layout.addWidget(list_hosts[0], 1)
-        self._splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        calendar = QWidget(self)
+        calendar_layout = QVBoxLayout(calendar)
+        calendar_layout.setContentsMargins(0, 0, 0, 0)
+        calendar_layout.setSpacing(LAYOUT.space_sm)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal, calendar)
         self._splitter.setObjectName("calendarSplit")
         self._splitter.setChildrenCollapsible(False)
         # Let the page cross its stacking breakpoint before the horizontal
@@ -837,7 +841,14 @@ class CalendarPage(QWidget):
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 0)
         self._splitter.setSizes([640, LAYOUT.calendar_agenda_width])
-        self._tabs.addTab(self._splitter, "")
+        calendar_layout.addWidget(self._splitter, 1)
+        # Keep the note inside the swiped viewport so switching tabs does not
+        # resize it and cancel the transition.
+        self._note = QLabel(calendar)
+        self._note.setWordWrap(True)
+        self._note.setProperty("extrasMuted", True)
+        calendar_layout.addWidget(self._note)
+        self._tabs.addTab(calendar, "")
         todos = QFrame(self)
         todos.setObjectName("calendarTodoPanel")
         self._todo_layout = QVBoxLayout(todos)
@@ -857,9 +868,6 @@ class CalendarPage(QWidget):
         self._empty.setMaximumWidth(LAYOUT.calendar_agenda_width - 2 * LAYOUT.space_lg)
         self._empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._list_layouts[0].addWidget(self._empty, 0, 0, Qt.AlignmentFlag.AlignCenter)
-        self._note = QLabel(self)
-        self._note.setWordWrap(True)
-        self._note.setProperty("extrasMuted", True)
         body = QVBoxLayout()
         body.setContentsMargins(
             LAYOUT.space_lg, LAYOUT.space_md, LAYOUT.space_lg, LAYOUT.space_lg
@@ -883,7 +891,6 @@ class CalendarPage(QWidget):
         body.addLayout(self._calendar_actions)
         body.addWidget(self._status)
         body.addWidget(self._tabs, 1)
-        body.addWidget(self._note)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -953,12 +960,6 @@ class CalendarPage(QWidget):
             layout.removeWidget(self._empty)
         self._list_layouts[self._tabs.currentIndex()].addWidget(
             self._empty, 0, 0, Qt.AlignmentFlag.AlignCenter
-        )
-        self._note.setVisible(
-            self._tabs.currentIndex() == 0
-            and any(
-                item.entry.has_recurrence for item in self._controller.catalog.calendar
-            )
         )
         self._update_list_state()
 
@@ -1427,10 +1428,7 @@ class CalendarPage(QWidget):
         self._trees[1].setAccessibleName(self.tr("To Dos"))
         self._note.setText(self.tr("All saved entries lists each series once."))
         self._note.setVisible(
-            self._tabs.currentIndex() == 0
-            and any(
-                item.entry.has_recurrence for item in self._controller.catalog.calendar
-            )
+            any(item.entry.has_recurrence for item in self._controller.catalog.calendar)
         )
         self._import.setEnabled(self._writable())
         group = self._selected_calendar()

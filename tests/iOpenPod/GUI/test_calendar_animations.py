@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
 from tests.iOpenPod.GUI.extras_test_support import ExtrasTestController, find_widget
 
+from iOpenPod.app.models.extras import CalendarItem, ExtrasCatalog
 from iOpenPod.GUI.pages.calendar_page import CalendarPage
 from iOpenPod.GUI.presentation.theme.stylesheet import render_stylesheet
 from iOpenPod.GUI.presentation.theme.tokens import (
@@ -34,6 +35,7 @@ from iOpenPod.GUI.presentation.theme.tokens import (
 )
 from iOpenPod.GUI.widgets.calendar_month import MonthGrid
 from iOpenPod.GUI.widgets.calendar_tabs import CalendarTabs
+from iPodDB.calendar import parse_calendar
 
 
 def _pause(owner: QWidget, name: str) -> QVariantAnimation:
@@ -269,6 +271,42 @@ def test_host_disabled_motion_updates_calendar_immediately(
     ]:
         assert _pause(owner, name).state() == QAbstractAnimation.State.Stopped
     assert not find_widget(tabs, QWidget, "calendarContentSwipe").isVisible()
+
+
+@pytest.mark.parametrize("recurring", [False, True])
+def test_calendar_page_swipes_in_both_directions(recurring: bool) -> None:
+    repeat_rule = b"RRULE:FREQ=DAILY\r\n" if recurring else b""
+    entry = parse_calendar(
+        b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n"
+        b"UID:swipe\r\nSUMMARY:Lunch\r\nDTSTART:20261113T120000\r\n"
+        + repeat_rule
+        + b"END:VEVENT\r\nEND:VCALENDAR\r\n"
+    ).entries[0]
+    controller = ExtrasTestController(
+        ExtrasCatalog(calendar=(CalendarItem("swipe.ics", entry),))
+    )
+    page = CalendarPage(controller)
+    page.setStyleSheet(render_stylesheet(LIGHT_TOKENS, resolve_typography()))
+    try:
+        page.resize(1000, 700)
+        page.show()
+        APPLICATION.processEvents()
+        tabs = find_widget(page, CalendarTabs, "calendarTabs")
+        bar = tabs.tabBar()
+        swipe = find_widget(tabs, QWidget, "calendarContentSwipe")
+        for target in (1, 0):
+            QTest.mouseClick(
+                bar, Qt.MouseButton.LeftButton, pos=bar.tabRect(target).center()
+            )
+            APPLICATION.processEvents()
+            animation = _pause(tabs, "calendarContentSlide")
+            assert tabs.currentIndex() == target
+            assert swipe.isVisible()
+            assert animation.state() == QAbstractAnimation.State.Paused
+            animation.setCurrentTime(animation.duration())
+            assert not swipe.isVisible()
+    finally:
+        page.close()
 
 
 def test_device_updates_discard_old_calendar_frames() -> None:
