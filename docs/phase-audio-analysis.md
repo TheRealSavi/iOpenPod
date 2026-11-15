@@ -49,7 +49,11 @@ metadata receipts bypass the audio queue entirely. Content-cache candidates with
 matching metadata use a full audio hash before reuse (ADR-0232).
 Full-file checks take priority over starting another copy. Large files and Host
 disk-full/quota errors use the serial device path. Prepared incoming Host audio
-keeps its existing verification. See [ADR-0227](adr/0227-prefetch-bounded-phase-audio-inputs.md)
+keeps its existing verification. Tag rewrites retained as bytes are staged through
+Storage into one private Host file for the current Track. Its content is checked
+before and after analysis, and the file is released on completion, cancellation,
+or failure. The reviewed media and Phase companions still publish together in the
+Library's Storage Transaction. See [ADR-0227](adr/0227-prefetch-bounded-phase-audio-inputs.md)
 for source verification, temporary-space overhead and cleanup.
 
 Only the coordinator invokes the caller's cancellation checkpoint. It checks

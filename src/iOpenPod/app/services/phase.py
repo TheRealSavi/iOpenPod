@@ -42,6 +42,7 @@ from storage import (
     SessionInvalidatedError,
     TransactionWrite,
 )
+from storage.content_workspace import StagedContent, content_workspace
 from storage.host_input import LocalHostFile
 
 if TYPE_CHECKING:
@@ -382,10 +383,24 @@ def prepare_phase(
                     supplied = incoming.get(audio_path)
                     if supplied is not None:
                         if isinstance(supplied.source, bytes):
-                            raise ValueError(
-                                "Phase analysis requires a prepared audio file source."
+                            if not supplied.source:
+                                raise ValueError("Prepared Phase audio is empty.")
+                            workspace = capture.enter_context(
+                                content_workspace(
+                                    memory_budget=0, checkpoint=inputs.checkpoint
+                                )
                             )
-                        source = supplied.source
+                            # Small tag rewrites may stay in memory. Give the
+                            # decoder one private, verified file for this Track.
+                            payload = supplied.source
+                            staged = workspace.store_chunks(
+                                payload[offset : offset + 1024 * 1024]
+                                for offset in range(0, len(payload), 1024 * 1024)
+                            )
+                            assert isinstance(staged, StagedContent)
+                            source = staged.path
+                        else:
+                            source = supplied.source
                         observed = LocalHostFile.observe(source)
 
                         audio_hash = _host_digest(

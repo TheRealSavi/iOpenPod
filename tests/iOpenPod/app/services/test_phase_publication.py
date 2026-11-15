@@ -2,6 +2,7 @@
 
 import json
 import plistlib
+from collections.abc import Callable
 from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 from tests.iOpenPod.app.phase_test_support import StubPhaseAnalysis
 
 from iOpenPod.app.library_workspace import LibraryWorkspace
+from iOpenPod.app.library_write import PreparationCancelledError
 from iOpenPod.app.phase_cache import VALIDATION_PATH
 from iOpenPod.app.services.phase import (
     CACHE_PATH,
@@ -32,8 +34,10 @@ from storage import (
     AccessMode,
     DevicePath,
     FileContent,
+    FilesystemSession,
     HostPath,
     Storage,
+    StorageError,
     StorageTransaction,
     TransactionWrite,
 )
@@ -263,7 +267,11 @@ def test_large_index_can_be_loaded_and_prepared(tmp_path: Path) -> None:
         assert path.read_bytes() == original
 
 
-def test_incoming_audio_is_analyzed_before_it_exists_on_device(tmp_path: Path) -> None:
+@pytest.mark.parametrize("in_memory", [False, True])
+@pytest.mark.parametrize("interruption", ["none", "cancel", "mutate"])
+def test_incoming_audio_is_analyzed_before_it_exists_on_device(
+    tmp_path: Path, in_memory: bool, interruption: str
+) -> None:
     root = tmp_path / "device"
     manifest = root / str(MANIFEST_PATH)
     manifest.parent.mkdir(parents=True)
@@ -286,13 +294,59 @@ def test_incoming_audio_is_analyzed_before_it_exists_on_device(tmp_path: Path) -
     platform = VirtualStoragePlatform()
     platform.add_volume(root)
     storage = Storage(platform)
-    analyzer = StubPhaseAnalysis()
+
+    class CheckingAnalysis(StubPhaseAnalysis):
+        def analyze(
+            self,
+            source: DevicePath | HostPath,
+            *,
+            input_suffix: str,
+            length_ms: int,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            assert isinstance(source, HostPath)
+            assert Path(source).read_bytes() == payload
+            result = super().analyze(
+                source,
+                input_suffix=input_suffix,
+                length_ms=length_ms,
+                session=session,
+                checkpoint=checkpoint,
+            )
+            if interruption == "cancel":
+                raise PreparationCancelledError("Cancelled during Phase analysis")
+            if interruption == "mutate":
+                Path(source).write_bytes(b"changed during Phase analysis")
+            return result
+
+    analyzer = CheckingAnalysis()
     incoming = TransactionWrite(
         DevicePath(track.metadata.location),
-        HostPath(host),
+        payload if in_memory else HostPath(host),
         FileContent(len(payload), sha256(payload).hexdigest()),
     )
     with storage.open_session(storage.discover().volumes[0]) as session:
+        if interruption != "none":
+            expected_error = (
+                PreparationCancelledError
+                if interruption == "cancel"
+                else (StorageError, ValueError)
+            )
+            with pytest.raises(expected_error):
+                prepare_phase(
+                    session,
+                    LibrarySnapshot(),
+                    desired,
+                    analyzer=analyzer,
+                    media_writes=(incoming,),
+                )
+            assert len(analyzer.calls) == 1
+            staged = analyzer.calls[0]
+            assert isinstance(staged, HostPath)
+            assert Path(staged).exists() is not in_memory
+            assert not (root / str(INDEX_PATH)).exists()
+            return
         prepared = prepare_phase(
             session,
             LibrarySnapshot(),
@@ -301,9 +355,16 @@ def test_incoming_audio_is_analyzed_before_it_exists_on_device(tmp_path: Path) -
             media_writes=(incoming,),
         )
         assert len(prepared.writes) == 4  # chart, provenance, validation, index
-        assert analyzer.calls == [HostPath(host)]
+        if in_memory:
+            assert len(analyzer.calls) == 1
+            staged = analyzer.calls[0]
+            assert isinstance(staged, HostPath) and not Path(staged).exists()
+        else:
+            assert analyzer.calls == [HostPath(host)]
         assert not (root / track.metadata.location).exists()
         host.write_bytes(b"changed Host audio")
+        if in_memory:
+            incoming = replace(incoming, source=b"changed prepared audio")
         with pytest.raises(ValueError, match="changed before analysis"):
             prepare_phase(
                 session,

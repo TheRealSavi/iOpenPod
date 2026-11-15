@@ -1,6 +1,7 @@
 """Embedded lyrics and iTunesDB publish and recover as one reviewed transaction."""
 
 import io
+import plistlib
 import struct
 from collections.abc import Callable
 from dataclasses import replace
@@ -10,6 +11,7 @@ from typing import Any, BinaryIO
 
 import pytest
 from mutagen.mp4 import MP4
+from tests.iOpenPod.app.phase_test_support import StubPhaseAnalysis
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.app.test_media_lyrics import WORDS, fixture, media_payload
 from tests.iOpenPod.app.test_music_import import song_file
@@ -22,8 +24,19 @@ from iOpenPod.app.library_write import (
 )
 from iOpenPod.app.media.importing import MusicImporter
 from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
-from iOpenPod.app.services import library_resources
-from iPodDB.library import LibrarySnapshot, TrackChapter, TrackFieldEdit
+from iOpenPod.app.services import device_coordinator, library_resources
+from iOpenPod.app.services.phase import INDEX_PATH, MANIFEST_PATH
+from iPodDB.games import parse_phase_library
+from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+from iPodDB.iTunesDB.shared.chunk_defs.mhit import MhitHeader
+from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
+from iPodDB.library import (
+    LibrarySnapshot,
+    Playlist,
+    TrackChapter,
+    TrackFieldEdit,
+    playlist_entries,
+)
 from storage import CapturedHostFile, HostPath
 from storage.media_processing import MediaWorkspace
 
@@ -46,6 +59,71 @@ def desired_lyrics(device: Device, text: str) -> LibrarySnapshot:
 def read_lyrics(data: bytes) -> str:
     reader: Any = MP4
     return embedded_lyrics(reader(io.BytesIO(data)))
+
+
+@pytest.mark.parametrize("capture_limited", [False, True])
+def test_phase_analyzes_prepared_lyrics_and_publishes_with_the_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capture_limited: bool
+) -> None:
+    analyzer = StubPhaseAnalysis()
+    monkeypatch.setattr(device_coordinator, "PhaseAnalysisService", lambda: analyzer)
+    device = build_device(tmp_path, media_payload=fixture("tone.m4a"))
+    try:
+        database = device.root / "iPod_Control/iTunes/iTunesDB"
+        raw = parse_iTunesDB(database.read_bytes())
+        for item in raw.find_chunks(MhitHeader):
+            raw = raw.replace_chunk(
+                item,
+                replace(item.chunk, header=replace(item.chunk.header, length=30_000)),
+            )
+        database.write_bytes(write_iTunesDB(raw))
+        manifest = device.root / str(MANIFEST_PATH)
+        manifest.parent.mkdir(parents=True)
+        manifest.write_bytes(
+            plistlib.dumps({"Name": "Phase", "Version": "1", "GUID": "phase"})
+        )
+        device.coordinator.select_device(device.active.candidate.id)
+        if capture_limited:
+            monkeypatch.setattr(library_resources, "_MAX_CAPTURE_BYTES", 10)
+        first = device.active.library.tracks[0]
+        desired = desired_lyrics(device, WORDS)
+        desired = replace(
+            desired,
+            playlists=(
+                *desired.playlists,
+                Playlist(
+                    -1,
+                    "Rhythm",
+                    entries=playlist_entries((first.track_id,)),
+                    is_phase=True,
+                ),
+            ),
+        )
+        media_path = device.root / first.metadata.location
+        before = media_path.read_bytes()
+        review = device.prepare(desired, lyrics_updates=(first.track_id,))
+        assert review.result.prepared is not None, review.result.issues
+        assert media_path.read_bytes() == before
+        assert len(analyzer.calls) == 1
+        analyzed = analyzer.calls[0]
+        assert isinstance(analyzed, HostPath)
+        if capture_limited:
+            assert read_lyrics(Path(analyzed).read_bytes()) == WORDS
+        else:
+            assert not Path(analyzed).exists()
+        saved = device.save(review)
+        assert saved.active is not None, saved.issues
+        assert read_lyrics(media_path.read_bytes()) == WORDS
+        assert media_payload(media_path.read_bytes(), ".m4a") == media_payload(
+            before, ".m4a"
+        )
+        index = parse_phase_library((device.root / str(INDEX_PATH)).read_bytes())
+        assert first.ipod is not None
+        assert [track.persistent_id for track in index.tracks] == [
+            first.ipod.db_track_id
+        ]
+    finally:
+        device.coordinator.close()
 
 
 def test_invalid_chapters_do_not_report_unprepared_lyrics_as_missing(
