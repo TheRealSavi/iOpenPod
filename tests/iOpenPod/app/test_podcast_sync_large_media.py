@@ -9,7 +9,7 @@ from threading import Event
 from typing import TYPE_CHECKING, cast
 
 import pytest
-from mutagen.id3 import ID3
+from mutagen.id3 import ID3, PRIV, TCOP
 from mutagen.mp4 import MP4
 from tests.iOpenPod.app.podcast_sync_test_support import (
     FixedPodcastPlan,
@@ -33,6 +33,57 @@ if TYPE_CHECKING:
 
     from storage import HostPath
     from storage.host_capture import CapturedHostFile
+
+
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
+    reason="FFmpeg and FFprobe required for actual Podcast preparation",
+)
+def test_podcast_sync_with_oversized_private_mp3_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "episode.mp3"
+    source.write_bytes(base64.decodebytes((FIXTURES / "tone.mp3.b64").read_bytes()))
+    tags = ID3(source)  # type: ignore[no-untyped-call]
+    # FFprobe expands binary PRIV bytes into escaped text, exceeding the 4 MiB
+    # JSON limit even though the playable MP3 and its normal tags are small.
+    tags.add(PRIV(owner="XMP", data=b"\x00" * 1024 * 1024))  # type: ignore[no-untyped-call]
+    tags.add(TCOP(encoding=3, text=["Publisher copyright"]))  # type: ignore[no-untyped-call]
+    tags.save(source)  # pyright: ignore[reportUnknownMemberType]
+    data = source.read_bytes()
+    monkeypatch.setattr(http_client, "build_opener", PodcastOpenerFactory(data))
+    addition = podcast_addition()
+    addition = replace(
+        addition,
+        episode=replace(
+            addition.episode, enclosure_url="https://publisher.example/episode.mp3"
+        ),
+    )
+    monkeypatch.setattr(
+        "iOpenPod.app.sync_execution.prepare_podcast_sync",
+        FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
+    )
+    device = build_device(tmp_path)
+    request = podcast_request(device.active)
+    request = replace(
+        request, settings=replace(request.settings, smart_spoken_word=False)
+    )
+    try:
+        result = SyncExecutor(device.coordinator).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert result.active is not None
+        podcast = next(
+            track
+            for track in result.active.library.tracks
+            if track.media_kind is MediaKind.PODCAST
+        )
+        assert podcast.title == addition.episode.title
+        assert podcast.metadata.copyright == "Publisher copyright"
+        assert (device.root / podcast.metadata.location).read_bytes() == data
+    finally:
+        device.coordinator.close()
 
 
 @pytest.mark.skipif(

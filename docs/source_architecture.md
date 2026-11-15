@@ -1650,7 +1650,9 @@ aid. Storage's explicit best-effort Host enumeration retains independent readabl
 entries while checking directory identity. Inspection progress follows completion
 order, and preparation reports reading, inspecting, converting, and verifying.
 Artwork extraction streams the enclosing media, and FFprobe diagnostics alone do
-not reject successful structured output. See ADR-0084.
+not reject successful structured output. Captured Media Inspection retries once
+with recognized container tag aliases if FFprobe stdout exceeds its limit. Stream
+and Chapter observations, the deadline, and output bounds still apply. See ADR-0084.
 FFmpeg runs strictly first; only an undecodable source packet earns a lenient
 second pass whose skipped packets become a Track warning. Converted output must
 match the source duration, copied audio (including stream-copy remuxes) must decode

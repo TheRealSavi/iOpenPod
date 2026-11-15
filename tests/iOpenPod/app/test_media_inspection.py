@@ -219,6 +219,7 @@ def _use_report(monkeypatch: pytest.MonkeyPatch, report: bytes) -> None:
         *,
         timeout_seconds: float,
         max_output_bytes: int,
+        fallback_format_tags: tuple[str, ...] | None = None,
     ) -> bytes:
         assert Path(source).read_bytes() == b"abc"
         return report
@@ -384,28 +385,31 @@ def test_malformed_inspection_output_is_rejected(
 
 
 @pytest.mark.parametrize(
-    ("script", "expected_code", "timeout", "limit"),
+    ("script", "expected_code", "timeout", "limit", "attempts"),
     [
-        ("import time; time.sleep(30)", "media.probe_timeout", 0.2, 4096),
+        ("import time; time.sleep(30)", "media.probe_timeout", 0.2, 4096, 1),
         (
             "import sys; sys.stdout.buffer.write(b'x'*1000000)",
             "media.probe_output_limit",
             5,
             4096,
+            2,
         ),
         (
             "import sys; sys.stderr.buffer.write(b'x'*1000000)",
             "media.probe_output_limit",
             5,
             4096,
+            1,
         ),
         (
             "import sys; sys.stderr.write('decode error'); sys.exit(1)",
             "media.probe_failed",
             5,
             4096,
+            1,
         ),
-        ("raise SystemExit(3)", "media.probe_failed", 5, 4096),
+        ("raise SystemExit(3)", "media.probe_failed", 5, 4096, 1),
     ],
 )
 def test_subprocess_failure_is_bounded_reaped_and_capture_cleaned(
@@ -415,6 +419,7 @@ def test_subprocess_failure_is_bounded_reaped_and_capture_cleaned(
     expected_code: str,
     timeout: float,
     limit: int,
+    attempts: int,
 ) -> None:
     original = subprocess.Popen
     processes: list[subprocess.Popen[bytes]] = []
@@ -451,8 +456,9 @@ def test_subprocess_failure_is_bounded_reaped_and_capture_cleaned(
             HostPath(sys.executable), timeout_seconds=timeout, max_output_bytes=limit
         ).inspect(HostPath(path), checkpoint=lambda: None)
     assert error.value.code == expected_code
-    assert len(processes) == 1 and processes[0].poll() is not None
-    assert not snapshots[0].parent.exists()
+    assert len(processes) == attempts
+    assert all(process.poll() is not None for process in processes)
+    assert len(set(snapshots)) == 1 and not snapshots[0].parent.exists()
     assert path.read_bytes() == b"abc"
 
 
@@ -520,6 +526,7 @@ def test_real_probe_observes_snapshot_when_original_changes(
         *,
         timeout_seconds: float,
         max_output_bytes: int,
+        fallback_format_tags: tuple[str, ...] | None = None,
     ) -> bytes:
         assert captured != source
         Path(source).write_bytes(b"changed while inspecting")
@@ -529,6 +536,7 @@ def test_real_probe_observes_snapshot_when_original_changes(
             checkpoint,
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
+            fallback_format_tags=fallback_format_tags,
         )
 
     monkeypatch.setattr(inspection, "probe", probe)

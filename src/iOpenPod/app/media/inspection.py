@@ -20,6 +20,7 @@ from iOpenPod.app.media.models import (
     MediaTag,
     StreamKind,
 )
+from iOpenPod.app.media.tags import FALLBACK_PROBE_FORMAT_TAGS
 from storage import HostPath, capture_host_file
 from storage.media_probe import MediaInspectionError as MediaInspectionError
 from storage.media_probe import probe, probe_host_metadata
@@ -118,6 +119,7 @@ class MediaInspector:
                 checkpoint,
                 timeout_seconds=self._timeout,
                 max_output_bytes=self._output_limit,
+                fallback_format_tags=FALLBACK_PROBE_FORMAT_TAGS,
             )
             result = _parse(data, captured)
             checkpoint()

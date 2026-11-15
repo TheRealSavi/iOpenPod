@@ -30,6 +30,13 @@ class MediaInspectionError(Exception):
         self.code = code
 
 
+class _ProbeStdoutLimitError(MediaInspectionError):
+    def __init__(self) -> None:
+        super().__init__(
+            "media.probe_output_limit", "FFprobe output exceeds the inspection limit"
+        )
+
+
 # Single-file demuxers only: playlists, concat scripts, network protocols and image
 # sequences are not authorization to open additional files. MOV external data
 # references remain disabled by default; never enable enable_drefs/use_absolute_path.
@@ -38,7 +45,7 @@ _FORMATS = (
     "ac3,eac3,dts,amr,ape,au,caf,wv,tta,aa,dsf,dff,tak,mpc,mpc8,rm"
 )
 _ENTRIES = (
-    "format=format_name,duration,start_time,size,bit_rate,nb_streams:format_tags:"
+    "format=format_name,duration,start_time,size,bit_rate,nb_streams:"
     "stream=index,codec_type,codec_name,codec_tag_string,profile,level,duration,"
     "start_time,time_base,duration_ts,bit_rate,sample_rate,channels,channel_layout,"
     "bits_per_sample,bits_per_raw_sample,width,height,pix_fmt,avg_frame_rate,"
@@ -113,7 +120,13 @@ def probe_host_metadata(
     return HostMetadataProbe(output.stdout, observed.size_bytes)
 
 
-def _arguments() -> tuple[str, ...]:
+def _arguments(format_tags: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    tags = "format_tags"
+    if format_tags is not None:
+        # FFprobe section lists use their own quoting (e.g. in iTunes tag names).
+        tags += "=" + ",".join(
+            "'" + name.replace("'", r"'\''") + "'" for name in format_tags
+        )
     return (
         "-v",
         "error",
@@ -129,7 +142,7 @@ def _arguments() -> tuple[str, ...]:
         "-analyzeduration",
         "10000000",
         "-show_entries",
-        _ENTRIES,
+        f"{_ENTRIES}:{tags}",
         "-of",
         "json",
         "-i",
@@ -143,9 +156,40 @@ def probe(
     *,
     timeout_seconds: float,
     max_output_bytes: int,
+    fallback_format_tags: tuple[str, ...] | None = None,
+) -> bytes:
+    """Probe a captured file, optionally narrowing container tags on stdout overflow."""
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        return _probe(
+            executable, source, checkpoint, _arguments(), deadline, max_output_bytes
+        )
+    except _ProbeStdoutLimitError:
+        if fallback_format_tags is None or time.monotonic() >= deadline:
+            raise
+    logging.getLogger(__name__).debug(
+        "FFprobe stdout exceeded the inspection limit; retrying with selected container tags"
+    )
+    return _probe(
+        executable,
+        source,
+        checkpoint,
+        _arguments(fallback_format_tags),
+        deadline,
+        max_output_bytes,
+    )
+
+
+def _probe(
+    executable: HostPath,
+    source: HostPath,
+    checkpoint: Callable[[], None],
+    arguments: tuple[str, ...],
+    deadline: float,
+    max_output_bytes: int,
 ) -> bytes:
     checkpoint()
-    args = [os.fspath(executable), *_arguments(), os.fspath(source)]
+    args = [os.fspath(executable), *arguments, os.fspath(source)]
     stdout = _Output(max_output_bytes)
     stderr = _Output(min(max_output_bytes, 65536))
     try:
@@ -166,17 +210,13 @@ def probe(
         threading.Thread(target=stdout.read, args=(process.stdout,)),
         threading.Thread(target=stderr.read, args=(process.stderr,)),
     )
-    deadline = time.monotonic() + timeout_seconds
     try:
         for reader in readers:
             reader.start()
         while process.poll() is None:
             checkpoint()
             if stdout.exceeded.is_set() or stderr.exceeded.is_set():
-                raise MediaInspectionError(
-                    "media.probe_output_limit",
-                    "FFprobe output exceeds the inspection limit",
-                )
+                break
             if time.monotonic() >= deadline:
                 raise MediaInspectionError(
                     "media.probe_timeout", "FFprobe inspection timed out"
@@ -193,10 +233,12 @@ def probe(
         process.stdout.close()
         process.stderr.close()
     checkpoint()
-    if stdout.exceeded.is_set() or stderr.exceeded.is_set():
+    if stderr.exceeded.is_set():
         raise MediaInspectionError(
             "media.probe_output_limit", "FFprobe output exceeds the inspection limit"
         )
+    if stdout.exceeded.is_set():
+        raise _ProbeStdoutLimitError
     if stdout.failed.is_set() or stderr.failed.is_set():
         raise MediaInspectionError("media.probe_io", "Could not read FFprobe output")
     if process.returncode != 0:

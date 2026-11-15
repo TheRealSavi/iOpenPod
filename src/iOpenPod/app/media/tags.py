@@ -114,6 +114,9 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "purchaser_name": ("ownr", "ITUNESOWNER"),
 }
 TAG_NAMES = frozenset((*_ALIASES, "rating"))
+FALLBACK_PROBE_FORMAT_TAGS = tuple(
+    sorted({alias.casefold() for aliases in _ALIASES.values() for alias in aliases})
+)
 
 
 class _Tags(Protocol):
