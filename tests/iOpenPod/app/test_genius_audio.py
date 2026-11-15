@@ -93,6 +93,38 @@ def test_block_boundaries_preserve_whole_segment_statistics(
     assert blocked.body == pytest.approx(whole.body, rel=1e-10, abs=1e-8)
 
 
+def test_floor_from_a_later_loud_block_applies_to_earlier_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quiet = np.frombuffer(_tone(440, 2), dtype="<f4") * 1e-6
+    pcm = quiet.astype("<f4").tobytes() + _tone(1760, 1)
+    whole = profile_genius_pcm(pcm)
+    monkeypatch.setattr("iOpenPod.app.genius_audio._BLOCK_FRAMES", 7)
+    blocked = profile_genius_pcm(pcm)
+    assert blocked.body == pytest.approx(whole.body, rel=1e-10, abs=1e-8)
+
+
+def test_each_spectral_block_is_transformed_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import librosa
+
+    calls = 0
+    stft = librosa.stft
+
+    def counted(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        return stft(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(librosa, "stft", counted)
+    monkeypatch.setattr("iOpenPod.app.genius_audio._BLOCK_FRAMES", 7)
+    seconds = 3
+    profile_genius_pcm(_tone(220, seconds))
+    frames = 1 + seconds * 22050 // 512
+    assert calls == math.ceil(frames / 7)
+
+
 @pytest.mark.parametrize("block_size", [7, 256, 1024])
 @pytest.mark.parametrize("sample_rate", [22050, 16000])
 def test_bounded_tempo_matches_whole_segment_estimator(
