@@ -4,6 +4,7 @@
 - Date: 2026-09-24
 - Extends: ADR-0021, ADR-0030 and ADR-0034
 - Amended by: ADR-0206 for Classic native verification and lyrics-flag semantics
+- Amended by: ADR-0270 for file-only lyrics and native capability gating
 
 Stock iPod lyrics need an embedded media tag as well as the iTunesDB presence flag.
 Database-only semantic verification previously accepted edits that could not
@@ -14,8 +15,9 @@ iPodDB now requires typed `PreparedLyrics` evidence for requested lyric changes
 and incoming/replacement media with known lyrics. The evidence contains the
 verified text and final file identity; the resulting file size is resource-derived.
 Tagging does not authorize codec changes, so it does not require inventing a new
-media inspection or changing retained native codec facts. Existing type-10 text
-projection remains for compatibility with the application's lossless documents.
+media inspection or changing retained native codec facts. ADR-0270 supersedes the
+original type-10 lyrics projection: retain its bytes without interpreting them as
+lyrics or writing new cache records.
 
 The Application Layer transforms privately captured bytes with the existing
 Mutagen dependency, verifies the embedded text, and supplies that evidence.
@@ -55,11 +57,13 @@ precedence for display over iTunesDB text; missing or unreadable tags fall back
 to iTunesDB. An explicit unsaved Library Draft lyrics edit remains authoritative.
 Merely viewing lyrics does not create a draft or write to the device.
 
-For an Add or Update Track during Sync, preparation reads lyrics from its
+For an Add or Update Track during lyrics-enabled Sync, preparation reads lyrics from its
 captured Host file. Nonempty file lyrics take precedence over older reviewed
 text. If the file has none, reviewed text remains the source. A requested lyric
-write publishes verified file text and matching iTunesDB text in the same
-transaction, regardless of Rockbox Metadata Support. Unchanged iPod Tracks are
+write publishes verified file text and the capability-appropriate presence flag in
+the same transaction. Native lyrics support or Rockbox Metadata Support enables
+automatic Sync preparation; explicit Library edits remain available on every
+target. Binary database text is no longer a lyrics source. Unchanged iPod Tracks are
 not scanned for lyric differences during Sync.
 
 [ADR-0117](0117-spill-prepared-library-content-to-host-storage.md) extends disk

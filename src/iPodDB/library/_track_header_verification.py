@@ -161,7 +161,7 @@ def track_field_expectations(
             meta.normalization_gain_db
         )
     if changed("lyrics"):
-        expected["lyrics_flag"] = int(bool(meta.lyrics))
+        expected["lyrics_flag"] = int(meta.has_lyrics)
 
     if before is None or desired.media_types != before.media_types:
         expected["media_type"] = encode_media_types(

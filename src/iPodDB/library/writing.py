@@ -84,6 +84,7 @@ class WriteTarget:
     include_auxiliary_image_records: bool = field(default=True, kw_only=True)
     artwork_checksum: WriteChecksum = WriteChecksum.NONE
     supports_sparse_artwork: bool = True
+    supports_lyrics: bool = field(default=True, kw_only=True)
     photo_formats: tuple[PhotoThumbnailFormat, ...] = ()
     photos_root_value: int | None = None
     max_photo_file_bytes: int = 256_000_000
@@ -103,6 +104,8 @@ class LibraryDraft:
     # Incoming or retained files whose tags will be finalized. Require lyrics/file
     # evidence even when the text itself is unchanged, to derive the final size.
     retag_tracks: tuple[int, ...] = field(default=(), kw_only=True)
+    # Explicit file-only lyrics edits, including clearing text not loaded in DB.
+    lyrics_updates: tuple[int, ...] = field(default=(), kw_only=True)
     # Explicit firmware-projection refresh; retained binary artifacts stay
     # byte-exact when the desired Library itself is unchanged.
     regenerate_sqlite: bool = field(default=False, kw_only=True)

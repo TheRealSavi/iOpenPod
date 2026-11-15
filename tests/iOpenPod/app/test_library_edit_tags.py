@@ -20,6 +20,7 @@ from iOpenPod.app.core.settings.definitions import (
 )
 from iOpenPod.app.device_controller import DeviceController
 from iOpenPod.app.export_tagging import ExportMediaTagger
+from iOpenPod.app.library_export import LibraryExporter
 from iOpenPod.app.library_workspace import (
     LibraryWorkspace,
     TrackArtworkEdit,
@@ -29,25 +30,96 @@ from iOpenPod.app.library_write_controller import (
     LibraryWriteController,
     PreparationState,
 )
+from iOpenPod.app.media.lyrics import read_lyrics_stream
 from iOpenPod.app.models.track_table_model import TrackTableModel
+from iOpenPod.app.services.library_resources import (
+    _FileTagPreparation,  # pyright: ignore[reportPrivateUsage]
+)
 from iPodDB.library import TrackFieldEdit
+from storage import HostPath
+
+
+@pytest.mark.parametrize("edit", [None, "", "Exported draft text"])
+def test_export_preserves_file_lyrics_unless_draft_explicitly_changes_them(
+    tmp_path: Path, edit: str | None
+) -> None:
+    from iOpenPod.app.media.lyrics import rewrite_lyrics
+
+    original = rewrite_lyrics(fixture("tone.m4a"), "tone.m4a", "Retained file text")
+    device = build_device(tmp_path, media_payload=original)
+    try:
+        track = device.active.library.tracks[0]
+        assert track.metadata.lyrics == ""
+        if edit is not None:
+            track = replace(track, metadata=replace(track.metadata, lyrics=edit))
+        output = tmp_path / "export"
+        output.mkdir()
+        result = LibraryExporter(device.coordinator).export_tracks(
+            (track,),
+            HostPath(output),
+            lyrics_updates=frozenset({track.track_id})
+            if edit is not None
+            else frozenset(),
+        )
+        with Path(result.track_files[0]).open("rb") as stream:
+            assert read_lyrics_stream(stream, "tone.m4a") == (
+                "Retained file text" if edit is None else edit
+            )
+        device.assert_original()
+    finally:
+        device.coordinator.close()
+
+
+def test_unrelated_raw_aac_tag_edit_preserves_file_lyrics() -> None:
+    track = library().snapshot.tracks[0]
+    track = replace(
+        track, metadata=replace(track.metadata, lyrics="Retained AAC lyrics")
+    )
+    payload = b"\xff\xf1" + b"retained AAC payload" * 20
+    data = ExportMediaTagger().prepare_bytes(payload, "track.aac", track)
+    projected = replace(
+        track, title="Renamed", metadata=replace(track.metadata, lyrics="")
+    )
+    prepare = _FileTagPreparation(
+        projected,
+        "track.aac",
+        None,
+        full_metadata=True,
+        preserve_artwork=True,
+        preserve_lyrics=True,
+        native_lyrics=False,
+    )
+    stream = io.BytesIO(data)
+    prepare(stream)
+    assert read_lyrics_stream(stream, "track.aac") == "Retained AAC lyrics"
+    assert stream.getvalue().endswith(payload)
 
 
 @pytest.mark.parametrize("rockbox", [False, True])
 @pytest.mark.parametrize("automatic", [False, True])
 @pytest.mark.parametrize("model", ["MB565", "M9802"])
 @pytest.mark.parametrize(
-    "change", ["metadata", "replace", "remove", "lyrics", "combined"]
+    "change", ["metadata", "replace", "remove", "lyrics", "clear_lyrics", "combined"]
 )
 def test_edits_update_retained_file_tags(
     tmp_path: Path,
     rockbox: bool,
     automatic: bool,
     model: str,
-    change: Literal["metadata", "replace", "remove", "lyrics", "combined"],
+    change: Literal[
+        "metadata", "replace", "remove", "lyrics", "clear_lyrics", "combined"
+    ],
 ) -> None:
     original = ExportMediaTagger().prepare_bytes(
-        fixture("tone.m4a"), "tone.m4a", library().snapshot.tracks[0], RED.pixels
+        fixture("tone.m4a"),
+        "tone.m4a",
+        replace(
+            library().snapshot.tracks[0],
+            metadata=replace(
+                library().snapshot.tracks[0].metadata, lyrics="Retained file lyrics"
+            ),
+        ),
+        RED.pixels,
     )
     device = build_device(tmp_path, media_payload=original, model=model)
     settings = manual_settings()
@@ -75,6 +147,8 @@ def test_edits_update_retained_file_tags(
             fields.append(TrackFieldEdit("title", "Edited in iOpenPod"))
         if change in ("lyrics", "combined"):
             fields.append(TrackFieldEdit("metadata.lyrics", "Edited lyrics"))
+        if change == "clear_lyrics":
+            fields.append(TrackFieldEdit("metadata.lyrics", ""))
         artwork = (
             TrackArtworkEdit(BLUE.pixels)
             if change in ("replace", "combined")
@@ -115,6 +189,10 @@ def test_edits_update_retained_file_tags(
         )
         if change in ("lyrics", "combined"):
             assert tagged["\u00a9lyr"] == ["Edited lyrics"]
+        elif change == "clear_lyrics":
+            assert "\u00a9lyr" not in tagged
+        else:
+            assert tagged["\u00a9lyr"] == ["Retained file lyrics"]
         if rockbox and change in ("replace", "combined"):
             with Image.open(io.BytesIO(tagged["covr"][0])) as image:
                 assert image.size == ((120, 120) if model == "M9802" else (4, 4))
@@ -132,7 +210,7 @@ def test_edits_update_retained_file_tags(
         assert media_payload(path.read_bytes(), ".m4a") == media_payload(before, ".m4a")
         assert other.read_bytes() == other_before
         assert device.active.library.tracks[0].size_bytes == path.stat().st_size
-        if not rockbox and change not in ("lyrics", "combined"):
+        if not rockbox and change not in ("lyrics", "clear_lyrics", "combined"):
             assert path.read_bytes() == before
     finally:
         controller.shutdown()

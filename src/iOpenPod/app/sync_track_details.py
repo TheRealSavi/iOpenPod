@@ -11,7 +11,13 @@ from iOpenPod.app.track_conversion import media_type_choices
 from iPodDB.library import MediaType, metadata_edit_issues
 
 if TYPE_CHECKING:
+    from device_registry import DeviceProfile
     from iPodDB.library import Track, WriteIssue
+
+
+def sync_lyrics_enabled(profile: DeviceProfile, *, rockbox_metadata: bool) -> bool:
+    """Native display and optional Rockbox tagging can each require Sync lyrics."""
+    return profile.capabilities.audio.supports_lyrics or rockbox_metadata
 
 
 TRACK_TAG_FIELDS = (
@@ -71,25 +77,35 @@ METADATA_TAG_FIELDS = (
 )
 
 
-def track_tag_values(track: Track) -> tuple[object, ...]:
+def track_tag_values(
+    track: Track, *, include_lyrics: bool = True
+) -> tuple[object, ...]:
     """Compare Host-owned tags; EQ is edited only in the iPod Library."""
+    excluded = {"equalizer"} if include_lyrics else {"equalizer", "lyrics"}
     return (
         *(getattr(track, name) for name in TRACK_TAG_FIELDS),
         *(
             getattr(track.metadata, name)
             for name in METADATA_TAG_FIELDS
-            if name != "equalizer"
+            if name not in excluded
         ),
     )
 
 
-def apply_track_tags(target: Track, source: Track) -> Track:
+def apply_track_tags(
+    target: Track, source: Track, *, include_lyrics: bool = True
+) -> Track:
     """Apply Host tags while retaining identity, media facts and playback state."""
     # Scanned chapters are not removal intent. Keep their existing comparison and
     # digest representation, but only captured media preparation or explicit
     # Library edits may replace the retained Track's chapter evidence.
     # EQ has no Host tag mapping or clear intent; only explicit Library edits
     # author its value, including choosing Use iPod setting.
+    excluded = (
+        ("chapters", "equalizer")
+        if include_lyrics
+        else ("chapters", "equalizer", "lyrics")
+    )
     return replace(
         target,
         **{name: getattr(source, name) for name in TRACK_TAG_FIELDS},
@@ -98,7 +114,7 @@ def apply_track_tags(target: Track, source: Track) -> Track:
             **{
                 name: getattr(source.metadata, name)
                 for name in METADATA_TAG_FIELDS
-                if name not in ("chapters", "equalizer")
+                if name not in excluded
             },
         ),
     )

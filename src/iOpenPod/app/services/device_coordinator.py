@@ -2146,6 +2146,7 @@ class DeviceCoordinator:
                 ) = _read_sqlite_postprocess_commands(active.session)
             target = WriteTarget(
                 checksum=checksum,
+                supports_lyrics=capabilities.audio.supports_lyrics,
                 database_version=capabilities.database.binary_version,
                 firewire_guid=guid,
                 max_database_bytes=capabilities.database.max_database_bytes,
@@ -2368,6 +2369,7 @@ class DeviceCoordinator:
                     snapshot,
                     delete_omissions=request.delete_omissions,
                     replace_media=request.replace_media,
+                    lyrics_updates=request.lyrics_updates,
                     replace_photos=request.replace_photos,
                     retag_tracks=tuple(
                         update.track_id for update in request.rockbox_media
@@ -4756,6 +4758,7 @@ class DeviceCoordinator:
                     sqlite_checksum=sqlite_checksum,
                     hash72_material=material,
                     sqlite_postprocess_commands=commands,
+                    supports_lyrics=profile.capabilities.audio.supports_lyrics,
                 )
                 plan = library_initialization.prepare(
                     session,

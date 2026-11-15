@@ -866,6 +866,7 @@ def test_execution_builds_one_comparison_for_validation_and_playlists(
         *,
         file_tag_policy: str | None = None,
         rating_conflict_policy: str | None = None,
+        include_lyrics: bool = True,
     ) -> SyncPlan:
         nonlocal comparisons
         comparisons += 1
@@ -875,6 +876,7 @@ def test_execution_builds_one_comparison_for_validation_and_playlists(
             library,
             file_tag_policy=file_tag_policy,
             rating_conflict_policy=rating_conflict_policy,
+            include_lyrics=include_lyrics,
         )
 
     try:
@@ -1602,7 +1604,7 @@ def test_sync_writes_lyrics_to_media_and_prefers_existing_file_text(
             for track in result.active.library.tracks
             if track.title == "Lyrics song"
         )
-        assert added.metadata.lyrics == WORDS
+        assert added.metadata.lyrics == ""
         assert added.metadata.has_lyrics
         assert (
             embedded_lyrics(

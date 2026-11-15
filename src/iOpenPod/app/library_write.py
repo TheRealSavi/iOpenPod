@@ -62,6 +62,7 @@ class LibraryPreparationRequest:
     )
     media: tuple[LibraryMediaSource, ...] = field(default=(), kw_only=True)
     replace_media: tuple[int, ...] = field(default=(), kw_only=True)
+    lyrics_updates: tuple[int, ...] = field(default=(), kw_only=True)
     rockbox_media: tuple[RockboxMediaUpdate, ...] = field(default=(), kw_only=True)
     rockbox_metadata: bool = field(default=False, kw_only=True)
     photos: tuple[PreparedPhoto, ...] = field(default=(), kw_only=True)

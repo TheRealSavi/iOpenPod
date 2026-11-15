@@ -19,7 +19,7 @@ class MhodType(IntEnum):
     # Legacy application interpretation, not a verified native meaning. Classic
     # skips it; captured payloads include podcast HTML. See
     # docs/research/mhod-10-provenance.md before changing its compatibility use.
-    LYRICS = 10
+    UNKNOWN_TEXT_10 = 10
     UNKNOWN_11 = 11
     COMPOSER = 12
     GROUPING = 13

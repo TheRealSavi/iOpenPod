@@ -67,17 +67,22 @@ def test_reads_only_when_visible_and_does_not_require_the_presence_flag(
     assert provider.opened == [track]
 
 
+@pytest.mark.parametrize(
+    "database_text,flag", [("Database words", True), ("", True), ("", False)]
+)
 def test_file_lyrics_win_for_display_but_explicit_draft_clear_wins(
     system: System,
+    database_text: str,
+    flag: bool,
 ) -> None:
     controller, playback, workspace, provider = system
     track = replace(
-        tracks(1)[0], metadata=TrackMetadata(lyrics="Database words", has_lyrics=True)
+        tracks(1)[0], metadata=TrackMetadata(lyrics=database_text, has_lyrics=flag)
     )
     workspace.load(LibrarySnapshot(tracks=(track,)))
     playback.enqueue(track)
     controller.set_active(True)
-    assert controller.text == "Database words"
+    assert controller.text == database_text
     settle(controller)
     assert controller.text == WORDS
     assert_state(controller, LyricsState.READY)
@@ -92,6 +97,12 @@ def test_file_lyrics_win_for_display_but_explicit_draft_clear_wins(
     assert controller.text == ""
     assert_state(controller, LyricsState.READY)
     assert provider.opened == [track]
+
+    workspace.reset_changes()
+    playback.reconcile_library(workspace.tracks)
+    settle(controller)
+    assert controller.text == WORDS
+    assert_state(controller, LyricsState.READY)
 
 
 def test_database_lyrics_are_used_when_file_has_none(system: System) -> None:

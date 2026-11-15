@@ -1458,6 +1458,9 @@ class MainWindow(QMainWindow):
                 directory,
                 dialog.selected_file_type,
                 mode,
+                lyrics_updates=frozenset(
+                    self._context.library_workspace.lyrics_updates
+                ),
                 host_folders=(
                     load_host_media_folders(self._context.settings)
                     if mode is PlaylistExportMode.HOST_REFERENCES
@@ -1478,7 +1481,11 @@ class MainWindow(QMainWindow):
         directory = self._choose_export_directory(self.tr("Choose Track Export Folder"))
         if directory is None:
             return
-        if self._export_controller.start_tracks(tracks, directory):
+        if self._export_controller.start_tracks(
+            tracks,
+            directory,
+            lyrics_updates=frozenset(self._context.library_workspace.lyrics_updates),
+        ):
             self._show_export_progress(self.tr("Preparing Track export…"))
 
     def _tone_conversion_requested(self, value: object) -> None:

@@ -5,6 +5,11 @@ in iTunesDB. It does not concern MHOD 100, ArtworkDB MHODs, or the separate MHIT
 lyrics-presence byte at `+0xB0`. It records implementation history and upstream
 evidence; the firmware investigation must establish native behavior separately.
 
+The [2026-11-15 issue-333 follow-up](mini2-mhod10-memory-2026-11-15.md)
+establishes that Mini 1/2 retain this text and have a native comparison consumer,
+unlike the studied Classic importer. Mini 2 probes also demonstrate its allocation
+cost and failure propagation. The original Apple semantic name remains unresolved.
+
 ## Conclusion
 
 The examined history provides no independent evidence that Apple used MHOD 10

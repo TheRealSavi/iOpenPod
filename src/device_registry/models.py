@@ -152,6 +152,8 @@ class AudioCapabilities:
     supports_podcasts: bool
     supports_gapless_playback: bool
     supports_alac: bool
+    # Catalog policy for native display, independent of Host/Rockbox tag support.
+    supports_lyrics: bool = False
     max_sample_rate_hz: int = 48_000
     max_channels: int = 2
     max_lossless_bits: int = 16

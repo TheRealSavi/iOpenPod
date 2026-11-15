@@ -333,3 +333,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0267: Remove Nano Countdown Timer support](0267-remove-nano-countdown-timer-support.md)
 - [ADR-0268: Sync opt-in ListenBrainz recording feedback](0268-sync-opt-in-listenbrainz-recording-feedback.md)
 - [ADR-0269: Share rating scrobbling with Last.fm loved status](0269-share-rating-scrobbling-with-lastfm-loved-status.md)
+- [ADR-0270: Keep lyrics out of MHOD 10](0270-keep-lyrics-out-of-mhod-10.md)

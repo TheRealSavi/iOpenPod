@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 
 from iOpenPod.app.sync_plan import prepare_sync_plan
+from iOpenPod.app.sync_track_details import sync_lyrics_enabled
 from storage import HostPath
 
 if TYPE_CHECKING:
@@ -67,6 +68,11 @@ class SyncComparisonController(QObject):
                     active.library,
                     rating_conflict_policy=rating_conflict_policy,
                     file_tag_policy=file_tag_policy,
+                    include_lyrics=(
+                        sync_lyrics_enabled(
+                            active.profile, rockbox_metadata=file_tag_policy is not None
+                        )
+                    ),
                 )
                 refresh_paths: frozenset[HostPath] = (
                     frozenset(

@@ -367,6 +367,7 @@ class LibraryWriteController(QObject):
             delete_omissions=self._workspace.delete_omissions,
             artwork=self._workspace.artwork_assets,
             media=self._workspace.media_sources,
+            lyrics_updates=self._workspace.lyrics_updates,
             add_genius_mixes=self._workspace.genius_mix_additions,
             remove_genius_collections=self._workspace.genius_collection_removals,
             regenerate_genius=bool(

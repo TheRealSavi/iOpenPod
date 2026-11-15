@@ -1913,6 +1913,12 @@ If either fingerprint is unavailable, changed Host file facts request replacemen
 Migration reuses existing fingerprint evidence without introducing a new baseline. Tags/artwork-only
 updates retain media locations and payloads; lyrics and optional Rockbox tags share
 one verified file rewrite, whose final size is reflected in iTunesDB.
+Native lyrics display capability or Rockbox Metadata Support enables automatic
+Sync lyrics work. Explicit Library lyrics edits remain independent of that
+capability and carry clearing intent even when the binary projection has no text.
+MHOD 10 is retained unidentified text, never a lyrics cache. Lyrics remain in
+media tags, with lazy reads for display; unrelated full-tag edits preserve them.
+SQLite Extras lyrics rows use verified media evidence. See ADR-0270.
 Classic-incompatible ID3v2.4 lyrics layouts automatically convert to ID3v2.3 in
 Storage-owned staging and pass full-text and native-layout verification again.
 Version-specific metadata may be lost on the iPod copy; Host sources and encoded

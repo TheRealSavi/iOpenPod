@@ -4,6 +4,7 @@
 - Date: 2026-10-28
 - Amends: ADR-0075
 - Amended: 2026-11-04 to allow automatic conversion on the private iPod copy
+- Amended by: ADR-0270 for file-only text and native capability gating
 
 Classic 120GB RetailOS 2.0.1 provides an exact database-to-player lyrics trace.
 MHIT `+0xB0` bit zero becomes runtime TrackRecord `+0x8F` bit four. The Library

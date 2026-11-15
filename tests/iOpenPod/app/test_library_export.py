@@ -78,7 +78,14 @@ class _Tagger:
         del destination
         return
 
-    def prepare(self, destination: HostPath, track: Track, artwork: Any) -> None:
+    def prepare(
+        self,
+        destination: HostPath,
+        track: Track,
+        artwork: Any,
+        *,
+        preserve_lyrics: bool = False,
+    ) -> None:
         self.prepared.append((Path(os.fspath(destination)), track.track_id, artwork))
 
 

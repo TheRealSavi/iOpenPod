@@ -42,6 +42,9 @@ sessions.
 - [iPod mini 2 firmware workspace](../../ipod-firmware-lab/notes/mini2-firmware-workspace.md) —
   verified RetailOS 1.4.1 extraction, Ghidra project, searchable decompilation,
   and startup-map evidence in the sibling firmware lab.
+- [Mini 2 type-10 database loading](research/mini2-mhod10-memory-2026-11-15.md) —
+  issue 333, native text-pool allocation and failure propagation, unresolved field
+  meaning, and implications for lyrics authoring and database-size guards.
 - [`sync-workflow-audit-2026-09-26.md`](sync-workflow-audit-2026-09-26.md) — scan and Sync findings, fixes, and remaining limits.
 - [`sync-artwork-audit-2026-10-08.md`](sync-artwork-audit-2026-10-08.md) — artwork loss reproductions, automatic repairs, publication safety, and source research.
 - [Photo shard research](research/photo-sharding-2026-10-08.md) — shared per-format

@@ -291,7 +291,8 @@ def _project_track_children(
             equalizer=values.get(MhodType.EQ_SETTING, ""),
             comment=values.get(MhodType.COMMENT, ""),
             category=values.get(MhodType.CATEGORY, ""),
-            lyrics=values.get(MhodType.LYRICS, ""),
+            # Type 10 has unidentified native consumers; it is not lyrics.
+            lyrics="",
             composer=values.get(MhodType.COMPOSER, ""),
             grouping=values.get(MhodType.GROUPING, ""),
             description=values.get(MhodType.DESCRIPTION, ""),

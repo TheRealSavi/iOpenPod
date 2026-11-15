@@ -688,6 +688,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
         *,
         rating_conflict_policy: str | None = None,
         file_tag_policy: str | None = None,
+        include_lyrics: bool = True,
     ) -> SyncPlan:
         comparisons.append(get_ident())
         return prepare_sync_plan(
@@ -696,6 +697,7 @@ def test_completed_scans_open_selection_with_matched_checked_and_host_only_unche
             library,
             rating_conflict_policy=rating_conflict_policy,
             file_tag_policy=file_tag_policy,
+            include_lyrics=include_lyrics,
         )
 
     def unexpected_comparison(*_args: object, **_kwargs: object) -> SyncPlan:
@@ -1035,6 +1037,7 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
         *,
         rating_conflict_policy: str | None = None,
         file_tag_policy: str | None = None,
+        include_lyrics: bool = True,
     ) -> SyncPlan:
         entered.set()
         try:
@@ -1045,6 +1048,7 @@ def test_ipod_tag_drift_refreshes_host_before_presenting_sync_plan(
                 library,
                 rating_conflict_policy=rating_conflict_policy,
                 file_tag_policy=file_tag_policy,
+                include_lyrics=include_lyrics,
             )
         finally:
             completed.set()

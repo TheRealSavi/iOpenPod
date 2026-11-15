@@ -50,6 +50,7 @@ class _ExportWork(QRunnable):
         host_folders: tuple[HostMediaFolder, ...] = (),
         photos: tuple[Photo, ...] = (),
         photo_album_name: str | None = None,
+        lyrics_updates: frozenset[int] = frozenset(),
     ) -> None:
         super().__init__()
         self.token = token
@@ -57,6 +58,7 @@ class _ExportWork(QRunnable):
         self.photo_exporter = photo_exporter
         self.directory = directory
         self.tracks = tracks
+        self.lyrics_updates = lyrics_updates
         self.playlist_name = playlist_name
         self.file_type = file_type
         self.mode = mode
@@ -99,6 +101,7 @@ class _ExportWork(QRunnable):
                     self.file_type,
                     self.mode,
                     host_folders=self.host_folders,
+                    lyrics_updates=self.lyrics_updates,
                     checkpoint=checkpoint,
                     progress=progress,
                 )
@@ -106,6 +109,7 @@ class _ExportWork(QRunnable):
                 result = self.exporter.export_tracks(
                     self.tracks,
                     self.directory,
+                    lyrics_updates=self.lyrics_updates,
                     checkpoint=checkpoint,
                     progress=progress,
                 )
@@ -151,7 +155,13 @@ class LibraryExportController(QObject):
             not self._closed and not self.busy and self._devices.active_ipod is not None
         )
 
-    def start_tracks(self, tracks: tuple[Track, ...], directory: HostPath) -> bool:
+    def start_tracks(
+        self,
+        tracks: tuple[Track, ...],
+        directory: HostPath,
+        *,
+        lyrics_updates: frozenset[int] = frozenset(),
+    ) -> bool:
         return self._start(
             _ExportWork(
                 0,
@@ -159,6 +169,7 @@ class LibraryExportController(QObject):
                 self._photo_exporter,
                 directory,
                 tracks,
+                lyrics_updates=lyrics_updates,
             )
         )
 
@@ -171,6 +182,7 @@ class LibraryExportController(QObject):
         mode: PlaylistExportMode,
         *,
         host_folders: tuple[HostMediaFolder, ...] = (),
+        lyrics_updates: frozenset[int] = frozenset(),
     ) -> bool:
         return self._start(
             _ExportWork(
@@ -183,6 +195,7 @@ class LibraryExportController(QObject):
                 file_type=file_type,
                 mode=mode,
                 host_folders=host_folders,
+                lyrics_updates=lyrics_updates,
             )
         )
 
