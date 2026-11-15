@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-15
 - Amends: ADR-0183
+- Amended by: ADR-0273 for one device read at a time
 
 ## Context
 
