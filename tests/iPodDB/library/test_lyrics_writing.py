@@ -19,6 +19,7 @@ from iPodDB.library import (
     Track,
     TrackChapter,
     WriteResources,
+    WriteTarget,
     prepared_audio,
 )
 
@@ -273,3 +274,41 @@ def test_invalid_draft_reports_chapters_without_cascading_missing_lyrics(
         for issue in result.issues
     )
     assert not any(issue.code.startswith("resources.") for issue in result.issues)
+
+
+def test_unsupported_lyrics_target_skips_lyrics_preparation_and_mhod_10() -> None:
+    source = lyrics_source()
+    first, second = source.snapshot.tracks
+    edited = replace(
+        first,
+        size_bytes=456,
+        metadata=replace(
+            first.metadata,
+            sample_rate_hz=44100,
+            file_format="MP3",
+            lyrics="Unsupported device lyrics",
+            has_lyrics=False,
+        ),
+    )
+    media = prepared_audio(
+        first.track_id,
+        FileDependency(first.metadata.location, 456, "a" * 64),
+        AudioEncoding.MP3,
+    )
+    draft = replace(
+        source.begin_draft(replace(source.snapshot, tracks=(edited, second))),
+        replace_media=(first.track_id,),
+    )
+    plan = source.analyze(draft, target=WriteTarget(supports_lyrics=False))
+    assert not plan.blocked
+    assert plan.required_lyrics == ()
+    result = source.prepare(plan, WriteResources(media=(media,)))
+    assert result.prepared is not None, result.issues
+    written = result.prepared.snapshot.tracks[0]
+    assert written.metadata.lyrics == ""
+    assert not written.metadata.has_lyrics
+    headers = {
+        selection.chunk.header.track_id: selection.chunk.header
+        for selection in parse_iTunesDB(result.prepared.itunes).find_chunks(MhitHeader)
+    }
+    assert headers[written.track_id].lyrics_flag == 0

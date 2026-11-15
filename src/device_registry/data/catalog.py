@@ -708,8 +708,13 @@ def _profile_capabilities(
     generation: str,
     capacity: str,
 ) -> DeviceCapabilities:
+    base = _CAPABILITIES_BY_IDENTITY[(family, generation)]
+    supports_lyrics = (
+        family == "iPod" and generation in {"5th Gen", "5.5th Gen"}
+    ) or family in {"iPod Classic", "iPod Nano"}
     capabilities = replace(
-        _CAPABILITIES_BY_IDENTITY[(family, generation)],
+        base,
+        audio=replace(base.audio, supports_lyrics=supports_lyrics),
         extras=native_extras_capabilities(family, generation),
         supports_games=(
             (family == "iPod" and generation in {"5th Gen", "5.5th Gen"})

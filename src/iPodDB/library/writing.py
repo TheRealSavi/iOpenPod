@@ -84,6 +84,7 @@ class WriteTarget:
     include_auxiliary_image_records: bool = field(default=True, kw_only=True)
     artwork_checksum: WriteChecksum = WriteChecksum.NONE
     supports_sparse_artwork: bool = True
+    supports_lyrics: bool = field(default=True, kw_only=True)
     photo_formats: tuple[PhotoThumbnailFormat, ...] = ()
     photos_root_value: int | None = None
     max_photo_file_bytes: int = 256_000_000

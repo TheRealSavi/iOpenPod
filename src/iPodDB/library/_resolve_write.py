@@ -69,6 +69,7 @@ def _values(
     issues: list[WriteIssue],
     *,
     incoming_media: frozenset[int],
+    supports_lyrics: bool,
 ) -> LibrarySnapshot:
     original = {t.track_id: t for t in before.tracks}
     tracks: list[Track] = []
@@ -80,7 +81,10 @@ def _values(
             or prior.metadata.lyrics != meta.lyrics
             or track.track_id in incoming_media
         ):
-            meta = replace(meta, has_lyrics=bool(meta.lyrics))
+            if supports_lyrics:
+                meta = replace(meta, has_lyrics=bool(meta.lyrics))
+            else:
+                meta = replace(meta, lyrics="", has_lyrics=False)
         for attr in ("volume_adjustment_percent", "normalization_gain_db"):
             value = getattr(meta, attr)
             if prior is not None and value == getattr(prior.metadata, attr):
@@ -307,6 +311,7 @@ def resolve(
             desired,
             issues,
             incoming_media=frozenset(plan.required_media),
+            supports_lyrics=target.supports_lyrics,
         )
     if plan.blocked:
         return ResolvedWrite(

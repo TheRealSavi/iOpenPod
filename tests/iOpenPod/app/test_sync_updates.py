@@ -325,7 +325,13 @@ def test_updates_retain_payload_and_commit_only_required_changes(
         ipod = IPodMediaLibrary((), (), (), IPodMediaCacheStats(), None, False)
         active = device.active
         first_rockbox = rockbox and case != "enable"
-        comparison = prepare_sync_plan(host, ipod, active.library)
+        comparison = prepare_sync_plan(
+            host,
+            ipod,
+            active.library,
+            supports_lyrics=active.profile.capabilities.audio.supports_lyrics
+            or first_rockbox,
+        )
         selected = select_sync_plan(
             comparison,
             selected_host_paths=frozenset({host_path_identity(str(path))}),
@@ -418,7 +424,12 @@ def test_updates_retain_payload_and_commit_only_required_changes(
         host = scan()
         policy = rockbox_tag_policy(active.profile) if rockbox else None
         comparison = prepare_sync_plan(
-            host, ipod, active.library, file_tag_policy=policy
+            host,
+            ipod,
+            active.library,
+            file_tag_policy=policy,
+            supports_lyrics=active.profile.capabilities.audio.supports_lyrics
+            or rockbox,
         )
         selected = select_sync_plan(
             comparison,
@@ -432,6 +443,12 @@ def test_updates_retain_payload_and_commit_only_required_changes(
         item = selected.items[0]
         if case == "reencoded":
             assert _mp3_audio_bytes(path) != original_payload
+            assert item.action is SyncPlanAction.UNCHANGED
+            assert device_path.read_bytes() == old_bytes
+            return
+        if case == "lyrics" and not (
+            active.profile.capabilities.audio.supports_lyrics or rockbox
+        ):
             assert item.action is SyncPlanAction.UNCHANGED
             assert device_path.read_bytes() == old_bytes
             return
@@ -481,7 +498,15 @@ def test_updates_retain_payload_and_commit_only_required_changes(
         new_payload = _mp3_audio_bytes(device_path)
         assert (new_payload != original_payload) == (case == "payload")
         parsed = _read_mp3(device_path)
-        assert embedded_lyrics(parsed) == host_track.metadata.lyrics
+        expected_lyrics = (
+            ""
+            if case == "enable"
+            and not active.profile.capabilities.audio.supports_lyrics
+            else host_track.metadata.lyrics
+            if (active.profile.capabilities.audio.supports_lyrics or rockbox)
+            else "Old words"
+        )
+        assert embedded_lyrics(parsed) == expected_lyrics
         if rockbox:
             assert parsed.tags is not None
             assert str(parsed.tags["TIT2"]) == updated.title

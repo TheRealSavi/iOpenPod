@@ -510,24 +510,27 @@ def analyze(
         required_lyrics=tuple(
             track.track_id
             for track in draft.snapshot.tracks
-            if (
-                track.metadata.lyrics
-                != (
-                    old_tracks[track.track_id].metadata.lyrics
-                    if track.track_id in old_tracks
-                    else ""
-                )
-                or (
-                    track.track_id in media_ids
-                    and (
-                        bool(track.metadata.lyrics)
-                        or (
-                            track.track_id in old_tracks
-                            and old_tracks[track.track_id].metadata.has_lyrics
+            if track.track_id in retagged
+            or (
+                target.supports_lyrics
+                and (
+                    track.metadata.lyrics
+                    != (
+                        old_tracks[track.track_id].metadata.lyrics
+                        if track.track_id in old_tracks
+                        else ""
+                    )
+                    or (
+                        track.track_id in media_ids
+                        and (
+                            bool(track.metadata.lyrics)
+                            or (
+                                track.track_id in old_tracks
+                                and old_tracks[track.track_id].metadata.has_lyrics
+                            )
                         )
                     )
                 )
-                or track.track_id in retagged
             )
         ),
     )

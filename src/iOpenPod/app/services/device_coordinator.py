@@ -4756,6 +4756,7 @@ class DeviceCoordinator:
                     sqlite_checksum=sqlite_checksum,
                     hash72_material=material,
                     sqlite_postprocess_commands=commands,
+                    supports_lyrics=profile.capabilities.audio.supports_lyrics,
                 )
                 plan = library_initialization.prepare(
                     session,

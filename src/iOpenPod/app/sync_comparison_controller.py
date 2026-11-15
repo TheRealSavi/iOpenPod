@@ -67,6 +67,7 @@ class SyncComparisonController(QObject):
                     active.library,
                     rating_conflict_policy=rating_conflict_policy,
                     file_tag_policy=file_tag_policy,
+                    supports_lyrics=active.profile.capabilities.audio.supports_lyrics,
                 )
                 refresh_paths: frozenset[HostPath] = (
                     frozenset(

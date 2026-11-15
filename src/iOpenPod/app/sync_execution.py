@@ -1556,7 +1556,14 @@ class SyncExecutor:
             try:
                 _validate_host_source(source)
                 desired = (
-                    apply_track_tags(old_track, host_track)
+                    apply_track_tags(
+                        old_track,
+                        host_track,
+                        include_lyrics=(
+                            request.source.profile.capabilities.audio.supports_lyrics
+                            or request.options.rockbox_metadata
+                        ),
+                    )
                     if item.metadata_changed
                     else old_track
                 )
@@ -2342,6 +2349,10 @@ def _validate_plan(request: SyncExecutionRequest) -> SyncPlan:
             request.source.library,
             file_tag_policy=request.plan.file_tag_policy,
             rating_conflict_policy=request.plan.rating_conflict_policy,
+            supports_lyrics=(
+                request.source.profile.capabilities.audio.supports_lyrics
+                or request.options.rockbox_metadata
+            ),
         ),
         request.plan.duplicate_resolutions,
     )
@@ -2485,6 +2496,14 @@ def _song(
             ),
             date_added=Instant.now().timestamp(),
             artwork_count=0,
+            lyrics=(
+                host.metadata.lyrics
+                if (
+                    request.source.profile.capabilities.audio.supports_lyrics
+                    or request.options.rockbox_metadata
+                )
+                else ""
+            ),
             has_lyrics=False,
         ),
     )
@@ -2652,7 +2671,18 @@ def _draft(
         old = tracks[identity]
         host_track = host_tracks_by_path[host_path_identity(item.host_path or "")]
         cover_id = cover_identity(update.artwork) if item.artwork_changed else 0
-        track = apply_track_tags(old, host_track) if item.metadata_changed else old
+        track = (
+            apply_track_tags(
+                old,
+                host_track,
+                include_lyrics=(
+                    request.source.profile.capabilities.audio.supports_lyrics
+                    or request.options.rockbox_metadata
+                ),
+            )
+            if item.metadata_changed
+            else old
+        )
         if item.artwork_changed:
             track = replace(
                 track,
@@ -2951,6 +2981,10 @@ def _retained_playlist_mapping(
                 request.source.library,
                 file_tag_policy=request.plan.file_tag_policy,
                 rating_conflict_policy=request.plan.rating_conflict_policy,
+                supports_lyrics=(
+                    request.source.profile.capabilities.audio.supports_lyrics
+                    or request.options.rockbox_metadata
+                ),
             ),
             request.plan.duplicate_resolutions,
         )

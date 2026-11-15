@@ -157,6 +157,7 @@ class SyncPlan:
     items: tuple[SyncPlanItem, ...]
     rating_conflict_policy: str | None = field(default=None, kw_only=True)
     file_tag_policy: str | None = field(default=None, kw_only=True)
+    supports_lyrics: bool = field(default=True, kw_only=True)
     duplicate_groups: tuple[SyncDuplicateGroup, ...] = field(default=(), kw_only=True)
     duplicate_resolutions: tuple[SyncDuplicateResolution, ...] = field(
         default=(), kw_only=True
@@ -310,6 +311,7 @@ class SyncDuplicateGroup:
         *,
         file_tag_policy: str | None,
         rating_conflict_policy: str | None = None,
+        supports_lyrics: bool = True,
     ) -> tuple[SyncPlanItem, ...]:
         """Validate choices and derive items from this group's captured evidence."""
 
@@ -335,7 +337,11 @@ class SyncDuplicateGroup:
                 )
             items.append(
                 _explicit_paired_item(
-                    host, ipod, file_tag_policy, rating_conflict_policy
+                    host,
+                    ipod,
+                    file_tag_policy,
+                    rating_conflict_policy,
+                    supports_lyrics=supports_lyrics,
                 )
             )
             paired_hosts.add(path)
@@ -369,6 +375,7 @@ def prepare_sync_plan(
     *,
     file_tag_policy: str | None = None,
     rating_conflict_policy: str | None = None,
+    supports_lyrics: bool = True,
 ) -> SyncPlan:
     """Correlate completed Host and iPod scans without mutating either source.
 
@@ -422,6 +429,7 @@ def prepare_sync_plan(
             ipod_candidates[ipod_index],
             file_tag_policy,
             rating_conflict_policy=rating_conflict_policy,
+            supports_lyrics=supports_lyrics,
         )
         for host_index, ipod_index in pairs
     ]
@@ -432,6 +440,7 @@ def prepare_sync_plan(
         tuple(sorted(items, key=_item_sort_key)),
         rating_conflict_policy=rating_conflict_policy,
         file_tag_policy=file_tag_policy,
+        supports_lyrics=supports_lyrics,
         duplicate_groups=_duplicate_groups(
             host_candidates, ipod_candidates, pairs, attention, ipod_library
         ),
@@ -589,6 +598,7 @@ def resolve_sync_duplicates(
                 resolution,
                 file_tag_policy=comparison.file_tag_policy,
                 rating_conflict_policy=comparison.rating_conflict_policy,
+                supports_lyrics=comparison.supports_lyrics,
             )
         )
     items: list[SyncPlanItem] = []
@@ -612,6 +622,7 @@ def resolve_sync_duplicates(
         tuple(sorted(items, key=_item_sort_key)),
         rating_conflict_policy=comparison.rating_conflict_policy,
         file_tag_policy=comparison.file_tag_policy,
+        supports_lyrics=comparison.supports_lyrics,
         duplicate_groups=comparison.duplicate_groups,
         duplicate_resolutions=resolutions,
     )
@@ -635,16 +646,23 @@ def _explicit_paired_item(
     ipod: _Candidate,
     file_tag_policy: str | None,
     rating_conflict_policy: str | None,
+    *,
+    supports_lyrics: bool = True,
 ) -> SyncPlanItem:
     item = _paired_item(
-        host, ipod, file_tag_policy, rating_conflict_policy=rating_conflict_policy
+        host,
+        ipod,
+        file_tag_policy,
+        rating_conflict_policy=rating_conflict_policy,
+        supports_lyrics=supports_lyrics,
     )
     if item.action is SyncPlanAction.ATTENTION:
         raise ValueError("Conflicting source facts need a fresh scan before pairing")
     metadata_changed = (
         host.track is not None
         and ipod.track is not None
-        and track_tag_values(host.track) != track_tag_values(ipod.track)
+        and track_tag_values(host.track, include_lyrics=supports_lyrics)
+        != track_tag_values(ipod.track, include_lyrics=supports_lyrics)
     )
     return replace(
         item,
@@ -915,6 +933,7 @@ def _paired_item(
     file_tag_policy: str | None,
     *,
     rating_conflict_policy: str | None = None,
+    supports_lyrics: bool = True,
 ) -> SyncPlanItem:
     sync = ipod.sync
     if sync is None:
@@ -973,24 +992,26 @@ def _paired_item(
                 metadata_changed = (
                     track_tag_sha256(host.track) != sync.host_tag_sha256
                     or track_tag_sha256(ipod.track) != sync.ipod_tag_sha256
-                ) and track_tag_values(host.track) != track_tag_values(ipod.track)
+                ) and track_tag_values(
+                    host.track, include_lyrics=supports_lyrics
+                ) != track_tag_values(ipod.track, include_lyrics=supports_lyrics)
             elif size_changed or modified_changed or host.track_details_refreshed:
-                metadata_changed = track_tag_values(host.track) != track_tag_values(
-                    ipod.track
-                )
+                metadata_changed = track_tag_values(
+                    host.track, include_lyrics=supports_lyrics
+                ) != track_tag_values(ipod.track, include_lyrics=supports_lyrics)
             elif sync.ipod_tag_sha256 is not None:
                 metadata_changed = track_tag_sha256(
                     ipod.track
                 ) != sync.ipod_tag_sha256 and track_tag_values(
-                    host.track
-                ) != track_tag_values(ipod.track)
+                    host.track, include_lyrics=supports_lyrics
+                ) != track_tag_values(ipod.track, include_lyrics=supports_lyrics)
             elif sync.ipod_baseline_pending:
                 # A migrated helper has Sync provenance but no post-commit iPod
                 # tag baseline. Compare the two current semantic projections
                 # rather than accepting the current iPod value as that baseline.
-                metadata_changed = track_tag_values(host.track) != track_tag_values(
-                    ipod.track
-                )
+                metadata_changed = track_tag_values(
+                    host.track, include_lyrics=supports_lyrics
+                ) != track_tag_values(ipod.track, include_lyrics=supports_lyrics)
         artwork_changed = _artwork_changed(
             host, ipod, facts_changed=size_changed or modified_changed
         )

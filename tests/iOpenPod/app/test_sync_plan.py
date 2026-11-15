@@ -1645,3 +1645,44 @@ def test_selecting_a_host_video_without_a_fingerprint_plans_an_add(
     item = selection.selected_plan.items[0]
     assert item.action is SyncPlanAction.ADD
     assert item.basis is SyncPlanBasis.HOST_ONLY
+
+
+def test_prepare_sync_plan_ignores_lyrics_differences_when_unsupported(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "song.flac"
+    host_track, host_source = _host_track(path, track_id=1, fingerprint="101,102")
+    host_track = replace(
+        host_track,
+        metadata=replace(host_track.metadata, lyrics="La la la"),
+    )
+    ipod_source = _ipod_track(
+        track_id=10,
+        fingerprint="101,102",
+        sync=replace(_sync(path), ipod_baseline_pending=True),
+    )
+    ipod_snapshot = LibrarySnapshot(
+        tracks=(
+            replace(
+                host_track,
+                track_id=10,
+                metadata=replace(host_track.metadata, lyrics=""),
+            ),
+        )
+    )
+    with_lyrics = prepare_sync_plan(
+        _host_library((host_track,), (), (host_source,)),
+        _ipod_library((ipod_source,)),
+        ipod_snapshot,
+        supports_lyrics=True,
+    )
+    without_lyrics = prepare_sync_plan(
+        _host_library((host_track,), (), (host_source,)),
+        _ipod_library((ipod_source,)),
+        ipod_snapshot,
+        supports_lyrics=False,
+    )
+    assert with_lyrics.items[0].action is SyncPlanAction.UPDATE
+    assert with_lyrics.items[0].metadata_changed is True
+    assert without_lyrics.items[0].action is SyncPlanAction.UNCHANGED
+    assert without_lyrics.items[0].metadata_changed is False

@@ -866,6 +866,7 @@ def test_execution_builds_one_comparison_for_validation_and_playlists(
         *,
         file_tag_policy: str | None = None,
         rating_conflict_policy: str | None = None,
+        supports_lyrics: bool = True,
     ) -> SyncPlan:
         nonlocal comparisons
         comparisons += 1
@@ -875,6 +876,7 @@ def test_execution_builds_one_comparison_for_validation_and_playlists(
             library,
             file_tag_policy=file_tag_policy,
             rating_conflict_policy=rating_conflict_policy,
+            supports_lyrics=supports_lyrics,
         )
 
     try:
