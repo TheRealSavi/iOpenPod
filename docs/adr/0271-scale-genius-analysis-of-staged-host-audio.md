@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-15
 - Amends: ADR-0183
-- Amended by: ADR-0273 for one device read at a time
+- Amended by: ADR-0274 for one device read at a time
 
 ## Context
 
@@ -40,8 +40,12 @@ workers. Analysis of retained device media keeps the two-read bound.
 
 Peak memory rises with the worker count. A worker holds at most about 80 MB of
 PCM for a 15-minute Track, plus about 40 MB of retained mel blocks and bounded
-per-block spectra. Six workers can approach 0.75 GB when every Track is near the
-duration limit. A typical four-minute Track needs about 60 MB per worker.
+per-block spectra. These buffers alone are not a process-memory upper bound:
+temporary arrays, native libraries and decoding also contribute. An isolated
+Windows profiler measurement with six 15-minute synthetic Tracks peaked near
+1 GiB of resident memory, including Python and audio libraries but excluding
+the full GUI and FFmpeg processes. A typical four-minute Track needs about
+60 MB per worker. ADR-0273 records the accepted spectral-memory tradeoff.
 
 Progress events no longer arrive in strict Library order. The active-Track list
 can hold up to six entries.

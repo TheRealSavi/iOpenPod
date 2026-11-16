@@ -9,10 +9,13 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager, nullcontext
 from copy import copy
 from dataclasses import dataclass, replace
+from importlib import import_module
 from pathlib import PurePosixPath
 from threading import Event, Lock
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
+
+from threadpoolctl import threadpool_limits
 
 from iOpenPod.app.genius_analysis_cache import GeniusProfileCache
 from iOpenPod.app.genius_audio import (
@@ -53,7 +56,7 @@ GENIUS_SAMPLE_RATE_HZ = 22_050
 MAX_GENIUS_AUDIO_SECONDS = 15 * 60
 _MAX_PCM_BYTES = GENIUS_SAMPLE_RATE_HZ * MAX_GENIUS_AUDIO_SECONDS * 4
 # Two device Tracks may be in flight, but only one reads at a time: concurrent
-# reads seek between files on hard-drive iPods (ADR-0273). Staged Host captures
+# reads seek between files on hard-drive iPods (ADR-0274). Staged Host captures
 # are local files and may use every worker.
 _MAX_DEVICE_ANALYSIS_WORKERS = 2
 _DEVICE_READ_POLL_SECONDS = 0.1
@@ -66,6 +69,11 @@ def _default_analysis_workers() -> int:
         _MAX_DEVICE_ANALYSIS_WORKERS,
         min(_MAX_ANALYSIS_WORKERS, available_compute_threads() // 2),
     )
+
+
+# Each profile's matrices are small. Measured BLAS threading slowed profiling even
+# for one worker, and concurrent workers oversubscribed the CPU (ADR-0272).
+_MATHS_THREADS_PER_WORKER = 1
 
 
 # Explicit single-file demuxers prevent a disguised playlist from following
@@ -503,7 +511,19 @@ class GeniusAnalysisService:
                         )
                     )
 
-            with ThreadPoolExecutor(max_workers=self._workers) as workers:
+            if pending and not should_skip():
+                # SciPy can load a separate BLAS library on the first profile.
+                # Discover it before limiting pools, while keeping startup lazy.
+                import_module("scipy.linalg")
+
+            # The limit is process-wide; restore it only after every worker stops.
+            with (
+                threadpool_limits(
+                    limits=_MATHS_THREADS_PER_WORKER,
+                    user_api="blas",
+                ),
+                ThreadPoolExecutor(max_workers=self._workers) as workers,
+            ):
                 try:
                     while waiting or running:
                         checkpoint()

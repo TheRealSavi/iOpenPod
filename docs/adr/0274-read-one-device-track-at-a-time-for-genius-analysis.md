@@ -1,4 +1,4 @@
-# ADR-0273: Read one device Track at a time for Genius analysis
+# ADR-0274: Read one device Track at a time for Genius analysis
 
 - Status: Accepted
 - Date: 2026-11-15

@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
+import sys
 import wave
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from importlib import import_module
 from pathlib import Path
 from threading import Event, Lock, current_thread
 from typing import TYPE_CHECKING
 
 import pytest
+from threadpoolctl import threadpool_info
 
 from iOpenPod.app import genius_analysis, genius_analysis_cache
 from iOpenPod.app.genius_analysis import (
@@ -734,6 +739,94 @@ def test_default_workers_follow_physical_cores_within_bounds(
 ) -> None:
     monkeypatch.setattr(genius_analysis, "available_compute_threads", lambda: threads)
     assert genius_analysis._default_analysis_workers() == expected  # pyright: ignore[reportPrivateUsage]
+
+
+def _blas_threads() -> dict[str, int]:
+    return {
+        pool["filepath"]: pool["num_threads"]
+        for pool in threadpool_info()
+        if pool["user_api"] == "blas"
+    }
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_blas_threads_are_limited_during_analysis_and_then_restored(
+    tmp_path: Path,
+    cancelled: bool,
+) -> None:
+    # Both libraries may have their own BLAS, each with a distinct prior limit.
+    import_module("scipy.linalg")
+    before = _blas_threads()
+    if not before:
+        pytest.skip("No BLAS backend supported by threadpoolctl (e.g. Accelerate)")
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2, 3))
+    observed: list[dict[str, int]] = []
+
+    def profile(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        observed.append(_blas_threads())
+        if cancelled:
+            raise PreparationCancelledError
+        return _profile(pcm, sample_rate_hz=sample_rate_hz, checkpoint=checkpoint)
+
+    service = GeniusAnalysisService(decoder=_Decoder(), profiler=profile, workers=2)
+    if cancelled:
+        with pytest.raises(PreparationCancelledError):
+            service.analyze(snapshot, session, checkpoint=_checkpoint)
+    else:
+        service.analyze(snapshot, session, checkpoint=_checkpoint)
+        assert len(observed) == 3
+    assert observed
+    assert all(pools == dict.fromkeys(before, 1) for pools in observed)
+    assert _blas_threads() == before
+
+
+def test_blas_limits_include_libraries_loaded_by_the_first_profile(
+    tmp_path: Path,
+) -> None:
+    # A fresh interpreter is required: other tests can already have loaded SciPy.
+    code = """
+import runpy
+import sys
+from pathlib import Path
+
+helpers = runpy.run_path(sys.argv[1])
+assert 'scipy.linalg' not in sys.modules
+from iOpenPod.app.genius_audio import profile_genius_pcm
+
+observed = []
+def profile(pcm, *, sample_rate_hz, checkpoint):
+    result = profile_genius_pcm(
+        pcm, sample_rate_hz=sample_rate_hz, checkpoint=checkpoint
+    )
+    pools = helpers['_blas_threads']()
+    observed.append(pools)
+    assert all(threads == 1 for threads in pools.values()), pools
+    return result
+
+_, _, session, snapshot = helpers['_device'](Path(sys.argv[2]))
+result = helpers['GeniusAnalysisService'](
+    decoder=helpers['_Decoder'](), profiler=profile
+).analyze(snapshot, session, checkpoint=helpers['_checkpoint'])
+assert tuple(result.profiles) == (1,)
+assert len(observed) == 1
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(Path(__file__).resolve()), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        env={
+            **os.environ,
+            "OPENBLAS_NUM_THREADS": "2",
+            "MKL_NUM_THREADS": "2",
+            "BLIS_NUM_THREADS": "2",
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_skip_requested_from_admission_progress_starts_no_reads(

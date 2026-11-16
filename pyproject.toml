@@ -28,7 +28,7 @@ exclude = [
 
 [project]
 name = "iOpenPod"
-version = "2.1.3"
+version = "2.1.4"
 description = "iPod sync tool. Manage your iPod media library without iTunes."
 authors = [{ name = "John Gibbons", email = "johngibbons167@gmail.com" }]
 readme = "README.md"
@@ -69,6 +69,7 @@ dependencies = [
     "pyside6==6.9.3 ; sys_platform == 'darwin'",
     "pyside6>=6.11.2 ; sys_platform != 'darwin'",
     "scipy>=1.15,<2",
+    "threadpoolctl>=3.6,<4",
     "tqdm>=4.70.0",
     "tzdata>=2026.2",
     "wasmtime>=36,<39",
@@ -183,7 +184,14 @@ ignore_errors = true
 
 [tool.pyright]
 # Discover project code only; imported library types still resolve normally.
-include = ["conftest.py", "main.py", "src", "scripts", "tests", "packaging/hooks"]
+include = [
+    "conftest.py",
+    "main.py",
+    "src",
+    "scripts",
+    "tests",
+    "packaging/hooks",
+]
 exclude = [
     ".scratch",
     ".venv",

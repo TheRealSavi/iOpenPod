@@ -1070,7 +1070,7 @@ profiles with final iPod identities using Storage's verified output fingerprints
 This adds no device media read, and a cache failure cannot undo a committed Library.
 A continuously refilled pool of two to six workers decodes and profiles Tracks
 (ADR-0271). At most two device Tracks are in flight, and only one reads from the
-device at a time while the other is profiled (ADR-0273). Staged Host captures may
+device at a time while the other is profiled (ADR-0274). Staged Host captures may
 use every worker. Result collection, progress, and cache writes stay on the
 preparation thread. Per-Track source validation and cancellation still apply
 before any profile is accepted.
