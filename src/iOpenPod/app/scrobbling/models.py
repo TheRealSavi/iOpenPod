@@ -62,6 +62,23 @@ class Submission:
 
 
 @dataclass(frozen=True, slots=True)
+class ScrobbleProgress:
+    """Work processed in one service's current phase, not accepted deliveries.
+
+    Unknown totals remain indeterminate. A returned rejection or unmatched lookup
+    completes processing of that item; an interrupted request does not. Counts
+    advance only after the resulting queue state has been saved.
+    """
+
+    phase: str
+    message: str
+    completed: int | None = None
+    total: int | None = None
+    current_item: str = ""
+    unit: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class ScrobbleResult:
     accepted: int = 0
     pending: int = 0

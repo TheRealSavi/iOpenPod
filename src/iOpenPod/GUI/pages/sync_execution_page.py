@@ -389,6 +389,7 @@ class SyncExecutionPage(QWidget):
             label = (
                 self.tr("Item: %1")
                 if progress.phase in ("sync.prepare", "sync.photos")
+                or progress.phase.startswith("sync.scrobble.")
                 else self.tr("Current file: %1")
             )
             item = (

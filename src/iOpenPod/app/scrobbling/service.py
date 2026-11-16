@@ -8,13 +8,20 @@ from typing import TYPE_CHECKING, Protocol
 
 from whenever import Instant
 
+from iOpenPod.app.display_text import source_text
 from iOpenPod.app.media.recording_id import embedded_recording_mbid
 from iOpenPod.app.media.tag_reader import read_embedded_media
 from iOpenPod.app.playback.backend import PlaybackSourceError
 
 from .clients import LastFmClient, ListenBrainzClient, client_for, wait_between_batches
 from .feedback import FeedbackCancelledError, capture_feedback
-from .models import LASTFM_MAX_AGE, ScrobbleError, ScrobbleResult, Service
+from .models import (
+    LASTFM_MAX_AGE,
+    ScrobbleError,
+    ScrobbleProgress,
+    ScrobbleResult,
+    Service,
+)
 from .queue import MIN_TIMESTAMP, capture
 from .reporting import adjustment_report, rejection_report
 from .timestamps import adjust_lastfm_dates
@@ -68,7 +75,7 @@ class ScrobbleService:
         active: ActiveIPod,
         accounts: tuple[Account, ...],
         cancelled: Event,
-        progress: Callable[[str], None],
+        progress: Callable[[ScrobbleProgress], None],
         *,
         ratings: bool = False,
     ) -> ScrobbleResult:
@@ -91,7 +98,7 @@ class ScrobbleService:
         active: ActiveIPod,
         accounts: tuple[Account, ...],
         cancelled: Event,
-        progress: Callable[[str], None],
+        progress: Callable[[ScrobbleProgress], None],
         *,
         ratings: bool,
     ) -> ScrobbleResult:
@@ -102,7 +109,7 @@ class ScrobbleService:
         now = int(self._clock())
         skipped = capture(state, device, active.library, accounts, now)
         if ratings:
-            progress("Capturing iPod star ratings…")
+            progress(ScrobbleProgress("capture", "Capturing iPod star ratings…"))
             capture_feedback(
                 state,
                 device,
@@ -178,9 +185,16 @@ class ScrobbleService:
                         break
                     checkpoint()
                     batch = entries[offset : offset + client.batch_size]
-                    progress(
-                        f"Scrobbling to {account.service.label}: {offset} / {len(entries)}…"
+                    update = ScrobbleProgress(
+                        f"{account.service.value}.plays",
+                        source_text(
+                            "Scrobbling to {service}…", service=account.service.label
+                        ),
+                        offset,
+                        len(entries),
+                        unit="plays",
                     )
+                    progress(update)
                     result = client.submit(
                         tuple(item.submission for item in batch), credentials
                     )
@@ -200,6 +214,7 @@ class ScrobbleService:
                     self._queue.save(state)
                     accepted += len(received)
                     rejections.extend(result.rejections)
+                    progress(replace(update, completed=offset + len(batch)))
                     if offset + len(batch) < len(entries) and not wait_between_batches(
                         client, cancelled, checkpoint
                     ):
@@ -210,12 +225,21 @@ class ScrobbleService:
                     raise ScrobbleError("This client does not support rating feedback.")
                 if isinstance(client, (LastFmClient, ListenBrainzClient)):
                     for index, item in enumerate(feedback):
+                        update = ScrobbleProgress(
+                            f"{account.service.value}.ratings",
+                            source_text(
+                                "Sending {service} ratings…",
+                                service=account.service.label,
+                            ),
+                            index,
+                            len(feedback),
+                            f"{item.artist} — {item.title}",
+                            "ratings",
+                        )
+                        progress(update)
                         if not wait_between_batches(client, cancelled, checkpoint):
                             break
                         checkpoint()
-                        progress(
-                            f"Sending {account.service.label} ratings: {index} / {len(feedback)}…"
-                        )
                         if (
                             isinstance(client, ListenBrainzClient)
                             and not item.recording_mbid
@@ -229,6 +253,7 @@ class ScrobbleService:
                                 )
                                 self._queue.save(state)
                                 feedback_skipped += 1
+                                progress(replace(update, completed=index + 1))
                                 continue
                             item = replace(item, recording_mbid=mbid)
                             state.feedback[item.identity] = item
@@ -248,6 +273,7 @@ class ScrobbleService:
                         state.feedback[item.identity] = replace(item, pending=False)
                         self._queue.save(state)
                         feedback_accepted += 1
+                        progress(replace(update, completed=index + 1))
             except ScrobbleError as error:
                 issues.append(f"{account.service.label}: {error}")
             if rejections:

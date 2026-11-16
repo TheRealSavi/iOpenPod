@@ -34,6 +34,54 @@ from iPodDB.library import IssueSeverity, Track, WriteIssue
 from storage import AtomicHostFile
 
 
+@pytest.mark.parametrize("service", ["lastfm", "listenbrainz"])
+def test_scrobble_ratings_render_counted_progress_and_track_identity(
+    service: str,
+) -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        page.update_progress(
+            WriteProgress(
+                f"sync.scrobble.{service}.ratings",
+                "Sending ratings…",
+                completed=22,
+                total=168,
+                current_item="Artist — Song",
+                unit="ratings",
+            )
+        )
+        bar = page.findChild(QProgressBar, "syncExecutionProgress")
+        summary = page.findChild(QLabel, "syncExecutionProgressSummary")
+        item = page.findChild(QLabel, "syncExecutionItem")
+        stage = page.findChild(QLabel, "syncExecutionStage")
+        assert (
+            bar is not None
+            and summary is not None
+            and item is not None
+            and stage is not None
+        )
+        assert (bar.value(), bar.maximum()) == (22, 168)
+        assert summary.text() == "22 of 168 ratings"
+        assert item.text() == "Item: Artist — Song"
+        assert stage.text() == "Scrobble plays"
+        page.update_progress(
+            WriteProgress(
+                f"sync.scrobble.{service}.ratings",
+                "Sending ratings…",
+                completed=168,
+                total=168,
+                unit="ratings",
+            )
+        )
+        assert bar.value() == bar.maximum() == 168
+        assert summary.text() == "168 of 168 ratings"
+        assert item.isHidden()
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
 @pytest.mark.parametrize("outcome", ["saved", "cancelled", "write_error"])
 def test_save_sync_report_keeps_every_file_and_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str

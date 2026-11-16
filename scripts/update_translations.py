@@ -28,6 +28,7 @@ TRANSLATIONS = ROOT / "src/iOpenPod/GUI/presentation/i18n/translations"
 _CONTRACT_FIELDS: dict[str, tuple[tuple[int, str], ...]] = {
     "MediaToolInstallPlan": ((1, "explanation"),),
     "WriteProgress": ((1, "message"), (5, "unit")),
+    "ScrobbleProgress": ((1, "message"), (5, "unit")),
     "MediaPreparationProgress": ((1, "message"),),
     "HostMediaScanProgress": ((3, "message"),),
     "IPodMediaScanProgress": ((3, "message"),),

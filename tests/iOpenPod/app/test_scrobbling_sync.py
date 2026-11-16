@@ -3,6 +3,7 @@
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
+from typing import TYPE_CHECKING
 
 import pytest
 from tests.iOpenPod.app.services.test_library_resources import build_device
@@ -32,6 +33,9 @@ from iOpenPod.app.sync_execution import (
 from iOpenPod.app.sync_plan import prepare_sync_plan
 from iPodDB.library import IssueSeverity, LibrarySnapshot
 from storage import AtomicHostFile
+
+if TYPE_CHECKING:
+    from iOpenPod.app.library_write import WriteProgress
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -89,8 +93,9 @@ def test_sync_captures_ratings_before_removal_without_host_tag_writeback(
                 account for account in ACCOUNTS if account.service is service
             ),
         )
+        events: list[WriteProgress] = []
         result = SyncExecutor(device.coordinator, scrobbler=scrobbler).execute(
-            request, lambda _: None, Event()
+            request, events.append, Event()
         )
         assert result.status in (
             SyncExecutionStatus.SUCCESS,
@@ -103,6 +108,12 @@ def test_sync_captures_ratings_before_removal_without_host_tag_writeback(
         )
         if enabled and offline:
             assert any(issue.code == "sync.scrobble_pending" for issue in result.issues)
+        if enabled:
+            ratings = [event for event in events if event.unit == "ratings"]
+            assert ratings
+            assert all(event.total == len(tracks) for event in ratings)
+            assert ratings[0].completed == 0
+            assert ratings[-1].completed == (0 if offline else len(tracks))
     finally:
         device.coordinator.close()
 
@@ -153,10 +164,11 @@ def test_sync_submits_before_removal_and_keeps_failed_listens(
             reconcile_playlists=False,
             scrobble_accounts=ACCOUNTS[:1],
         )
-        phases: list[str] = []
+        events: list[WriteProgress] = []
         result = SyncExecutor(device.coordinator, scrobbler=scrobbler).execute(
-            request, lambda event: phases.append(event.phase), Event()
+            request, events.append, Event()
         )
+        phases = [event.phase for event in events]
         assert result.status in (
             SyncExecutionStatus.SUCCESS,
             SyncExecutionStatus.PARTIAL,
@@ -171,6 +183,11 @@ def test_sync_submits_before_removal_and_keeps_failed_listens(
             assert phases.index("sync.scrobble") < phases.index(
                 "save.storage.publishing"
             )
+            plays = [event for event in events if event.unit == "plays"]
+            assert [event.completed for event in plays] == (
+                [0] if outcome == "offline" else [0, 2]
+            )
+            assert all(event.total == 2 for event in plays)
         if enabled and outcome == "offline":
             assert any(issue.code == "sync.scrobble_pending" for issue in result.issues)
         if enabled and outcome == "filtered":

@@ -30,6 +30,12 @@ available for the next manual attempt or enabled Sync. Cancellation stops betwee
 requests; an in-flight request can still be accepted. Completed acknowledgements
 are saved before stopping. The status bar provides a cancellation action during
 manual submission, and Sync shows its own Scrobble plays step.
+Submission progress counts processed plays or ratings for the current service,
+with a determinate progress bar in Sync and the manual status display. Counts
+advance after queue persistence, including the final batch or rating. Rejected
+plays and unmatched ratings count as processed; accepted and pending deliveries
+remain separate in the result report. Capture stays indeterminate until delivery
+totals are known, and changing service or work type starts a new progress phase.
 Manual results keep the status bar short: **Details** opens a scrollable, copyable
 report. **View last scrobble report** in Settings → Sync reopens the most recent
 manual report for the current application session.

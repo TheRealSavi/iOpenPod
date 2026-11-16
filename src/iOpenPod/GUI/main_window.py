@@ -75,7 +75,7 @@ from iOpenPod.app.photo_controller import PhotoLoadFailure
 from iOpenPod.app.playback.backend import PlaybackFailure
 from iOpenPod.app.podcasts.sync import PodcastSyncRequest
 from iOpenPod.app.scrobbling.controller import create_scrobbling
-from iOpenPod.app.scrobbling.models import ScrobbleResult
+from iOpenPod.app.scrobbling.models import ScrobbleProgress, ScrobbleResult
 from iOpenPod.app.scrobbling.settings import configured_accounts
 from iOpenPod.app.services.media_tools import MediaToolSetup
 from iOpenPod.app.sync_comparison_controller import (
@@ -248,6 +248,7 @@ class MainWindow(QMainWindow):
             self,
         )
         self._scrobbling.message.connect(self._scrobble_message)
+        self._scrobbling.progress.connect(self._scrobble_progress)
         self._scrobbling.finished.connect(self._scrobble_finished)
         self._sync_controller = SyncController(
             SyncExecutor(
@@ -1780,6 +1781,21 @@ class MainWindow(QMainWindow):
             if running
             else None,
             timeout_ms=0 if running else 20_000,
+        )
+
+    def _scrobble_progress(self, progress: ScrobbleProgress) -> None:
+        self._context.status.show(
+            "scrobbling",
+            workflow_text(progress.message),
+            progress=StatusProgress(
+                progress.completed or 0,
+                progress.total or 0,
+                detail=progress.current_item,
+            ),
+            action=StatusAction(
+                "cancel", QCoreApplication.translate("CommonActions", "Cancel")
+            ),
+            timeout_ms=0,
         )
 
     def _scrobble_finished(self, result: ScrobbleResult) -> None:

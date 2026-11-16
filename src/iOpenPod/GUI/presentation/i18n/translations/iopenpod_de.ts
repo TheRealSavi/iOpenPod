@@ -12095,6 +12095,26 @@ Playlists: %3</translation>
 <context>
     <name>Workflow</name>
     <message>
+        <source>Capturing iPod star ratings…</source>
+        <translation>Sternebewertungen vom iPod werden erfasst…</translation>
+    </message>
+    <message>
+        <source>Scrobbling to {service}…</source>
+        <translation>Scrobbles werden an {service} gesendet…</translation>
+    </message>
+    <message>
+        <source>Sending {service} ratings…</source>
+        <translation>Bewertungen werden an {service} gesendet…</translation>
+    </message>
+    <message>
+        <source>plays</source>
+        <translation>Wiedergaben</translation>
+    </message>
+    <message>
+        <source>ratings</source>
+        <translation>Bewertungen</translation>
+    </message>
+    <message>
         <source>A changed native browse record is shared by incompatible groups.</source>
         <translation type="vanished">Ein geänderter nativer Browsing-Datensatz wird von inkompatiblen Gruppen gemeinsam verwendet.</translation>
     </message>

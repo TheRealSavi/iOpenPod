@@ -58,6 +58,11 @@ def test_extraction_includes_dynamic_sources_in_runtime_contexts(catalog: Path) 
         ("Workflow", "No tag changes are needed."),
         ("Workflow", "Reparsing and verifying candidate output"),
         ("Workflow", "steps"),
+        ("Workflow", "plays"),
+        ("Workflow", "ratings"),
+        ("Workflow", "Capturing iPod star ratings…"),
+        ("Workflow", "Scrobbling to {service}…"),
+        ("Workflow", "Sending {service} ratings…"),
         ("Workflow", "Rebuild descendant membership and direct-child rules."),
         (
             "Workflow",

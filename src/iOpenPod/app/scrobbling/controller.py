@@ -43,7 +43,7 @@ class _AccountChange:
 
 class _Signals(QObject):
     completed = Signal(object, str)
-    progress = Signal(str)
+    progress = Signal(object)
 
 
 class _Work(QRunnable):
@@ -70,6 +70,7 @@ class _Work(QRunnable):
 class ScrobbleController(QObject):
     changed = Signal()
     message = Signal(str)
+    progress = Signal(object)
     authorizationRequested = Signal(str)
     finished = Signal(object)
 
@@ -136,7 +137,7 @@ class ScrobbleController(QObject):
             self._completed, Qt.ConnectionType.QueuedConnection
         )
         job.signals.progress.connect(
-            self.message.emit, Qt.ConnectionType.QueuedConnection
+            self.progress.emit, Qt.ConnectionType.QueuedConnection
         )
         self.changed.emit()
         self._pool.start(job)

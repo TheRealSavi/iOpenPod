@@ -23,7 +23,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build
 from iOpenPod.app.core.settings.definitions import BACK_SYNC_RATINGS
 from iOpenPod.app.scrobbling.clients import LastFmClient, ListenBrainzClient
 from iOpenPod.app.scrobbling.controller import ScrobbleController
-from iOpenPod.app.scrobbling.models import ScrobbleResult, Service
+from iOpenPod.app.scrobbling.models import ScrobbleProgress, ScrobbleResult, Service
 from iOpenPod.app.scrobbling.queue import ScrobbleQueue
 from iOpenPod.app.scrobbling.service import ScrobbleService
 from iOpenPod.app.scrobbling.settings import (
@@ -39,6 +39,43 @@ from iOpenPod.GUI.widgets.settings_editor import SettingsEditor
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings
 from storage import AtomicHostFile
+
+
+def test_manual_status_retains_typed_counts_and_cancel_action() -> None:
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    controller = window.findChild(ScrobbleController)
+    assert controller is not None
+    try:
+        controller.progress.emit(
+            ScrobbleProgress("capture", "Capturing iPod star ratings…")
+        )
+        status = context.status.current_status
+        assert status is not None and status.progress is not None
+        assert status.progress.total == 0
+        controller.progress.emit(
+            ScrobbleProgress(
+                "lastfm.ratings",
+                "Sending Last.fm ratings…",
+                22,
+                168,
+                "Artist — Song",
+                "ratings",
+            )
+        )
+        status = context.status.current_status
+        assert status is not None and status.progress is not None
+        assert (status.progress.current, status.progress.total) == (22, 168)
+        assert status.progress.detail == "Artist — Song"
+        assert status.action is not None and status.action.key == "cancel"
+        controller._completed(ScrobbleResult(feedback_accepted=168), "")  # pyright: ignore[reportPrivateUsage]
+        status = context.status.current_status
+        assert status is not None and status.progress is None
+        assert status.action is not None and status.action.key == "details"
+    finally:
+        window.close()
+        context.shutdown()
+        APPLICATION.processEvents()
 
 
 def test_manual_report_uses_a_short_status_and_scrollable_details() -> None:
@@ -186,6 +223,7 @@ def test_manual_scrobbling_uses_rating_setting_even_when_sync_scrobbling_is_off(
     controller = ScrobbleController(
         service, credentials, context.settings, context.device_controller
     )
+    progress = QSignalSpy(controller.progress)
     try:
         assert controller.scrobble_now()
         # A worker uses the captured choice, independent of later settings edits.
@@ -197,6 +235,14 @@ def test_manual_scrobbling_uses_rating_setting_even_when_sync_scrobbling_is_off(
         )
         assert bool(transport.calls) == enabled
         assert bool(lastfm_transport.calls) == enabled
+        events = [progress.at(index)[0] for index in range(progress.count())]
+        assert all(isinstance(event, ScrobbleProgress) for event in events)
+        if enabled:
+            for name in ("lastfm", "listenbrainz"):
+                ratings = [
+                    event for event in events if event.phase == f"{name}.ratings"
+                ]
+                assert ratings[-1].completed == ratings[-1].total == len(library.tracks)
     finally:
         controller.shutdown()
         context.shutdown()

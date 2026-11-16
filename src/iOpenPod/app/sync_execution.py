@@ -356,8 +356,15 @@ class SyncExecutor:
                         request.source,
                         request.scrobble_accounts,
                         cancelled,
-                        lambda message: progress(
-                            WriteProgress("sync.scrobble", message)
+                        lambda update: progress(
+                            WriteProgress(
+                                f"sync.scrobble.{update.phase}",
+                                update.message,
+                                update.completed,
+                                update.total,
+                                update.current_item,
+                                update.unit,
+                            )
                         ),
                         ratings=request.options.scrobble_ratings,
                     )
