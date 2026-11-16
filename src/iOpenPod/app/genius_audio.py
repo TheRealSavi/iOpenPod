@@ -9,6 +9,7 @@ firmware owns subsequent playback traversal; this module does not build a queue.
 from __future__ import annotations
 
 import math
+from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -145,25 +146,32 @@ def _segment_features(
         "Callable[[NDArray[np.float64]], NDArray[np.float64]]",
         _library_member(librosa, "power_to_db"),
     )
-    floor: float | None = None
-    frames = 1 + max(samples.size, _FRAME_SIZE) // _HOP_SIZE
-    if frames > _BLOCK_FRAMES:
-        # Establish the whole-segment 80 dB floor before accumulating MFCCs.
-        # Recomputing bounded spectra avoids retaining a song-sized spectrogram.
-        peak = 0.0
-        for _, mel in _spectral_blocks(samples, sample_rate_hz, checkpoint):
-            peak = max(peak, float(np.max(mel)))
-        floor = 10.0 * math.log10(max(peak, 1e-10)) - 80.0
     centroid = _Moments(0, np.zeros(1), np.zeros(1))
-    mfcc = _Moments(0, np.zeros(13), np.zeros(13))
-    onset_blocks: list[NDArray[np.float64]] = []
-    previous: NDArray[np.float64] | None = None
+    # Compute each STFT once. MFCCs need the whole-segment floor first, so keep
+    # only the 128-band mel blocks, not the 1,025-bin spectra. A 15-minute
+    # segment retains about 40 MB, half of its PCM; the spectra would be ~8x.
+    mel_blocks: deque[NDArray[np.float64]] = deque()
     for magnitude, mel in _spectral_blocks(samples, sample_rate_hz, checkpoint):
         centroid.add(
             librosa.feature.spectral_centroid(
                 S=magnitude, sr=sample_rate_hz, n_fft=_FRAME_SIZE, hop_length=_HOP_SIZE
             )
         )
+        mel_blocks.append(mel)
+    floor: float | None = None
+    frames = 1 + max(samples.size, _FRAME_SIZE) // _HOP_SIZE
+    if frames > _BLOCK_FRAMES:
+        # Apply one whole-segment 80 dB floor before accumulating MFCCs.
+        peak = 0.0
+        for mel in mel_blocks:
+            peak = max(peak, float(np.max(mel)))
+        floor = 10.0 * math.log10(max(peak, 1e-10)) - 80.0
+    mfcc = _Moments(0, np.zeros(13), np.zeros(13))
+    onset_blocks: list[NDArray[np.float64]] = []
+    previous: NDArray[np.float64] | None = None
+    while mel_blocks:
+        # Release each retained block once its MFCCs and onsets are recorded.
+        mel = mel_blocks.popleft()
         mel_db = power_to_db(mel)
         if floor is not None:
             mel_db = np.maximum(mel_db, floor)
