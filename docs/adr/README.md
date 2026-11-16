@@ -337,3 +337,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0271: Scale Genius analysis of staged Host audio](0271-scale-genius-analysis-of-staged-host-audio.md)
 - [ADR-0272: Use one maths thread per Genius worker](0272-use-one-maths-thread-per-genius-worker.md)
 - [ADR-0273: Retain Genius mel blocks for one spectral pass](0273-retain-genius-mel-blocks-for-one-spectral-pass.md)
+- [ADR-0274: Read one device Track at a time for Genius analysis](0274-read-one-device-track-at-a-time-for-genius-analysis.md)

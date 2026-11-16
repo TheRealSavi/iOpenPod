@@ -449,6 +449,7 @@ class _GatedDecoder:
     def __init__(self, target: int) -> None:
         self.target = target
         self.reached = Event()
+        self.exceeded = Event()
         self.release = Event()
         self.lock = Lock()
         self.active: list[HostPath | DevicePath] = []
@@ -476,6 +477,8 @@ class _GatedDecoder:
             )
             if len(self.active) == self.target:
                 self.reached.set()
+            elif len(self.active) > self.target:
+                self.exceeded.set()
         try:
             assert self.release.wait(5)
             checkpoint()
@@ -485,12 +488,12 @@ class _GatedDecoder:
                 self.active.remove(source)
 
 
-def test_device_reads_stay_bounded_with_spare_workers_and_report_progress(
+def test_device_tracks_read_one_at_a_time_and_report_progress(
     tmp_path: Path,
 ) -> None:
     root, _, session, snapshot = _device(tmp_path)
     snapshot = _with_device_tracks(root, snapshot, (2, 3))
-    decoder = _GatedDecoder(target=2)
+    decoder = _GatedDecoder(target=1)
     progress: list[tuple[int, int]] = []
     active_snapshots: list[tuple[GeniusAnalysisActivity, ...]] = []
     progress_threads: set[object] = set()
@@ -514,16 +517,22 @@ def test_device_reads_stay_bounded_with_spare_workers_and_report_progress(
         try:
             assert decoder.reached.wait(5)
             assert reported.wait(5)
-            # The third device read cannot start until a device slot is released.
-            assert len(decoder.calls) == 2
+            # Two device Tracks are in flight, but only one reads at a time.
             assert active_snapshots[0] == (
                 GeniusAnalysisActivity(1, "Song"),
                 GeniusAnalysisActivity(2, "Song"),
             )
+            # Hold the first read long enough for an unserialized peer to start.
+            assert not decoder.exceeded.wait(0.3)
+            assert len(decoder.calls) == 1
+            assert decoder.calls[0] in {
+                DevicePath("song.mp3"),
+                DevicePath("song-2.mp3"),
+            }
         finally:
             decoder.release.set()
         result = future.result(timeout=10)
-    assert decoder.peak == 2
+    assert decoder.peak == 1
     assert len(decoder.calls) == 3
     assert tuple(result.profiles) == (1, 2, 3)
     assert progress[0] == (0, 3)
@@ -533,6 +542,95 @@ def test_device_reads_stay_bounded_with_spare_workers_and_report_progress(
     assert all(len(active) <= 2 for active in active_snapshots)
     assert active_snapshots[-1] == ()
     assert len(progress_threads) == 1
+
+
+def test_next_device_read_overlaps_previous_profile(tmp_path: Path) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2,))
+    second_read = Event()
+
+    class OrderedDecoder(_Decoder):
+        def decode(
+            self,
+            source: HostPath | DevicePath,
+            *,
+            input_suffix: str,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            super().decode(
+                source,
+                input_suffix=input_suffix,
+                session=session,
+                checkpoint=checkpoint,
+            )
+            if len(self.sources) == 2:
+                second_read.set()
+            return bytes((len(self.sources), 0, 0, 0))
+
+    def profile(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        if pcm[0] == 1:
+            # The first reader releases the device before it is profiled.
+            assert second_read.wait(5)
+        return _profile(pcm, sample_rate_hz=sample_rate_hz, checkpoint=checkpoint)
+
+    result = GeniusAnalysisService(
+        decoder=OrderedDecoder(), profiler=profile, workers=2
+    ).analyze(snapshot, session, checkpoint=_checkpoint)
+    assert tuple(result.profiles) == (1, 2)
+
+
+def test_waiting_for_the_device_read_observes_cancellation(tmp_path: Path) -> None:
+    root, _, session, snapshot = _device(tmp_path)
+    snapshot = _with_device_tracks(root, snapshot, (2,))
+    analysis_thread = current_thread()
+    reader: list[object] = []
+    calls: dict[object, int] = {}
+    lock = Lock()
+    second_waiting = Event()
+    cancelled = Event()
+    waiter_stopped = Event()
+
+    def checkpoint() -> None:
+        thread = current_thread()
+        if thread is not analysis_thread and reader and thread is not reader[0]:
+            with lock:
+                calls[thread] = calls.get(thread, 0) + 1
+                # Entry makes one call; any later call polls for the read slot.
+                if calls[thread] >= 2:
+                    second_waiting.set()
+            if cancelled.is_set():
+                waiter_stopped.set()
+        if cancelled.is_set():
+            raise PreparationCancelledError
+
+    class HoldingDecoder(_Decoder):
+        def decode(
+            self,
+            source: HostPath | DevicePath,
+            *,
+            input_suffix: str,
+            session: FilesystemSession,
+            checkpoint: Callable[[], None],
+        ) -> bytes:
+            self.sources.append(source)
+            reader.append(current_thread())
+            assert second_waiting.wait(5)
+            cancelled.set()
+            # Holding the slot, the reader cannot release the waiting Track.
+            assert waiter_stopped.wait(5)
+            checkpoint()
+            pytest.fail("Cancelled audio decoding should stop at its checkpoint")
+
+    decoder = HoldingDecoder()
+    with pytest.raises(PreparationCancelledError):
+        GeniusAnalysisService(decoder=decoder, profiler=_profile, workers=2).analyze(
+            snapshot, session, checkpoint=checkpoint
+        )
+    assert waiter_stopped.is_set()
+    assert len(decoder.sources) == 1
 
 
 def test_staged_host_sources_use_every_worker(tmp_path: Path) -> None:
@@ -561,7 +659,7 @@ def test_waiting_device_reads_do_not_hold_back_later_staged_sources(
     root, _, session, snapshot = _device(tmp_path)
     snapshot = _with_device_tracks(root, snapshot, (2, 3))
     snapshot, media = _with_staged_tracks(tmp_path, snapshot, (4, 5))
-    decoder = _GatedDecoder(target=4)
+    decoder = _GatedDecoder(target=3)
     service = GeniusAnalysisService(decoder=decoder, profiler=_profile, workers=4)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(
@@ -574,13 +672,15 @@ def test_waiting_device_reads_do_not_hold_back_later_staged_sources(
         finally:
             decoder.release.set()
         result = future.result(timeout=10)
-    assert active == {
-        DevicePath("song.mp3"),
-        DevicePath("song-2.mp3"),
-        HostPath(tmp_path / "staged-4.mp3"),
-        HostPath(tmp_path / "staged-5.mp3"),
-    }
-    assert decoder.peak_device == 2
+    # One of Tracks 1 and 2 reads while the other waits for the device and Track 3
+    # waits for admission. Both staged captures decode meanwhile.
+    staged = {HostPath(tmp_path / "staged-4.mp3"), HostPath(tmp_path / "staged-5.mp3")}
+    assert staged < active
+    assert active - staged in (
+        {DevicePath("song.mp3")},
+        {DevicePath("song-2.mp3")},
+    )
+    assert decoder.peak_device == 1
     assert tuple(result.profiles) == (1, 2, 3, 4, 5)
 
 
@@ -589,7 +689,7 @@ def test_slow_track_does_not_hold_back_later_admission(tmp_path: Path) -> None:
     snapshot = _with_device_tracks(root, snapshot, (2, 3))
     third_started = Event()
 
-    class SlowFirstDecoder(_Decoder):
+    class MarkingDecoder(_Decoder):
         def decode(
             self,
             source: HostPath | DevicePath,
@@ -598,20 +698,30 @@ def test_slow_track_does_not_hold_back_later_admission(tmp_path: Path) -> None:
             session: FilesystemSession,
             checkpoint: Callable[[], None],
         ) -> bytes:
-            if source == DevicePath("song-3.mp3"):
-                third_started.set()
-            elif source == DevicePath("song.mp3"):
-                # A pairwise batch would never start Track 3 while this waits.
-                assert third_started.wait(5)
-            return super().decode(
+            super().decode(
                 source,
                 input_suffix=input_suffix,
                 session=session,
                 checkpoint=checkpoint,
             )
+            if source == DevicePath("song-3.mp3"):
+                third_started.set()
+            return (
+                b"\x07\x00\x00\x00"
+                if source == DevicePath("song.mp3")
+                else (b"\x01\x00\x00\x00")
+            )
+
+    def profile(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        if pcm[0] == 7:
+            # A pairwise batch would never start Track 3 while this waits.
+            assert third_started.wait(5)
+        return _profile(pcm, sample_rate_hz=sample_rate_hz, checkpoint=checkpoint)
 
     result = GeniusAnalysisService(
-        decoder=SlowFirstDecoder(), profiler=_profile, workers=2
+        decoder=MarkingDecoder(), profiler=profile, workers=2
     ).analyze(snapshot, session, checkpoint=_checkpoint)
     assert third_started.is_set()
     assert tuple(result.profiles) == (1, 2, 3)
@@ -772,19 +882,7 @@ def test_skip_stops_active_and_waiting_work_and_keeps_completed_profiles(
     tmp_path: Path,
 ) -> None:
     root, _, session, snapshot = _device(tmp_path)
-    tracks = [snapshot.tracks[0]]
-    for track_id in (2, 3):
-        name = f"song-{track_id}.mp3"
-        (root / name).write_bytes(b"audio")
-        tracks.append(
-            replace(
-                tracks[0],
-                track_id=track_id,
-                metadata=TrackMetadata(location=name),
-                ipod=IPodTrackDetails(db_track_id=100 + track_id),
-            )
-        )
-    snapshot = replace(snapshot, tracks=tuple(tracks))
+    snapshot = _with_device_tracks(root, snapshot, (2, 3))
     skip = Event()
     peer_started = Event()
     peer_stopped = Event()
@@ -799,8 +897,7 @@ def test_skip_stops_active_and_waiting_work_and_keeps_completed_profiles(
             checkpoint: Callable[[], None],
         ) -> bytes:
             self.sources.append(source)
-            if source == DevicePath("song.mp3"):
-                assert peer_started.wait(5)
+            if len(self.sources) == 1:
                 return b"\x01\x00\x00\x00"
             peer_started.set()
             try:
@@ -810,6 +907,13 @@ def test_skip_stops_active_and_waiting_work_and_keeps_completed_profiles(
             finally:
                 peer_stopped.set()
 
+    def profile(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        # The first reader releases the device before it is profiled.
+        assert peer_started.wait(5)
+        return _profile(pcm, sample_rate_hz=sample_rate_hz, checkpoint=checkpoint)
+
     decoder = SkippableDecoder()
     cache = AtomicHostFile(tmp_path / "profiles.json")
 
@@ -817,7 +921,7 @@ def test_skip_stops_active_and_waiting_work_and_keeps_completed_profiles(
         if value.completed == 1:
             skip.set()
 
-    result = GeniusAnalysisService(cache, decoder, profiler=_profile).analyze(
+    result = GeniusAnalysisService(cache, decoder, profiler=profile).analyze(
         snapshot,
         session,
         checkpoint=_checkpoint,
@@ -825,20 +929,19 @@ def test_skip_stops_active_and_waiting_work_and_keeps_completed_profiles(
         skip_requested=skip.is_set,
     )
     assert peer_stopped.is_set()
-    assert tuple(result.profiles) == (1,)
+    # Tracks 1 and 2 were in flight; either may have read first.
+    assert set(decoder.sources) == {DevicePath("song.mp3"), DevicePath("song-2.mp3")}
+    completed = {1 if decoder.sources[0] == DevicePath("song.mp3") else 2}
+    assert set(result.profiles) == completed
     assert not result.issues
-    assert set(decoder.sources) == {
-        DevicePath("song.mp3"),
-        DevicePath("song-2.mp3"),
-    }
     retry_decoder = _Decoder()
     retried = GeniusAnalysisService(cache, retry_decoder, profiler=_profile).analyze(
         snapshot, session, checkpoint=_checkpoint
     )
     assert tuple(retried.profiles) == (1, 2, 3)
     assert set(retry_decoder.sources) == {
-        DevicePath("song-2.mp3"),
         DevicePath("song-3.mp3"),
+        DevicePath("song.mp3") if 2 in completed else DevicePath("song-2.mp3"),
     }
 
 
@@ -888,6 +991,7 @@ def test_concurrent_source_change_stops_peer_and_rejects_profiles(
             ),
         ),
     )
+    first: list[HostPath | DevicePath] = []
     peer_started = Event()
     peer_stopped = Event()
 
@@ -901,9 +1005,8 @@ def test_concurrent_source_change_stops_peer_and_rejects_profiles(
             checkpoint: Callable[[], None],
         ) -> bytes:
             assert input_suffix == ".mp3"
-            if source == DevicePath("song.mp3"):
-                assert peer_started.wait(5)
-                (root / "song.mp3").write_bytes(b"changed")
+            if not first:
+                first.append(source)
                 return b"\x01\x00\x00\x00"
             peer_started.set()
             try:
@@ -914,7 +1017,16 @@ def test_concurrent_source_change_stops_peer_and_rejects_profiles(
             finally:
                 peer_stopped.set()
 
-    service = GeniusAnalysisService(decoder=ChangingDecoder(), profiler=_profile)
+    def profile(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        # The first reader's source changes while its peer is reading.
+        assert peer_started.wait(5)
+        assert isinstance(first[0], DevicePath)
+        (root / str(first[0])).write_bytes(b"changed")
+        return _profile(pcm, sample_rate_hz=sample_rate_hz, checkpoint=checkpoint)
+
+    service = GeniusAnalysisService(decoder=ChangingDecoder(), profiler=profile)
     with pytest.raises(ConcurrentModificationError):
         service.analyze(snapshot, session, checkpoint=_checkpoint)
     assert peer_stopped.is_set()

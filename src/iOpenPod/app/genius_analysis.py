@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from contextlib import contextmanager, nullcontext
 from copy import copy
 from dataclasses import dataclass, replace
 from importlib import import_module
@@ -44,7 +45,7 @@ from storage.media_processing import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Generator, Mapping
 
     from iOpenPod.app.media.importing import LibraryMediaSource
     from iPodDB.library import LibrarySnapshot, PreparedLyrics, Track
@@ -54,8 +55,11 @@ if TYPE_CHECKING:
 GENIUS_SAMPLE_RATE_HZ = 22_050
 MAX_GENIUS_AUDIO_SECONDS = 15 * 60
 _MAX_PCM_BYTES = GENIUS_SAMPLE_RATE_HZ * MAX_GENIUS_AUDIO_SECONDS * 4
-# Removable devices keep ADR-0183's bound; staged Host captures are local files.
+# Two device Tracks may be in flight, but only one reads at a time: concurrent
+# reads slowed both hard-drive and flash iPods (ADR-0274). Staged Host captures
+# are local files and may use every worker.
 _MAX_DEVICE_ANALYSIS_WORKERS = 2
+_DEVICE_READ_POLL_SECONDS = 0.1
 _MAX_ANALYSIS_WORKERS = 6
 
 
@@ -324,10 +328,10 @@ class _AnalyzedTrack:
 
 
 class _AdmissionQueue:
-    """Library-ordered waiting analysis with a separate bound for device reads.
+    """Library-ordered waiting analysis with a separate bound for device Tracks.
 
     Host and device sources wait in separate Library-ordered queues. The earliest
-    admissible head is admitted next, so a device Track waiting for a read slot
+    admissible head is admitted next, so a device Track waiting for admission
     does not hold back later staged Host captures.
     """
 
@@ -370,9 +374,10 @@ class _AdmissionQueue:
 class GeniusAnalysisService:
     """Profile music sources concurrently and retain successful work.
 
-    At most ``workers`` sources are analyzed at once, of which at most two read
-    from the device. Admission follows Library order; outcomes are recorded as
-    they complete, so one slow Track never idles the remaining workers.
+    At most ``workers`` sources are analyzed at once. At most two are device
+    Tracks, and only one of those reads at a time while the other is profiled.
+    Admission follows Library order; outcomes are recorded as they complete, so
+    one slow Track never idles the remaining workers.
     """
 
     def __init__(
@@ -482,6 +487,7 @@ class GeniusAnalysisService:
                 else:
                     outcomes[track.track_id] = resolved
             waiting = _AdmissionQueue(pending)
+            device_read = Lock()
             # Insertion order is admission order, which progress reports as active.
             running: dict[
                 Future[_AnalyzedTrack | GeniusAnalysisIssue], tuple[Track, bool]
@@ -545,6 +551,7 @@ class GeniusAnalysisService:
                                 session,
                                 decoder,
                                 worker_checkpoint,
+                                device_read,
                             )
                             running[future] = (track, on_device)
                         if should_skip():
@@ -686,6 +693,7 @@ class GeniusAnalysisService:
         session: FilesystemSession,
         decoder: GeniusPCMDecoder,
         checkpoint: Callable[[], None],
+        device_read: Lock,
     ) -> _AnalyzedTrack | GeniusAnalysisIssue:
         try:
             try:
@@ -695,12 +703,17 @@ class GeniusAnalysisService:
                     raise GeniusAudioDecodeError(
                         "Track exceeds the 15-minute acoustic analysis limit"
                     )
-                pcm = decoder.decode(
-                    source.path,
-                    input_suffix=PurePosixPath(track.metadata.location).suffix,
-                    session=session,
-                    checkpoint=checkpoint,
-                )
+                with (
+                    _holding(device_read, checkpoint)
+                    if isinstance(source.path, DevicePath)
+                    else nullcontext()
+                ):
+                    pcm = decoder.decode(
+                        source.path,
+                        input_suffix=PurePosixPath(track.metadata.location).suffix,
+                        session=session,
+                        checkpoint=checkpoint,
+                    )
                 if len(pcm) > _MAX_PCM_BYTES:
                     raise GeniusAudioDecodeError("Decoded audio exceeds its byte limit")
                 profile = self._profiler(
@@ -723,6 +736,17 @@ class GeniusAnalysisService:
             return GeniusAnalysisIssue(
                 track.track_id, "genius.audio_unavailable", str(error)
             )
+
+
+@contextmanager
+def _holding(lock: Lock, checkpoint: Callable[[], None]) -> Generator[None]:
+    """Hold the device read slot; waiting for it stays cancellable."""
+    while not lock.acquire(timeout=_DEVICE_READ_POLL_SECONDS):
+        checkpoint()
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 class PreparationStoppedError(RuntimeError):
