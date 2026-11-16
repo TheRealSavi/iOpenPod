@@ -11,15 +11,22 @@ FFmpeg decoders can read from the device concurrently. Genius analysis of
 retained Tracks reads each uncached file from the device in full. On a
 hard-drive iPod, concurrent reads make the drive seek between files.
 
-Direct, uncached reads of 16 iPod Music files from an iPod classic over USB 2.0:
+Direct, uncached reads of 16 iPod Music files per run over USB 2.0:
 
-| Concurrent readers | Throughput |
-| ---: | ---: |
-| 1 | 22.2–22.6 MB/s |
-| 2 | 15.9–16.2 MB/s |
+| Concurrent readers | iPod classic, hard drive | iPod 5.5G, flash storage |
+| ---: | ---: | ---: |
+| 1 | 22.2–22.6 MB/s | 15.3–15.4 MB/s |
+| 2 | 15.9–16.2 MB/s | 9.8–10.4 MB/s |
 
-Read size made no difference. A cold Sync of that iPod spent about 6,000 seconds
-in Genius analysis for a 57 GB Music library, consistent with device-bound reads.
+On the hard drive, read size made no difference. A cold Sync of the iPod classic
+spent about 6,000 seconds in Genius analysis for a 57 GB Music library,
+consistent with device-bound reads.
+
+Flash storage does not seek, yet concurrent reads slowed it as much. The cause was
+not isolated; the iPod's USB bridge or the storage may favor sequential reads.
+The storage type cannot be detected reliably: Linux reported the flash iPod as
+rotational, and an iPod fitted with flash storage identifies as its original
+hard-drive model.
 
 The iPod Media Scan already uses one serialized device capture overlapped with
 decoding (ADR-0123).
@@ -38,19 +45,21 @@ Library order.
 ## Consequences
 
 Device reads proceed one at a time at the device's sequential rate, and profiling
-overlaps the next read. On the measured iPod this raises read throughput by about
-40%, which bounds cold Genius analysis of retained Tracks.
+overlaps the next read. On the measured iPods this raises read throughput by about
+40% for the hard drive and 50% for flash storage, which bounds cold Genius
+analysis of retained Tracks.
 
-A cold Sync of the same iPod with this decision, ADR-0271, ADR-0272, and the
-single-transform spectral blocks analyzed 2,867 Tracks, 2,817 of them read from the
+A cold Sync of the iPod classic with this decision and ADR-0271 to ADR-0273
+analyzed 2,867 Tracks, 2,817 of them read from the
 device, in 3,054 seconds. Holding the device read accounted for 3,042 seconds,
 about 19 MB/s across the Music library, so the step remains device-bound and
 further CPU or GPU work would not shorten it. Of 2,817 profiles shared with the
 earlier cache, 2,816 matched to within floating-point rounding; the other decoded
 to a different duration.
 
-Flash-based iPods do not seek, so concurrent reads would cost them less. They are
-still limited by the same USB 2.0 link, and this decision does not distinguish
-storage types.
+A Sync of the flash iPod analyzed 824 device Tracks and 745 staged Host captures
+in 1,078 seconds, of which 1,067 seconds held the device read.
+
+The decision applies to every device, regardless of storage type.
 
 Peak device PCM memory is unchanged: two device Tracks in flight, as before.

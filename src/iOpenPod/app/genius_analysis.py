@@ -56,7 +56,7 @@ GENIUS_SAMPLE_RATE_HZ = 22_050
 MAX_GENIUS_AUDIO_SECONDS = 15 * 60
 _MAX_PCM_BYTES = GENIUS_SAMPLE_RATE_HZ * MAX_GENIUS_AUDIO_SECONDS * 4
 # Two device Tracks may be in flight, but only one reads at a time: concurrent
-# reads seek between files on hard-drive iPods (ADR-0274). Staged Host captures
+# reads slowed both hard-drive and flash iPods (ADR-0274). Staged Host captures
 # are local files and may use every worker.
 _MAX_DEVICE_ANALYSIS_WORKERS = 2
 _DEVICE_READ_POLL_SECONDS = 0.1
