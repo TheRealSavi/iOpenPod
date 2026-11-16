@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-24
 - Amends: ADR-0179
+- Amended by: ADR-0271 for staged Host audio and continuous admission
 
 ## Context
 

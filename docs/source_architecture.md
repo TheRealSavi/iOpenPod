@@ -1068,9 +1068,11 @@ Cache lookup precedes worker admission, so only uncached Tracks enter audio-anal
 progress. After commit, matching published size and SHA-256 associate prepared Host
 profiles with final iPod identities using Storage's verified output fingerprints.
 This adds no device media read, and a cache failure cannot undo a committed Library.
-At most two Tracks are decoded and profiled concurrently; result collection,
-progress, and cache writes stay on the preparation thread. Per-Track source
-validation and cancellation still apply before any profile is accepted.
+A continuously refilled pool of two to six workers decodes and profiles Tracks
+(ADR-0271); at most two read from the device at once, while staged Host captures
+may use every worker. Result collection, progress, and cache writes stay on the
+preparation thread. Per-Track source validation and cancellation still apply
+before any profile is accepted.
 The pure generator compares body features and outro-to-intro transitions, retains
 metadata fallback, and supplies stable artist/album keys with native spacing rules.
 Device analysis identities are rechecked before staging and publication; cache
