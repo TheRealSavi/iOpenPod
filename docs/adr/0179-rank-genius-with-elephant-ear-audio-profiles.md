@@ -109,3 +109,18 @@ bytes after analysis. Captured tag-only output evidence carries the profile to
 the new fingerprint, and cache association occurs only after Storage verifies
 publication. Audio replacement or unverified file changes never receive that
 association. See ADR-0076 and ADR-0120.
+
+## Amendment: key retained device profiles by persistent facts (2026-11-15)
+
+A retained device profile's cache key uses the Physical Device ID, Volume ID,
+persistent database Track ID, Device Path, size, and modification time. It omits
+the host-assigned `st_dev` and `st_ino`. FAT filesystems assign inode numbers per
+mount, so keys that included them discarded every retained profile on
+reconnection and forced complete device rereads each Sync. The iPod Media Scan
+analysis cache already uses the same persistent facts (ADR-0065).
+
+Within one Filesystem Session, retained device sources are still validated
+against their complete observed file identity, including inode, before and after
+analysis and again before publication. Size and modification time remain a fast
+cache discriminator rather than hostile-change detection, as for the Sync helper.
+Existing inode-bound entries become unused and age out under the normal bounds.
