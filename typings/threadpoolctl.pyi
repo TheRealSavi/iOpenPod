@@ -1,8 +1,16 @@
 # threadpoolctl 3.6 ships no type information. Declare only the API iOpenPod uses.
 from types import TracebackType
-from typing import Literal, Self
+from typing import Literal, Self, TypedDict
 
-def threadpool_info() -> list[dict[str, object]]: ...
+class _LibraryInfo(TypedDict):
+    user_api: Literal["blas", "openmp"]
+    internal_api: str
+    num_threads: int
+    prefix: str
+    filepath: str
+    version: str | None
+
+def threadpool_info() -> list[_LibraryInfo]: ...
 
 class threadpool_limits:  # noqa: N801 - the library's own spelling
     def __init__(

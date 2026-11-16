@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from threading import Event, Lock, current_thread
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 from threadpoolctl import threadpool_info
@@ -629,9 +629,7 @@ def test_default_workers_follow_physical_cores_within_bounds(
 
 def _blas_threads() -> int:
     return min(
-        cast("int", pool["num_threads"])
-        for pool in threadpool_info()
-        if pool["user_api"] == "blas"
+        pool["num_threads"] for pool in threadpool_info() if pool["user_api"] == "blas"
     )
 
 
