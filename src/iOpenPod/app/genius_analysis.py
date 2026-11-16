@@ -8,6 +8,7 @@ from collections import deque
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from copy import copy
 from dataclasses import dataclass, replace
+from importlib import import_module
 from pathlib import PurePosixPath
 from threading import Event, Lock
 from types import MappingProxyType
@@ -503,6 +504,11 @@ class GeniusAnalysisService:
                             ),
                         )
                     )
+
+            if pending and not should_skip():
+                # SciPy can load a separate BLAS library on the first profile.
+                # Discover it before limiting pools, while keeping startup lazy.
+                import_module("scipy.linalg")
 
             # The limit is process-wide; restore it only after every worker stops.
             with (

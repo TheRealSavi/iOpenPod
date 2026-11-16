@@ -4,6 +4,7 @@
 - Date: 2026-10-24
 - Extends: ADR-0176 and ADR-0178
 - Preserves: ADR-0042, ADR-0123, ADR-0156, and ADR-0172
+- Amended by: ADR-0273 for retaining segment mel blocks
 
 ADR-0188 reduces the authored candidate cap from 256 to 32 while preserving this
 ranking and spacing policy.

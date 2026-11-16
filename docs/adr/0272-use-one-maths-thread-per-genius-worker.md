@@ -29,9 +29,12 @@ threading did not speed up even one worker.
 
 ## Decision
 
-While Genius analysis runs, BLAS libraries use one thread. Parallelism comes from
-the analysis workers (ADR-0271). The limit is applied with `threadpoolctl` for
-the duration of analysis and restored after every worker stops.
+While Genius analysis runs, BLAS libraries supported by `threadpoolctl` use one
+thread. Parallelism comes from the analysis workers (ADR-0271). NumPy and SciPy's
+native BLAS libraries must be loaded before entering the limit: library discovery
+does not include a pool loaded later by the first profile. SciPy remains lazy until
+uncached audio work is pending. The limit is restored after every worker stops,
+including cancellation and failure.
 
 `threadpoolctl` becomes a direct dependency. It was already installed and
 distributed through scikit-learn, so this adds no package to the distribution. A
@@ -47,3 +50,8 @@ every core with busy-waiting threads.
 BLAS thread limits are process-wide, so other NumPy work in the application during
 Genius analysis also runs single-threaded. Sync runs Genius analysis after media
 preparation, when no other analysis is expected.
+
+Unmanaged backends such as Apple's Accelerate retain their own threading policy.
+Analysis remains available on those builds. Tests verify every detected pool by
+library identity, including a fresh-process first profile and restoration after
+cancellation; backend-specific assertions skip when no controllable pool exists.
