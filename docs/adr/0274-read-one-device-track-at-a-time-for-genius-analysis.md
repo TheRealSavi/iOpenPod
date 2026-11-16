@@ -57,8 +57,10 @@ further CPU or GPU work would not shorten it. Of 2,817 profiles shared with the
 earlier cache, 2,816 matched to within floating-point rounding; the other decoded
 to a different duration.
 
-A Sync of the flash iPod analyzed 824 device Tracks and 745 staged Host captures
-in 1,078 seconds, of which 1,067 seconds held the device read.
+A Sync of the flash iPod, which does not support Genius, analyzed 824 device
+Tracks and 745 staged Host captures for missing BPM (ADR-0179) in 1,078 seconds,
+of which 1,067 seconds held the device read. It analyzed only Tracks without a
+BPM.
 
 The decision applies to every device, regardless of storage type.
 
