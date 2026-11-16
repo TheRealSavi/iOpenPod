@@ -388,8 +388,7 @@ class SyncExecutionPage(QWidget):
         if progress.current_item and not (preparing and progress.active_items):
             label = (
                 self.tr("Item: %1")
-                if progress.phase in ("sync.prepare", "sync.photos")
-                or progress.phase.startswith("sync.scrobble.")
+                if progress.phase.startswith("sync.")
                 else self.tr("Current file: %1")
             )
             item = (
@@ -793,7 +792,26 @@ class SyncExecutionPage(QWidget):
         return reference + (" · " + issue.field if issue.field else "")
 
     def _stage_index(self, phase: str) -> int:
-        if phase == "sync.prepare" or phase == "sync.photos":
+        if any(
+            phase == prefix or phase.startswith(prefix + ".")
+            for prefix in ("sync.database", "draft", "resources")
+        ):
+            return self._STAGES.index("database.")
+        if any(
+            phase == prefix or phase.startswith(prefix + ".")
+            for prefix in (
+                "sync.prepare",
+                "sync.photos",
+                "sync.podcasts",
+                "sync.podcast_prepare",
+                "sync.podcast_artwork",
+                "sync.metadata",
+                "sync.artwork",
+                "sync.tools",
+                "sync.sources",
+                "sync.playlists",
+            )
+        ):
             return self._STAGES.index("sync.media")
         for index, prefix in enumerate(self._STAGES):
             if phase == prefix or phase.startswith(prefix):

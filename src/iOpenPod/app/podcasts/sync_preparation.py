@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from iOpenPod.app.display_text import source_text
+from iOpenPod.app.library_write import WriteProgress
 from iOpenPod.app.podcasts.catalog import (
     mark_episodes_automatically_cleared,
     merge_fetched_subscription,
@@ -19,6 +20,7 @@ from iOpenPod.app.podcasts.feed_client import (
 from iOpenPod.app.podcasts.identity import track_podcast_identity
 from iOpenPod.app.podcasts.models import ListeningRecord
 from iOpenPod.app.podcasts.sync import PodcastSyncPlan, plan_podcast_sync
+from iOpenPod.app.sync_progress import CountedProgress
 from iPodDB.library import WriteIssue
 
 if TYPE_CHECKING:
@@ -47,6 +49,7 @@ def prepare_podcast_sync(
     checkpoint: Callable[[], None],
     *,
     feeds: PodcastFeedClient | None = None,
+    progress: Callable[[WriteProgress], None] = lambda _: None,
 ) -> PreparedPodcastSync:
     """Run inside the Sync reservation, never on the GUI thread.
 
@@ -84,7 +87,17 @@ def prepare_podcast_sync(
     refreshed: list[str] = []
     if request.automatic:
         client = feeds or FeedparserPodcastClient()
-        for subscription_id in selected_ids:
+        refresh = CountedProgress(
+            progress,
+            "sync.podcasts",
+            "Refreshing selected Podcast feeds…",
+            unit="feeds",
+        )
+        titles = {item.subscription_id: item.title for item in snapshot.subscriptions}
+        for subscription_id in refresh.items(
+            selected_ids,
+            lambda identity: titles.get(identity, identity),
+        ):
             checkpoint()
             subscription = snapshot.subscription(subscription_id)
             if subscription is None:
@@ -118,6 +131,7 @@ def prepare_podcast_sync(
     checkpoint()
     # Keep observed and explicit listening facts even when the Track is removed.
     # Failure here stops publication, so retention cannot discard the sole copy.
+    progress(WriteProgress("sync.podcasts.save", "Saving Podcast listening history…"))
     persisted = coordinator.save_podcast_state(
         source, replace(loaded, snapshot=snapshot)
     )

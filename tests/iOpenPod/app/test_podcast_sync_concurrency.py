@@ -253,8 +253,19 @@ def test_concurrency_is_bounded_and_progress_and_paths_stay_on_owner_thread(
             ]
             assert len(issues) == 1 and issues[0].code == "sync.podcast_failed"
             assert len({p.song.track.metadata.location for p in prepared}) == 6
-            assert events[-1].completed == events[-1].total == 7
-            assert not events[-1].active_items
+            preparation = [
+                event for event in events if event.phase == "sync.podcast_prepare"
+            ]
+            assert preparation[-1].completed == preparation[-1].total == 7
+            assert not preparation[-1].active_items
+            allocation = [
+                event
+                for event in events
+                if event.phase == "sync.podcast_prepare.allocate"
+            ]
+            assert allocation[0].completed == 0
+            assert allocation[-1].completed == allocation[-1].total == 6
+            assert all(not event.active_items for event in allocation)
     finally:
         release.set()
         device.coordinator.close()

@@ -26,6 +26,7 @@ TRANSLATIONS = ROOT / "src/iOpenPod/GUI/presentation/i18n/translations"
 
 # Position and keyword in the corresponding application display contract.
 _CONTRACT_FIELDS: dict[str, tuple[tuple[int, str], ...]] = {
+    "CountedProgress": ((2, "message"), (3, "unit")),
     "MediaToolInstallPlan": ((1, "explanation"),),
     "WriteProgress": ((1, "message"), (5, "unit")),
     "ScrobbleProgress": ((1, "message"), (5, "unit")),

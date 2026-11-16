@@ -102,13 +102,21 @@ def test_sync_photos_share_shards_and_append_on_a_later_sync(
     device = build_device(tmp_path)
     try:
         executor = _Executor(device.coordinator, transcoder=_AvailableTools())
+        events: list[WriteProgress] = []
         first = executor.execute(
             _request(device, photo_host(tmp_path / "first", ("red", "blue"))),
-            lambda _: None,
+            events.append,
             Event(),
         )
         assert first.status is SyncExecutionStatus.SUCCESS, first.issues
         assert first.active is not None and first.active.library.photos is not None
+        packing = [event for event in events if event.phase == "sync.photos.pack"]
+        assert packing[0].completed == 0 and packing[-1].completed == 2
+        assert all(event.total == 2 and event.unit == "Photos" for event in packing)
+        verification = [
+            event for event in events if event.phase == "sync.photos.verify"
+        ]
+        assert verification and verification[-1].completed == verification[-1].total
         photos = first.active.library.photos.photos
         first_thumbs = {
             rep.format_id: rep
@@ -160,9 +168,16 @@ def test_sync_rolls_over_full_shards_independently_by_format(
         checkpoint: Callable[[], None],
         *,
         max_file_bytes: int | None = None,
+        progress: Callable[[WriteProgress], None] = lambda _: None,
     ) -> tuple[PreparedPhoto, ...]:
         return original_pack(
-            coordinator, expected, assets, workspace, checkpoint, max_file_bytes=limit
+            coordinator,
+            expected,
+            assets,
+            workspace,
+            checkpoint,
+            max_file_bytes=limit,
+            progress=progress,
         )
 
     monkeypatch.setattr(DeviceCoordinator, "pack_photo_shards", pack_with_capacity)
@@ -357,6 +372,7 @@ def test_changed_prefix_after_capture_prevents_sync_publication(
             checkpoint: Callable[[], None],
             *,
             max_file_bytes: int,
+            progress: Callable[[WriteProgress], None] = lambda _: None,
         ) -> tuple[PreparedPhoto, ...]:
             packed = original_pack(
                 session,
@@ -366,6 +382,7 @@ def test_changed_prefix_after_capture_prevents_sync_publication(
                 workspace,
                 checkpoint,
                 max_file_bytes=max_file_bytes,
+                progress=progress,
             )
             path.write_bytes(b"changed" + old[7:])
             return packed

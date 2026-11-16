@@ -111,6 +111,7 @@ from iOpenPod.app.sync_plan import (
     resolve_sync_duplicates,
     with_stream_selection,
 )
+from iOpenPod.app.sync_progress import CountedProgress
 from iOpenPod.app.sync_track_details import (
     apply_track_tags,
     sync_lyrics_enabled,
@@ -344,7 +345,7 @@ class SyncExecutor:
                         request, ipod=read_sync_history(session, request.source.library)
                     )
             comparison = _validate_plan(request)
-            self._validate_sources(request, checkpoint)
+            self._validate_sources(request, checkpoint, progress=progress)
             if request.options.scrobble and request.scrobble_accounts:
                 progress(
                     WriteProgress("sync.scrobble", "Scrobbling pending iPod plays…")
@@ -414,6 +415,7 @@ class SyncExecutor:
                     self._coordinator,
                     checkpoint,
                     feeds=FeedparserPodcastClient(access=self._podcast_access),
+                    progress=progress,
                 )
                 podcast_plan = podcast_sync.plan
                 issues.extend(podcast_plan.issues)
@@ -489,7 +491,7 @@ class SyncExecutor:
             with ExitStack() as resources:
                 prepared: list[_PreparedTrack] = []
                 metadata_updates, failures = self._prepare_metadata_updates(
-                    request, checkpoint
+                    request, checkpoint, progress=progress
                 )
                 issues.extend(failures)
                 podcast_tracks: list[_PreparedPodcast] = []
@@ -541,12 +543,15 @@ class SyncExecutor:
                         prepared,
                         metadata_updates,
                         checkpoint,
+                        progress=progress,
                         find_tool=self._find_tool,
                     )
                 )
                 if request.options.rockbox_metadata:
                     issues.extend(
-                        self._embed_rockbox_artwork(request, prepared, checkpoint)
+                        self._embed_rockbox_artwork(
+                            request, prepared, checkpoint, progress=progress
+                        )
                     )
                 podcast_artwork_repairs: tuple[_PodcastArtworkRepair, ...] = ()
                 if podcast_sync is not None and podcast_plan is not None:
@@ -593,7 +598,16 @@ class SyncExecutor:
                     *photos,
                     *metadata_updates,
                 )
-                for result in candidates:
+                source_progress = CountedProgress(
+                    progress,
+                    "sync.sources",
+                    "Rechecking prepared Host sources…",
+                    unit="items",
+                )
+                for result in source_progress.items(
+                    candidates, lambda result: result.item.name
+                ):
+                    checkpoint()
                     source = sources[host_path_identity(result.item.host_path or "")]
                     try:
                         _validate_host_source(source)
@@ -626,6 +640,7 @@ class SyncExecutor:
                         tuple(photo.asset for photo in photos),
                         photo_workspace,
                         checkpoint,
+                        progress=progress,
                     )
                     photos = tuple(
                         replace(photo, asset=asset)
@@ -633,7 +648,7 @@ class SyncExecutor:
                     )
                 metadata_updates = stable_metadata
                 invalid_playlists = _validate_playlist_sources(
-                    request, issues, checkpoint
+                    request, issues, checkpoint, progress=progress
                 )
                 draft_request = replace(
                     request,
@@ -863,7 +878,13 @@ class SyncExecutor:
                 staged_rating_revision = None
 
                 def validate_sources(session: FilesystemSession) -> None:
-                    _validate_device_sources(request, session, checkpoint)
+                    _validate_device_sources(
+                        request,
+                        session,
+                        checkpoint,
+                        progress=progress,
+                        phase="save.source_check.media",
+                    )
                     if staged_rating_revision is not None and (
                         session.fingerprint(RATING_SYNC_PATH) != staged_rating_revision
                     ):
@@ -935,7 +956,12 @@ class SyncExecutor:
                         # For an unchanged Library this helper is the first write.
                         # Cancellation may still stop before its atomic publication.
                         checkpoint()
-                        self._validate_sources(request, checkpoint)
+                        self._validate_sources(
+                            request,
+                            checkpoint,
+                            progress=progress,
+                            phase="sync.helper.validate",
+                        )
                         for update in metadata_updates:
                             _validate_host_source(
                                 sources[host_path_identity(update.item.host_path or "")]
@@ -993,8 +1019,14 @@ class SyncExecutor:
                                 completed,
                                 synced_tracks,
                                 validate_device=validate_rating_device,
+                                progress=progress,
                             )
                             issues.extend(rating_issues)
+                        progress(
+                            WriteProgress(
+                                "sync.helper", "Recording successful Sync details…"
+                            )
+                        )
                         helper = self._coordinator.publish_sync_success(
                             saved.active,
                             request.ipod
@@ -1227,10 +1259,17 @@ class SyncExecutor:
         )
 
     def _validate_sources(
-        self, request: SyncExecutionRequest, checkpoint: Callable[[], None]
+        self,
+        request: SyncExecutionRequest,
+        checkpoint: Callable[[], None],
+        *,
+        progress: Callable[[WriteProgress], None] = lambda _: None,
+        phase: str = "sync.validate.media",
     ) -> None:
         with self._coordinator.sync_session(request.source) as session:
-            _validate_device_sources(request, session, checkpoint)
+            _validate_device_sources(
+                request, session, checkpoint, progress=progress, phase=phase
+            )
 
     def _prepare_tracks(
         self,
@@ -1487,7 +1526,13 @@ class SyncExecutor:
                 (track.metadata.location for track in request.source.library.tracks),
                 exists=session.exists,
             )
-            for result in prepared:
+            allocation = CountedProgress(
+                progress,
+                "sync.prepare.allocate",
+                "Reserving iPod media locations…",
+                unit="Tracks",
+            )
+            for result in allocation.items(prepared, lambda result: result.item.name):
                 checkpoint()
                 try:
                     extension = result.song.source.media.file.relative_path.rsplit(
@@ -1527,6 +1572,8 @@ class SyncExecutor:
         self,
         request: SyncExecutionRequest,
         checkpoint: Callable[[], None],
+        *,
+        progress: Callable[[WriteProgress], None] = lambda _: None,
     ) -> tuple[list[_PreparedMetadataUpdate], list[WriteIssue]]:
         """Prepare desired Track metadata without opening an encoder."""
 
@@ -1544,13 +1591,20 @@ class SyncExecutor:
         }
         updates: list[_PreparedMetadataUpdate] = []
         issues: list[WriteIssue] = []
-        for item in request.plan.items:
-            if (
-                item.media_kind is not SyncPlanMediaKind.TRACK
-                or item.action is not SyncPlanAction.UPDATE
-                or item.audio_payload_changed
-            ):
-                continue
+        candidates = tuple(
+            item
+            for item in request.plan.items
+            if item.media_kind is SyncPlanMediaKind.TRACK
+            and item.action is SyncPlanAction.UPDATE
+            and not item.audio_payload_changed
+        )
+        metadata = CountedProgress(
+            progress,
+            "sync.metadata",
+            "Preparing Track metadata updates…",
+            unit="Tracks",
+        )
+        for item in metadata.items(candidates, lambda item: item.name):
             checkpoint()
             if item.host_path is None or item.ipod_id is None:
                 raise ValueError("A metadata-only Track update needs both sources.")
@@ -1650,11 +1704,20 @@ class SyncExecutor:
         request: SyncExecutionRequest,
         tracks: list[_PreparedTrack],
         checkpoint: Callable[[], None],
+        *,
+        progress: Callable[[WriteProgress], None] = lambda _: None,
     ) -> tuple[WriteIssue, ...]:
         issues: list[WriteIssue] = []
-        for result in tracks:
-            if result.song.artwork is None or result.output is None:
-                continue
+        candidates = tuple(
+            result
+            for result in tracks
+            if result.song.artwork is not None and result.output is not None
+        )
+        artwork = CountedProgress(
+            progress, "sync.artwork.embed", "Embedding Rockbox artwork…", unit="Tracks"
+        )
+        for result in artwork.items(candidates, lambda result: result.item.name):
+            assert result.song.artwork is not None and result.output is not None
             try:
                 embedded = rockbox_artwork(request.source.profile, result.song.artwork)
                 output = self._transcoder.embed_artwork(
@@ -1821,7 +1884,15 @@ class SyncExecutor:
                 ),
                 exists=session.exists,
             )
-            for index in sorted(ready):
+            allocation = CountedProgress(
+                progress,
+                "sync.podcast_prepare.allocate",
+                "Reserving Podcast media locations…",
+                unit="episodes",
+            )
+            for index in allocation.items(
+                sorted(ready), lambda index: ready[index].item.name
+            ):
                 checkpoint()
                 result = ready[index]
                 try:
@@ -3202,13 +3273,19 @@ def _validate_device_sources(
     request: SyncExecutionRequest,
     session: FilesystemSession,
     checkpoint: Callable[[], None],
+    *,
+    progress: Callable[[WriteProgress], None] = lambda _: None,
+    phase: str = "sync.validate.media",
 ) -> None:
     """Recheck consumed or matched media within the caller's bound session."""
 
     tracks = {item.track_id: item for item in request.ipod.tracks}
     images = {item.image_id: item for item in request.ipod.images}
     observed: dict[DevicePath, DeviceEntry] = {}
-    for item in request.plan.items:
+    validation = CountedProgress(
+        progress, phase, "Checking selected iPod media…", unit="items"
+    )
+    for item in validation.items(request.plan.items, lambda item: item.name):
         checkpoint()
         if item.action is SyncPlanAction.ATTENTION:
             continue
@@ -3267,6 +3344,8 @@ def _validate_playlist_sources(
     request: SyncExecutionRequest,
     issues: list[WriteIssue],
     checkpoint: Callable[[], None],
+    *,
+    progress: Callable[[WriteProgress], None] = lambda _: None,
 ) -> frozenset[int]:
     """A changed source blocks only the selected Playlists that depend on it."""
     if not request.reconcile_playlists:
@@ -3288,7 +3367,12 @@ def _validate_playlist_sources(
         if item.host_path is not None and item.action is SyncPlanAction.UNCHANGED
     }
     invalid: set[int] = set()
-    for source in request.host.sources:
+    validation = CountedProgress(
+        progress, "sync.playlists", "Checking Host Playlist sources…", unit="files"
+    )
+    for source in validation.items(
+        request.host.sources, lambda source: str(source.path)
+    ):
         if source.kind is HostMediaFileKind.PLAYLIST:
             identity = source.playlist_id
             # An unprojected source is conservative evidence for every selection.
@@ -3329,6 +3413,7 @@ def _capture_artwork(
     metadata_updates: list[_PreparedMetadataUpdate],
     checkpoint: Callable[[], None],
     *,
+    progress: Callable[[WriteProgress], None] = lambda _: None,
     find_tool: MediaToolFinder | None = None,
 ) -> tuple[WriteIssue, ...]:
     formats = application_artwork_formats(request.source.profile)
@@ -3365,7 +3450,12 @@ def _capture_artwork(
         if host_track.artwork_id:
             groups.setdefault(host_track.artwork_id, []).append(track)
     issues: list[WriteIssue] = []
-    for identity, group in groups.items():
+    artwork_progress = CountedProgress(
+        progress, "sync.artwork", "Preparing shared artwork…", unit="covers"
+    )
+    for identity, group in artwork_progress.items(
+        tuple(groups.items()), lambda item: item[1][0].item.name
+    ):
         checkpoint()
         try:
             source = sources.get(identity)
@@ -3396,6 +3486,7 @@ def _capture_artwork(
                 else:
                     track.artwork = pixels
     failed_frames: set[str] = set()
+    video_candidates: list[_PreparedTrack | _PreparedMetadataUpdate] = []
     for track in candidates:
         path_key = host_path_identity(track.item.host_path or "")
         host_track = by_path[path_key]
@@ -3415,6 +3506,14 @@ def _capture_artwork(
             )
         ):
             continue
+        video_candidates.append(track)
+    frames_progress = CountedProgress(
+        progress, "sync.artwork.video", "Preparing video artwork…", unit="Tracks"
+    )
+    for track in frames_progress.items(video_candidates, lambda track: track.item.name):
+        path_key = host_path_identity(track.item.host_path or "")
+        host_track = by_path[path_key]
+        media_source = media_sources[path_key]
         checkpoint()
         try:
             pixels = capture_video_frame(
@@ -3580,9 +3679,15 @@ def _capture_retained_podcast_artwork(
     repairs: list[_PodcastArtworkRepair] = []
     issues: list[WriteIssue] = []
     with coordinator.sync_session(request.source) as session:
-        for track in candidates:
+        retained_progress = CountedProgress(
+            progress,
+            "sync.podcast_artwork.retained",
+            "Preparing retained Podcast artwork…",
+            unit="episodes",
+        )
+        for track in retained_progress.items(candidates, lambda track: track.title):
             checkpoint()
-            progress(
+            retained_progress.report(
                 WriteProgress(
                     "sync.podcast_artwork",
                     source_text("Preparing artwork for {title}…", title=track.title),
@@ -3655,7 +3760,16 @@ def _capture_podcast_artwork(
     )
     embedded: list[_PreparedPodcast] = []
     issues: list[WriteIssue] = []
-    for podcast in prepared:
+    episode_progress = CountedProgress(
+        progress,
+        "sync.podcast_artwork.embedded",
+        "Preparing Podcast episode artwork…",
+        unit="episodes",
+    )
+    artwork.progress = episode_progress.report
+    for podcast in episode_progress.items(
+        prepared, lambda podcast: podcast.song.track.title
+    ):
         checkpoint()
         episode_cover = None
         if podcast.episode is not None:
@@ -3669,7 +3783,7 @@ def _capture_podcast_artwork(
                     podcast, song=replace(podcast.song, artwork=episode_cover)
                 )
         if episode_cover is None and podcast.cover_source is not None:
-            progress(
+            episode_progress.report(
                 WriteProgress(
                     "sync.podcast_artwork",
                     source_text(
@@ -3712,7 +3826,16 @@ def _capture_podcast_artwork(
         item.subscription.subscription_id: item.subscription for item in plan.additions
     }
     incoming_covers: list[_PreparedPodcast] = []
-    for podcast in embedded:
+    cover_progress = CountedProgress(
+        progress,
+        "sync.podcast_artwork.covers",
+        "Preparing Podcast publisher covers…",
+        unit="episodes",
+    )
+    artwork.progress = cover_progress.report
+    for podcast in cover_progress.items(
+        embedded, lambda podcast: podcast.song.track.title
+    ):
         if podcast.song.artwork is None and podcast.episode is not None:
             cover = artwork.cover(
                 shows[podcast.subscription_id], podcast.episode, target_px
@@ -3733,34 +3856,45 @@ def _capture_podcast_artwork(
     retained = {track.track_id: track for track in request.source.library.tracks}
     refreshed = frozenset(podcast_sync.refreshed_subscription_ids)
     repairs: list[_PodcastArtworkRepair] = []
-    for subscription in podcast_sync.state.snapshot.subscriptions:
-        if subscription.subscription_id not in refreshed:
-            continue
-        for episode in subscription.episodes:
-            identity = episode.track_id
-            if identity is None or identity in unavailable:
-                continue
-            track = retained.get(identity)
-            if track is None or track.artwork_id:
-                continue
-            pixels = artwork.cover(subscription, episode, target_px)
-            if pixels is not None:
-                repairs.append(
-                    _PodcastArtworkRepair(
-                        identity,
-                        pixels,
-                        item=SyncPlanItem(
-                            SyncPlanAction.UPDATE,
-                            SyncPlanMediaKind.TRACK,
-                            SyncPlanBasis.HOST_FACTS_CHANGED,
-                            track.title or "Podcast Episode",
-                            detail="Podcast artwork",
-                            host_path=artwork.source_url(pixels),
-                            ipod_path=track.metadata.location,
-                            ipod_id=identity,
-                        ),
-                    )
+    repair_candidates = tuple(
+        (subscription, episode, track)
+        for subscription in podcast_sync.state.snapshot.subscriptions
+        if subscription.subscription_id in refreshed
+        for episode in subscription.episodes
+        if episode.track_id is not None
+        and episode.track_id not in unavailable
+        and (track := retained.get(episode.track_id)) is not None
+        and not track.artwork_id
+    )
+    repair_progress = CountedProgress(
+        progress,
+        "sync.podcast_artwork.repair",
+        "Preparing missing Podcast covers…",
+        unit="episodes",
+    )
+    artwork.progress = repair_progress.report
+    for subscription, episode, track in repair_progress.items(
+        repair_candidates, lambda item: item[2].title
+    ):
+        identity = track.track_id
+        pixels = artwork.cover(subscription, episode, target_px)
+        if pixels is not None:
+            repairs.append(
+                _PodcastArtworkRepair(
+                    identity,
+                    pixels,
+                    item=SyncPlanItem(
+                        SyncPlanAction.UPDATE,
+                        SyncPlanMediaKind.TRACK,
+                        SyncPlanBasis.HOST_FACTS_CHANGED,
+                        track.title or "Podcast Episode",
+                        detail="Podcast artwork",
+                        host_path=artwork.source_url(pixels),
+                        ipod_path=track.metadata.location,
+                        ipod_id=identity,
+                    ),
                 )
+            )
 
     chapter_target_px = max(
         (
@@ -3772,7 +3906,16 @@ def _capture_podcast_artwork(
         )
     )
     with_chapters: list[_PreparedPodcast] = []
-    for podcast in incoming_covers:
+    chapter_progress = CountedProgress(
+        progress,
+        "sync.podcast_artwork.chapters",
+        "Preparing Podcast chapter artwork…",
+        unit="episodes",
+    )
+    artwork.progress = chapter_progress.report
+    for podcast in chapter_progress.items(
+        incoming_covers, lambda podcast: podcast.song.track.title
+    ):
         if podcast.cover_source is not None:
             try:
                 captured = capture_embedded_chapter_artwork(

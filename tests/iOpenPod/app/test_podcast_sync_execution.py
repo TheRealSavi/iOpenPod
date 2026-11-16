@@ -468,10 +468,18 @@ def test_downloaded_podcast_persists_publisher_cover_in_device_artwork(
         FixedPodcastPlan(PodcastSyncPlan(additions=(addition,))),
     )
     try:
+        events: list[WriteProgress] = []
         result = SyncExecutor(device.coordinator).execute(
-            podcast_request(device.active), lambda _: None, Event()
+            podcast_request(device.active), events.append, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        artwork = [
+            event for event in events if event.phase.startswith("sync.podcast_artwork.")
+        ]
+        assert artwork and all(event.total == 1 for event in artwork)
+        for phase in {event.phase for event in artwork}:
+            stage = [event for event in artwork if event.phase == phase]
+            assert stage[0].completed == 0 and stage[-1].completed == 1
         reloaded = device.coordinator.select_device(device.active.candidate.id)
         podcast = next(
             track

@@ -7,12 +7,14 @@ from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from iOpenPod.app.media.photo_shards import pack_photo_shards, photo_shard_identity
+from iOpenPod.app.sync_progress import CountedProgress
 from iPodDB.library import FileDependency, SourceFile
 from storage import DeviceEntryKind, DevicePath, StorageOperationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from iOpenPod.app.library_write import WriteProgress
     from iPodDB.library import PhotoLibrary, PreparedPhoto, RetainedArtworkFile
     from storage import FilesystemSession
     from storage.content_workspace import ContentWorkspace
@@ -29,6 +31,7 @@ def capture_and_pack(
     checkpoint: Callable[[], None],
     *,
     max_file_bytes: int,
+    progress: Callable[[WriteProgress], None] = lambda _: None,
 ) -> tuple[PreparedPhoto, ...]:
     """Read only the last eligible partial shard for each requested format."""
     reserved = {file.file_name for file in retained}
@@ -84,7 +87,15 @@ def capture_and_pack(
         if previous is None or number > previous[0]:
             candidates[format_id] = number, entry.path
     prefixes: list[SourceFile] = []
-    for _, candidate_path in candidates.values():
+    captures = CountedProgress(
+        progress,
+        "sync.photos.capture",
+        "Reading retained Photo thumbnail files…",
+        unit="files",
+    )
+    for _, candidate_path in captures.items(
+        tuple(candidates.values()), lambda item: str(item[1])
+    ):
         checkpoint()
         try:
             data, fingerprint = workspace.capture_device_snapshot(
@@ -121,4 +132,5 @@ def capture_and_pack(
         max_file_bytes=max_file_bytes,
         create_buffer=workspace.new_buffer,
         checkpoint=checkpoint,
+        progress=progress,
     )

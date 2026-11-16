@@ -15,6 +15,7 @@ from iOpenPod.app.media.ratings import (
     rewrite_rating_stream,
     whole_star_rating,
 )
+from iOpenPod.app.sync_progress import CountedProgress
 from iPodDB.library import IssueSeverity, WriteIssue
 from storage import StorageError
 from storage.host_input import LocalHostFile
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from iOpenPod.app.library_sync_helper import SyncDetails
+    from iOpenPod.app.library_write import WriteProgress
     from iOpenPod.app.models.device import ActiveIPod
     from iOpenPod.app.sync_execution import SyncExecutionRequest
     from iOpenPod.app.sync_plan import SyncPlanItem
@@ -93,6 +95,7 @@ def back_sync_ratings(
     provenance: tuple[SyncedTrack, ...],
     *,
     validate_device: Callable[[], None] = lambda: None,
+    progress: Callable[[WriteProgress], None] = lambda _: None,
 ) -> tuple[tuple[SyncedTrack, ...], tuple[WriteIssue, ...]]:
     """Write ratings only for successfully completed, explicitly selected items.
 
@@ -119,13 +122,21 @@ def back_sync_ratings(
         if t.sync is not None
     }
     issues: list[WriteIssue] = []
-    for item in completed:
-        if (
-            item.media_kind is not SyncPlanMediaKind.TRACK
-            or item.host_path is None
-            or item.action in (SyncPlanAction.REMOVE, SyncPlanAction.ATTENTION)
-        ):
-            continue
+    candidates = tuple(
+        item
+        for item in completed
+        if item.media_kind is SyncPlanMediaKind.TRACK
+        and item.host_path is not None
+        and item.action not in (SyncPlanAction.REMOVE, SyncPlanAction.ATTENTION)
+    )
+    ratings = CountedProgress(
+        progress,
+        "sync.helper.ratings",
+        "Updating Host ratings and rating baselines…",
+        unit="Tracks",
+    )
+    for item in ratings.items(candidates, lambda item: item.name):
+        assert item.host_path is not None
         key = host_path_identity(item.host_path)
         new = linked.get(key)
         old = scanned.get(item.ipod_id) if item.ipod_id is not None else None

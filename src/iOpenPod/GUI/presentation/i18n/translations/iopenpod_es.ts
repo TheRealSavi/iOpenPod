@@ -16446,6 +16446,102 @@ Firmware verificado para la familia de actualización {family}: {firmware}.</tra
         <source>Updated Host rating from {old} to {new} stars.</source>
         <translation>Valoración del equipo actualizada de {old} a {new} estrellas.</translation>
     </message>
+    <message>
+        <source>Checking selected iPod media…</source>
+        <translation>Comprobando los medios seleccionados del iPod…</translation>
+    </message>
+    <message>
+        <source>Preparing Track metadata updates…</source>
+        <translation>Preparando las actualizaciones de metadatos de las pistas…</translation>
+    </message>
+    <message>
+        <source>Rechecking prepared Host sources…</source>
+        <translation>Volviendo a comprobar las fuentes preparadas del equipo…</translation>
+    </message>
+    <message>
+        <source>Checking Host Playlist sources…</source>
+        <translation>Comprobando las fuentes de las listas de reproducción del equipo…</translation>
+    </message>
+    <message>
+        <source>Preparing shared artwork…</source>
+        <translation>Preparando las carátulas compartidas…</translation>
+    </message>
+    <message>
+        <source>Preparing video artwork…</source>
+        <translation>Preparando las carátulas de vídeo…</translation>
+    </message>
+    <message>
+        <source>Embedding Rockbox artwork…</source>
+        <translation>Incrustando las carátulas de Rockbox…</translation>
+    </message>
+    <message>
+        <source>Preparing retained Podcast artwork…</source>
+        <translation>Preparando las carátulas de los pódcast conservados…</translation>
+    </message>
+    <message>
+        <source>Preparing Podcast episode artwork…</source>
+        <translation>Preparando las carátulas de los episodios de pódcast…</translation>
+    </message>
+    <message>
+        <source>Preparing Podcast publisher covers…</source>
+        <translation>Preparando las carátulas de los editores de pódcast…</translation>
+    </message>
+    <message>
+        <source>Preparing missing Podcast covers…</source>
+        <translation>Preparando las carátulas que faltan de los pódcast…</translation>
+    </message>
+    <message>
+        <source>Preparing Podcast chapter artwork…</source>
+        <translation>Preparando las carátulas de los capítulos de pódcast…</translation>
+    </message>
+    <message>
+        <source>Updating Host ratings and rating baselines…</source>
+        <translation>Actualizando las valoraciones del equipo y sus valores de referencia…</translation>
+    </message>
+    <message>
+        <source>Refreshing selected Podcast feeds…</source>
+        <translation>Actualizando las fuentes de pódcast seleccionadas…</translation>
+    </message>
+    <message>
+        <source>Saving Podcast listening history…</source>
+        <translation>Guardando el historial de escucha de pódcast…</translation>
+    </message>
+    <message>
+        <source>Reserving iPod media locations…</source>
+        <translation>Reservando las ubicaciones de los medios del iPod…</translation>
+    </message>
+    <message>
+        <source>Reserving Podcast media locations…</source>
+        <translation>Reservando las ubicaciones de los medios de pódcast…</translation>
+    </message>
+    <message>
+        <source>Preparing retained Photo thumbnails…</source>
+        <translation>Preparando las miniaturas de fotos conservadas…</translation>
+    </message>
+    <message>
+        <source>Packing Photo thumbnails…</source>
+        <translation>Empaquetando las miniaturas de fotos…</translation>
+    </message>
+    <message>
+        <source>Verifying packed Photo files…</source>
+        <translation>Verificando los archivos de fotos empaquetados…</translation>
+    </message>
+    <message>
+        <source>Reading retained Photo thumbnail files…</source>
+        <translation>Leyendo los archivos de miniaturas de fotos conservados…</translation>
+    </message>
+    <message>
+        <source>covers</source>
+        <translation>carátulas</translation>
+    </message>
+    <message>
+        <source>feeds</source>
+        <translation>fuentes</translation>
+    </message>
+    <message>
+        <source>items</source>
+        <translation>elementos</translation>
+    </message>
 </context>
 <context>
     <name>_DateCalendar</name>

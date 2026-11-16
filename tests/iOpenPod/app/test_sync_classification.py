@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 import pytest
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
@@ -24,6 +24,9 @@ from iOpenPod.app.sync_plan import SyncPlanAction, prepare_sync_plan
 from iOpenPod.app.sync_track_details import track_tag_edit_issues, track_tag_sha256
 from iPodDB.library import IPodLibrary, MediaType, Track
 from iPodDB.library.video import is_video_track
+
+if TYPE_CHECKING:
+    from iOpenPod.app.library_write import WriteProgress
 
 
 class _NoMediaPreparation(MediaTranscoder):
@@ -128,13 +131,20 @@ def test_sync_reclassifies_retained_media_and_records_the_update(
         assert item.action is SyncPlanAction.UPDATE
         assert item.metadata_changed and not item.audio_payload_changed
 
+        events: list[WriteProgress] = []
         result = SyncExecutor(
             device.coordinator, transcoder=_NoMediaPreparation()
-        ).execute(request, lambda _: None, Event())
+        ).execute(request, events.append, Event())
 
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None and result.helper is not None
         assert result.completed == (item,)
+        metadata = [event for event in events if event.phase == "sync.metadata"]
+        assert [(event.completed, event.total) for event in metadata] == [
+            (0, 1),
+            (1, 1),
+        ]
+        assert all(event.current_item == item.name for event in metadata)
         reloaded = IPodLibrary(
             (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
         )
@@ -182,9 +192,11 @@ def test_reclassification_does_not_bypass_invalid_metadata(
             ),
         )
         # Exercise the same per-item preparation boundary as ordinary Sync.
+        events: list[WriteProgress] = []
         updates, issues = SyncExecutor(device.coordinator)._prepare_metadata_updates(  # pyright: ignore[reportPrivateUsage]
-            request, lambda: None
+            request, lambda: None, progress=events.append
         )
+        assert [(event.completed, event.total) for event in events] == [(0, 1), (1, 1)]
         assert not updates
         assert any(
             issue.code == "track.invalid_value" and issue.field == "year"

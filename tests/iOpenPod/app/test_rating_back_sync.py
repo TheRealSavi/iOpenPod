@@ -454,7 +454,10 @@ def test_sync_writes_changed_rating_to_paired_host_file(
         if case == "cancelled":
             cancelled.set()
 
+        events: list[WriteProgress] = []
+
         def progress(value: WriteProgress) -> None:
+            events.append(value)
             if case == "cancel_after_commit" and value.phase == "sync.helper":
                 cancelled.set()
 
@@ -470,6 +473,12 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             progress,
             cancelled,
         )
+        if case in {"success", "write_failure"}:
+            ratings = [
+                event for event in events if event.phase == "sync.helper.ratings"
+            ]
+            assert ratings[0].completed == 0
+            assert ratings[-1].completed == ratings[-1].total == 1
         if average_retry:
             assert result.status is SyncExecutionStatus.PARTIAL, result.issues
             assert result.active is not None

@@ -755,7 +755,12 @@ def test_execution_validation_does_not_revisit_unchanged_media(
 
     class CountingExecutor(_Executor):
         def _validate_sources(
-            self, request: SyncExecutionRequest, checkpoint: Callable[[], None]
+            self,
+            request: SyncExecutionRequest,
+            checkpoint: Callable[[], None],
+            *,
+            progress: Callable[[WriteProgress], None] = lambda _: None,
+            phase: str = "sync.validate.media",
         ) -> None:
             paths: list[DevicePath] = []
 
@@ -767,7 +772,9 @@ def test_execution_validation_does_not_revisit_unchanged_media(
 
             with monkeypatch.context() as scoped:
                 scoped.setattr(FilesystemSession, "stat", record_stat)
-                super()._validate_sources(request, checkpoint)
+                super()._validate_sources(
+                    request, checkpoint, progress=progress, phase=phase
+                )
             validations.append(tuple(paths))
 
     try:
@@ -823,7 +830,12 @@ def test_execution_validates_shared_media_once_per_checkpoint(
 
     class CountingExecutor(_Executor):
         def _validate_sources(
-            self, request: SyncExecutionRequest, checkpoint: Callable[[], None]
+            self,
+            request: SyncExecutionRequest,
+            checkpoint: Callable[[], None],
+            *,
+            progress: Callable[[WriteProgress], None] = lambda _: None,
+            phase: str = "sync.validate.media",
         ) -> None:
             paths: list[DevicePath] = []
 
@@ -835,7 +847,9 @@ def test_execution_validates_shared_media_once_per_checkpoint(
 
             with monkeypatch.context() as scoped:
                 scoped.setattr(FilesystemSession, "stat", record_stat)
-                super()._validate_sources(request, checkpoint)
+                super()._validate_sources(
+                    request, checkpoint, progress=progress, phase=phase
+                )
             validations.append(tuple(paths))
 
     try:
@@ -977,6 +991,8 @@ def test_preparation_reports_all_concurrent_tracks(
 
     def progress(event: WriteProgress) -> None:
         observed.append(event)
+        if event.phase != "sync.prepare":
+            return
         if event.current_item:
             started.add(event.current_item)
         started.update(item.name for item in event.active_items)
@@ -996,7 +1012,11 @@ def test_preparation_reports_all_concurrent_tracks(
             "cancel": SyncExecutionStatus.CANCELLED,
         }
         assert result.status is expected_status[outcome], result.issues
-        concurrent = next(event for event in observed if len(event.active_items) == 2)
+        concurrent = next(
+            event
+            for event in observed
+            if event.phase == "sync.prepare" and len(event.active_items) == 2
+        )
         assert {item.name for item in concurrent.active_items} == {
             "First song",
             second_title,
@@ -1065,6 +1085,22 @@ def test_add_and_playlist_publish_before_successful_sync_history(
         assert track_progress[0].total == 1
         assert track_progress[-1].completed == 1
         assert track_progress[-1].current_item == "New song"
+        allocation = [
+            event
+            for event in observed_progress
+            if event.phase == "sync.prepare.allocate"
+        ]
+        assert [(event.completed, event.total) for event in allocation] == [
+            (0, 1),
+            (1, 1),
+        ]
+        validation = [
+            event for event in observed_progress if event.phase == "sync.validate.media"
+        ]
+        assert validation[0].completed == 0
+        assert (
+            validation[-1].completed == validation[-1].total == len(request.plan.items)
+        )
         storage_progress = next(
             event
             for event in observed_progress
@@ -1812,8 +1848,9 @@ def test_shared_album_artwork_is_captured_once_and_referenced_by_new_tracks(
             ),
             artwork_sources=(artwork_source,),
         )
+        events: list[WriteProgress] = []
         result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
-            _request(device, host), lambda _: None, Event()
+            _request(device, host), events.append, Event()
         )
         assert result.status is SyncExecutionStatus.SUCCESS, result.issues
         assert result.active is not None
@@ -1825,6 +1862,8 @@ def test_shared_album_artwork_is_captured_once_and_referenced_by_new_tracks(
         assert len(incoming) == 2
         assert incoming[0].artwork_id == incoming[1].artwork_id > 0
         assert all(track.metadata.artwork_count > 0 for track in incoming)
+        artwork = [event for event in events if event.phase == "sync.artwork"]
+        assert [(event.completed, event.total) for event in artwork] == [(0, 1), (1, 1)]
     finally:
         device.coordinator.close()
 

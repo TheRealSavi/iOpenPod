@@ -26,6 +26,7 @@ from iOpenPod.app.podcasts.sync_preparation import (
 from iPodDB.library import LibrarySnapshot
 
 if TYPE_CHECKING:
+    from iOpenPod.app.library_write import WriteProgress
     from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 
 
@@ -74,18 +75,25 @@ def test_failed_refresh_cannot_clear_a_listened_episode() -> None:
     source, snapshot = _state()
     coordinator = _Coordinator(snapshot)
     feeds = _Feeds()
+    events: list[WriteProgress] = []
     prepared = prepare_podcast_sync(
         PodcastSyncRequest(snapshot),
         source,
         cast("DeviceCoordinator", coordinator),
         lambda: None,
         feeds=feeds,
+        progress=events.append,
     )
     plan = prepared.plan
     assert feeds.calls == 1
     assert not plan.removals and not plan.additions
     assert plan.issues[0].code == "podcast.refresh_failed"
     assert coordinator.saved[0].snapshot.history[0].listened
+    refresh = [event for event in events if event.phase == "sync.podcasts"]
+    assert [(event.completed, event.total) for event in refresh] == [(0, 1), (1, 1)]
+    assert all(event.unit == "feeds" for event in refresh)
+    assert events[-1].phase == "sync.podcasts.save"
+    assert events[-1].total is None
 
 
 @pytest.mark.parametrize("scoped", (False, True))

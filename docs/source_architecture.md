@@ -1993,7 +1993,16 @@ Playlist IDs before helper publication. Unchanged accepted matches use the exist
 verified no-op Library path. Failed and skipped changes do not advance matches.
 See ADR-0159.
 
-During execution, the progress page exposes safe cancellation. Completion replaces
+During execution, the progress page exposes safe cancellation. Finite Sync work
+reports processed counts, totals, units, and the current item through `WriteProgress`,
+including source validation, metadata updates, artwork preparation, Podcast feed
+refreshes, media location allocation, Photo packing, and Host rating Back Sync.
+Handled skips count as processed; interrupted work is never reported as complete.
+Nested Podcast artwork activity retains its enclosing counts. Rapid sequential
+updates are throttled while preserving the first and final counts. Each phase has
+its own total; device flushing and other operations without a measurable total
+remain indeterminate. Draft and resource work belongs to the Library build step,
+including retries, without moving back to media preparation. Completion replaces
 the progress steps with a dedicated result screen showing the actual Sync outcome,
 saved change counts, and messages grouped as errors, warnings, and information.
 Warnings alone do not change a successful outcome. Technical details retain diagnostic

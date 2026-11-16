@@ -130,7 +130,8 @@ class SyncPreparationProgress(QScrollArea):
             if identity not in identities:
                 removed = self._rows.pop(identity)
                 self._layout.removeWidget(removed)
-                removed.setParent(None)
+                # Keep ownership until deferred deletion; detaching creates a window.
+                removed.hide()
                 removed.deleteLater()
         for index, item in enumerate(items):
             row = self._rows.get(item.item_id)

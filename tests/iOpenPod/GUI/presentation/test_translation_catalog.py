@@ -258,6 +258,7 @@ def test_contract_extraction_keeps_display_copy_separate_from_identifiers(
     source = tmp_path / "example.py"
     source.write_text(
         'WriteProgress("stable.phase", "Working…", unit="files")\n'
+        'CountedProgress(callback, "sync.metadata", "Preparing metadata…", unit="Tracks")\n'
         'BackupFailure(code="stable.code", summary="Failed", action="Retry")\n'
         'WriteProgress("stable.phase", external_error)\n'
         "def emit(code, text, *, unit):\n"
@@ -267,6 +268,8 @@ def test_contract_extraction_keeps_display_copy_separate_from_identifiers(
     )
     assert application_sources(source) == {
         ("Workflow", "Working…"),
+        ("Workflow", "Preparing metadata…"),
+        ("Workflow", "Tracks"),
         ("Workflow", "files"),
         ("Workflow", "Failed"),
         ("Workflow", "Retry"),

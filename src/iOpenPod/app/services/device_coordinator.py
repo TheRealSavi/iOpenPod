@@ -641,6 +641,7 @@ class DeviceCoordinator:
         checkpoint: Callable[[], None],
         *,
         max_file_bytes: int | None = None,
+        progress: Callable[[WriteProgress], None] = lambda _: None,
     ) -> tuple[PreparedPhoto, ...]:
         """Pack Photos against one source-checked, read-only device capture."""
         from iPodDB.library import WriteTarget
@@ -681,6 +682,7 @@ class DeviceCoordinator:
                     if max_file_bytes is None
                     else max_file_bytes
                 ),
+                progress=progress,
             )
             validate_photos()
             return packed

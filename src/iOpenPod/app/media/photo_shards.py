@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from iOpenPod.app.sync_progress import CountedProgress
 from iPodDB.library import (
     FileDependency,
     MemoryContentBuffer,
@@ -20,6 +21,7 @@ from iPodDB.library import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection
 
+    from iOpenPod.app.library_write import WriteProgress
     from iPodDB.library import ContentBuffer, PhotoRepresentation
 
 _SHARD = re.compile(r"Photos/Thumbs/F([1-9][0-9]*)_([1-9][0-9]*)\.ithmb", re.I)
@@ -49,6 +51,7 @@ def pack_photo_shards(
     max_file_bytes: int,
     create_buffer: Callable[[], ContentBuffer] = MemoryContentBuffer,
     checkpoint: Callable[[], None] = lambda: None,
+    progress: Callable[[WriteProgress], None] = lambda _: None,
 ) -> tuple[PreparedPhoto, ...]:
     """Append frames to one current shard per format and roll over at capacity.
 
@@ -62,7 +65,15 @@ def pack_photo_shards(
     reserved = {path.casefold() for path in reserved_paths}
     shards: dict[str, _Shard] = {}
     current: dict[int, _Shard] = {}
-    for source in prefixes:
+    prefix_progress = CountedProgress(
+        progress,
+        "sync.photos.prefixes",
+        "Preparing retained Photo thumbnails…",
+        unit="files",
+    )
+    for source in prefix_progress.items(
+        prefixes, lambda source: source.dependency.relative_path
+    ):
         checkpoint()
         dependency = source.dependency
         identity = photo_shard_identity(dependency.relative_path)
@@ -84,7 +95,20 @@ def pack_photo_shards(
 
     placements: list[tuple[PhotoRepresentation, ...]] = []
     originals: list[tuple[SourceFile, ...]] = []
-    for asset in assets:
+    photo_progress = CountedProgress(
+        progress, "sync.photos.pack", "Packing Photo thumbnails…", unit="Photos"
+    )
+    for asset in photo_progress.items(
+        assets,
+        lambda asset: next(
+            (
+                item.relative_path
+                for item in asset.photo.representations
+                if item.kind is PhotoRepresentationKind.FULL_RESOLUTION
+            ),
+            "",
+        ),
+    ):
         checkpoint()
         sources = {source.dependency.relative_path: source for source in asset.files}
         representations: list[PhotoRepresentation] = []
@@ -128,7 +152,12 @@ def pack_photo_shards(
         originals.append(tuple(original_files))
 
     files: dict[str, SourceFile] = {}
-    for path, shard in shards.items():
+    shard_progress = CountedProgress(
+        progress, "sync.photos.verify", "Verifying packed Photo files…", unit="files"
+    )
+    for path, shard in shard_progress.items(
+        tuple(shards.items()), lambda item: item[0]
+    ):
         checkpoint()
         data = shard.buffer.finish()
         files[path] = SourceFile(
