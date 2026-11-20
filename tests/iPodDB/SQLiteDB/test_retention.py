@@ -152,6 +152,83 @@ def test_captured_nano5_schema_needs_no_version_or_column_migration() -> None:
     )
 
 
+def test_nano6_item_schema_without_home_video_and_tone_flags_is_retained() -> None:
+    snapshot = sample_snapshot()
+    baseline = build_sqlite_databases(
+        snapshot, database_id=42, checksum=WriteChecksum.NONE
+    )
+    connection = sqlite3.connect(":memory:")
+    connection.deserialize(baseline.library)
+    connection.executescript("""
+        ALTER TABLE item DROP COLUMN is_home_video;
+        ALTER TABLE item DROP COLUMN is_tone;
+        ALTER TABLE item ADD COLUMN future_item TEXT;
+        UPDATE item SET future_item='retained',genius_id=1234;
+    """)
+    connection.commit()
+    original = connection.serialize()
+    connection.close()
+    original_track = snapshot.tracks[0]
+    assert original_track.ipod is not None
+    added = replace(
+        original_track,
+        track_id=8,
+        title="Added",
+        ipod=replace(original_track.ipod, db_track_id=8, media_type_code=0x100000),
+    )
+    desired = replace(snapshot, tracks=(replace(original_track, title="Edited"), added))
+    result = build_sqlite_databases(
+        desired,
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        retained=(SQLiteSource("Library.itdb", original),),
+    )
+    assert sqlite_rows(
+        result.library, "SELECT sql FROM sqlite_master ORDER BY name"
+    ) == sqlite_rows(original, "SELECT sql FROM sqlite_master ORDER BY name")
+    assert sqlite_rows(
+        result.library,
+        "SELECT title,future_item,genius_id,is_ringtone,is_voice_memo FROM item ORDER BY pid",
+    ) == (("Edited", "retained", 1234, 0, 0), ("Added", None, 0, 0, 1))
+    removed = build_sqlite_databases(
+        replace(snapshot, tracks=(added,), playlists=()),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        retained=(SQLiteSource("Library.itdb", result.library),),
+    )
+    assert sqlite_rows(removed.library, "SELECT pid,title FROM item") == ((8, "Added"),)
+    assert sqlite_rows(
+        removed.library, "SELECT sql FROM sqlite_master ORDER BY name"
+    ) == sqlite_rows(original, "SELECT sql FROM sqlite_master ORDER BY name")
+
+
+@pytest.mark.parametrize("column", ["title", "is_song"])
+def test_missing_required_item_columns_are_still_rejected(column: str) -> None:
+    snapshot = sample_snapshot()
+    baseline = build_sqlite_databases(
+        snapshot, database_id=42, checksum=WriteChecksum.NONE
+    )
+    connection = sqlite3.connect(":memory:")
+    connection.deserialize(baseline.library)
+    connection.executescript(f"""
+        ALTER TABLE item DROP COLUMN is_home_video;
+        ALTER TABLE item DROP COLUMN is_tone;
+        ALTER TABLE item DROP COLUMN {column};
+    """)
+    connection.commit()
+    original = connection.serialize()
+    connection.close()
+    with pytest.raises(
+        ValueError, match=r"Cannot preserve incompatible Library\.itdb table item"
+    ):
+        build_sqlite_databases(
+            snapshot,
+            database_id=42,
+            checksum=WriteChecksum.NONE,
+            retained=(SQLiteSource("Library.itdb", original),),
+        )
+
+
 def test_reordered_groups_keep_their_own_unknown_metadata() -> None:
     snapshot = sample_snapshot()
     first = snapshot.tracks[0]

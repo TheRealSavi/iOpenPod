@@ -1065,8 +1065,10 @@ identified Device Profile. iPodDB unwraps and reproduces CDB framing and treats 
 CDB as the sole readable Library authority. It generates all five SQLite databases
 and the Locations checksum book from the checked CDB snapshot and its native
 firmware categories, smart preferences, and chapter data, and supports HASH58,
-HASH72, and HASHAB finalization. Selection neither requires nor reads SQLite
-companions. When a CDB change is prepared, the Application Layer captures the
+HASH72, and HASHAB finalization. Selection without pending playback history or
+On-The-Go Playlists neither requires nor reads SQLite companions. Selection with
+consumed sidecars uses the normal save path and captures existing companions.
+When a CDB change is prepared, the Application Layer captures the
 current companion paths as write preconditions and publishes the CDB, the complete
 replacement SQLite set, and compatibility iTunesDB truncation in one recoverable
 Storage Transaction. User-directed Sync also regenerates the complete SQLite set

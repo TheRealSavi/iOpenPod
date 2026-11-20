@@ -2140,12 +2140,15 @@ def test_nano_save_rejects_sqlite_path_changed_after_review(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize(
-    "model", ["MC027", "MC525", "MD480"], ids=["nano5", "nano6", "nano7"]
+    ("model", "retained_nano6_schema"),
+    [("MC027", False), ("MC525", False), ("MD480", False), ("MC525", True)],
+    ids=["nano5", "nano6", "nano7", "nano6-retained-item-schema"],
 )
 @pytest.mark.parametrize("sidecar_name", ["Play Counts", "PlayCounts.plist"])
 def test_modern_nano_selection_expands_short_tracks_and_preserves_skip_history(
     tmp_path: Path,
     model: str,
+    retained_nano6_schema: bool,
     sidecar_name: str,
 ) -> None:
     platform = VirtualStoragePlatform()
@@ -2177,6 +2180,29 @@ def test_modern_nano_selection_expands_short_tracks_and_preserves_skip_history(
         history = counts()
     sidecar = directory / sidecar_name
     sidecar.write_bytes(history)
+    sqlite_directory = directory / "iTunes Library.itlp"
+    original_item_schema: tuple[tuple[object, ...], ...] = ()
+    if retained_nano6_schema:
+        baseline = build_sqlite_databases(
+            IPodLibrary.parse(cdb.read_bytes()).snapshot,
+            database_id=42,
+            checksum=WriteChecksum.NONE,
+        )
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.deserialize(baseline.library)
+            connection.executescript("""
+                ALTER TABLE item DROP COLUMN is_home_video;
+                ALTER TABLE item DROP COLUMN is_tone;
+                ALTER TABLE item ADD COLUMN future_item TEXT;
+                UPDATE item SET future_item='retained';
+            """)
+            connection.commit()
+            original_item_schema = tuple(connection.execute("PRAGMA table_info(item)"))
+            sqlite_directory.mkdir()
+            (sqlite_directory / "Library.itdb").write_bytes(connection.serialize())
+        finally:
+            connection.close()
     platform.add_volume(root, label=model)
     coordinator = DeviceCoordinator(Storage(platform))
     try:
@@ -2205,7 +2231,6 @@ def test_modern_nano_selection_expands_short_tracks_and_preserves_skip_history(
             )
         else:
             assert verify_hashab(cdb.read_bytes(), guid)
-        sqlite_directory = directory / "iTunes Library.itlp"
         connection = sqlite3.connect(":memory:")
         try:
             connection.deserialize((sqlite_directory / "Dynamic.itdb").read_bytes())
@@ -2213,6 +2238,14 @@ def test_modern_nano_selection_expands_short_tracks_and_preserves_skip_history(
             assert connection.execute(
                 "SELECT play_count_user, skip_count_user, date_skipped FROM item_stats"
             ).fetchone() == (3, 2, track.metadata.last_skipped - 978_307_200)
+            if retained_nano6_schema:
+                connection.deserialize((sqlite_directory / "Library.itdb").read_bytes())
+                assert tuple(connection.execute("PRAGMA table_info(item)")) == (
+                    original_item_schema
+                )
+                assert connection.execute(
+                    "SELECT future_item FROM item"
+                ).fetchone() == ("retained",)
         finally:
             connection.close()
         reloaded = coordinator.select_device(active.candidate.id)

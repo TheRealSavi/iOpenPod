@@ -54,8 +54,13 @@ policy of deliberately discarding SQLite-only metadata on every refresh.
   retained without executing their SQL as a creation script.
 - Reject unreadable or incompatible present companions before publication instead
   of silently erasing them. The four calculated columns absent in the captured
-  Nano 5 schemas are optional. Missing known tables can be created from trusted
-  built-in definitions. Selection without a pending save still reads the CDB.
+  Nano 5 schemas are optional. So are the default-only `item.is_home_video` and
+  `item.is_tone` flags absent on Nano 6 in
+  [issue #343](https://github.com/TheRealSavi/iOpenPod/issues/343); they have no
+  evidenced CDB mapping. Their absence does not authorize a schema migration or
+  relaxing checks for other required columns. Missing known tables can be created
+  from trusted built-in definitions. Selection without a pending save still reads
+  the CDB.
 
 Validate the resulting complete artifact set and sign its resulting Locations
 bytes. Storage still publishes one recoverable generation; iPodDB receives bytes
@@ -78,3 +83,9 @@ publication. Host-only replays retain the captured versions, schemas, store rows
 and lyrics while eliminating the false playback dates. Physical Finder acceptance
 remains a separate experiment. Podcast artwork, chapters, advisory flags, Episode
 and season numbers, and intentional dataset-5 containers remain supported.
+
+Issue #343 regression tests reconstruct the reported missing-column schema with
+synthetic data; no affected user's database was supplied. They cover Track edits,
+additions and removals, retained schema and Unknown Data, rejection of missing
+required columns, and virtual Nano 6 selection with binary or plist playback
+history. Physical selection on an affected Nano 6 remains unverified.
