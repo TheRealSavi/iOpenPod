@@ -1,0 +1,53 @@
+{
+  "source": "osos-lab d2c8e357; independently captured probe package 14684e46f0ca25d9441b5914045be36818421bd95794e08aab92b69d454422fc",
+  "cases": [
+    {
+      "group": "rom_fingerprint_memory_read64",
+      "address": 536871936,
+      "size": 64,
+      "code_hex": "18e09fe53eff2fe114009fe54010a0e310209fe532ff2fe10ce09fe51eff2fe1180400200004002040aa0020d4480020"
+    },
+    {
+      "group": "rom_fingerprint_memory_read64",
+      "address": 536872000,
+      "size": 64,
+      "code_hex": "18e09fe53eff2fe114009fe54010a0e310209fe532ff2fe10ce09fe51eff2fe1180400204004002040aa0020d4480020"
+    },
+    {
+      "group": "rom_fingerprint_memory_read64",
+      "address": 536889344,
+      "size": 64,
+      "code_hex": "18e09fe53eff2fe114009fe54010a0e310209fe532ff2fe10ce09fe51eff2fe1180400200048002040aa0020d4480020"
+    },
+    {
+      "group": "fast_bootrom512",
+      "address": 0,
+      "size": 512,
+      "code_hex": "30e09fe53eff2fe12ce09fe53eff2fe128e09fe53eff2fe124009fe524109fe524e09fe53eff2fe100409de504e09de508d08de21eff2fe1180400206804002014a50020000000200002000040aa0020"
+    },
+    {
+      "group": "nor_init",
+      "address": 0,
+      "size": 64,
+      "code_hex": "30e09fe53eff2fe10000a0e328e09fe53eff2fe12200a0e320e09fe53eff2fe11c009fe54010a0e318209fe532ff2fe114e09fe51eff2fe118040020241900207c1400200000002040aa0020d4480020"
+    },
+    {
+      "group": "fast_nor512_primary",
+      "address": 0,
+      "size": 512,
+      "code_hex": "0000a0e3c810a0e374e09fe53eff2fe10000a0e36ce09fe53eff2fe1000050e30900001a0000a0e35c109fe550e09fe53eff2fe10000a0e30010a0e34c209fe54c309fe54ce09fe53eff2fe148109fe5000081e544e09fe53eff2fe140e09fe53eff2fe130009fe538109fe538e09fe53eff2fe100409de504e09de508d08de21eff2fe1908f00207c4c00200402000000020000100002225c4e0020000002226804002014a500201002000040aa0020"
+    },
+    {
+      "group": "fast_nor_source_shifted509",
+      "address": 1,
+      "size": 509,
+      "code_hex": "0000a0e3c810a0e374e09fe53eff2fe10000a0e36ce09fe53eff2fe1000050e30900001a0000a0e35c109fe550e09fe53eff2fe10000a0e30110a0e34c209fe54c309fe54ce09fe53eff2fe148109fe5000081e544e09fe53eff2fe140e09fe53eff2fe130009fe538109fe538e09fe53eff2fe100409de504e09de508d08de21eff2fe1908f00207c4c002001020000fd010000100002225c4e0020000002226804002014a500200d02000040aa0020"
+    },
+    {
+      "group": "iram0_nor_helper_report256",
+      "address": 570552320,
+      "size": 256,
+      "code_hex": "30e09fe53eff2fe12ce09fe53eff2fe128e09fe53eff2fe124009fe524109fe524e09fe53eff2fe100409de504e09de508d08de21eff2fe1180400206804002014a5002000f001220001000040aa0020"
+    }
+  ]
+}

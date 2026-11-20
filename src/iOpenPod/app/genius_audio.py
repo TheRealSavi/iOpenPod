@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-GENIUS_AUDIO_PROFILE_VERSION = 1
+GENIUS_AUDIO_PROFILE_VERSION = 2
 GENIUS_AUDIO_FEATURE_COUNT = 29
 _END_SECONDS = 20
 _FRAME_SIZE = 2048
@@ -32,12 +32,60 @@ _PROJECTION_COUNT = 8
 _MAX_CANDIDATES = 256
 
 
+class GeniusVocalAnalysisError(ValueError):
+    """Optional source evidence was unavailable; keep the acoustic profile."""
+
+
+@dataclass(frozen=True, slots=True)
+class GeniusAudioCharacter:
+    """Gain-independent body measurements, distinct from learned mood labels."""
+
+    spectral_activity: float
+    beat_strength: float
+    dynamic_range_db: float
+    spectral_flatness: float
+    active_fraction: float
+
+    def __post_init__(self) -> None:
+        for value, maximum in (
+            (self.spectral_activity, math.inf),
+            (self.beat_strength, 1.0),
+            (self.dynamic_range_db, 60.0),
+            (self.spectral_flatness, 1.0),
+            (self.active_fraction, 1.0),
+        ):
+            if not math.isfinite(value) or not 0 <= value <= maximum:
+                raise ValueError("Invalid Genius audio character measurement")
+
+
+@dataclass(frozen=True, slots=True)
+class GeniusVocalEvidence:
+    """Estimated vocal occupancy in distributed samples, not a lyric classifier."""
+
+    provider: str
+    vocal_fraction: float
+    sampled_seconds: float
+
+    def __post_init__(self) -> None:
+        if (
+            not self.provider
+            or len(self.provider) > 1024
+            or not math.isfinite(self.vocal_fraction)
+            or not 0 <= self.vocal_fraction <= 1
+            or not math.isfinite(self.sampled_seconds)
+            or not 0 < self.sampled_seconds <= 48
+        ):
+            raise ValueError("Invalid Genius vocal evidence")
+
+
 @dataclass(frozen=True, slots=True)
 class GeniusAudioProfile:
     duration_seconds: float
     intro: tuple[float, ...] | None
     body: tuple[float, ...]
     outro: tuple[float, ...] | None
+    character: GeniusAudioCharacter | None = None
+    vocals: GeniusVocalEvidence | None = None
 
 
 def _library_member(namespace: object, name: str) -> object:
@@ -96,11 +144,11 @@ def _spectral_blocks(
         yield magnitude, mel
 
 
-def _segment_tempo(
+def _segment_rhythm(
     onset: NDArray[np.float64],
     sample_rate_hz: int,
     checkpoint: Callable[[], None],
-) -> float:
+) -> tuple[float, float]:
     import librosa
 
     # Preserve librosa's whole-segment mean tempogram, without allocating its
@@ -122,20 +170,32 @@ def _segment_tempo(
         )
         total += np.sum(block, axis=-1)
     checkpoint()
+    average = total / onset.size
     estimated = librosa.feature.tempo(
-        tg=(total / onset.size)[:, None], sr=sample_rate_hz, hop_length=_HOP_SIZE
+        tg=average[:, None], sr=sample_rate_hz, hop_length=_HOP_SIZE
     )
-    return float(np.asarray(estimated).reshape(-1)[0])
+    tempo = float(np.asarray(estimated).reshape(-1)[0])
+    # Subtract the nonperiodic floor: raw autocorrelation also rewards a
+    # continuously active onset envelope with no distinct pulse.
+    frames_per_minute = 60 * sample_rate_hz / _HOP_SIZE
+    first = max(1, round(frames_per_minute / 240))
+    last = min(average.size, round(frames_per_minute / 40) + 1)
+    lag = round(frames_per_minute / tempo)
+    strength = 0.0
+    if first < last and 0 < lag < average.size:
+        floor = float(np.median(average[first:last]))
+        strength = float(np.clip((average[lag] - floor) / max(1 - floor, 1e-9), 0, 1))
+    return tempo, strength
 
 
 def _segment_features(
     samples: NDArray[np.float32],
     sample_rate_hz: int,
     checkpoint: Callable[[], None],
-) -> tuple[float, ...]:
+) -> tuple[tuple[float, ...], GeniusAudioCharacter]:
     checkpoint()
     if not np.any(samples):
-        return (0.0,) * GENIUS_AUDIO_FEATURE_COUNT
+        return (0.0,) * GENIUS_AUDIO_FEATURE_COUNT, GeniusAudioCharacter(0, 0, 0, 0, 0)
 
     # Keep expensive analysis dependencies out of application startup.
     import librosa
@@ -151,6 +211,8 @@ def _segment_features(
     # only the 128-band mel blocks, not the 1,025-bin spectra. A 15-minute
     # segment retains about 40 MB, half of its PCM; the spectra would be ~8x.
     mel_blocks: deque[NDArray[np.float64]] = deque()
+    rms_blocks: list[NDArray[np.float64]] = []
+    flatness_blocks: list[NDArray[np.float64]] = []
     for magnitude, mel in _spectral_blocks(samples, sample_rate_hz, checkpoint):
         centroid.add(
             librosa.feature.spectral_centroid(
@@ -158,6 +220,12 @@ def _segment_features(
             )
         )
         mel_blocks.append(mel)
+        rms_blocks.append(
+            librosa.feature.rms(
+                S=magnitude, frame_length=_FRAME_SIZE, dtype=np.float64
+            )[0]
+        )
+        flatness_blocks.append(librosa.feature.spectral_flatness(S=magnitude)[0])
     floor: float | None = None
     frames = 1 + max(samples.size, _FRAME_SIZE) // _HOP_SIZE
     if frames > _BLOCK_FRAMES:
@@ -188,8 +256,9 @@ def _segment_features(
         onset_blocks.append(onset)
     onset = np.concatenate(onset_blocks)
     tempo = 0.0
+    beat_strength = 0.0
     if samples.size >= 2 * sample_rate_hz and np.any(onset > 1e-6):
-        tempo = _segment_tempo(onset, sample_rate_hz, checkpoint)
+        tempo, beat_strength = _segment_rhythm(onset, sample_rate_hz, checkpoint)
     checkpoint()
     values = (
         tempo,
@@ -200,7 +269,26 @@ def _segment_features(
     )
     if not all(math.isfinite(value) for value in values):
         raise ValueError("Audio analysis produced nonfinite Genius features")
-    return values
+    rms = np.concatenate(rms_blocks)
+    flatness = np.concatenate(flatness_blocks)
+    # A relative floor avoids calling quiet recordings silence. Exclude silent
+    # frames from flatness: their empty spectrum would otherwise look like noise.
+    peak = float(np.max(rms))
+    active = rms > peak * 0.001
+    low, high = np.quantile(rms, (0.1, 0.9))
+    dynamics = (
+        min(60.0, 20 * math.log10(high / max(low, high * 0.001))) if high > 0 else 0.0
+    )
+    character = GeniusAudioCharacter(
+        spectral_activity=float(np.mean(onset)) * sample_rate_hz / _HOP_SIZE,
+        beat_strength=beat_strength,
+        dynamic_range_db=dynamics,
+        spectral_flatness=float(np.clip(np.mean(flatness[active]), 0, 1))
+        if np.any(active)
+        else 0.0,
+        active_fraction=float(np.mean(active)),
+    )
+    return values, character
 
 
 def profile_genius_pcm(
@@ -228,13 +316,14 @@ def profile_genius_pcm(
     duration = samples.size / sample_rate_hz
     end_size = _END_SECONDS * sample_rate_hz
     if samples.size <= 2 * end_size:
-        return GeniusAudioProfile(
-            duration, None, _segment_features(samples, sample_rate_hz, check), None
-        )
-    intro = _segment_features(samples[:end_size], sample_rate_hz, check)
-    body = _segment_features(samples[end_size:-end_size], sample_rate_hz, check)
-    outro = _segment_features(samples[-end_size:], sample_rate_hz, check)
-    return GeniusAudioProfile(duration, intro, body, outro)
+        body, character = _segment_features(samples, sample_rate_hz, check)
+        return GeniusAudioProfile(duration, None, body, None, character)
+    intro, _ = _segment_features(samples[:end_size], sample_rate_hz, check)
+    body, character = _segment_features(
+        samples[end_size:-end_size], sample_rate_hz, check
+    )
+    outro, _ = _segment_features(samples[-end_size:], sample_rate_hz, check)
+    return GeniusAudioProfile(duration, intro, body, outro, character)
 
 
 def _validated_features(values: tuple[float, ...]) -> tuple[float, ...]:
@@ -256,11 +345,30 @@ def _normalize(rows: list[tuple[float, ...]]) -> NDArray[np.float64]:
     return centered / np.where(deviation > 1e-12, deviation, 1.0)
 
 
+def _rank_vectors(rows: list[tuple[float, ...]]) -> NDArray[np.float64]:
+    # Balance feature families instead of giving 26 cepstral statistics 26 votes.
+    # MFCC0 mean includes recording gain; its variance describes dynamics, which
+    # have dedicated measurements. Neither is used as timbre evidence here.
+    weights = np.asarray(
+        (
+            0.1,
+            0.15,
+            0.1,
+            0.0,
+            *(0.4 / 12 for _ in range(12)),
+            0.0,
+            *(0.25 / 12 for _ in range(12)),
+        ),
+        dtype=np.float64,
+    )
+    return _normalize(rows) * np.sqrt(weights)
+
+
 def _projection_orders(
     bodies: NDArray[np.float64], checkpoint: Callable[[], None]
 ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
     # Fixed trigonometric directions avoid random state/version-dependent draws.
-    dimensions = np.arange(1, GENIUS_AUDIO_FEATURE_COUNT + 1, dtype=np.float64)
+    dimensions = np.arange(1, bodies.shape[1] + 1, dtype=np.float64)
     directions = np.stack(
         [
             np.cos(dimensions * (index + 1) * math.sqrt(2.0))
@@ -321,7 +429,7 @@ def rank_genius_candidates(
     Libraries up to 512 profiles use exact body neighbors. Larger Libraries use
     eight sorted projection neighborhoods, then exact distances within each
     bounded shortlist. Work is O(N log N + N*K*(D + log K)), memory O(N*D + N*K),
-    with fixed feature dimension D=29 and candidate cap K=256. Neighbor search is
+    with fixed feature dimension D<=33 and candidate cap K=256. Neighbor search is
     approximate above that small-Library threshold.
 
     Repeatedly choose the best seed-outro to candidate-intro transition among the
@@ -353,8 +461,26 @@ def rank_genius_candidates(
                 end_rows.append(_validated_features(segment))
     if not limit or len(identities) == 1:
         return dict.fromkeys(identities, ())
-    bodies = _normalize(body_rows)
-    ends = _normalize(end_rows) if end_rows else None
+    bodies = _rank_vectors(body_rows)
+    characters = [profiles[identity].character for identity in identities]
+    if all(character is not None for character in characters):
+        character_rows: list[tuple[float, ...]] = [
+            (
+                character.spectral_activity,
+                character.beat_strength,
+                character.dynamic_range_db,
+                character.spectral_flatness,
+            )
+            for character in characters
+            if character is not None
+        ]
+        # The four new body measurements share 40% of distance. Optional vocal
+        # inference cannot change the global graph: only some Tracks receive it.
+        bodies = np.concatenate(
+            (bodies * math.sqrt(0.6), _normalize(character_rows) * math.sqrt(0.1)),
+            axis=1,
+        )
+    ends = _rank_vectors(end_rows) if end_rows else None
     orders, positions = (
         _projection_orders(bodies, check)
         if len(identities) > _EXACT_NEIGHBOR_LIMIT

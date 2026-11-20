@@ -102,7 +102,7 @@ def verify_native_tracks(
                 raw = getattr(dates, field)
                 if raw is not None:
                     expected_fields[field] = raw
-        if genius_update is not None:
+        if genius_update is not None and genius_update.data is not None:
             expected_fields["genius_id"] = genius_ids.get(track.track_id, 0)
         elif track.track_id in replaced_tracks:
             expected_fields["genius_id"] = 0

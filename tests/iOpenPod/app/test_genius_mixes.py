@@ -2,6 +2,7 @@
 
 import random
 from dataclasses import replace
+from uuid import UUID
 
 import pytest
 
@@ -49,6 +50,100 @@ def browse(state: MixState) -> GeniusBrowse:
             for entry in state.entries
         )
     )
+
+
+def test_new_cover_identity_avoids_artwork_owners_and_classic_low_word_collision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from iOpenPod.app import genius_mixes
+
+    state = MixState((ManagedMix(900, "pop"),))
+    choices = iter((UUID(int=901), UUID(int=(1 << 32) | 900), UUID(int=902)))
+    monkeypatch.setattr(genius_mixes, "uuid4", lambda: next(choices))
+    plan = plan_mixes(
+        music("Rock", "Pop"),
+        browse(state),
+        state,
+        manual_keys=("rock",),
+        now=100,
+        reserved_ids=frozenset({901}),
+        unique_low_words=True,
+    )
+    assert plan.additions[0].container_id == 902
+
+
+def test_classic_capacity_counts_external_mixes_and_leaves_them_untouched() -> None:
+    external = browse(
+        MixState(tuple(ManagedMix(i + 1, f"external-{i}") for i in range(12)))
+    )
+    with pytest.raises(ValueError, match="12 Genius Mixes"):
+        plan_mixes(
+            music("Rock"),
+            external,
+            MixState(),
+            manual_keys=("rock",),
+            now=100,
+            max_mixes=12,
+        )
+    automatic = plan_mixes(
+        music("Rock"), external, MixState(), policy=MixPolicy(12), now=100, max_mixes=12
+    )
+    assert automatic.additions == ()
+    assert automatic.removals == ()
+    replaced = plan_mixes(
+        music("Rock"),
+        external,
+        MixState(),
+        manual_keys=("rock",),
+        remove_ids=(1,),
+        now=100,
+        max_mixes=12,
+    )
+    assert len(replaced.additions) == 1 and replaced.removals == (1,)
+
+
+def test_classic_automatic_rotation_respects_remaining_slots() -> None:
+    external = browse(
+        MixState(tuple(ManagedMix(i + 1, f"external-{i}") for i in range(11)))
+    )
+    first = plan_mixes(
+        music("Rock", "Pop", "Jazz"),
+        external,
+        MixState(),
+        policy=MixPolicy(12, 1),
+        now=100,
+        max_mixes=12,
+    )
+    assert len(first.additions) == 1
+    combined = GeniusBrowse((*external.collections, *browse(first.state).collections))
+    next_plan = plan_mixes(
+        music("Rock", "Pop", "Jazz"),
+        combined,
+        first.state,
+        policy=MixPolicy(12, 1),
+        now=86502,
+        max_mixes=12,
+    )
+    assert next_plan.removals == (first.additions[0].container_id,)
+    assert len(next_plan.additions) == 1
+
+
+def test_classic_rotation_preserves_an_already_overfull_external_library() -> None:
+    state = MixState((ManagedMix(99, "rock", 100),))
+    external = browse(
+        MixState(tuple(ManagedMix(i + 1, f"external-{i}") for i in range(13)))
+    )
+    current = GeniusBrowse((*external.collections, *browse(state).collections))
+    plan = plan_mixes(
+        music("Rock", "Pop"),
+        current,
+        state,
+        policy=MixPolicy(1, 1),
+        now=86502,
+        max_mixes=12,
+    )
+    assert plan.additions == () and plan.removals == ()
+    assert plan.state == state
 
 
 def test_catalog_uses_normalized_genres_and_excludes_nonmusic() -> None:

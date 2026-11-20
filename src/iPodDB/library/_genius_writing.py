@@ -103,7 +103,9 @@ def reconcile_genius_tracks(
     update: GeniusUpdate | None,
     replaced_ids: frozenset[int],
 ) -> DatabaseDocument[MhbdHeader]:
-    if update is None and not replaced_ids:
+    if (update is None or update.data is None) and not replaced_ids:
+        if update is not None:
+            validate_genius_update(update, {})
         return document
     selections = tuple(document.find_chunks(MhitHeader))
     pids = {s.chunk.header.track_id: s.chunk.header.db_track_id for s in selections}
@@ -118,7 +120,7 @@ def reconcile_genius_tracks(
         header = chunk.header
         gid = (
             assignments.get(header.track_id, 0)
-            if update is not None
+            if update is not None and update.data is not None
             else (0 if header.track_id in replaced_ids else header.genius_id)
         )
         if gid == header.genius_id:
@@ -158,23 +160,24 @@ def prepare_classic_genius(
     source: bytes | None,
     update: GeniusUpdate | None,
 ) -> bytes | None:
+    authored = None if update is None else update.data
     previous = {
         t.ipod.genius_id for t in original.tracks if t.ipod and t.ipod.genius_id
     }
     current = {t.ipod.genius_id for t in checked.tracks if t.ipod and t.ipod.genius_id}
     removed = frozenset(previous - current)
     if source is None:
-        if removed or (update is not None and previous):
+        if removed or (authored is not None and previous):
             raise ValueError(
                 "Capture the Classic Extras.itdb before removing or replacing Genius Track identities"
             )
         return (
             None
-            if update is None
-            else serialize_genius_database(GeniusDatabase(update.data))
+            if authored is None
+            else serialize_genius_database(GeniusDatabase(authored))
         )
     retained = parse_genius_database(source)
     data = (
-        update.data if update is not None else prune_genius_data(retained.data, removed)
+        authored if authored is not None else prune_genius_data(retained.data, removed)
     )
     return serialize_genius_database(retained, data)

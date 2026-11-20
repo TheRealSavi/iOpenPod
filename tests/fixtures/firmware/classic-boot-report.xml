@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+<key>iOpenPodBootReport</key>
+<dict>
+<key>Schema</key>
+<integer>1</integer>
+<key>Status</key>
+<integer>4</integer>
+<key>ModVersion</key>
+<string>0.6.0-dev</string>
+<key>DeviceSerial</key>
+<string>TEST12345678</string>
+<key>DeviceModel</key>
+<string>MB565</string>
+<key>HardwareRevision</key>
+<integer>1245440</integer>
+<key>BodySHA256</key>
+<string>7d4e94a6a509713d92e3d54f839491e4152a2fb639fb178ad50d2aaf38abbe61</string>
+<key>Marker</key>
+<string>694f70656e506f642d426f6f746c6f616465722d7631000000000000000000000200000002000000434c53430f000000322e312e300000000000000000000000</string>
+</dict>
+</dict>
+</plist>

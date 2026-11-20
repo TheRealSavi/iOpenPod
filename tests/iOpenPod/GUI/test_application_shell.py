@@ -173,12 +173,17 @@ def test_deferred_widget_updates_are_cancelled_when_shell_is_deleted(
     assert errors == []
 
 
-def test_draft_all_changes_setting_controls_review_visibility_immediately() -> None:
+@pytest.mark.parametrize(
+    "review_name", ["reviewLibraryChanges", "compactReviewLibraryChanges"]
+)
+def test_draft_all_changes_setting_controls_review_visibility_immediately(
+    review_name: str,
+) -> None:
     context = _context()
     window = MainWindow(context, auto_discover=False)
     try:
         combo = window.findChild(AppComboBox, "draftAllChangesCombo")
-        review = window.findChild(QPushButton, "reviewLibraryChanges")
+        review = window.findChild(QPushButton, review_name)
         assert combo is not None and review is not None
         assert combo.currentData() is False
         assert review.isHidden()

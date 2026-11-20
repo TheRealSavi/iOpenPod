@@ -5,7 +5,13 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from device_registry.models import DeviceEvidence, DeviceProfile, FeatureSupport
+from device_registry.firmware import resolve_firmware_target
+from device_registry.models import (
+    DeviceEvidence,
+    DeviceProfile,
+    FeatureSupport,
+    FirmwareTarget,
+)
 
 
 def refine_genius_capabilities(
@@ -19,6 +25,54 @@ def refine_genius_capabilities(
     """
 
     genius = profile.capabilities.genius
+    # The shared OS can expose newer software features on older Classic hardware.
+    # Require one qualified release/family pair at the strongest authority; a
+    # current partial report must not borrow the other half from cached metadata.
+    authority = max(
+        (
+            item.authority
+            for item in (*evidence.firmware_versions, *evidence.updater_family_ids)
+        ),
+        default=None,
+    )
+    target = resolve_firmware_target(
+        profile,
+        tuple(
+            item.value
+            for item in evidence.firmware_versions
+            if item.authority == authority
+        ),
+        tuple(
+            item.value
+            for item in evidence.updater_family_ids
+            if item.authority == authority
+        ),
+    )
+    # Artwork is independently qualified; Mix playback alone does not imply it.
+    artwork = (
+        FeatureSupport.SUPPORTED
+        if target
+        in (
+            FirmwareTarget.CLASSIC_UPDATER_35_2_0_4,
+            FirmwareTarget.CLASSIC_UPDATER_38_2_0_5,
+            FirmwareTarget.NANO_7_1_0_4,
+            FirmwareTarget.NANO_UPDATER_39_1_1_2,
+        )
+        else FeatureSupport.UNKNOWN
+    )
+    genius = replace(genius, mix_artwork=artwork)
+    profile = profile.with_capabilities(replace(profile.capabilities, genius=genius))
+    if target is FirmwareTarget.CLASSIC_UPDATER_38_2_0_5:
+        return profile.with_capabilities(
+            replace(
+                profile.capabilities,
+                genius=replace(
+                    genius,
+                    playlists=FeatureSupport.SUPPORTED,
+                    mixes=FeatureSupport.SUPPORTED,
+                ),
+            )
+        )
     minimum = genius.mixes_minimum_firmware
     if minimum is None:
         return profile

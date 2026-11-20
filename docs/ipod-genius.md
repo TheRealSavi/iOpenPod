@@ -41,8 +41,17 @@ minimum. Libraries below that minimum still receive valid relationships, but nat
 playback is not guaranteed. The new spacing settings require hardware acceptance;
 the earlier no-rule experiments do not validate them.
 
-Cold Sync analyzes up to two prepared Host sources or retained iPod music Tracks
-concurrently through Storage. The normal application keeps a versioned,
+Cold Sync uses two to six workers through Storage. Host sources may use every
+worker; at most two device Tracks are in flight with one device read at a time.
+For retained music without a usable cached profile, Genius prefers a still-valid
+Host counterpart from committed Sync Details or the current reviewed comparison.
+Both device and Host file facts must match; missing or stale correlations fall
+back to the iPod. Host decoding uses the original format, and optional decoder
+failure retries through the bounded device queue. Prepared incoming media retains
+priority. Explicit stream-selection digests keep using prepared/device audio.
+See [ADR-0292](adr/0292-prefer-correlated-host-audio-for-genius-analysis.md).
+
+The normal application keeps a versioned,
 checksummed, bounded Host cache of successful compact profiles. Unchanged
 sources reuse profiles; changed sources invalidate them. Cache lookup and source
 checks happen before queuing audio work. Only uncached Tracks enter the analysis
@@ -51,7 +60,7 @@ active Track has its own indeterminate progress bar during analysis; the overall
 bar counts only Tracks needing analysis. Decoder and profiler phases do not provide reliable
 percentages. Decode or cache failure is reported with metadata fallback, while
 cancellation, device disconnect, and source mutation stop preparation. Device
-identities are checked again before publication.
+identities and any correlated Host observations are checked again before publication.
 Synesthesia Track Analysis and Chromaprint matching evidence remain separate.
 The current decoder accepts up to 15 minutes of audio and 300 seconds of decoding
 time per Track; longer or undecodable Tracks retain metadata candidates. Spectral
@@ -79,10 +88,13 @@ saved Genius Playlist creation and Host Mix playback remain separate. See
 
 The Genius Mixes header has Settings and Add glyph buttons. Add opens a grid of
 fixed genre and mood proposals, allowing multiple selections. At least ten matching
-music Tracks are required for each proposal. Focus, Energy, and Relax use the
-existing librosa-derived Genius Audio Profiles to suggest seeds from tempo and
-spectral texture. Love also needs a title or album cue; audio cannot determine a
-song's subject. Mood counts are checked after audio analysis during save, and a
+music Tracks are required for each proposal. Focus, Energy, and Relax use
+Genius Audio Profiles with rhythm, spectral activity, brightness, dynamics and
+texture evidence. Focus requires very calm, steady music and little detected
+singing; it uses the optional instrument-analysis runtime available through
+Settings. Missing vocal evidence does not count as instrumental. Relax allows
+vocals. Love also needs a title or album cue; audio cannot determine a song's
+subject. Mood counts are checked after audio analysis during save, and a
 Mix with too few matching Tracks is rejected without changing the Library.
 Add uses the existing Library save
 workflow, which saves automatically unless **Draft all changes** is enabled.
@@ -95,6 +107,10 @@ age. Lowering Count removes excess automatic Mixes at the next Sync; zero remove
 all automatic Mixes. Manual Mixes never expire and do not count toward Count.
 Selecting an automatic Mix through Add makes it permanent.
 
+Added Mixes appear immediately as **Pending save**. If **Draft all changes** is
+enabled, open **Review Changes** to prepare and save them; otherwise the existing
+automatic save workflow creates them. Pending rows are not yet native iPod Mixes.
+
 The catalog currently covers Rock, Alternative, Pop, Hard Rock, Metal, Punk,
 Electronic, Dance, Hip-Hop, R&B and Soul, Jazz, Blues, Country, Folk and Acoustic,
 Classical, Reggae, Latin, and Soundtracks, plus Focus, Love, Energy, and Relax.
@@ -103,7 +119,23 @@ missing profiles do not become matches. These rules do not claim to reproduce
 Apple's recommendations. Native relationship traversal can play beyond the
 proposed starting Tracks.
 
-Creation requires confirmed native Mix support and a supported SQLite writer.
+The version-2 analysis cache needs a fresh acoustic pass. Focus additionally
+samples at most 48 seconds across each calm candidate using one retained optional
+model worker. Its vocal estimate can miss unsampled singing or mistake instruments
+for voices; it favors conservative selection. Existing Mixes keep their original
+members until removed and added again or rotated. Recreate them to apply the new
+rules. See [ADR-0290](adr/0290-require-rhythm-dynamics-and-vocal-evidence-for-mood-mixes.md).
+
+Mix counts in the sidebar and detail view are labeled **starting tracks**. They
+describe the pool of possible seeds, not the length of the generated playback
+queue. Mixes have no total-duration summary because that would add up the seed
+pool rather than the Tracks the iPod will play.
+
+Creation requires confirmed native Mix support and a supported Classic or SQLite writer.
+Classic uses iTunesDB Mix records and root Extras.itdb, with a maximum of twelve
+Mixes in total, including externally owned collections. Add shows available slots;
+automatic Mixes fill the space left by other Mixes. See
+[ADR-0289](adr/0289-author-classic-genius-mixes-in-binary-playlist-datasets.md).
 Other devices continue to browse existing Genius collections. Automatic ownership
 is explicit and stored with the Mix publication in
 `iPod_Control/iOpenPod/genius-mixes-v1.json`; preexisting unowned collections never
@@ -122,10 +154,10 @@ collection through the Library save workflow. Removing a Playlist also removes
 its matching saved sidecar when present. Removing a Mix clears its iOpenPod
 ownership entry, including an automatic Mix. Tracks remain in the Library. An
 automatic Mix removed this way may be replaced at the next Sync if Count still
-calls for it. Mix removal requires the supported SQLite writer.
+calls for it. Mix removal requires a supported Classic or SQLite writer.
 
 `project_genius_browse` combines canonical Genius Playlists, saved plist sidecars,
-and optional SQLite Mix records into immutable `GeniusBrowse` collections and
+and optional Classic binary or SQLite Mix records into immutable `GeniusBrowse` collections and
 diagnostics. It maps persistent references to existing semantic Tracks and
 deduplicates matching native Playlist identities. This separate browse state is
 refreshed when loading or saving an iPod. Missing or damaged optional sources do
@@ -168,14 +200,37 @@ than the Original iOpenPod or libgpod definitions.
 
 ## Coordinated writing
 
+On qualified Classic 2.0.4/2.0.5 and Nano 7/7.5 1.0.4/1.1.2 firmware,
+iOpenPod saves the colored genre/mood artwork from Add Mixes as native Mix covers.
+Existing iOpenPod-managed Mixes receive covers on their next save or Sync. Covers
+use a stable dark palette; changing the desktop theme does not rewrite device
+artwork. Other devices retain their previous behavior. Firmware and updater-family
+evidence must agree; supporting Mix playback alone does not enable cover writes.
+The shared UI painter generates cover pixels in memory during preparation, using
+the existing SVG icons. No pre-rendered PNG assets or disk cache are needed.
+See [ADR-0291](adr/0291-publish-qualified-native-genius-mix-covers.md).
+
+`GeniusMixArtwork(mix_id, pixels)` is explicit cover intent passed through
+`begin_draft(genius_mix_artwork=...)`; `pixels=None` retires its reverse link.
+The caller supplies `WriteTarget.genius_mix_artwork_format` only for a qualified
+target. Prepared output includes ArtworkDB and bounded iTHMB files in the normal
+Library transaction. Album covers remain separate. Identical covers are reused;
+retired pixel ranges remain preserved rather than being compacted during Sync.
+
 Use `library.begin_draft(genius_update=GeniusUpdate(data, tracks, mixes))`, then
 analyze and prepare normally. `GeniusTrack(track_id, genius_id)` and
 `GeniusMix(container_id, name, track_ids, seed_track_id=None)` use semantic Library
 Track IDs. Preparation maps newly allocated IDs. Container IDs are unsigned 64-bit
 persistent identities; SQLite represents the high half as signed values. Mix
 membership supplies possible starting Tracks, not a complete playback queue.
+For Classic authoring, set `WriteTarget.classic_genius_mixes=True` after confirming
+the Device Profile's native capabilities. `IPodLibrary.classic_genius_mixes()`
+projects retained Mixes for the optional `classic_mixes` browse argument. Classic
+members use short native Track IDs and do not use the optional single compatibility
+seed. Existing nonzero MHBD result counts are retained; new Mix creation initializes
+zero counts from the explicit Genius configuration (currently 25/10).
 
-An explicit update replaces the complete known graph and assignments. Its default
+An explicit update containing `data` replaces the complete known graph and assignments. Its default
 `mixes=None` preserves existing native Mixes while pruning unavailable references;
 an explicit tuple replaces the Mix set, and `mixes=()` clears it. Omitting the
 entire update preserves retained graph state. Duplicate IDs,
@@ -187,6 +242,13 @@ For selective management, leave `mixes=None` and supply `mix_additions` and/or
 `mix_removals`. Additions must have new container identities; removals identify
 native Mix containers. All unmentioned native Mix rows retain their original
 metadata and Unknown Data. Full replacement and selective edits cannot be combined.
+
+To remove Mixes without regenerating the graph, use
+`GeniusUpdate(None, mix_removals=(container_id,))`. This preserves Track assignments,
+the retained graph, and unmentioned collections. Assignments, additions, and full
+Mix replacement are rejected in this mode. Removing or replacing Track media in
+the same draft still prunes the affected relationships normally. The application
+does not analyze music for a removal-only save.
 
 For Classic, supply captured root `Extras.itdb` in `WriteResources.genius_source`
 and publish `PreparedLibrary.genius` together with `itunes`. Captured bytes are

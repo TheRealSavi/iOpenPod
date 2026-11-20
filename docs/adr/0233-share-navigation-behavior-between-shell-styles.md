@@ -46,6 +46,10 @@ the current page and Playlist selection, including after a Library reload; initi
 popup focus must not implicitly select the tree's first item. Ordinary hover handling
 does not intercept Track drags or close nested Playlist menus.
 
+As refined on 2026-11-19, Review Changes moves from Maintenance to a direct button
+immediately to the right of Sync with Host. It remains visible only when Draft all
+changes is enabled and retains the shared review availability and workflow.
+
 The Playlists popup has a New control above the existing `PlaylistTree`. It reuses
 the tree's editing, folder hierarchy, reordering, duplicate handling, and regular
 Playlist drop behavior. Hovering a valid Track drag over Playlists opens the popup;

@@ -1,0 +1,18 @@
+iOpenPod Classic33 bootloader installation assets
+
+Custom native code and host probe port: GPL-3.0-only. Source, rebuild instructions
+and upstream provenance are in scripts/bootloader in the iOpenPod source tree.
+The source distribution includes the corresponding C, ARM assembly and Go code.
+
+SPI/SST25 sequencing derives from Rockbox 10ec9bd5, norboot-s5l8702.c and
+spi-s5l8702.c, Copyright (C) 2009 Michael Sparmann.
+DFU certificate-envelope construction follows Rockbox mks5lboot.
+SHA-256 and return trampoline derive from osos-lab
+d2c8e357d58591bdaa70bb6be9da191f489554a6 (GPL-3.0-only).
+Probe encodings derive from osos-lab / wInd3x,
+Copyright (C) 2022 Serge 'q3k' Bazanski (q3k@q3k.org).
+wInd3x is GPL-2.0-or-later; this port uses GPL-3.0-only.
+
+stock.delta applies only to the qualified Apple loader. Apple code is not
+relicensed by this notice. No full Apple firmware or personal device image is
+included. The human-readable marker does not imply authorship authentication.

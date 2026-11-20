@@ -44,7 +44,12 @@ def is_master(kind: int, header: MhypHeader) -> bool:
 
 
 def is_visible(kind: int, header: MhypHeader) -> bool:
-    return kind in (2, 3) and not header.master_flag & 1 and not header.mhsd_5_type
+    return (
+        kind in (2, 3)
+        and not header.master_flag & 1
+        and not header.mhsd_5_type
+        and not header.is_genius_mix
+    )
 
 
 def is_podcasts(kind: int, header: MhypHeader) -> bool:
@@ -300,7 +305,11 @@ def ensure_companion(
         if not isinstance(child.header, MhypHeader):
             rows.append(child)
             continue
-        if not is_visible(3, child.header) and not is_master(3, child.header):
+        if (
+            not is_visible(3, child.header)
+            and not is_master(3, child.header)
+            and not child.header.is_genius_mix
+        ):
             continue
         rows.append(_flat_playlist(document, chunk_as(child, MhypHeader), allocator))
     companion = new_itunes_chunk(

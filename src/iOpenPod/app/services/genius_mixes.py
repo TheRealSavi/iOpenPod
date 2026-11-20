@@ -16,8 +16,11 @@ from iOpenPod.app.genius_mixes import (
     ManagedMix,
     MixPolicy,
     MixState,
+    mix_limit,
     plan_mixes,
 )
+from iOpenPod.app.services.library_resources import database_path
+from iPodDB.library import IPodLibrary
 from iPodDB.library.genius import project_genius_browse
 from storage import (
     DevicePath,
@@ -123,6 +126,17 @@ def load_mix_state(session: FilesystemSession) -> MixState:
         )
 
 
+def capture_mix_ownership(
+    session: FilesystemSession, expected: MixState
+) -> FilePrecondition:
+    state, before = _capture(session)
+    if state != expected:
+        raise ValueError(
+            "Genius Mix ownership changed. Reload the iPod before saving covers."
+        )
+    return before
+
+
 def prune_mix_ownership(
     session: FilesystemSession,
     expected: MixState,
@@ -157,6 +171,7 @@ def prepare_mix_changes(
     *,
     profiles: Mapping[int, GeniusAudioProfile] | None = None,
     remove_ids: tuple[int, ...] = (),
+    reserved_artwork_ids: frozenset[int] = frozenset(),
 ) -> tuple[
     GeniusUpdate, MixState, tuple[FilePrecondition, ...], TransactionWrite | None
 ]:
@@ -180,7 +195,24 @@ def prepare_mix_changes(
                 "Invalid automatic Genius Mix settings. Update the settings before Sync."
             )
         policy = MixPolicy.decode(value)
-    if session.exists(_LIBRARY):
+    sqlite = request.source.profile.capabilities.database.uses_sqlite_database
+    if not sqlite:
+        path = database_path(request.source.database_name)
+        source = session.read_snapshot(
+            path,
+            max_bytes=request.source.profile.capabilities.database.max_database_bytes,
+        )
+        if source.fingerprint != request.source.database_fingerprint:
+            raise ValueError(
+                "The iTunesDB changed. Reload the iPod before saving Genius Mixes."
+            )
+        preconditions.append(FilePrecondition(path, source.fingerprint))
+        browse = IPodLibrary(source.data).classic_genius_mixes()
+        if browse.issues:
+            raise ValueError(
+                "Classic Genius Mix collections could not be verified. Reload the iPod."
+            )
+    elif session.exists(_LIBRARY):
         source = session.read_snapshot(_LIBRARY, max_bytes=1024 * 1024 * 1024)
         preconditions.append(FilePrecondition(_LIBRARY, source.fingerprint))
         browse = project_genius_browse(
@@ -202,6 +234,9 @@ def prepare_mix_changes(
         policy=policy,
         profiles=profiles,
         now=Instant.now().timestamp(),
+        max_mixes=mix_limit(request.source.profile),
+        reserved_ids=reserved_artwork_ids,
+        unique_low_words=request.source.profile.family == "iPod Classic",
     )
     write = None
     if plan.state != state:

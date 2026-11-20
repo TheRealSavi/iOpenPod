@@ -98,7 +98,10 @@ def _changed(data: bytes, sql: str) -> bytes:
     return result
 
 
-def test_selective_mix_addition_retains_unmentioned_native_metadata() -> None:
+@pytest.mark.parametrize("regenerate_graph", (False, True))
+def test_selective_mix_addition_retains_unmentioned_native_metadata(
+    regenerate_graph: bool,
+) -> None:
     baseline = _build(_snapshot())
     library = _changed(
         baseline.library,
@@ -141,8 +144,23 @@ def test_selective_mix_addition_retains_unmentioned_native_metadata() -> None:
         database_id=42,
         checksum=WriteChecksum.NONE,
         retained=_sources(result),
-        genius_update=replace(_update(), mixes=None, mix_removals=(1000,)),
+        genius_update=(
+            replace(_update(), mixes=None, mix_removals=(1000,))
+            if regenerate_graph
+            else SQLiteGeniusUpdate(None, mix_removals=(1000,))
+        ),
     )
+    for table, identity in (
+        ("container", "pid"),
+        ("item_to_container", "container_pid"),
+        ("container_seed", "container_pid"),
+    ):
+        query = f"SELECT * FROM {table} WHERE {identity}=999"
+        assert sqlite_rows(removed.library, query) == sqlite_rows(result.library, query)
+    query = "SELECT * FROM container_ui WHERE container_pid=999"
+    assert sqlite_rows(removed.dynamic, query) == sqlite_rows(result.dynamic, query)
+    if not regenerate_graph:
+        assert removed.genius == result.genius
     assert {
         mix.container_id
         for mix in read_sqlite_genius_state(
@@ -177,6 +195,53 @@ def test_selective_addition_cannot_overwrite_an_existing_native_mix() -> None:
                 mix_additions=(SQLiteGeniusMix(999, "Overwrite", (8,)),),
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "update",
+    (
+        SQLiteGeniusUpdate(None, tracks=(SQLiteGeniusTrack(7, 1001),)),
+        SQLiteGeniusUpdate(None, mixes=()),
+        SQLiteGeniusUpdate(None, mix_additions=(SQLiteGeniusMix(1000, "New", (7,)),)),
+    ),
+)
+def test_preserved_graph_rejects_assignments_and_mix_authoring(
+    update: SQLiteGeniusUpdate,
+) -> None:
+    with pytest.raises(ValueError, match="only selective Mix removals"):
+        build_sqlite_databases(
+            _snapshot(),
+            database_id=42,
+            checksum=WriteChecksum.NONE,
+            retained=_sources(_build(_snapshot())),
+            genius_update=update,
+        )
+
+
+def test_mix_removal_preserves_unknown_genius_data_exactly() -> None:
+    baseline = _build(_snapshot())
+    genius = _changed(
+        baseline.genius,
+        """
+        CREATE TABLE future_genius (value BLOB);
+        INSERT INTO future_genius VALUES (X'010203');
+        UPDATE genius_similarities SET version=999,data=X'12345678';
+        """,
+    )
+    result = build_sqlite_databases(
+        _snapshot(),
+        database_id=42,
+        checksum=WriteChecksum.NONE,
+        retained=_sources(replace(baseline, genius=genius)),
+        genius_update=SQLiteGeniusUpdate(None, mix_removals=(999,)),
+    )
+    assert result.genius == genius
+    state = read_sqlite_genius_state(result.library, result.dynamic, result.genius)
+    before = read_sqlite_genius_state(
+        baseline.library, baseline.dynamic, baseline.genius
+    )
+    assert state.track_genius_ids == before.track_genius_ids
+    assert state.mixes == ()
 
 
 def test_document_round_trip_preserves_exact_bytes_and_unknown_schema() -> None:

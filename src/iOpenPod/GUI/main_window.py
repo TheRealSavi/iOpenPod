@@ -94,6 +94,7 @@ from iOpenPod.app.tag_normalization_controller import TagNormalizationController
 from iOpenPod.app.tag_normalizer import tag_profile
 from iOpenPod.app.updates.controller import UpdateController
 from iOpenPod.app.updates.platform import create_update_provider
+from iOpenPod.GUI.dialogs.bootloader_unlock import BootloaderUnlockDialog
 from iOpenPod.GUI.dialogs.device_picker import DevicePickerDialog
 from iOpenPod.GUI.dialogs.external_playlist_files import (
     ExternalPlaylistFilesDialog,
@@ -108,6 +109,7 @@ from iOpenPod.GUI.dialogs.onboarding import OnboardingDialog
 from iOpenPod.GUI.dialogs.phase_runtime_setup import PhaseRuntimeSetupDialog
 from iOpenPod.GUI.dialogs.playlist_export import PlaylistExportDialog
 from iOpenPod.GUI.dialogs.scrobble_report import show_scrobble_report
+from iOpenPod.GUI.dialogs.shared_firmware import SharedFirmwareDialog
 from iOpenPod.GUI.dialogs.tag_normalizer import TagNormalizerDialog
 from iOpenPod.GUI.dialogs.tone_conversion import ToneConversionDialog
 from iOpenPod.GUI.navigation import PageId
@@ -490,6 +492,16 @@ class MainWindow(QMainWindow):
             self._pages,
             theme=context.theme_manager,
             workspace=context.library_workspace,
+            bootloader_controller=context.bootloader_controller,
+            shared_firmware_controller=context.shared_firmware_controller,
+        )
+        self._bootloader_dialog: BootloaderUnlockDialog | None = None
+        self._shared_firmware_dialog: SharedFirmwareDialog | None = None
+        self._device_summary_page.installSharedFirmwareRequested.connect(
+            self._open_shared_firmware
+        )
+        self._device_summary_page.unlockBootloaderRequested.connect(
+            self._open_bootloader_unlock
         )
         self._device_summary_page.set_active_ipod(context.device_controller.active_ipod)
         self._refresh_device_summary()
@@ -1406,6 +1418,24 @@ class MainWindow(QMainWindow):
         self._media_tools.check()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if (
+            self._context.shared_firmware_controller is not None
+            and self._context.shared_firmware_controller.busy
+        ):
+            if self._shared_firmware_dialog is not None:
+                self._shared_firmware_dialog.show()
+                self._shared_firmware_dialog.raise_()
+            event.ignore()
+            return
+        if (
+            self._context.bootloader_controller is not None
+            and self._context.bootloader_controller.busy
+        ):
+            if self._bootloader_dialog is not None:
+                self._bootloader_dialog.show()
+                self._bootloader_dialog.raise_()
+            event.ignore()
+            return
         if self._updates.installing and not self._updates.handing_off:
             event.ignore()
             return
@@ -1432,6 +1462,57 @@ class MainWindow(QMainWindow):
         self._context.settings.set_global(WINDOW_GEOMETRY, self.saveGeometry())
         self._context.settings.sync()
         super().closeEvent(event)
+
+    def _open_shared_firmware(self) -> None:
+        context = self._context
+        controller = context.shared_firmware_controller
+        active = context.device_controller.active_ipod
+        if controller is None or (
+            not controller.needs_attention and not controller.can_install(active)
+        ):
+            return
+        if context.library_workspace.dirty or context.library_workspace.locked:
+            QMessageBox.information(
+                self,
+                self.tr("Install universal 2.0.5"),
+                self.tr(
+                    "Save or discard the Library Draft before installing firmware."
+                ),
+            )
+            return
+        if context.device_controller.busy:
+            return
+        context.playback_controller.clear_session()
+        if self._shared_firmware_dialog is not None:
+            self._shared_firmware_dialog.deleteLater()
+        self._shared_firmware_dialog = SharedFirmwareDialog(controller, active, self)
+        self._shared_firmware_dialog.open()
+
+    def _open_bootloader_unlock(self) -> None:
+        context = self._context
+        controller = context.bootloader_controller
+        active = context.device_controller.active_ipod
+        if controller is None or (
+            not controller.can_resume
+            and (active is None or not controller.supported(active))
+        ):
+            return
+        if context.library_workspace.dirty or context.library_workspace.locked:
+            QMessageBox.information(
+                self,
+                self.tr("Install unlocked bootloader"),
+                self.tr(
+                    "Save or discard the Library Draft before unlocking the bootloader."
+                ),
+            )
+            return
+        if context.device_controller.busy:
+            return
+        context.playback_controller.clear_session()
+        if self._bootloader_dialog is not None:
+            self._bootloader_dialog.deleteLater()
+        self._bootloader_dialog = BootloaderUnlockDialog(controller, active, self)
+        self._bootloader_dialog.open()
 
     def _playlist_export_requested(self, name: str, value: object) -> None:
         tracks = _tracks_from_signal(value)

@@ -1,0 +1,136 @@
+{
+  "schema": 2,
+  "identifier": "iOpenPod-Bootloader-v1",
+  "version": "2.1.0",
+  "family": 38,
+  "hardware": 1245952,
+  "stock_sha256": "d2670f7e5493c4b5ed4b9b6fa2029ce1e519c1927522384469e810fbf408fb5e",
+  "unmarked_sha256": "104c0d6453dc03e6cd8952c46855802dbbae91ffc8a1023a921ab0b474b17a32",
+  "target_sha256": "7d4e94a6a509713d92e3d54f839491e4152a2fb639fb178ad50d2aaf38abbe61",
+  "bootrom_sha256": "69c087afc5753d7f0f11f09b141b372af753a854bc526673ea444c486d6003e4",
+  "marker_offset": 109952,
+  "marker_hex": "694f70656e506f642d426f6f746c6f616465722d7631000000000000000000000200000002000000434c53430f000000322e312e300000000000000000000000",
+  "gap_start": 110016,
+  "seccore_offset": 128272,
+  "max_body_bytes": 16775168,
+  "slots": {
+    "expected_after_full": {
+      "offset": 5860,
+      "size": 32
+    },
+    "expected_target": {
+      "offset": 5828,
+      "size": 32
+    },
+    "expected_outside": {
+      "offset": 5796,
+      "size": 32
+    },
+    "expected_syscfg": {
+      "offset": 5764,
+      "size": 32
+    },
+    "expected_original_boot": {
+      "offset": 5732,
+      "size": 32
+    },
+    "expected_original_full": {
+      "offset": 5700,
+      "size": 32
+    },
+    "run_nonce": {
+      "offset": 5684,
+      "size": 16
+    },
+    "packed_header": {
+      "offset": 6180,
+      "size": 80
+    },
+    "packed_body": {
+      "offset": 6260,
+      "size": 110768
+    }
+  },
+  "files": {
+    "writer.dfu": "e3a4246e7246d2accb84619fe1501db34c7f4b4ba22e36f90dca9ca104820840",
+    "shared-v2.delta": "bdd6fc510efffecaf0ca53ba691986a695f09334ae188272a2718f069fe3b9a5",
+    "24-stock.delta": "8ebc2ace251438ef6a1bb52868409825456d4f0c35dc376847847e455a08c1a2",
+    "24-v1.delta": "56f8d221459fc76c618f8b211e25850a264cbcbc0dff96dc246e351475ddca2f",
+    "33-stock.delta": "953e768cfc56dedee4371ffaff2ecddfde69c050eaaf73c9c054b97fddcd4f3e",
+    "33-v1.delta": "94fa62bd73c48e2d4bf780159f25d7d51973b185e261a61756a4ef8b04632be6",
+    "33-v5b.delta": "bab698cd0517b3f243aa867dc9c9f3d2f360e084b9f9d49ddab3197e86c8a733",
+    "35-stock.delta": "f7988622555299dc330b6e25e7afe89540eeafb7d06164dfd19c38067a93145c",
+    "35-v1.delta": "9880c8c4d60f5ee822ba703e51e2a28ef4df191181ab9e4816a3289f71183b7a",
+    "38-stock.delta": "2a894b8eb3a42cc23b62e9227ac7afb8d026efafd6c80090fd3fe3b8649a7b9e",
+    "38-v1.delta": "8b06afb2fa313fa9cb34c6655bcce3b4efbc10bc1bd9f13c17324c62bb8e3ad5"
+  },
+  "image_target": 1129532483,
+  "hardware_mask": 15,
+  "sources": [
+    {
+      "family": 24,
+      "sha256": "9cb983b4bc8b5707074cdc06ce4a3634a78694ddea3449adb7727c6c4449100c",
+      "delta": "shared-v2.delta"
+    },
+    {
+      "family": 24,
+      "sha256": "460368ec325ab567b3ea1d0c5e2eb09df7dac0502c1141257ffb32d661248f96",
+      "delta": "24-stock.delta"
+    },
+    {
+      "family": 24,
+      "sha256": "2f29ceef5ad494885cc81e390261b34227bdc6d14ec455224c7e4272e052f5cf",
+      "delta": "24-v1.delta"
+    },
+    {
+      "family": 33,
+      "sha256": "9cb983b4bc8b5707074cdc06ce4a3634a78694ddea3449adb7727c6c4449100c",
+      "delta": "shared-v2.delta"
+    },
+    {
+      "family": 33,
+      "sha256": "8d028296d20d7162eb109d062239ba510fe842510e006178040caacbabead1b8",
+      "delta": "33-stock.delta"
+    },
+    {
+      "family": 33,
+      "sha256": "286656927ea39e2115583930d867ae810e715255b1b54ff6ca0a01e151caabea",
+      "delta": "33-v1.delta"
+    },
+    {
+      "family": 33,
+      "sha256": "fb0d5ebff7c97f3efb8de3e5b429e0b0bb698687b0aa7b1a8ef50d205c404f90",
+      "delta": "33-v5b.delta"
+    },
+    {
+      "family": 35,
+      "sha256": "9cb983b4bc8b5707074cdc06ce4a3634a78694ddea3449adb7727c6c4449100c",
+      "delta": "shared-v2.delta"
+    },
+    {
+      "family": 35,
+      "sha256": "7caf3863376cf7890adc73601d24fbf11bc9ce89c7b40366fd61b45a1d6633e8",
+      "delta": "35-stock.delta"
+    },
+    {
+      "family": 35,
+      "sha256": "641f4adbcad34a36845f4dfffe3cf97fc8f4373f4f85693c6980a4f3501ac002",
+      "delta": "35-v1.delta"
+    },
+    {
+      "family": 38,
+      "sha256": "9cb983b4bc8b5707074cdc06ce4a3634a78694ddea3449adb7727c6c4449100c",
+      "delta": "shared-v2.delta"
+    },
+    {
+      "family": 38,
+      "sha256": "d2670f7e5493c4b5ed4b9b6fa2029ce1e519c1927522384469e810fbf408fb5e",
+      "delta": "38-stock.delta"
+    },
+    {
+      "family": 38,
+      "sha256": "4db5f3d96d5a7544f9a70fd2c271fbaf26d4f675995423a167a0d1d23d402f19",
+      "delta": "38-v1.delta"
+    }
+  ]
+}

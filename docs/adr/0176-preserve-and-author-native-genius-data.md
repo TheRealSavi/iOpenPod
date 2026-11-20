@@ -1,6 +1,7 @@
 # ADR-0176: Preserve and author native Genius data
 
 - Status: Accepted
+- Amended by: [ADR-0289](0289-author-classic-genius-mixes-in-binary-playlist-datasets.md), which adds Classic binary Mix authoring
 - Date: 2026-10-24
 - Extends: ADR-0100, ADR-0141, ADR-0150, and ADR-0175
 - Extended by: ADR-0186 replaces the seed-deletion and application remapping restrictions below.

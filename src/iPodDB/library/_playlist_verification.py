@@ -113,6 +113,7 @@ def verify_playlists(
     normalize_podcasts: bool = False,
     sqlite: bool = False,
     refreshed_smart_playlists: frozenset[int] = frozenset(),
+    classic_mix_changes: frozenset[int] = frozenset(),
 ) -> tuple[WriteIssue, ...]:
     # Reconciliation explicitly replaces conflicting dataset-2 relationships.
     # Retention checks use that reviewed baseline; dataset 3 stays byte-retained.
@@ -252,6 +253,14 @@ def verify_playlists(
     for key, selection in old.items():
         kind, identity = key
         chunk = selection.chunk
+        # The native Mix reconciler verifies these explicitly authored/pruned
+        # collections separately; every other hidden row keeps this byte check.
+        if (
+            kind in (2, 3)
+            and chunk.header.is_genius_mix
+            and identity in classic_mix_changes
+        ):
+            continue
         if is_visible(kind, chunk.header) and identity in wanted and key not in output:
             fail(
                 "playlist_missing_mirror",

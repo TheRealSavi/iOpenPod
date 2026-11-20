@@ -1,7 +1,9 @@
 """Explicit firmware Genius intent, separate from the semantic Library Snapshot.
 
 Track references use Library Track IDs; preparation assigns persistent identities.
-Updates replace the complete known graph. ``mixes=None`` preserves retained native
+Updates with ``data`` replace the complete known graph. ``data=None`` permits only
+selective Mix removals, preserving the graph and assignments except for ordinary
+deleted/replaced-media pruning. ``mixes=None`` preserves retained native
 Mixes; an explicit tuple replaces them, including an empty tuple to clear them.
 Recommendation policy belongs to the caller. Omitting an update preserves retained
 Genius state. With ``mixes=None``, ``mix_additions`` and ``mix_removals`` provide
@@ -17,6 +19,7 @@ from iPodDB.genius import (
 )
 from iPodDB.library._genius_reconciliation import reconcile_genius_playlists
 from iPodDB.library.genius_browse import (
+    CLASSIC_GENIUS_MIX_LIMIT,
     GeniusBrowse,
     GeniusBrowseIssue,
     GeniusCollection,
@@ -49,6 +52,7 @@ from iPodDB.SQLiteDB.inputs import (
 )
 
 __all__ = [
+    "CLASSIC_GENIUS_MIX_LIMIT",
     "GeniusBrowse",
     "GeniusBrowseIssue",
     "GeniusCollection",

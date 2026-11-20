@@ -70,6 +70,8 @@ class WriteTarget:
     max_database_bytes: int = 256 * 1024 * 1024
     compressed_database: bool = False
     sqlite_database: bool = False
+    classic_genius_mixes: bool = field(default=False, kw_only=True)
+    genius_mix_artwork_format: CoverFormat | None = field(default=None, kw_only=True)
     sqlite_checksum: WriteChecksum = WriteChecksum.NONE
     hash72_material: Hash72Material | None = None
     sqlite_postprocess_commands: tuple[str, ...] = ()
@@ -119,6 +121,7 @@ class LibraryDraft:
     refresh_smart_playlists: tuple[int, ...] = field(default=(), kw_only=True)
     # Complete native graph/assignment/Mix replacement; None preserves state.
     genius_update: GeniusUpdate | None = field(default=None, kw_only=True)
+    genius_mix_artwork: tuple[GeniusMixArtwork, ...] = field(default=(), kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +213,14 @@ class ArtworkAsset:
 
     artwork_id: int
     pixels: ArtworkPixels
+
+
+@dataclass(frozen=True, slots=True)
+class GeniusMixArtwork:
+    """Explicit Mix-owned cover pixels, or removal of its reverse image link."""
+
+    mix_id: int
+    pixels: ArtworkPixels | None
 
 
 @dataclass(frozen=True, slots=True)

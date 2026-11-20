@@ -2,19 +2,30 @@
 
 from collections.abc import Iterator
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog, QLabel, QListWidget, QMessageBox, QSpinBox
+from tests.iOpenPod.app.test_classic_genius_mix_publication import classic_device
 from tests.iOpenPod.app.test_genius_mixes import music
+from tests.iOpenPod.app.test_library_write_controller import wait_for
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 from tests.iOpenPod.GUI.test_genius_page import Browser, active, button, tree
 
-from device_registry import DEFAULT_DEVICE_REGISTRY, FeatureSupport
+from device_registry import (
+    DEFAULT_DEVICE_REGISTRY,
+    EvidenceAuthority,
+    FeatureSupport,
+    parse_sysinfo,
+)
+from iOpenPod.app import genius_mixes
 from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES, AppearanceMode
 from iOpenPod.app.genius_mixes import GENIUS_MIX_POLICY, MixPolicy, propose_mixes
+from iOpenPod.app.library_write_controller import PreparationState
+from iOpenPod.GUI.delegates.genius_collection_delegate import DETAIL_ROLE
 from iOpenPod.GUI.dialogs.genius_mixes import (
     AddGeniusMixesDialog,
     GeniusMixSettingsDialog,
@@ -23,6 +34,7 @@ from iOpenPod.GUI.pages.genius_page import GeniusPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.widgets.browser_chrome import SourceListPanel
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, IconButton
+from iPodDB.library import IPodLibrary
 from iPodDB.library.genius import GeniusBrowse, GeniusCollection, GeniusCollectionKind
 
 
@@ -74,6 +86,35 @@ def test_empty_mix_header_shows_settings_then_add_and_locks_during_work(
     assert settings.x() < add.x()
     mix_browser.context.library_workspace.set_locked(True)
     assert not settings.isEnabled() and not add.isEnabled()
+
+
+@pytest.mark.parametrize("model", ["MB029", "MB565", "MC293"])
+def test_shared_classic_shows_mixes_and_enables_authoring(
+    mix_browser: Browser, model: str
+) -> None:
+    result = DEFAULT_DEVICE_REGISTRY.identify(
+        parse_sysinfo(
+            f"ModelNumStr: {model}\nvisibleBuildID: 2.0.5\nUpdaterFamilyID: 38\n",
+            authority=EvidenceAuthority.CURRENT_HARDWARE,
+        )
+    )
+    assert result.profile is not None
+    snapshot = mix_browser.context.library_workspace.snapshot
+    assert snapshot is not None
+    current = replace(active(), profile=result.profile, library=snapshot)
+    page = mix_browser.page
+    page.set_active_ipod(current)
+    assert tree(page).topLevelItemCount() == 2
+    section = tree(page).topLevelItem(1)
+    assert section is not None and section.text(0) == "Genius Mixes"
+    header = tree(page).itemWidget(section, 0)
+    APPLICATION.processEvents()
+    for name in ("geniusMixSettings", "addGeniusMixes"):
+        control = header.findChild(IconButton, name)
+        assert control is not None
+        assert control.isVisible()
+        assert control.isEnabled()
+        assert control.toolTip() == control.accessibleName()
 
 
 @pytest.mark.parametrize(
@@ -153,9 +194,166 @@ def test_add_grid_supports_multiple_selection_and_stages_one_edit(
     assert not mix_browser.context.library_workspace.dirty
 
 
+def test_added_mixes_are_visible_before_a_draft_is_saved(mix_browser: Browser) -> None:
+    def choose() -> None:
+        dialog = mix_browser.page.findChild(AddGeniusMixesDialog)
+        assert dialog is not None
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        add = dialog.findChild(ActionButton, "confirmAddGeniusMixes")
+        assert grid is not None and add is not None
+        for row in range(grid.count()):
+            if grid.item(row).data(Qt.ItemDataRole.UserRole) in {"rock", "jazz"}:
+                grid.item(row).setSelected(True)
+        add.click()
+
+    QTimer.singleShot(0, choose)
+    icon(mix_browser.page, "addGeniusMixes").click()
+    assert set(mix_browser.context.library_workspace.genius_mix_additions) == {
+        "rock",
+        "jazz",
+    }
+    section = tree(mix_browser.page).topLevelItem(0)
+    assert section is not None
+    assert section.childCount() == 2
+    names: set[str] = set()
+    for i in range(section.childCount()):
+        item = section.child(i)
+        assert item is not None
+        names.add(item.text(0))
+        assert item.data(0, DETAIL_ROLE) == "Pending save"
+    assert names == {"Rock Mix", "Jazz Mix"}
+    assert any(
+        "Open Review Changes" in label.text()
+        for label in mix_browser.page.findChildren(QLabel)
+    )
+    mix_browser.context.library_workspace.reset_changes()
+    section = tree(mix_browser.page).topLevelItem(0)
+    assert section is not None and section.childCount() == 0
+
+
+@pytest.mark.parametrize("draft", (False, True))
+def test_classic_add_button_reaches_native_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, draft: bool
+) -> None:
+    monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
+    device = classic_device(tmp_path)
+    initial = device.active
+    desired = replace(
+        initial.library,
+        tracks=tuple(replace(t, genre="Rock") for t in initial.library.tracks),
+    )
+    saved = device.save(device.prepare(desired))
+    assert saved.active is not None, saved.issues
+    current = saved.active
+    context = build_context(device_coordinator=device.coordinator)
+    context.settings.set_global(DRAFT_ALL_CHANGES, draft)
+    context.library_workspace.load(current.library)
+    artwork = ArtworkPixmapProvider(context.artwork_controller)
+    page = GeniusPage(
+        context.library_workspace, context.settings, context.theme_manager, artwork
+    )
+    context.device_controller.activeIPodChanged.connect(page.set_active_ipod)
+    page.set_active_ipod(current)
+    page.show()
+    controller = context.library_write_controller
+    database = device.root / "iPod_Control/iTunes/iTunesDB"
+    before = database.read_bytes()
+
+    def choose() -> None:
+        dialog = page.findChild(AddGeniusMixesDialog)
+        assert dialog is not None
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        add = dialog.findChild(ActionButton, "confirmAddGeniusMixes")
+        assert grid is not None and add is not None
+        for row in range(grid.count()):
+            if grid.item(row).data(Qt.ItemDataRole.UserRole) == "rock":
+                grid.item(row).setSelected(True)
+        page.set_active_ipod(
+            replace(
+                current,
+                candidate=replace(current.candidate, available_bytes=1_000_000_000),
+            )
+        )
+        add.click()
+
+    try:
+        QTimer.singleShot(0, choose)
+        icon(page, "addGeniusMixes").click()
+        assert context.library_workspace.genius_mix_additions == ("rock",)
+        if draft:
+            APPLICATION.processEvents()
+            assert controller.state is PreparationState.IDLE
+            assert database.read_bytes() == before
+            controller.prepare()
+            wait_for(lambda: controller.state is PreparationState.READY)
+            controller.save()
+        wait_for(lambda: controller.state is PreparationState.SAVED)
+        assert not context.library_workspace.genius_mix_additions
+        mixes = IPodLibrary(database.read_bytes()).classic_genius_mixes()
+        assert not mixes.issues and len(mixes.collections) == 1
+        assert mixes.collections[0].name == "Rock Mix"
+        section = tree(page).topLevelItem(0)
+        assert section is not None and section.childCount() == 1
+        item = section.child(0)
+        assert item is not None
+        assert item.text(0) == "Rock Mix"
+        assert item.data(0, DETAIL_ROLE) != "Pending save"
+    finally:
+        page.close()
+        context.shutdown()
+        artwork.deleteLater()
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
+@pytest.mark.parametrize("refresh", (False, True))
+def test_add_mixes_survives_same_library_device_status_refresh(
+    mix_browser: Browser, refresh: bool
+) -> None:
+    snapshot = mix_browser.context.library_workspace.snapshot
+    assert snapshot is not None
+    current = replace(active(), library=snapshot, genius=GeniusBrowse())
+    mix_browser.page.set_active_ipod(current)
+
+    def choose() -> None:
+        dialog = mix_browser.page.findChild(AddGeniusMixesDialog)
+        assert dialog is not None
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        add = dialog.findChild(ActionButton, "confirmAddGeniusMixes")
+        assert grid is not None and add is not None
+        for row in range(grid.count()):
+            if grid.item(row).data(Qt.ItemDataRole.UserRole) in {"rock", "jazz"}:
+                grid.item(row).setSelected(True)
+        if refresh:
+            mix_browser.page.set_active_ipod(
+                replace(
+                    current,
+                    candidate=replace(
+                        current.candidate, available_bytes=59_000_000_000
+                    ),
+                )
+            )
+        add.click()
+        assert dialog.result() == QDialog.DialogCode.Accepted
+
+    QTimer.singleShot(0, choose)
+    icon(mix_browser.page, "addGeniusMixes").click()
+    assert set(mix_browser.context.library_workspace.genius_mix_additions) == {
+        "rock",
+        "jazz",
+    }
+
+
+@pytest.mark.parametrize("refresh", (False, True))
 def test_settings_save_count_and_expiry_together_for_selected_ipod(
     mix_browser: Browser,
+    refresh: bool,
 ) -> None:
+    snapshot = mix_browser.context.library_workspace.snapshot
+    assert snapshot is not None
+    current = replace(active(), library=snapshot, genius=GeniusBrowse())
+    mix_browser.page.set_active_ipod(current)
+
     def configure() -> None:
         dialog = mix_browser.page.findChild(GeniusMixSettingsDialog)
         assert dialog is not None
@@ -164,6 +362,8 @@ def test_settings_save_count_and_expiry_together_for_selected_ipod(
         assert count is not None and expiry is not None
         count.setValue(3)
         expiry.setValue(14)
+        if refresh:
+            mix_browser.page.set_active_ipod(replace(current, game_storage_bytes=1234))
         dialog.accept()
 
     QTimer.singleShot(0, configure)
@@ -174,20 +374,89 @@ def test_settings_save_count_and_expiry_together_for_selected_ipod(
     assert not mix_browser.context.library_workspace.dirty
 
 
-def test_disconnect_while_dialog_open_discards_selection(mix_browser: Browser) -> None:
+@pytest.mark.parametrize("change", ("disconnect", "library", "device", "locked"))
+def test_changed_dialog_source_rejects_selection_with_feedback(
+    mix_browser: Browser, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    warnings: list[str] = []
+    snapshot = mix_browser.context.library_workspace.snapshot
+    assert snapshot is not None
+    current = replace(active(), library=snapshot, genius=GeniusBrowse())
+    mix_browser.page.set_active_ipod(current)
+
+    def warn(_parent: object, _title: str, message: str) -> QMessageBox.StandardButton:
+        warnings.append(message)
+        return QMessageBox.StandardButton.Ok
+
+    monkeypatch.setattr(QMessageBox, "warning", warn)
+
     def disconnect() -> None:
         dialog = mix_browser.page.findChild(AddGeniusMixesDialog)
         assert dialog is not None
         grid = dialog.findChild(QListWidget, "geniusMixProposals")
         assert grid is not None
         grid.item(0).setSelected(True)
-        mix_browser.page.set_active_ipod(None)
-        mix_browser.context.library_workspace.load(None)
+        if change == "disconnect":
+            mix_browser.page.set_active_ipod(None)
+            mix_browser.context.library_workspace.load(None)
+        elif change == "library":
+            updated = replace(
+                current, library=replace(snapshot, device_name="Reloaded")
+            )
+            mix_browser.context.library_workspace.load(updated.library)
+            mix_browser.page.set_active_ipod(updated)
+        elif change == "device":
+            mix_browser.page.set_active_ipod(
+                replace(
+                    current,
+                    candidate=replace(
+                        current.candidate,
+                        id=replace(current.candidate.id, value="another-device"),
+                    ),
+                )
+            )
+        else:
+            mix_browser.context.library_workspace.set_locked(True)
         dialog.accept()
 
     QTimer.singleShot(0, disconnect)
     icon(mix_browser.page, "addGeniusMixes").click()
     assert not mix_browser.context.library_workspace.genius_mix_additions
+    assert warnings == [
+        "The iPod or its library changed. Reopen the dialog and try again."
+    ]
+
+
+def test_pending_promotion_does_not_duplicate_an_existing_automatic_mix(
+    mix_browser: Browser,
+) -> None:
+    snapshot = mix_browser.context.library_workspace.snapshot
+    assert snapshot is not None
+    mix = GeniusCollection(
+        "genius-mix:000000000000007b",
+        "Rock Mix",
+        GeniusCollectionKind.MIX,
+        (1,),
+        None,
+        123,
+    )
+    state = genius_mixes.MixState((genius_mixes.ManagedMix(123, "rock", 100),))
+    mix_browser.page.set_active_ipod(
+        replace(
+            active(),
+            library=snapshot,
+            genius=GeniusBrowse((mix,)),
+            genius_mix_state=state,
+        )
+    )
+    workspace = mix_browser.context.library_workspace
+    workspace.add_genius_mixes(("rock",), workspace.edit_revision)
+    section = tree(mix_browser.page).topLevelItem(0)
+    assert section is not None and section.childCount() == 1
+    item = section.child(0)
+    assert item is not None
+    assert item.data(0, DETAIL_ROLE) == "Pending save"
+    assert item.data(0, Qt.ItemDataRole.UserRole) == mix.collection_id
 
 
 def test_add_dialog_only_shows_eligible_proposals() -> None:
@@ -200,6 +469,38 @@ def test_add_dialog_only_shows_eligible_proposals() -> None:
         assert dialog.selected_keys == ()
         dialog.reject()
         assert dialog.result() == QDialog.DialogCode.Rejected
+    finally:
+        dialog.deleteLater()
+
+
+def test_classic_add_dialog_limits_new_slots_but_allows_manual_promotion() -> None:
+    dialog = AddGeniusMixesDialog(
+        propose_mixes(music("Rock", "Jazz")),
+        available_slots=0,
+        retained_keys=frozenset(("rock",)),
+    )
+    try:
+        grid = dialog.findChild(QListWidget, "geniusMixProposals")
+        add = dialog.findChild(ActionButton, "confirmAddGeniusMixes")
+        assert grid is not None and add is not None
+        for i in range(grid.count()):
+            if grid.item(i).data(Qt.ItemDataRole.UserRole) == "rock":
+                grid.item(i).setSelected(True)
+        assert add.isEnabled()
+        for i in range(grid.count()):
+            grid.item(i).setSelected(True)
+        assert not add.isEnabled()
+    finally:
+        dialog.deleteLater()
+
+
+def test_classic_settings_limit_automatic_count_to_twelve() -> None:
+    dialog = GeniusMixSettingsDialog(MixPolicy(2), max_count=12)
+    try:
+        count = dialog.findChild(QSpinBox, "automaticGeniusMixCount")
+        assert count is not None and count.maximum() == 12
+        count.setValue(20)
+        assert dialog.policy.count == 12
     finally:
         dialog.deleteLater()
 

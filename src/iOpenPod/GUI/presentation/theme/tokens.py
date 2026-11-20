@@ -119,6 +119,13 @@ class LayoutTokens:
     playlist_banner_artwork_size: int = 88
     status_popup_width: int = 440
     status_popup_height: int = 300
+    firmware_dialog_width: int = 640
+    firmware_dialog_height: int = 560
+    firmware_guide_height: int = 680
+    firmware_dialog_minimum_width: int = 320
+    firmware_stacked_breakpoint: int = 480
+    firmware_diagram_width: int = 200
+    firmware_diagram_height: int = 256
 
 
 @dataclass(frozen=True, slots=True)

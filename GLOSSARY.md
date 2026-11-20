@@ -16,6 +16,24 @@ normal lowercase conventions while retaining the same domain term.
 | **Host** | The computer running iOpenPod. | PC when referring to all platforms, client |
 | **iPod** | A supported Apple media device whose library is accessible through the Host filesystem. | player, drive, generic device |
 
+## Firmware mods
+
+| Term | Definition | Aliases to avoid |
+| --- | --- | --- |
+| **Apple Firmware** | The unmodified Apple release and exact image used as a build input, identified independently of the mod platform. | mod platform version, latest for every iPod |
+| **Reported Firmware** | The version string exposed by the running OS, with current or cached provenance. It does not certify unmodified Apple code, installed mods, or the bootloader. | hardware revision, transport revision |
+| **OS Updater Family** | The updater family ID exposed by the running OS. A modified OS can report a different family from the physical iPod's SysCfg hardware revision. | immutable hardware identity |
+| **Mod Platform Version** | The release of the custom firmware infrastructure, stored separately from Apple's version fields and from individual mods. | Apple firmware version, iOpenPod app version |
+| **Bootloader Identity Record** | Public marker, schema, loader release and supported hardware target or mask embedded in the custom loader. It is separate from the Mod Platform Version; a matching marker alone does not prove a qualified loader or successful installation. | signing key, unlock proof, Mod Platform Version |
+| **Bootloader Report** | Current USB response from the custom firmware carrying its boot-time NOR measurement: loader marker, complete executable hash and SysCfg identity. Kept separate from a historical DFU receipt; it is firmware-reported evidence, not cryptographic attestation. | installation receipt, cached SysInfo, instantaneous NOR read |
+| **Universal Unlocked Bootloader** | The common Classic loader executable for updater families 24, 33, 35 and 38, installed with a device-authenticated header through DFU and able to accept the qualified unsigned custom OS format. | bootloader for every iPod, per-device executable |
+| **Universal Classic Firmware** | The common complete 2.0.5-derived image, including OS, resources and an independent Mod Platform Version, bundled for Classic updater families 24, 33, 35 and 38. Device-specific state preserved during installation is separate from this image. | stock Apple firmware, universal for all iPod models |
+| **Firmware Mod** | A versioned change with explicit target compatibility, dependencies, conflicts and a qualified build recipe. | arbitrary Host plugin, game slot |
+| **Mod Memory Region** | The bounded RAM area reserved for linked firmware-mod code, constants, data, scratch and BSS. Its actual page-rounded extent is removed from Apple's heap; its capacity is independent of the on-disk OS slot. | firmware partition, unused disk space |
+| **Firmware Build Plan** | The requested mod set and its pinned dependency closure against one exact Apple input and platform release. | installed mods, installation receipt |
+| **Firmware Build ID** | A content-derived identity for the platform, Apple input and resolved mod composition. | release number, output image hash |
+| **Firmware Mod Registry** | The build-generated record of the platform and included mods, exposed by the custom firmware and mirrored in its installed-build record. A disk copy alone does not prove current boot state. | mod catalog, checkbox selection, Device Registry |
+
 ## Device identity and storage
 
 | Term | Definition | Aliases to avoid |
@@ -34,6 +52,8 @@ normal lowercase conventions while retaining the same domain term.
 | **Classic Calendar Target** | One qualified Classic updater-family and RetailOS-release pair whose saved clock and date behavior has been inspected; the latest targets are 24/1.1.2, 33/2.0.1, 35/2.0.4 and 38/2.0.5. It is separate from a retail model number or Device Profile generation. | SKU, storage capacity, transport revision |
 | **Device Path** | A validated relative path inside an authorized device filesystem root. | Host path, absolute path, file path |
 | **Filesystem Session** | Authorized access to one connected Volume for one Connection Generation. | mount, handle, device connection |
+| **SCSI Session** | Exclusive native command access to one connected Volume for one Connection Generation, with a retained device handle and verified SCSI identity. | Filesystem Session, Hardware Probe, installer |
+| **USB Control Session** | Serialized USB setup requests through retained native handles for one observed interface and Connection Generation, protected by a Host writer lease. Native driver exclusivity is separate and may be unavailable. | SCSI Session, Filesystem Session, firmware installer |
 | **Connection Generation** | The unique lifetime of one attachment of a Physical Device. | session, connection ID |
 | **Storage Transaction** | A planned unit of filesystem change that is validated, executed, verified, and committed together. | sync, batch, file operation |
 | **Operation Journal** | A durable record of the intended and completed steps of a Storage Transaction. | log, history |
@@ -109,9 +129,9 @@ normal lowercase conventions while retaining the same domain term.
 | **Automatic Genius Mix** | An application-owned catalog Genius Mix added during Sync to satisfy the configured Count. Its recorded age determines eligibility for replacement by a different Mix after Expiry. | manual Mix, any preexisting native Mix |
 | **Genius ID** | The native identity connecting a Track to Genius metadata and candidate relationships. It is separate from its short Track ID, persistent database identity, and Genius category. | Track ID, persistent Track ID, category ID |
 | **Genius Data** | Native configuration instructions, metadata keys, and ordered candidate relationships consumed by firmware to generate Genius playback. iPodDB models this data independently of recommendation policy. | recommendation algorithm, Playlist membership |
-| **Genius Audio Profile** | A compact Application Layer record of tempo, spectral-centroid statistics, and MFCC statistics for a music Track's intro, body, and outro. Short Tracks have only a body. Versioned Host caching supports candidate ranking during Sync; the vectors are not written as native Genius metadata or used as Sync identity evidence. | Acoustic Fingerprint, Track Analysis, native Genius key |
-| **Mood Genius Mix** | A catalog Genius Mix whose possible seed Tracks are selected from available Genius Audio Profiles. Love also requires an explicit title or album cue. Native playback can leave the proposed seed set. | genre Mix, emotion classifier, fixed Playlist |
-| **Genius Browse** | Immutable, read-only collections and diagnostics projected from native Genius Playlists, saved sidecars, and SQLite Mix records. It references semantic Tracks beside the editable Library Snapshot. | second Library authority, generated playback queue |
+| **Genius Audio Profile** | A compact Application Layer record of tempo, spectral-centroid statistics, and MFCC statistics for a music Track's intro, body, and outro, plus body rhythm/dynamics/texture measurements and optional sampled vocal evidence. Short Tracks have only a body. Versioned Host caching supports candidate ranking during Sync; the vectors are not written as native Genius metadata or used as Sync identity evidence. | Acoustic Fingerprint, Track Analysis, native Genius key |
+| **Mood Genius Mix** | A catalog Genius Mix whose possible seed Tracks are selected from available Genius Audio Profiles. Focus requires very calm music with sparse detected vocals; unknown vocal presence does not qualify. Love also requires an explicit title or album cue. Native playback can leave the proposed seed set. | genre Mix, emotion classifier, fixed Playlist |
+| **Genius Browse** | Immutable, read-only collections and diagnostics projected from native Genius Playlists, saved sidecars, and Classic binary or Nano SQLite Mix records. It references semantic Tracks beside the editable Library Snapshot. | second Library authority, generated playback queue |
 | **Playlist Folder** | A named container for Playlists, Smart Playlists, and other Playlist Folders. | group when referring to the sidebar container |
 | **Master Playlist** | The iTunesDB library-wide Playlist whose title names the iPod. It is not an ordinary user Playlist. | root folder, firmware category |
 | **Library Workspace** | Application-owned session drafts for the Active iPod's Track metadata, device name, Playlists, and Photos. It retains the loaded Library Snapshot and produces one complete desired snapshot without writing database bytes. | Playlist Workspace, writer model, saved changes |

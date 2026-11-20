@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -15,10 +15,13 @@ from PySide6.QtWidgets import (
 )
 
 from device_registry import FeatureSupport
+from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.genius_mixes import (
     GENIUS_MIX_POLICY,
+    MIX_CATALOG,
     MixPolicy,
+    mix_limit,
     propose_mixes,
     supports_mix_creation,
 )
@@ -36,7 +39,10 @@ from iOpenPod.GUI.dialogs.genius_mixes import (
 )
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
-from iOpenPod.GUI.presentation.i18n.text import track_count_text
+from iOpenPod.GUI.presentation.i18n.text import (
+    mix_starting_track_count_text,
+    track_count_text,
+)
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
@@ -71,6 +77,7 @@ class GeniusPage(PlaylistPage):
         self._candidate_id: DeviceCandidateId | None = None
         self._browse = GeniusBrowse()
         self._visible_removals: frozenset[str] = frozenset()
+        self._visible_additions: tuple[str, ...] = ()
         self._library_tracks: dict[int, Track] = {}
         self._selected_collection_id: str | None = None
         collections = self._genius_collections
@@ -174,6 +181,30 @@ class GeniusPage(PlaylistPage):
         pending_removals = set(self._workspace.genius_collection_removals)
         self._visible_removals = frozenset(pending_removals)
         displayed = self._displayed_collections()
+        self._visible_additions = (
+            self._workspace.genius_mix_additions
+            if self._active is not None
+            and self._workspace.snapshot is self._active.library
+            else ()
+        )
+        visible_native_ids = {c.native_playlist_id for c in displayed}
+        promotions = (
+            {
+                entry.definition_key: entry.container_id
+                for entry in self._active.genius_mix_state.entries
+                if entry.definition_key in self._visible_additions
+                and entry.container_id in visible_native_ids
+            }
+            if self._active is not None
+            else {}
+        )
+        pending = tuple(
+            definition
+            for definition in MIX_CATALOG
+            if definition.key in self._visible_additions
+            and definition.key not in promotions
+            and self._mixes_supported()
+        )
         for kind, label in (
             (GeniusCollectionKind.PLAYLIST, self.tr("Genius Playlists")),
             (GeniusCollectionKind.MIX, self.tr("Genius Mixes")),
@@ -226,14 +257,34 @@ class GeniusPage(PlaylistPage):
                 item = QTreeWidgetItem(section, [collection.name])
                 item.setData(0, Qt.ItemDataRole.UserRole, collection.collection_id)
                 item.setData(
-                    0, DETAIL_ROLE, track_count_text(len(collection.track_ids))
+                    0,
+                    DETAIL_ROLE,
+                    self.tr("Pending save")
+                    if collection.native_playlist_id in promotions.values()
+                    else mix_starting_track_count_text(len(collection.track_ids))
+                    if kind is GeniusCollectionKind.MIX
+                    else track_count_text(len(collection.track_ids)),
                 )
                 if collection.collection_id == self._selected_collection_id:
                     selected = item
+            if kind is GeniusCollectionKind.MIX:
+                for definition in pending:
+                    item = QTreeWidgetItem(
+                        section,
+                        [QCoreApplication.translate("GeniusMixNames", definition.name)],
+                    )
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                    item.setData(0, DETAIL_ROLE, self.tr("Pending save"))
+                    item.setToolTip(
+                        0,
+                        self.tr(
+                            "This Mix will appear on your iPod after your changes are saved."
+                        ),
+                    )
         if selected is not None:
             self._collections.setCurrentItem(selected)
         self._collections.blockSignals(False)
-        self._panel.set_count(len(displayed))
+        self._panel.set_count(len(displayed) + len(pending))
         if selected is None:
             self._selected_collection_id = None
         messages = [issue.detail for issue in self._browse.issues]
@@ -277,6 +328,7 @@ class GeniusPage(PlaylistPage):
         if (
             frozenset(self._workspace.genius_collection_removals)
             != self._visible_removals
+            or self._workspace.genius_mix_additions != self._visible_additions
             or self._browse != browse
         ):
             self._rebuild_collections()
@@ -285,21 +337,25 @@ class GeniusPage(PlaylistPage):
 
     def _refresh_mix_actions(self) -> None:
         active = self._active
+        writer_available = active is not None and supports_mix_creation(active.profile)
         enabled = (
             active is not None
-            and supports_mix_creation(active.profile)
+            and writer_available
             and not active.genius_mix_state.error
             and self._workspace.snapshot is active.library
             and not self._workspace.locked
             and self._settings.device_writable
         )
+        disabled_reason = (
+            self.tr(
+                "This firmware supports Genius Mixes, but iOpenPod cannot create Mixes for this iPod yet."
+            )
+            if self._mixes_supported() and not writer_available
+            else self.tr("Choose a supported iPod that is available for writing.")
+        )
         for button in self._mix_buttons:
             button.setEnabled(enabled)
-            button.setToolTip(
-                button.accessibleName()
-                if enabled
-                else self.tr("Choose a supported iPod that is available for writing.")
-            )
+            button.setToolTip(button.accessibleName() if enabled else disabled_reason)
         collection = self._selected_collection()
         can_remove = (
             active is not None
@@ -338,7 +394,9 @@ class GeniusPage(PlaylistPage):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
-        if answer != QMessageBox.StandardButton.Yes or self._active is not active:
+        if answer != QMessageBox.StandardButton.Yes or not self._accept_dialog_source(
+            active
+        ):
             return
         try:
             self._workspace.remove_genius_collection(collection, revision)
@@ -368,6 +426,23 @@ class GeniusPage(PlaylistPage):
             not in self._workspace.genius_collection_removals
         }
         manual.update(self._workspace.genius_mix_additions)
+        limit = mix_limit(active.profile)
+        retained_mix_ids = {
+            c.native_playlist_id
+            for c in self._displayed_collections()
+            if c.kind is GeniusCollectionKind.MIX
+        }
+        retained_keys = frozenset(
+            e.definition_key
+            for e in active.genius_mix_state.entries
+            if e.container_id in retained_mix_ids
+        )
+        pending_new = set(self._workspace.genius_mix_additions) - retained_keys
+        slots = (
+            None
+            if limit is None
+            else max(0, limit - len(retained_mix_ids) - len(pending_new))
+        )
         proposals = tuple(
             proposal
             for proposal in propose_mixes(
@@ -376,13 +451,17 @@ class GeniusPage(PlaylistPage):
             if proposal.definition.key not in manual
         )
         dialog = AddGeniusMixesDialog(
-            proposals, self, theme_manager=self._theme_manager
+            proposals,
+            self,
+            theme_manager=self._theme_manager,
+            available_slots=slots,
+            retained_keys=retained_keys,
         )
         try:
             if (
                 dialog.exec() == QDialog.DialogCode.Accepted
                 and dialog.selected_keys
-                and self._active is active
+                and self._accept_dialog_source(active)
             ):
                 self._workspace.add_genius_mixes(dialog.selected_keys, revision)
         except ValueError as error:
@@ -400,9 +479,14 @@ class GeniusPage(PlaylistPage):
             return
         value, overridden = self._settings.device_edit_value(GENIUS_MIX_POLICY)
         policy = MixPolicy.decode(value) if overridden else MixPolicy()
-        dialog = GeniusMixSettingsDialog(policy, self)
+        dialog = GeniusMixSettingsDialog(
+            policy, self, max_count=mix_limit(active.profile)
+        )
         try:
-            if dialog.exec() == QDialog.DialogCode.Accepted and self._active is active:
+            if (
+                dialog.exec() == QDialog.DialogCode.Accepted
+                and self._accept_dialog_source(active)
+            ):
                 self._settings.set_device(GENIUS_MIX_POLICY, dialog.policy.encode())
         except (ValueError, RuntimeError) as error:
             QMessageBox.warning(
@@ -410,6 +494,32 @@ class GeniusPage(PlaylistPage):
             )
         finally:
             dialog.deleteLater()
+
+    def _accept_dialog_source(self, source: ActiveIPod) -> bool:
+        """Status refreshes may replace ActiveIPod without replacing its Library."""
+        current = self._active
+        valid = (
+            current is not None
+            and current.candidate.id == source.candidate.id
+            and current.library is source.library
+            and self._workspace.snapshot is source.library
+            and current.database_name == source.database_name
+            and current.database_fingerprint == source.database_fingerprint
+            and current.profile == source.profile
+            and current.genius == source.genius
+            and current.genius_mix_state == source.genius_mix_state
+            and not self._workspace.locked
+            and self._settings.device_writable
+        )
+        if not valid:
+            QMessageBox.warning(
+                self,
+                self.tr("iPod changed"),
+                self.tr(
+                    "The iPod or its library changed. Reopen the dialog and try again."
+                ),
+            )
+        return valid
 
     def _collection_selected(
         self, current: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None
@@ -436,6 +546,14 @@ class GeniusPage(PlaylistPage):
         if self._candidate_id is None:
             empty_message = self.tr(
                 "Connect and choose an iPod to browse its Genius collections."
+            )
+        elif bool(self._visible_additions) and self._settings.get(DRAFT_ALL_CHANGES):
+            empty_message = self.tr(
+                "Mixes are pending. Open Review Changes to save them to your iPod."
+            )
+        elif self._visible_additions:
+            empty_message = self.tr(
+                "New Mixes are pending until your changes are saved."
             )
         elif not self._displayed_collections():
             empty_message = self.tr("No Genius collections were found on this iPod.")

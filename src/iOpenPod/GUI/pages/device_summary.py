@@ -2,11 +2,11 @@
 
 Hallmark: left product portrait and aligned specification list; existing theme;
 side-rail navigation; capacity-strip footer; no decorative motion.
-Pre-emit critique: philosophy 4, hierarchy 4, execution 4, specificity 5,
-restraint 5, variety 4. Desktop pane reflow checked from 320 to 1200 pixels.
+Pre-emit critique: philosophy 4, hierarchy 5, execution 4, specificity 5,
+restraint 5, variety 4. Quiet facts and one firmware action; native theme states.
 """
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QKeyEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QBoxLayout,
@@ -21,6 +21,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.app.firmware.bootloader_controller import BootloaderController
+from iOpenPod.app.firmware.bootloader_report import require_reported_bootloader
+from iOpenPod.app.firmware.shared_bootloader import VERSION as BOOTLOADER_VERSION
+from iOpenPod.app.firmware.shared_controller import SharedFirmwareController
+from iOpenPod.app.firmware.shared_release import MOD_VERSION
 from iOpenPod.app.library_workspace import EditRevision, LibraryWorkspace
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.services.device_summary import device_storage_breakdown
@@ -30,11 +35,19 @@ from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.storage_breakdown import StorageBreakdown, format_capacity
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton, IconButton, IconButtonKind
+from iOpenPod.GUI.widgets.themed_buttons import (
+    ActionButton,
+    ActionButtonKind,
+    IconButton,
+    IconButtonKind,
+)
 
 
 class DeviceSummaryPage(QWidget):
     """Compose device observations and revision-bound Library name editing."""
+
+    unlockBootloaderRequested = Signal()
+    installSharedFirmwareRequested = Signal()
 
     def __init__(
         self,
@@ -42,11 +55,15 @@ class DeviceSummaryPage(QWidget):
         *,
         theme: ThemeManager,
         workspace: LibraryWorkspace | None = None,
+        bootloader_controller: BootloaderController | None = None,
+        shared_firmware_controller: SharedFirmwareController | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("deviceSummaryPage")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._theme = theme
+        self._bootloader_controller = bootloader_controller
+        self._shared_firmware_controller = shared_firmware_controller
         self._active: ActiveIPod | None = None
         self._draft_name = ""
         self._workspace = workspace
@@ -98,12 +115,16 @@ class DeviceSummaryPage(QWidget):
         self._grid.setHorizontalSpacing(LAYOUT.space_xs)
         self._grid.setVerticalSpacing(LAYOUT.space_xs)
         self._grid.setColumnStretch(1, 1)
-        self._fields: list[tuple[QLabel, QLabel]] = []
+        self._fields: dict[str, tuple[QLabel, QLabel]] = {}
         for index, key in enumerate(
             (
                 "name",
                 "capacity",
                 "firmware",
+                "mod_version",
+                "hardware_family",
+                "bootloader_version",
+                "updater_family",
                 "serial",
                 "model",
                 "model_name",
@@ -124,9 +145,9 @@ class DeviceSummaryPage(QWidget):
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self._grid.addWidget(label, index, 0)
             self._grid.addWidget(value, index, 1)
-            self._fields.append((label, value))
-        self._name = self._fields[0][1]
-        self._fields[0][0].setAlignment(
+            self._fields[key] = (label, value)
+        self._name = self._fields["name"][1]
+        self._fields["name"][0].setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self._grid.removeWidget(self._name)
@@ -159,7 +180,7 @@ class DeviceSummaryPage(QWidget):
         name_row.addWidget(self._rename_apply)
         name_row.addWidget(self._rename_cancel)
         self._name_spacer = QWidget(name_panel)
-        name_row.addWidget(self._name_spacer, 1)
+        name_row.addWidget(self._name_spacer)
         self._rename_feedback = self._label("renameIPodFeedback", name_panel)
         self._rename_feedback.setProperty("error", True)
         name_layout.addLayout(name_row)
@@ -173,25 +194,54 @@ class DeviceSummaryPage(QWidget):
         )
         surface_row.addWidget(self._surface)
         body.addLayout(surface_row)
-        self._restore_row = QFrame(self._body)
-        self._restore_row.setObjectName("deviceRestoreRow")
-        restore_layout = QHBoxLayout(self._restore_row)
-        restore_layout.setContentsMargins(
+        self._firmware_actions = QFrame(self._body)
+        self._firmware_actions.setObjectName("deviceFirmwareActions")
+        self._firmware_layout = QBoxLayout(
+            QBoxLayout.Direction.LeftToRight, self._firmware_actions
+        )
+        firmware_layout = self._firmware_layout
+        firmware_layout.setContentsMargins(
             LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
         )
-        restore_layout.setSpacing(LAYOUT.space_sm)
-        self._restore = ActionButton(parent=self._restore_row)
-        self._restore.setObjectName("restoreDevice")
-        self._restore.setEnabled(False)
-        self._coming_soon = self._label("deviceRestoreComingSoon", self._restore_row)
-        restore_layout.addWidget(self._restore)
-        restore_layout.addWidget(self._coming_soon, 1)
-        restore_surface_row = QHBoxLayout()
-        restore_surface_row.setContentsMargins(
+        firmware_layout.setSpacing(LAYOUT.space_lg)
+        firmware_copy = QVBoxLayout()
+        firmware_copy.setSpacing(LAYOUT.space_xs)
+        firmware_layout.addLayout(firmware_copy, 1)
+        self._firmware_heading = self._label(
+            "deviceFirmwareTitle", self._firmware_actions
+        )
+        firmware_copy.addWidget(self._firmware_heading)
+        self._firmware_current = self._label(
+            "deviceFirmwareCurrent", self._firmware_actions
+        )
+        firmware_copy.addWidget(self._firmware_current)
+        firmware_buttons = QVBoxLayout()
+        firmware_buttons.setSpacing(LAYOUT.space_sm)
+        firmware_layout.addLayout(firmware_buttons)
+        self._unlock_bootloader = ActionButton(
+            parent=self._firmware_actions, kind=ActionButtonKind.PRIMARY
+        )
+        self._unlock_bootloader.setObjectName("unlockBootloader")
+        self._unlock_bootloader.clicked.connect(self.unlockBootloaderRequested.emit)
+        self._unlock_hint = self._label("deviceBootloaderHint", self._firmware_actions)
+        firmware_buttons.addWidget(self._unlock_bootloader)
+        firmware_copy.addWidget(self._unlock_hint)
+        self._install_shared = ActionButton(
+            parent=self._firmware_actions, kind=ActionButtonKind.PRIMARY
+        )
+        self._install_shared.setObjectName("installSharedFirmware")
+        self._install_shared.clicked.connect(self.installSharedFirmwareRequested.emit)
+        self._install_hint = self._label(
+            "deviceSharedFirmwareHint", self._firmware_actions
+        )
+        firmware_buttons.addWidget(self._install_shared)
+        firmware_copy.addWidget(self._install_hint)
+        firmware_surface_row = QHBoxLayout()
+        firmware_surface_row.setContentsMargins(
             LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg, LAYOUT.space_lg
         )
-        restore_surface_row.addWidget(self._restore_row)
-        body.addLayout(restore_surface_row)
+        firmware_surface_row.addWidget(self._firmware_actions)
+        body.addLayout(firmware_surface_row)
         body.addStretch(1)
         self._scroll.setWidget(canvas)
         self._storage = StorageBreakdown(theme, self)
@@ -204,6 +254,10 @@ class DeviceSummaryPage(QWidget):
         theme.deviceArtworkChanged.connect(self._refresh_portrait)
         if workspace is not None:
             workspace.changed.connect(self._rename_state_changed)
+        if bootloader_controller is not None:
+            bootloader_controller.changed.connect(self._refresh_bootloader)
+        if shared_firmware_controller is not None:
+            shared_firmware_controller.changed.connect(self._refresh_bootloader)
         self.retranslate_ui()
 
     def _label(self, name: str, parent: QWidget | None = None) -> QLabel:
@@ -221,8 +275,147 @@ class DeviceSummaryPage(QWidget):
         self._draft_name = ""
         self._refresh()
 
+    def _firmware_button_text(self, text: str, button: ActionButton) -> str:
+        if self.width() >= 480:
+            return text
+        available = max(
+            1,
+            self.width()
+            - 4 * LAYOUT.space_lg
+            - LAYOUT.scrollbar_extent
+            - 2 * LAYOUT.device_summary_border_width
+            - 2 * LAYOUT.space_md
+            - 4,
+        )
+        lines: list[str] = []
+        current = ""
+        for word in text.replace("-", "- ").split():
+            separator = "" if not current or current.endswith("-") else " "
+            candidate = current + separator + word
+            if (
+                current
+                and button.fontMetrics().horizontalAdvance(candidate) > available
+            ):
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        return "\n".join((*lines, current))
+
+    def _observed_value(self, value: str, current: bool) -> str:
+        if not value:
+            return self.tr("Unavailable")
+        return value if current else self.tr("{value} (cached)").format(value=value)
+
+    def _refresh_bootloader(self) -> None:
+        controller = self._bootloader_controller
+        supported = controller is not None and controller.supported(self._active)
+        resume = controller is not None and controller.can_resume
+        self._unlock_bootloader.setEnabled((supported or resume) and not self._busy)
+        shared = self._shared_firmware_controller
+        pending = shared is not None and shared.needs_attention
+        recorded_family = (
+            shared.recorded_hardware_family(self._active) if shared else None
+        )
+        can_install = shared is not None and shared.can_install(self._active)
+        report = self._active.bootloader_report if self._active else None
+        bootloader_current = recorded_family is not None
+        family = recorded_family
+        version = BOOTLOADER_VERSION if recorded_family is not None else ""
+        provenance = self.tr("Last verified in DFU") if version else ""
+        if report is not None:
+            family = report.hardware_family
+            version = report.version
+            provenance = self.tr("Reported by firmware")
+            try:
+                require_reported_bootloader(
+                    report,
+                    serial=self._active.serial_number if self._active else "",
+                    model=self._active.profile.model_number if self._active else "",
+                )
+            except ValueError:
+                bootloader_current = False
+            else:
+                bootloader_current = True
+        for key, value in (
+            ("mod_version", report.mod_version if report else ""),
+            ("hardware_family", str(family) if family is not None else ""),
+            ("bootloader_version", version),
+        ):
+            field = self._fields[key][1]
+            field.setText(
+                value or self.tr("Unavailable") if self._active is not None else "—"
+            )
+            field.setToolTip(
+                self.tr("Reported by firmware")
+                if key == "mod_version" and value
+                else provenance
+                if key != "mod_version"
+                else ""
+            )
+        show_unlock = not bootloader_current and (self._active is not None or resume)
+        show_install = bootloader_current and (
+            report is None or report.mod_version != MOD_VERSION
+        )
+        self._unlock_bootloader.setVisible(show_unlock)
+        self._unlock_hint.setVisible(show_unlock)
+        self._install_shared.setVisible(show_install)
+        self._install_hint.setVisible(show_install or pending)
+        self._firmware_current.setVisible(
+            self._active is not None and not show_unlock and not show_install
+        )
+        text = (
+            self.tr("Check bootloader result")
+            if resume
+            else self.tr("Update bootloader to {version}").format(
+                version=BOOTLOADER_VERSION
+            )
+            if version
+            else self.tr("Install unlocked bootloader")
+        )
+        self._unlock_bootloader.setText(
+            self._firmware_button_text(text, self._unlock_bootloader)
+        )
+        install_text = (
+            self.tr("Installation needs attention")
+            if pending
+            else self.tr("Update firmware to {mod_version}").format(
+                mod_version=MOD_VERSION
+            )
+            if report is not None and report.mod_version
+            else self.tr("Install universal 2.0.5")
+        )
+        self._install_shared.setText(
+            self._firmware_button_text(install_text, self._install_shared)
+        )
+        self._install_shared.setEnabled((can_install or pending) and not self._busy)
+        self._install_hint.setText(
+            self.tr("The previous firmware upload was interrupted")
+            if pending
+            else self.tr("Install over USB")
+            if can_install and report is not None and report.mod_version
+            else self.tr("Mod version {mod_version} · Install over USB").format(
+                mod_version=MOD_VERSION
+            )
+            if can_install
+            else self.tr("Check the bootloader report or run bootloader setup")
+            if report is not None
+            else self.tr("Refresh the iPod to read its current firmware")
+            if recorded_family is not None
+            else self.tr("Install the unlocked bootloader first")
+        )
+        self._firmware_actions.setVisible(self._active is not None or resume or pending)
+        self._unlock_hint.setText(
+            self.tr("Guided DFU setup")
+            if supported
+            else self.tr(
+                "Available on Windows for iPod Classic families 24, 33, 35 and 38"
+            )
+        )
+
     def set_busy(self, busy: bool) -> None:
         self._busy = busy
+        self._refresh_bootloader()
         self._rename_state_changed()
 
     def _can_rename(self) -> bool:
@@ -320,9 +513,10 @@ class DeviceSummaryPage(QWidget):
             button.setAccessibleName(text)
             button.setToolTip(text)
         self._header.set_title(self.tr("Summary"))
-        self._restore.setText(self.tr("Restore iPod"))
-        self._restore.setToolTip(self.tr("Coming soon"))
-        self._coming_soon.setText(self.tr("Coming soon"))
+        self._firmware_heading.setText(self.tr("Firmware"))
+        self._firmware_current.setText(
+            self.tr("Bootloader and firmware are up to date.")
+        )
         self._empty_title.setText(self.tr("No Active iPod"))
         self._empty_detail.setText(
             self.tr("Choose an iPod from the sidebar to see its details.")
@@ -330,13 +524,17 @@ class DeviceSummaryPage(QWidget):
         labels = (
             self.tr("Name"),
             self.tr("Capacity"),
-            self.tr("Software version"),
+            self.tr("Reported firmware"),
+            self.tr("Mod version"),
+            self.tr("Hardware family ID"),
+            self.tr("Bootloader version"),
+            self.tr("OS updater family"),
             self.tr("Serial number"),
             self.tr("Model number"),
             self.tr("Model"),
             self.tr("Color"),
         )
-        for (label, _), text in zip(self._fields, labels, strict=True):
+        for (label, _), text in zip(self._fields.values(), labels, strict=True):
             label.setText(f"{text}:")
         self._refresh()
 
@@ -352,7 +550,13 @@ class DeviceSummaryPage(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        for label, _ in self._fields:
+        self._firmware_layout.setDirection(
+            QBoxLayout.Direction.LeftToRight
+            if self.width() >= 640
+            else QBoxLayout.Direction.TopToBottom
+        )
+        self._refresh_bootloader()
+        for label, _ in self._fields.values():
             label.setWordWrap(self.width() < 480)
         padding = LAYOUT.space_xs if self.width() < 480 else LAYOUT.space_lg
         self._surface_layout.setContentsMargins(
@@ -400,24 +604,41 @@ class DeviceSummaryPage(QWidget):
         self._empty_title.setVisible(active is None)
         self._empty_detail.setVisible(active is None)
         self._details.setVisible(active is not None)
-        self._restore_row.setVisible(active is not None)
         self._refresh_portrait()
-        values = ("—",) * len(self._fields)
+        values: dict[str, str] = {}
         if active is not None:
-            values = (
-                active.display_name,
-                format_capacity(active.candidate.total_bytes)
+            values = {
+                "name": active.display_name,
+                "capacity": format_capacity(active.candidate.total_bytes)
                 if active.candidate.total_bytes > 0
                 else self.tr("Unavailable"),
-                active.firmware_version or self.tr("Unavailable"),
-                active.serial_number or self.tr("Unavailable"),
-                active.profile.model_number,
-                active.profile.display_name,
-                active.profile.finish,
-            )
-        for (label, value), text in zip(self._fields, values, strict=True):
-            value.setText(text)
+                "firmware": self._observed_value(
+                    active.firmware_version, active.firmware_version_current
+                ),
+                "updater_family": self._observed_value(
+                    str(active.updater_family_id), active.updater_family_current
+                )
+                if active.updater_family_id is not None
+                else self.tr("Unavailable"),
+                "serial": active.serial_number or self.tr("Unavailable"),
+                "model": active.profile.model_number,
+                "model_name": active.profile.display_name,
+                "finish": active.profile.finish,
+            }
+        for key, (label, value) in self._fields.items():
+            value.setText(values.get(key, "—"))
             value.setAccessibleName(label.text().removesuffix(":"))
+        self._fields["firmware"][1].setToolTip(
+            self.tr(
+                "The OS-reported version is independent of the hardware and bootloader. Cached values have not been confirmed on this connection."
+            )
+        )
+        self._fields["updater_family"][1].setToolTip(
+            self.tr(
+                "The running OS reports this updater family. Modified firmware can report a different family from the physical iPod."
+            )
+        )
+        self._refresh_bootloader()
         self._refresh_name()
         self._rename_state_changed()
         self._storage.set_breakdown(

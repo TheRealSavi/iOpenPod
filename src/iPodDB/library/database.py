@@ -63,8 +63,8 @@ if TYPE_CHECKING:
     from iPodDB.ArtworkDB.shared.chunk_defs.mhfd import MhfdHeader
     from iPodDB.iTunesDB.shared.chunk_defs.mhbd import MhbdHeader
     from iPodDB.library._resolved_write import ResolvedWrite
-    from iPodDB.library.genius import GeniusUpdate
-    from iPodDB.library.writing import RetainedArtworkFile
+    from iPodDB.library.genius import GeniusBrowse, GeniusUpdate
+    from iPodDB.library.writing import GeniusMixArtwork, RetainedArtworkFile
     from iPodDB.PhotosDB.parser.repair_PhotosDB import PhotosDBCountRepair
     from iPodDB.PhotosDB.shared.chunk_defs.mhfd import MhfdHeader as PhotosMhfdHeader
     from iPodDB.shared.chunk import DatabaseDocument
@@ -104,6 +104,12 @@ class IPodLibrary:
         "_source_photos",
         "_source_revision",
     )
+
+    def classic_genius_mixes(self) -> GeniusBrowse:
+        """Read native Mixes from the retained binary source, outside Playlists."""
+        from iPodDB.library._classic_genius_mixes import project_classic_mixes
+
+        return project_classic_mixes(self._document)
 
     def __init__(
         self, data: bytes, *, device_time: DeviceTimeContext | None = None
@@ -321,6 +327,7 @@ class IPodLibrary:
         normalize_podcasts: bool = False,
         refresh_smart_playlists: tuple[int, ...] = (),
         genius_update: GeniusUpdate | None = None,
+        genius_mix_artwork: tuple[GeniusMixArtwork, ...] = (),
     ) -> LibraryDraft:
         """Bind desired state to this source, rejecting omissions unless opted in.
 
@@ -365,6 +372,7 @@ class IPodLibrary:
             normalize_podcasts=normalize_podcasts,
             refresh_smart_playlists=tuple(refresh_smart_playlists),
             genius_update=genius_update,
+            genius_mix_artwork=genius_mix_artwork,
         )
 
     def analyze(
@@ -497,13 +505,40 @@ class IPodLibrary:
                 draft.genius_update.mixes
                 or draft.genius_update.mix_additions
                 or draft.genius_update.mix_removals
-            ) and not target.sqlite_database:
+            ) and not (target.sqlite_database or target.classic_genius_mixes):
                 additional_issues += (
                     WriteIssue(
-                        "genius.mix_requires_sqlite",
-                        "Native Genius Mix authoring requires a SQLite artifact target.",
+                        "genius.mix_requires_supported_target",
+                        "Native Genius Mix authoring requires a supported Classic or SQLite target.",
                     ),
                 )
+        if draft.genius_mix_artwork:
+            if (
+                not (target.classic_genius_mixes or target.sqlite_database)
+                or target.genius_mix_artwork_format is None
+            ):
+                additional_issues += (
+                    WriteIssue(
+                        "genius.unsupported_mix_artwork",
+                        "Mix artwork requires a qualified firmware target.",
+                    ),
+                )
+            resolved = replace(
+                resolved,
+                plan=replace(
+                    resolved.plan,
+                    changes=(
+                        *resolved.plan.changes,
+                        LibraryChange(
+                            "artwork_database",
+                            None,
+                            "update",
+                            "Genius Mix covers",
+                        ),
+                    ),
+                    requires_artwork_inventory=True,
+                ),
+            )
         if self._photos_repairs:
             resolved = replace(
                 resolved,
@@ -695,6 +730,29 @@ class IPodLibrary:
             dict.fromkeys(
                 path for _, path, _ in retained_artwork_extents(self._artwork_document)
             )
+        )
+
+    def genius_mix_artwork_paths(self, identities: tuple[int, ...]) -> tuple[str, ...]:
+        """Captured paths needed to compare retained Mix covers; never reads files."""
+        from iPodDB.library._artwork_paths import artwork_path
+
+        return tuple(
+            dict.fromkeys(
+                artwork_path(location.file_name)
+                for identity in identities
+                if (item := self._artwork_index.item_for_db_track_id(identity))
+                is not None
+                for location in item.locations
+            )
+        )
+
+    @property
+    def artwork_owner_ids(self) -> frozenset[int]:
+        """Reserve all retained reverse identities when allocating Mix identities."""
+        return frozenset(
+            item.db_track_id_ref
+            for item in self._artwork_index.items
+            if item.db_track_id_ref
         )
 
     def artwork_read(

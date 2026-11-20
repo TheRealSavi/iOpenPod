@@ -14,6 +14,198 @@ then beyond it.
 
 ## Current stage
 
+Bootloader **2.1.0** supports the expanded OS slot introduced with Mod Platform
+Version **0.3.0-dev**: 16 MiB on disk and a 4 MiB Mod Memory Region. Native
+overlap-copy/BSS tests pass at full capacity. The app bundles this loader with
+the current firmware and requires qualified loader evidence
+before upload; existing shared 2.0.0 users need one DFU upgrade. The expanded pair
+awaits physical installation. See [expanded-space evidence](docs/research/classic-expanded-mod-space-2026-11-17.md)
+and ADR-0285.
+
+The bundled Universal Classic Firmware currently has Mod Platform
+Version **0.11.0-dev**, with temporary artwork diagnostics omitted,
+and a native **Extras → Mods** list of its twelve included Firmware Mods. The list
+and build provenance derive from the same composition. Native relocation and
+the compiled resource hook pass emulation; the menu awaits an on-device visual
+check. See [menu evidence](docs/research/classic-mod-menu-2026-11-17.md).
+With **Time in Title** enabled, Title Bar Clock shows the native local time at the
+right of full-width bars and aligns the screen title to the left edge.
+Half-width and partial-width bars retain Apple's title rotation. See the
+[title-bar layout inventory](docs/research/classic-title-bar-clock-2026-11-19.md).
+Photo Zoom and Pan adds 100%–500% wheel zoom and time-based directional panning
+to the full-size photo viewer. Center enters the mode, then pans up while held.
+Menu resets a changed view and exits at fit. A bottom-right magnifier indicates
+the active mode, including at fit. Magnification uses the native 720 × 480 F1067
+photo cache when available and falls back to the 320 × 240 F1024 rendition.
+On a Classic running 0.8.1-dev, Center entered and exited the mode, but scrolling
+and panning left the displayed image unchanged. Version 0.8.2-dev hooks the
+BitmapView used by the full-size Photos layout. In emulation, wheel turns and
+directional holds now move the displayed pixels. Physical LCD confirmation is pending.
+See [photo viewer controls and qualification](docs/research/classic-photo-zoom-2026-11-19.md).
+The 0.6.1-dev correction darkens the previously missed World Clock row backdrop,
+with exact Light restoration and unchanged reserved RAM. See
+[clock-row evidence](docs/research/classic-dark-mode-clocks-2026-11-18.md).
+The sixth mod adds **Settings → Appearance**, with persistent Light/Dark/Auto values,
+separate text/shadow/selection drawing, and embedded native artwork changes.
+The latest refinement darkens Genius/Shuffle controls, Search entry and built-in
+artwork placeholders, and fixes Calendar day/weekday and playback-control ink.
+Auto uses the iPod's Firmware Calendar: Light 07:00–18:00, Dark overnight. It
+reevaluates on the native clock UI timer without additional timers or preference
+writes. Compiled native tests cover cached colors, all 24 hours and 258 settings
+cycles with exact bitmap restoration; the fixed RAM reservation is unchanged.
+Compressed artwork packets apply in place without a second image buffer.
+User feedback identified gaps in the prior dark mode; this new build's physical
+visual validation remains outstanding. See [appearance design](docs/research/classic-dark-mode-design-2026-11-17.md)
+and ADR-0286.
+The seventh mod, **Now Playing Preview Artwork**, connects the main-menu hover
+preview to native current-track artwork. A 128 × 128 cover fits above the
+unchanged title, artist and album. It reuses Apple's model, fallbacks and change
+notifications without another pixel cache. Version 0.6.2-dev releases dynamic
+BitmapView contexts across visibility changes. A native cache-replacement replay
+and 512 lifetime cycles pass with no leaked contexts or extra reserved RAM.
+The user reports that 0.6.2-dev mostly fixes the loss after Cover Flow, but the
+Now Playing preview can still disappear after Dark → Light while ordinary menu
+previews work. Version 0.6.3-dev adds the missing playback-artwork notification
+to manual and Auto appearance refreshes, with no additional retained RAM. A
+native cache-replacement regression passes, but the user confirms the preview
+still disappears and does not recover even on a different album. Diagnostic
+builds retained bounded preview/source snapshots for normal-USB reading.
+A physical 0.6.4-diag capture confirms that the missing preview still paints with
+valid image geometry; its source-query hook incorrectly targeted the static path.
+Version 0.6.5-diag corrects that hook and captures source pixels and final draw
+inputs, tested through native load/paint calls. The user confirmed Podcasts art
+as a trigger. The physical 0.6.5 capture has valid draw geometry but flat source
+pixel samples and no retained current-track artwork. Version 0.6.6-dev loads and
+retains the thumbnail through Apple's existing model reference before returning
+its bitmap. A replay of that captured failure fails on 0.6.5 and passes on 0.6.6,
+including bounded ownership across track changes and missing-file recovery. It
+holds about 32 KiB of thumbnail data, briefly 64 KiB during replacement, with
+unchanged fixed RAM reservation. The user reproduced the Podcasts failure on
+0.6.6: retained image samples match the stored thumbnail, but native paint uses
+mask mode for the color image. Version 0.6.7-dev selects the format from the actual
+dynamic bitmap rather than the embedded static bitmap. The stale-mask replay
+fails on 0.6.6 and passes on 0.6.7, adding no dynamic allocation or reserved page.
+The user now confirms correct behavior on 0.6.7. Version 0.6.8 keeps those fixes
+and omits temporary artwork tracing from the bundle, freeing one 4 KiB RAM page.
+The developer diagnostic flag remains available; Bootloader Report stays enabled.
+See
+[drawing-mode evidence](docs/research/classic-now-playing-render-mode-2026-11-18.md).
+See [diagnostic capture](docs/research/classic-artwork-diagnostics-2026-11-18.md)
+and [appearance refresh evidence](docs/research/classic-appearance-artwork-refresh-2026-11-18.md).
+See [lifetime investigation](docs/research/classic-menu-artwork-lifetime-2026-11-18.md) and
+[preview artwork evidence](docs/research/classic-now-playing-preview-artwork-2026-11-18.md).
+The eighth mod, **Bootloader Report**, measures the plaintext NOR loader at startup
+and publishes its marker, complete executable hash and SysCfg identity through
+normal USB. A qualified current report enables compatible updates on any Host;
+current failures override old receipts. Legacy firmware without a report retains
+the DFU receipt migration path. Device Summary distinguishes **Reported by firmware**
+from **Last verified in DFU**. Native reader/XML/bootstrap tests pass; physical
+validation remains outstanding. See ADR-0287 and
+[report evidence](docs/research/classic-bootloader-report-2026-11-18.md).
+The ninth and tenth mods repair long MP4 audio playback and accelerate audio
+seeking. Three native comparisons now use the complete 64-bit media time. A
+validated chunk jump replaces only the audio call inside Apple's seek path,
+retaining duration checks, video/chapter alignment, fallback and error semantics.
+Native tests cover 390 seek/packet comparisons, timestamp boundaries, failed
+reads and recovery. These mods add one 4 KiB reserved page and no heap cache;
+the user reports successful audio testing on a Classic 120GB running 0.7.0-dev,
+and normal seeking and A/V sync on existing videos. A test-video classification
+mistake was corrected separately; its physical retest and other models remain
+unqualified. See
+[long-audio evidence](docs/research/classic-long-audio-fixes-2026-11-18.md).
+The unsigned eapp manifest mod selects Apple's existing unsigned reader
+at the game-loader call site, preserving executable Verify/DRM checks. Native
+manifest-gate and import-resolution probes pass with Parachute. The first physical
+launch returned immediately to Games; a game allocation larger than Apple's
+512 KiB per-request limit was reproduced and fixed in the game repository.
+The corrected package was installed and the user confirmed game launch and
+wheel/Center input on the Classic 120 GB. The user confirmed the preceding 0.2.0-dev loader/OS
+installation through iOpenPod's complete GUI workflow. See
+[homebrew evidence](docs/research/classic-homebrew-eapp-manifests-2026-11-17.md).
+
+Device Summary distinguishes current OS-reported firmware/updater family from
+cached metadata and the hardware family last verified in DFU. Reconnect and
+explicit refresh probe again; a saved bootloader result is labelled historical.
+Its Firmware section conditionally offers bootloader setup or firmware installation
+for Classic families 24, 33, 35 and 38 on Windows. Current versions hide their
+buttons; updates name the target bootloader or Mod Platform Version. When both
+versions are current, it says “Bootloader and firmware are up to date.” The summary
+includes Mod Platform Version, hardware family ID and bootloader version, with
+provenance in tooltips. Both workflows use bundled assets
+and work offline from first use. Apple catalog checks and stock Restore/Update
+downloads have been removed. The earlier mod selection panel and device-load registry
+capture are disconnected. The
+experimental composition, registry and panel code remains outside the active
+workflow; it does not provide installation support. See
+[Firmware mods](docs/firmware-mods.md) and ADR-0275.
+
+Classic stock-update preparation is offline and limited to the original family-33
+2.0.1 package. It validates the complete image and produces a bounded transfer
+description. Native handler research has established the hidden firmware write
+path and update reboot request. Storage now owns exclusive Windows SCSI Sessions;
+the journalled vendor upload has completed a stock 2.0.1 reinstall on the connected
+family-33 Classic. It booted normally with unchanged library databases and disk
+layout. A temporary read-only RAM helper independently verified all 93,515,776
+written bytes against the retained preimage. Recovery files are retained in Host
+application data. Physical interruption recovery and other models remain
+unqualified. This stock-only experiment has no UI installer. See ADR-0276.
+See [Classic update research](docs/research/classic-stock-update-source-path-2026-11-17.md).
+
+The Classic33 experiment adds an independent Mod Platform Version and a native
+About row. The conditional bootloader is installed: its fresh helper receipt
+and independent full NOR readback match the prepared image, with all bytes
+outside the 128 KiB boot span unchanged. It booted stock 2.0.1 normally. The
+About-row firmware was then uploaded and independently verified across all
+93,515,776 firmware bytes. A second complete NOR read confirmed the loader
+persisted, and the final normal boot retained the same library files and disk
+layout. The user confirmed both Apple **2.0.1** and **Mod Version: 0.1.0-dev**
+display correctly on the physical About page. Apple's Disk Mode has
+rewritten the complete saved stock firmware, independently verified across all
+93,515,776 bytes. Interrupted-write rollback remains unqualified. Storage now
+owns retained USB Control Sessions for DFU research, separate from mounted-volume
+SCSI Sessions; the Apple driver does not enforce an exclusive native open.
+See ADR-0277 and the [About resource evidence](docs/research/classic33-about-resource-extension-2026-11-17.md).
+
+That Classic now has the corrected unsigned-OS loader installed. Its one-use
+helper verified the complete NOR result and unchanged bytes outside the boot
+span. An unsigned **0.1.2-dev** build was then uploaded through normal USB,
+without DFU or per-device OS signing, and booted normally. The library files and
+visible disk layout remained unchanged; the user confirmed Apple **2.0.1** and
+**Mod Version: 0.1.2-dev** on the About page. Existing recovery material was reused.
+This increment used the helper's NOR readback and the physical boot/display test,
+not another independent full NOR or firmware-partition acquisition. Initial
+bootloader installation and recovery still use DFU. Device Summary includes a
+guided Windows unlock for Classic targets 24/1.1.2, 33/2.0.1, 35/2.0.4 and
+38/2.0.5. The initial shared release installed one **2.0.0** bootloader body and authenticates
+its header on the destination device. Pinned stock and previous custom loaders
+migrate to the same output; the current shared body is recognized without a write.
+Unfinished handoffs still receive read-only result checking. A common Apple
+**2.0.5** OS with Mod Version **0.2.0-dev** has been built offline, including
+the latest resources and native About row. Its framing, boot handoff, native
+relocation and memory reservation pass offline execution. Real SysCfg remains
+intact; only a shared OS's copied compatibility fields are adapted. The new
+shared loader and OS have now booted on the physical family-33 MB565 Classic.
+The writer verified its NOR result, the shared loader first booted the existing
+2.0.1 OS, and the complete common firmware then installed through normal USB.
+Live USB reports 2.0.5; library databases and visible disk layout are unchanged.
+The user confirmed both About versions, working menus/clickwheel and headphone
+playback. Families 24, 35 and 38 remain physically untested with this shared pair;
+interruption recovery and independent full shared-firmware readback remain
+unqualified. Device Summary now enables all four Classic families by project-owner
+direction: Install unlocked bootloader guides DFU installation, and Install universal 2.0.5
+prepares the pinned common image and uploads it over normal USB. A qualified current Bootloader Report or, for legacy firmware without a report,
+a verified local unlock receipt enables installation; interrupted uploads are never replayed.
+Fresh discovery checks running 2.0.5, disk layout and library hashes before safe
+ejection and the user's About-version confirmation. The complete image, including
+its OS and resources, is bundled as a 56,752,710-byte compressed asset. Preparation
+checks the image and caches it persistently, with no download or network fallback.
+No compiler or lab checkout is needed. Device Registry uses the
+observed 38/2.0.5 firmware contract while retaining the physical Classic generation.
+See ADR-0282, ADR-0283 and the
+[physical trial](docs/research/classic-shared-205-os-layout-2026-11-17.md#physical-family-33-trial).
+See ADR-0278, ADR-0279, ADR-0281 and the
+[unsigned boot-path evidence](docs/research/classic33-unsigned-boot-path-2026-11-17.md).
+
 Settings > Sync offers default-off **Scrobble Ratings** for connected Last.fm and
 ListenBrainz accounts. During manual scrobbling or the enabled Sync scrobble step,
 committed music ratings map 4-5 stars to Love on both services and 1-2 stars to
@@ -422,11 +614,16 @@ membership. See ADR-0186; firmware acceptance of replacement seeds remains open.
 Genius now offers manual genre Mix additions and per-iPod Count/Expiry settings.
 The Genius sidebar shows Mixes only on iPods with confirmed native Mix support
 (ADR-0201).
-Focus, Love, Energy, and Relax Mixes now use the existing librosa-derived Genius
-Audio Profiles during Library preparation; Love also requires an explicit title or
-album cue. The Add dialog defers their eligibility check until save. These are
+Focus, Love, Energy, and Relax Mixes use version-2 Genius Audio Profiles with
+rhythm, dynamics, spectral activity and texture measurements. Focus requires very
+calm music and sparse sampled vocal evidence from the optional installed instrument
+runtime; unknown vocals do not qualify. Love also requires an explicit title or
+album cue. Ranking balances feature families and excludes gain-sensitive MFCC0.
+The source-bound Host cache retains compact measurements only. See ADR-0290.
+Existing Mix membership changes only when recreated or rotated.
+The Add dialog defers their eligibility check until save. These are
 candidate seeds, so native playback may extend beyond the mood selection.
-Supported SQLite iPods can select multiple proposals in a grid; automatic Mixes
+Supported Classics and SQLite iPods can select multiple proposals in a grid; automatic Mixes
 rotate during Sync while manual Mixes remain permanent and outside the automatic
 count. Ownership and ages publish with native Mix changes through the same Storage
 transaction. Existing unowned Mixes remain preserved. See ADR-0184; this workflow
@@ -457,23 +654,35 @@ iOpenPod now exposes native Genius Playlists and Mixes in a dedicated Genius
 browser with explicit collection removal. Classic MHOD 54 seed records identify
 Genius Playlists before
 ordinary Smart classification; these records retain their bytes and do not enter
-Smart refresh or ordinary Playlist editing. Saved nano sidecars and SQLite Mixes
+Smart refresh or ordinary Playlist editing. Saved nano sidecars, Classic binary Mixes, and SQLite Mixes
 are captured as separate browse state, without changing Library authority or
 consuming the sidecars. See ADR-0177.
 
 iPodDB now models native Genius graphs, saved Genius Playlist sidecars, and
-SQLite-only Genius Mixes. Explicit Library preparation coordinates Genius Track
+Classic binary and Nano SQLite Genius Mixes. Explicit Library preparation coordinates Genius Track
 identities and companion artifacts; regeneration preserves Mixes and prunes
 understood relationships for removed media. Application editing/import workflows
 remain separate. Basic Sync generation is
 specified in ADR-0178. See ADR-0176 and the
 [Genius data contract](docs/ipod-genius.md).
 
+ADR-0289 adds Classic Mix management using MHYP records in iTunesDB, with a
+twelve-Mix limit and initialized Genius result counts. Actual writer records pass
+stock 2.0.4/2.0.5 importers in native execution. Virtual devices cover publication,
+removal, rotation, and recovery; physical Mix playback remains to be accepted.
+
+ADR-0291 adds native Mix covers using the colored Add Mixes genre/mood artwork.
+Qualified Classic 2.0.4/2.0.5 and nano 7 1.0.4/2015 refresh 1.1.2 targets receive
+142/240-pixel images linked by Mix identity in ArtworkDB. Existing owned Mixes
+receive covers on the next save/Sync, in the same recoverable publication as
+their native data. Other firmware combinations remain gated; physical artwork
+display verification is outstanding.
+
 Device Registry now distinguishes native Genius Playlist and Mix capabilities.
 Classic 7G Mix support is refined from ranked RetailOS release evidence against
 2.0.3; missing or conflicting versions remain unknown. Transport revisions remain
-separate from RetailOS versions. This describes firmware capability, not an
-implemented Genius generation or Sync workflow. Reconciliation caches the release
+separate from RetailOS versions. These feature flags are independent of the
+implemented Genius generation and Sync workflows. Reconciliation caches the release
 in both SysInfo files with recorded hardware provenance. SysInfo Authority version 2
 invalidates older caches once for every iPod model. Successful capture and selection
 repair restore cache reuse across refreshes and connections; failed capture remains

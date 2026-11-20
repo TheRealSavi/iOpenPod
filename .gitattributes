@@ -17,3 +17,6 @@
 *.png binary
 *.webp binary
 *.qm binary
+src/iOpenPod/assets/bootloader/**/*.dfu binary
+src/iOpenPod/assets/bootloader/**/*.delta binary
+src/iOpenPod/assets/firmware/**/*.zlib binary

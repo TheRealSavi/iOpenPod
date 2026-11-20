@@ -34,15 +34,17 @@ class SQLiteGeniusMix:
 
 @dataclass(frozen=True, slots=True)
 class SQLiteGeniusUpdate:
-    """Replace graph and assignments; omitted Mix intent preserves native Mixes.
+    """Replace graph and assignments, or remove selected Mixes without analysis.
 
     ``mixes=None`` retains existing containers and their surviving assigned
     starting Tracks. An explicit tuple replaces the Mix set; ``()`` clears it.
     With ``mixes=None``, selective additions and removals preserve unmentioned
     native Mix records. Additions cannot overwrite retained container identities.
+    ``data=None`` preserves the graph and assignments; only selective Mix
+    removals are allowed in that mode. Ordinary deleted-media pruning still runs.
     """
 
-    data: GeniusData
+    data: GeniusData | None
     tracks: tuple[SQLiteGeniusTrack, ...] = ()
     mixes: tuple[SQLiteGeniusMix, ...] | None = None
     # Selective collection management preserves every unmentioned native row.

@@ -572,6 +572,37 @@ def test_controller_safely_ejects_active_ipod_and_clears_models(
         controller.shutdown()
 
 
+def test_firmware_mode_change_retires_filesystem_and_keeps_reservation(
+    tmp_path: Path,
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _device_root(tmp_path / "device")
+    platform.add_volume(root, label="Test iPod")
+    coordinator = DeviceCoordinator(Storage(platform))
+    tracks = TrackTableModel()
+    controller = DeviceController(
+        coordinator,
+        tracks,
+        SettingsService(GlobalSettingsStore(), DeviceSettingsStore()),
+    )
+    try:
+        controller.refresh_devices()
+        _wait_until(lambda: not controller.busy)
+        controller.select_device(controller.discovery.candidates[0].id.value)
+        _wait_until(lambda: not controller.busy)
+        active = controller.active_ipod
+        assert active is not None
+        assert controller.prepare_firmware_mode_change(active)
+        assert controller.busy and controller.active_ipod is None
+        assert coordinator.active_ipod is None and tracks.rowCount() == 0
+        assert not controller.begin_exclusive_operation()
+        assert not controller.prepare_firmware_mode_change(active)
+        controller.finish_exclusive_operation()
+        assert not controller.busy
+    finally:
+        controller.shutdown()
+
+
 def test_controller_restores_active_session_after_retryable_eject_refusal(
     tmp_path: Path,
 ) -> None:

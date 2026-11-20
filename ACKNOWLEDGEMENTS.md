@@ -55,6 +55,35 @@ endorsement by Olsro, contributors, Apple, or game publishers.
 
 ## The wider community
 
+The Classic bootloader installer builds on Rockbox, osos-lab and wInd3x, including
+Michael Sparmann's SPI/NOR work and Serge 'q3k' Bazanski's DFU research. Source
+provenance, notices and reproducible build instructions are retained in
+[the bootloader source directory](scripts/bootloader/README.md) and
+[the bundled notice](src/iOpenPod/assets/bootloader/classic33/NOTICE.txt).
+
+The Universal Classic Firmware asset contains Apple-derived code and resources. Apple's code
+and resources are not covered by iOpenPod's GPL grant. The bundled OS identity and
+attribution are retained in
+[its notice](src/iOpenPod/assets/firmware/classic-shared/NOTICE.txt). The complete
+image is bundled and no firmware download occurs during installation.
+
+The native Extras → Mods menu and Light / Dark Appearance mod adapt resource
+cloning, event encoding and native Settings/rendering contracts from
+[osos-lab's UI compiler](https://github.com/lgreitis/osos-lab/tree/d2c8e357d58591bdaa70bb6be9da191f489554a6/patching/ui),
+under GPL-3.0-only. Its pinned provenance is recorded in
+[`classic_menu.py`](scripts/firmware/classic_menu.py),
+[`classic_appearance.py`](scripts/firmware/classic_appearance.py) and the bundled
+firmware notice. The semantic palette and embedded reversible artwork changes
+are implemented in iOpenPod.
+
+The Classic long-audio repairs build on kayboll's
+[64-bit MP4 timestamp fix](https://github.com/lgreitis/osos-lab/pull/62) and
+[chunk-based audio seeking proposal](https://github.com/lgreitis/osos-lab/pull/63),
+under GPL-3.0-only. The implementation, pinned commits, independent native
+qualification and additional error-handling work are documented in the
+[long-audio research note](docs/research/classic-long-audio-fixes-2026-11-18.md)
+and bundled firmware notice.
+
 The macOS standalone updater uses [Sparkle](https://sparkle-project.org/). Its full
 upstream license and component notices are retained in
 [`sparkle-2.10.0-NOTICES.txt`](packaging/third-party/notices/sparkle-2.10.0-NOTICES.txt)

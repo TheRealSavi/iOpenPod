@@ -28,6 +28,14 @@ from the portable document in the same Storage transaction. Removing an automati
 Mix does not permanently lower the configured Count; the next Sync may fill the
 vacated slot.
 
+Mix removal is independent of audio analysis and graph generation. The native
+update uses `data=None` with selective `mix_removals`; this preserves the retained
+graph and Track Genius identities. This mode rejects new assignments, additions,
+and full Mix replacement. Deleting or replacing Track media in the same save still
+prunes its existing relationships through the ordinary preservation path.
+This also applies to Classic binary Mixes qualified by ADR-0289. Mix artwork and
+ownership cleanup remain part of the same publication.
+
 All removal intent is reversible until publication. Source preconditions,
 transaction verification, recoverable deletion, and disconnect handling remain
 those of the existing Library save. Mix removal is enabled only where the native

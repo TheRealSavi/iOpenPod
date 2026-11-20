@@ -522,9 +522,12 @@ Both source and installed launchers support `--version` and `--smoke-test`. The 
 imports the GUI startup graph (including scrobbling and its credential-vault
 adapter), and checks Qt icon/image/SVG/multimedia loading, compiled shaders, the
 udev resource, native HASHAB execution, lazy audio-analysis imports, and the
-platform's dynamically loaded system-media bindings. It does not create settings,
-discover devices, or write to an iPod. `--smoke-test-report /absolute/file.txt` writes
-diagnostics even for a Windows executable without a console.
+platform's dynamically loaded system-media bindings. It also validates the bundled
+Universal Unlocked Bootloader assets and decompresses and hashes the bundled
+Universal Classic Firmware directly, even when a firmware cache exists. The check
+runs without creating settings, discovering devices, or writing to an iPod.
+`--smoke-test-report /absolute/file.txt` writes diagnostics even for a Windows
+executable without a console.
 
 Run the frozen smoke test outside the checkout on a machine without Python.
 Health checks the lockfile, formatting, linting, typing, and the complete test suite.

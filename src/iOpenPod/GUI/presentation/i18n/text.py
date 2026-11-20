@@ -20,6 +20,15 @@ def track_count_text(count: int) -> str:
     )
 
 
+def mix_starting_track_count_text(count: int) -> str:
+    count = max(0, count)
+    return _count_fallback(
+        Counts.tr("%n starting track(s)", "", count),
+        "%n starting track(s)",
+        count,
+    )
+
+
 def album_count_text(count: int) -> str:
     count = max(0, count)
     return _count_fallback(

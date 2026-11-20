@@ -41,6 +41,11 @@ from iPodDB.iTunesDB.writer.write_iTunesDB import write_iTunesDB
 from iPodDB.library._artwork_geometry import repair_geometry
 from iPodDB.library._artwork_verification import verify_artwork
 from iPodDB.library._artwork_writing import reconcile_artwork, validated_path
+from iPodDB.library._classic_genius_mixes import (
+    project_classic_mixes,
+    reconcile_classic_mixes,
+)
+from iPodDB.library._genius_mix_artwork import reconcile_mix_artwork, verify_mix_artwork
 from iPodDB.library._genius_writing import (
     bootstrap_classic_genius,
     mapped_update,
@@ -84,6 +89,8 @@ from iPodDB.PhotosDB.shared.chunk_defs.mhii import MhiiHeader as PhotoHeader
 from iPodDB.PhotosDB.writer.write_PhotosDB import write_PhotosDB
 from iPodDB.shared.errors import iPodDBWriteError
 from iPodDB.SQLiteDB.database import build_sqlite_databases
+from iPodDB.SQLiteDB.genius_projection import genius_mix_ids
+from iPodDB.SQLiteDB.inputs import SQLiteSource
 
 logger = logging.getLogger(__name__)
 
@@ -970,9 +977,17 @@ def _prepare(
         )
         candidate = reconcile_genius_tracks(candidate, genius_update, replaced_ids)
         genius_cuid = None
+        classic_mix_changes: frozenset[int] = frozenset()
         if not plan.target.sqlite_database:
             candidate, genius_cuid = bootstrap_classic_genius(
                 candidate, genius_update, plan.draft.source_revision
+            )
+            candidate, classic_mix_changes = reconcile_classic_mixes(
+                document,
+                candidate,
+                genius_update,
+                replaced_ids,
+                authoring=plan.target.classic_genius_mixes,
             )
         candidate_photos = photos
         if plan.changes_photos:
@@ -1061,6 +1076,13 @@ def _prepare(
             else itunes
         )
         checked_document = parse_iTunesDB(checked_logical_bytes)
+        if classic_mix_changes:
+            expected_mixes = project_classic_mixes(candidate)
+            checked_mixes = project_classic_mixes(checked_document)
+            if expected_mixes.issues or checked_mixes != expected_mixes:
+                raise ValueError(
+                    "Prepared Classic Genius Mix records failed verification"
+                )
         checked_artwork = (
             parse_ArtworkDB(artwork_bytes) if artwork_bytes is not None else None
         )
@@ -1182,6 +1204,7 @@ def _prepare(
         if (
             not resolved.artwork_tracks
             and not resolved.deleted_tracks
+            and not plan.draft.genius_mix_artwork
             and (artwork_bytes != expected_retained_artwork or artwork_files)
         ):
             issues.append(
@@ -1225,10 +1248,43 @@ def _prepare(
                 and not plan.target.sqlite_database,
                 sqlite=plan.target.sqlite_database,
                 refreshed_smart_playlists=resolved.refreshed_smart_playlists,
+                classic_mix_changes=classic_mix_changes,
             )
         )
         if _blocked(issues):
             return LibraryWriteResult(tuple(issues))
+        sqlite = _prepare_sqlite(
+            source, checked, checked_document, plan, resources, mappings
+        )
+        sqlite_mix_ids = None
+        if plan.target.sqlite_database and plan.draft.genius_mix_artwork:
+            sqlite_mix_ids = (
+                genius_mix_ids(resources.sqlite_sources, None),
+                genius_mix_ids(
+                    (SQLiteSource("Library.itdb", sqlite.library),)
+                    if sqlite is not None
+                    else resources.sqlite_sources,
+                    None,
+                ),
+            )
+        candidate_artwork, artwork_files, mix_artwork_ids = reconcile_mix_artwork(
+            document,
+            checked_document,
+            checked_artwork,
+            plan.draft.genius_mix_artwork,
+            plan.target,
+            resources,
+            artwork_files,
+            sqlite_mix_ids=sqlite_mix_ids,
+        )
+        if plan.draft.genius_mix_artwork and candidate_artwork is not None:
+            artwork_bytes = write_ArtworkDB(candidate_artwork)
+            if len(artwork_bytes) > plan.target.max_database_bytes:
+                raise ValueError("Mix artwork exceeds the database size limit")
+            checked_artwork = parse_ArtworkDB(artwork_bytes)
+            if write_ArtworkDB(checked_artwork) != artwork_bytes:
+                raise ValueError("Mix ArtworkDB round trip changed bytes")
+            checked_index = build_artwork_index(checked_artwork)
         verify_relationships(
             document,
             checked_document,
@@ -1243,6 +1299,7 @@ def _prepare(
             artwork_files,
             resources,
             {m.output_id for m in art_mappings}
+            | mix_artwork_ids
             | {i for i in plan.required_artwork if i in resource_facts.known_artwork},
             genius_cuid=genius_cuid,
         )
@@ -1258,6 +1315,15 @@ def _prepare(
             original_bytes.artwork,
             artwork_bytes,
         )
+        verify_mix_artwork(
+            checked_document,
+            checked_artwork,
+            plan.draft.genius_mix_artwork,
+            resources,
+            artwork_files,
+            plan.target.genius_mix_artwork_format,
+            sqlite_mix_ids=sqlite_mix_ids[1] if sqlite_mix_ids is not None else None,
+        )
         _verify_desired_snapshot(
             source.snapshot,
             checked,
@@ -1272,9 +1338,6 @@ def _prepare(
         )
         if _blocked(issues):
             return LibraryWriteResult(tuple(issues))
-        sqlite = _prepare_sqlite(
-            source, checked, checked_document, plan, resources, mappings
-        )
         genius = (
             None
             if plan.target.sqlite_database
@@ -1282,7 +1345,7 @@ def _prepare(
                 source.snapshot, checked, resources.genius_source, genius_update
             )
         )
-        if genius_update is not None:
+        if genius_update is not None and genius_update.data is not None:
             expected_genius = {t.track_id: t.genius_id for t in genius_update.tracks}
             if any(
                 t.ipod is None or t.ipod.genius_id != expected_genius.get(t.track_id, 0)

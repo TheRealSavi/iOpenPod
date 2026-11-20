@@ -211,15 +211,18 @@ The summary follows the supplied Apple reference through a large product image o
 the left, quiet native typography, and a vertical device specification list on the
 right, centered together within one lightly shaded, bordered surface at the top
 that fills the available width with 24-pixel top and side insets and 12-pixel rounded
-corners. Bold,
+corners. Quiet secondary-colored,
 right-aligned labels end in colons, with values aligned in a shared
 second column. Firmware version and product serial number come from captured
 device evidence, with unavailable values identified explicitly. The page uses
 packaged model artwork and the current theme. Narrow panes stack the portrait above
 the list; the main content scrolls independently of the storage
-strip. Restore iPod is always disabled with adjacent "Coming soon" text. They sit
-in a separate rounded surface below the device information, with matching side
-insets and a 24-pixel gap between surfaces.
+strip. The device name has slightly stronger weight. Firmware actions sit in a
+separate rounded surface below the device information, with matching side insets
+and a 24-pixel gap between surfaces. A heading and concise supporting text sit
+beside the one available primary action; narrow panes stack the action beneath
+the copy. Current installations show a quiet up-to-date message. The update
+buttons name their target versions and use the shared 44-pixel control tier.
 
 Storage categories pair labeled byte totals with semantic colors: Music uses
 `artwork_blue`, Videos `artwork_violet`, Podcasts `artwork_coral`, Audiobooks

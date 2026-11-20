@@ -7,6 +7,7 @@ from threading import Event
 
 import pytest
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
+from tests.iOpenPod.app.test_genius_host_sources import write_helper
 from tests.iOpenPod.app.test_sync_execution import (
     _AvailableTools,  # pyright: ignore[reportPrivateUsage]
     _Executor,  # pyright: ignore[reportPrivateUsage]
@@ -19,9 +20,13 @@ from tests.iOpenPod.app.test_sync_genius import (
 
 from iOpenPod.app.genius_analysis import GeniusAnalysisService, GeniusAudioDecodeError
 from iOpenPod.app.genius_audio import GeniusAudioProfile
+from iOpenPod.app.genius_host_sources import GeniusHostSource
+from iOpenPod.app.host_media_library import HostMediaFileKind, HostMediaSource
+from iOpenPod.app.library_sync_helper import IPodTrackFingerprint, SyncDetails
 from iOpenPod.app.library_write import LibraryPreparationRequest, WriteProgress
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
+from iOpenPod.app.sync_plan import SyncPlanAction, prepare_sync_plan
 from iPodDB.library.genius import (
     GeniusConfig,
     GeniusMetadata,
@@ -29,6 +34,91 @@ from iPodDB.library.genius import (
     parse_genius_database,
 )
 from storage import AtomicHostFile, DevicePath, FilesystemSession, HostPath
+
+
+@pytest.mark.parametrize("committed", (False, True))
+def test_real_sync_prefers_correlated_host_audio_for_retained_tracks(
+    tmp_path: Path, committed: bool
+) -> None:
+    decoder = _Decoder()
+    device = _with_analysis(build_device(tmp_path), tmp_path / "profiles.json", decoder)
+    try:
+        active = device.active
+        request = _refresh_request(active)
+        correlations: list[GeniusHostSource] = []
+        for track in active.library.tracks:
+            assert track.ipod is not None
+            host = tmp_path / f"original-{track.track_id}.flac"
+            host.write_bytes(b"original lossless audio")
+            local = host.stat()
+            observed = (device.root / track.metadata.location).stat()
+            sync = SyncDetails(
+                "2026-11-18",
+                str(host),
+                local.st_size,
+                local.st_mtime_ns,
+                "flac",
+                "mp3",
+                True,
+            )
+            record = IPodTrackFingerprint(
+                track.ipod.db_track_id,
+                track.track_id,
+                DevicePath(track.metadata.location),
+                observed.st_size,
+                observed.st_mtime_ns,
+                f"{track.track_id},2,3",
+                sync if committed else None,
+            )
+            correlations.append(
+                GeniusHostSource(
+                    record, HostPath(host), local.st_size, local.st_mtime_ns
+                )
+            )
+        if committed:
+            write_helper(device.root, tuple(correlations))
+        else:
+            host_tracks = tuple(
+                replace(
+                    t, ipod=None, metadata=replace(t.metadata, location=str(c.path))
+                )
+                for t, c in zip(active.library.tracks, correlations, strict=True)
+            )
+            host_sources = tuple(
+                HostMediaSource(
+                    c.path,
+                    HostMediaFileKind.AUDIO,
+                    c.size_bytes,
+                    c.modified_ns,
+                    acoustic_fingerprint=c.device.acoustic_fingerprint,
+                )
+                for c in correlations
+            )
+            request = replace(
+                request,
+                host=replace(
+                    request.host,
+                    snapshot=replace(active.library, tracks=host_tracks, playlists=()),
+                    sources=host_sources,
+                ),
+                ipod=replace(
+                    request.ipod, tracks=tuple(c.device for c in correlations)
+                ),
+            )
+            plan = prepare_sync_plan(request.host, request.ipod, active.library)
+            assert all(
+                item.action is SyncPlanAction.UNCHANGED for item in plan.items
+            ), plan
+            request = replace(request, plan=plan)
+        result = SyncExecutor(device.coordinator).execute(
+            request, lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert set(decoder.calls) == {c.path for c in correlations}
+        assert len(decoder.calls) == len(correlations)
+        assert not any(issue.code.startswith("genius.") for issue in result.issues)
+    finally:
+        device.coordinator.close()
 
 
 class _Decoder:

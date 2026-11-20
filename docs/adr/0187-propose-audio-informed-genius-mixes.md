@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-24
 - Extends: ADR-0179 and ADR-0184
+- Amended by: [ADR-0290](0290-require-rhythm-dynamics-and-vocal-evidence-for-mood-mixes.md), which replaces the mood thresholds and requires sparse-vocal evidence for Focus
 
 ## Context
 

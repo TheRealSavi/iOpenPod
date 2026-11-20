@@ -27,6 +27,31 @@ def _id[T](
     return DeviceIdentifier(value, "test observation", authority)
 
 
+@pytest.mark.parametrize("generation", ("6th Gen", "6.5th Gen", "7th Gen"))
+def test_shared_os_uses_latest_contract_without_changing_physical_profile(
+    generation: str,
+) -> None:
+    profile = _profile("iPod Classic", generation)
+    evidence = DeviceEvidence(
+        firmware_versions=(_id("2.0.5"),), updater_family_ids=(_id(38),)
+    )
+    assert (
+        resolve_preferences_support(profile, evidence).target
+        == FirmwareTarget.CLASSIC_UPDATER_38_2_0_5
+    )
+    assert profile.generation == generation
+    for families in ((), (_id(33),), (_id(33), _id(38))):
+        assert (
+            resolve_preferences_support(
+                profile,
+                DeviceEvidence(
+                    firmware_versions=(_id("2.0.5"),), updater_family_ids=families
+                ),
+            ).target
+            is None
+        )
+
+
 @pytest.mark.parametrize(
     "family,generation,release,updater,target",
     [

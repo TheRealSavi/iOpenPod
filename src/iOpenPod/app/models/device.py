@@ -3,8 +3,10 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from device_registry import DeviceProfile, IdentificationStatus
+from device_registry import DeviceProfile, FirmwareTarget, IdentificationStatus
 from iOpenPod.app.core.settings.device import DeviceSettings
+from iOpenPod.app.firmware.bootloader_report import BootloaderReport
+from iOpenPod.app.firmware.capture import RegistryObservation
 from iOpenPod.app.genius_mixes import MixState
 from iOpenPod.app.models.ipod_preferences import IPodPreferenceSection
 from iPodDB.library import LibrarySnapshot
@@ -146,6 +148,12 @@ class ActiveIPod:
     serial_number: str = ""
     game_storage_bytes: int | None = None
     album_artwork_storage_bytes: int | None = None
+    firmware_target: FirmwareTarget | None = None
+    firmware_registry: RegistryObservation = field(default_factory=RegistryObservation)
+    updater_family_id: int | None = None
+    firmware_version_current: bool = False
+    updater_family_current: bool = False
+    bootloader_report: BootloaderReport | None = None
 
     @property
     def display_name(self) -> str:

@@ -155,6 +155,7 @@ QLabel#gamesEmptyTitle {{
 }}
 
 QLabel#sectionTitle,
+QLabel#deviceFirmwareTitle,
 QLabel[browserTitle="true"] {{
     color: {tokens.text};
     font-family: "{typography.display}";
@@ -430,6 +431,8 @@ QLabel#photoAlbumManagerError {{
 }}
 
 QDialog#onboardingDialog,
+QDialog#bootloaderUnlockDialog,
+QDialog#sharedFirmwareDialog,
 QDialog#helpSupportDialog,
 QDialog#playlistEditor,
 QDialog#calendarEditor,
@@ -474,6 +477,63 @@ QLabel#dialogTitle {{
     font-size: {typography.title_pt:g}pt;
     font-weight: 700;
 }}
+
+/* Hallmark · component: firmware setup dialogs · genre: modern-minimal
+ * theme: existing iOpenPod tokens · component scope, no page macrostructure
+ * pre-emit critique: P5 H5 E4 S5 R5 V4
+ * states: default / hover / focus / pressed / disabled via ActionButton;
+ * loading / error / success via progress, status text and semantic color.
+ */
+QLabel#firmwareEyebrow {{
+    color: {tokens.text_secondary};
+    font-size: {typography.small_pt:g}pt;
+    font-weight: 600;
+}}
+QLabel#firmwareIdentity {{
+    color: {tokens.text_secondary};
+    padding-bottom: {LAYOUT.space_md}px;
+    border-bottom: 1px solid {tokens.border};
+}}
+QScrollArea#firmwareContentScroll, QWidget#firmwareContent {{
+    background: transparent;
+    border: none;
+}}
+QLabel#firmwareStepTitle {{
+    color: {tokens.text};
+    font-weight: 700;
+}}
+QLabel#firmwareStepDetail, QLabel#firmwareNotice, QLabel#firmwareVersionCaption {{
+    color: {tokens.text_secondary};
+}}
+QLabel#firmwareNotice, QLabel#firmwareStatus {{
+    font-size: {typography.small_pt:g}pt;
+}}
+QLabel#firmwareStatus {{ color: {tokens.text_secondary}; }}
+QLabel#firmwareStatus[tone="error"] {{ color: {tokens.danger}; }}
+QLabel#firmwareStatus[tone="success"] {{ color: {tokens.success}; }}
+QFrame#firmwareVersions {{
+    background: {tokens.surface};
+    border: 1px solid {tokens.border};
+    border-radius: {LAYOUT.radius_panel}px;
+}}
+QLabel#firmwareVersionValue {{
+    color: {tokens.text};
+    font-size: {typography.heading_pt:g}pt;
+    font-weight: 600;
+}}
+QProgressBar#firmwareProgress {{
+    border: none;
+    border-radius: {LAYOUT.radius_control // 2}px;
+    min-height: {LAYOUT.space_xs}px;
+    max-height: {LAYOUT.space_xs}px;
+    background: {tokens.surface_alt};
+}}
+QProgressBar#firmwareProgress::chunk {{
+    border-radius: {LAYOUT.radius_control // 2}px;
+    background: {tokens.accent};
+}}
+QFrame#firmwareFooter {{ border-top: 1px solid {tokens.border}; }}
+QFrame#firmwareFooter QPushButton {{ min-height: {LAYOUT.control_height_large}px; }}
 
 /* Hallmark · component: onboarding · existing desktop palette and typography */
 QLabel#onboardingProgress {{
@@ -1861,7 +1921,9 @@ QPushButton#startChooseDevice {{
 
 QLabel#deviceSummaryModel,
 QLabel#startDescription,
-QLabel#deviceRestoreComingSoon,
+QLabel#deviceFirmwareActionHint,
+QLabel#deviceBootloaderHint,
+QLabel#deviceSharedFirmwareHint,
 QLabel#deviceStorageCapacity,
 QLabel#deviceStorageNote {{
     color: {tokens.text_secondary};
@@ -1877,16 +1939,25 @@ QLabel[deviceSummaryValue="true"] {{
 }}
 
 QLabel#deviceSummaryFieldLabel {{
-    color: {tokens.text};
+    color: {tokens.text_secondary};
     font-size: {typography.body_pt:g}pt;
+    font-weight: 400;
+}}
+
+QLabel#deviceSummaryName {{
     font-weight: 600;
 }}
 
-QFrame#deviceRestoreRow,
+QFrame#deviceFirmwareActions,
+QFrame#firmwareModsPanel,
 QFrame#deviceSummarySurface {{
     background-color: {tokens.window};
     border: {LAYOUT.device_summary_border_width}px solid {tokens.border};
     border-radius: {LAYOUT.radius_panel}px;
+}}
+
+QFrame#deviceFirmwareActions QPushButton {{
+    min-height: {LAYOUT.control_height_large}px;
 }}
 
 QFrame#deviceStorageBreakdown {{

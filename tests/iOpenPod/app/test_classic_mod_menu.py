@@ -1,0 +1,219 @@
+"""Validate the native menu graph against the bundled Apple 2.0.5 resources."""
+
+import struct
+
+import pytest
+from scripts.firmware.classic_menu import (
+    EXTRAS_ITEMS,
+    EXTRAS_SCREEN,
+    MOD_ENTRY,
+    MOD_ITEMS,
+    MOD_LAYOUT,
+    MOD_LAYOUT_NAME,
+    MOD_SCREEN,
+    MOD_SCREEN_NAME,
+    MenuResources,
+    emit_menu_header,
+    included_mods,
+    menu_resources,
+    mod_records,
+)
+from scripts.firmware.classic_resources import RESOURCE_SCRATCH_BYTES, blocks, u32
+
+from iOpenPod.app.firmware.classic_shared import OSOS_LENGTH_OFFSET, OSOS_OFFSET
+from iOpenPod.app.firmware.shared_release import bundled_firmware
+
+
+@pytest.fixture(scope="module")
+def osos() -> bytes:
+    image = bundled_firmware()
+    size = u32(image, OSOS_LENGTH_OFFSET)
+    return image[OSOS_OFFSET : OSOS_OFFSET + size]
+
+
+@pytest.fixture(scope="module")
+def menu(osos: bytes) -> MenuResources:
+    return menu_resources(osos, included_mods(homebrew_eapps=True))
+
+
+def source_text(menu: MenuResources, source: int) -> str:
+    bindings = blocks(menu.added["SORC", source])
+    assert len(bindings) == 1
+    kind, body = bindings[0]
+    assert kind == 0x534F5243
+    mode, string_id, destination = struct.unpack("<3I", body)
+    assert (mode, destination) == (0x80, 1)
+    return menu.added["Str ", string_id].removesuffix(b"\0").decode()
+
+
+def parse_events(data: bytes) -> dict[str, list[tuple[str, list[str]]]]:
+    """Independent reader: consume complete variable-length native event streams."""
+    position = 4
+
+    def integer() -> int:
+        nonlocal position
+        value = u32(data, position)
+        position += 4
+        return value
+
+    def string() -> str:
+        nonlocal position
+        size = integer()
+        value = data[position : position + size].decode()
+        position += size
+        return value
+
+    events: dict[str, list[tuple[str, list[str]]]] = {}
+    for _ in range(u32(data, 0)):
+        name = string()
+        assert data[position : position + 1] in (b"0", b"1")
+        position += 1
+        string()  # Optional controller handler.
+        actions: list[tuple[str, list[str]]] = []
+        for _ in range(integer()):
+            action = string()
+            arguments = [string() for _ in range(integer())]
+            actions.append((action, arguments))
+        assert name not in events
+        events[name] = actions
+    assert position == len(data)
+    return events
+
+
+def test_extras_keeps_original_entries_and_routes_to_mods(menu: MenuResources) -> None:
+    original = blocks(menu.stock["ITEM", EXTRAS_ITEMS])
+    updated = blocks(menu.added["ITEM", EXTRAS_ITEMS])
+    assert updated[:-1] == original
+    row = updated[-1][1]
+    assert u32(row, 0x30) == MOD_ENTRY
+    assert row[0x64] == 1  # Visible without a user preference.
+    assert u32(row, 0x60) == 5  # Native submenu arrow.
+    assert source_text(menu, u32(row, 0x68)) == "Mods"
+    old_events = parse_events(menu.stock["CEVT", EXTRAS_SCREEN])
+    events = parse_events(menu.added["CEVT", EXTRAS_SCREEN])
+    assert events.items() >= old_events.items()
+    assert len(events) == len(old_events) + 2
+    assert events[f"list.pid.{MOD_ENTRY}.chosen"] == [
+        ("navigator.PushScreen", [MOD_SCREEN_NAME, MOD_LAYOUT_NAME, "foregroundpush"])
+    ]
+    assert events[f"list.pid.{MOD_ENTRY}.delayedselected"] == [
+        ("navigator.SwitchLayout", ["Extras_Screen_Default"])
+    ]
+
+
+@pytest.mark.parametrize("homebrew", [True, False])
+def test_menu_lists_only_included_mods(osos: bytes, homebrew: bool) -> None:
+    menu = menu_resources(osos, included_mods(homebrew_eapps=homebrew))
+    rows = blocks(menu.added["ITEM", MOD_ITEMS])
+    names = [source_text(menu, u32(body, 0x68)) for _, body in rows]
+    expected = ["Mod Version String", "Mod Version in About"]
+    if homebrew:
+        expected.append("Unsigned Game Manifests")
+    expected.extend(("Mod Menu", "Expanded Mod Memory"))
+    assert names == expected
+    assert names == [record["name"] for record in mod_records(homebrew_eapps=homebrew)]
+    assert all(u32(row, 0x60) == 2 and row[0x64] == 1 for _, row in rows)
+    assert len({u32(row, 0x30) for _, row in rows}) == len(rows)
+    assert parse_events(menu.added["CEVT", MOD_SCREEN]) == {}
+
+
+def test_layout_reuses_native_views_and_binds_new_title_and_rows(
+    menu: MenuResources,
+) -> None:
+    assert menu.added["SCST", MOD_SCREEN] == menu.stock["SCST", 0x0DAD0C6A]
+    layouts = blocks(menu.added["SLst", MOD_SCREEN])
+    assert len(layouts) == 1 and u32(layouts[0][1], 0) == MOD_LAYOUT
+    titles: list[str] = []
+    tables: list[int] = []
+    for _, layout in blocks(menu.added["SLyt", MOD_LAYOUT]):
+        for _, instance in blocks(menu.added["SSin", u32(layout, 0)]):
+            assert ("View", u32(instance, 4)) in menu.stock
+            assert ("VLyt", u32(instance, 8)) in menu.stock
+            for target, body in blocks(menu.added["VCvs", u32(instance, 0)]):
+                if target == 0x0DAD01A6:
+                    titles.append(source_text(menu, u32(body, 12)))
+                elif target == 0x3F1:
+                    tables.append(u32(body, 4))
+                else:
+                    pytest.fail(f"Unexpected list binding: {target:x}")
+    assert titles == ["Mods"] and tables == [MOD_ITEMS]
+    assert parse_events(menu.added["SEVT", MOD_LAYOUT]) == {
+        "button.menu.up": [("navigator.PopTopScreen", [])],
+        "button.menu.pressandhold": [("navigator.PopToMainScreen", [])],
+    }
+    # Only two stock resources are extended; Notes and Settings retain theirs.
+    assert menu.added.keys() & menu.stock.keys() == {
+        ("ITEM", EXTRAS_ITEMS),
+        ("CEVT", EXTRAS_SCREEN),
+    }
+
+
+def test_emitter_rejects_invalid_extension(osos: bytes) -> None:
+    menu = menu_resources(osos, included_mods(homebrew_eapps=True))
+    bad = bytearray(menu.added["ITEM", EXTRAS_ITEMS])
+    bad[50] ^= 1
+    menu.added["ITEM", EXTRAS_ITEMS] = bytes(bad)
+    with pytest.raises(ValueError, match="preserve the complete stock prefix"):
+        emit_menu_header(menu, osos)
+
+
+def test_emitter_uses_directory_even_when_source_bytes_are_duplicated(
+    osos: bytes,
+) -> None:
+    menu = menu_resources(osos, included_mods(homebrew_eapps=True))
+    duplicated = osos + menu.stock["ITEM", EXTRAS_ITEMS]
+    assert emit_menu_header(menu, duplicated) == emit_menu_header(menu, osos)
+
+
+def test_emitter_rejects_extension_larger_than_native_workspace(osos: bytes) -> None:
+    menu = menu_resources(osos, included_mods(homebrew_eapps=True))
+    key = "ITEM", EXTRAS_ITEMS
+    extension = menu.added[key]
+    menu.added[key] = extension + bytes(RESOURCE_SCRATCH_BYTES + 1 - len(extension))
+    with pytest.raises(ValueError, match="exceeds reserved initialization workspace"):
+        emit_menu_header(menu, osos)
+
+
+def test_emitter_rejects_source_that_disagrees_with_directory(osos: bytes) -> None:
+    menu = menu_resources(osos, included_mods(homebrew_eapps=True))
+    key = "ITEM", EXTRAS_ITEMS
+    # Preserve the extension's prefix contract but corrupt the assumed source.
+    for mapping in (menu.stock, menu.added):
+        corrupted = bytearray(mapping[key])
+        corrupted[50] ^= 1
+        mapping[key] = bytes(corrupted)
+    with pytest.raises(ValueError, match="differs from its native directory entry"):
+        emit_menu_header(menu, osos)
+
+
+@pytest.mark.parametrize("data", [b"", struct.pack("<I", 1), b"\0" * 5])
+def test_block_reader_rejects_incomplete_resources(data: bytes) -> None:
+    with pytest.raises(ValueError):
+        blocks(data)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("dark_mode", [False, True])
+def test_preview_artwork_mod_is_independent_and_listed_when_included(
+    osos: bytes, enabled: bool, dark_mode: bool
+) -> None:
+    mods = included_mods(
+        homebrew_eapps=True,
+        dark_mode=dark_mode,
+        now_playing_artwork=enabled,
+    )
+    menu = menu_resources(osos, mods)
+    names = [
+        source_text(menu, u32(row, 0x68))
+        for _, row in blocks(menu.added["ITEM", MOD_ITEMS])
+    ]
+    assert ("Now Playing Preview Artwork" in names) is enabled
+    assert names == [
+        record["name"]
+        for record in mod_records(
+            homebrew_eapps=True,
+            dark_mode=dark_mode,
+            now_playing_artwork=enabled,
+        )
+    ]
+    assert ("Light / Dark Appearance" in names) is dark_mode

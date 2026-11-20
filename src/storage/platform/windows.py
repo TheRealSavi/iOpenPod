@@ -8,7 +8,7 @@ import re
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from storage.errors import MountInspectionError, UnsupportedStorageOperationError
 from storage.models import (
@@ -31,7 +31,18 @@ from storage.models import (
 from storage.platform.base import ObservationDiscoveryResult
 from storage.platform.common import paths_share_single_device
 from storage.platform.windows_eject import WindowsDeviceEjector
+from storage.platform.windows_scsi import WindowsScsiChannel
+from storage.platform.windows_usb_control import (
+    WindowsUsbControl,
+    WindowsUsbControlChannel,
+)
 from storage.scsi_vpd import collect_scsi_vpd
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from storage.scsi import ScsiIdentity
+    from storage.usb_control import UsbControlEndpoint
 
 _DRIVE_REMOVABLE = 2
 _FILE_DEVICE_DISK = 0x00000007
@@ -389,6 +400,25 @@ class WindowsPlatformAdapter:
 
     def physical_device_id_for_path(self, path: Path) -> PhysicalDeviceId | None:
         return self._physical_device_lookup.for_path(path)
+
+    def open_scsi_channel(
+        self, observation: VolumeObservation, expected_identity: ScsiIdentity
+    ) -> WindowsScsiChannel:
+        return WindowsScsiChannel.open(self._kernel32, observation, expected_identity)
+
+    def discover_usb_control(
+        self,
+        interface_class: UUID,
+        vendor_id: int,
+        product_id: int,
+    ) -> tuple[UsbControlEndpoint, ...]:
+        return WindowsUsbControl().discover(interface_class, vendor_id, product_id)
+
+    def open_usb_control_channel(
+        self,
+        endpoint: UsbControlEndpoint,
+    ) -> WindowsUsbControlChannel:
+        return WindowsUsbControl().open(endpoint)
 
     def flush(self, observation: VolumeObservation) -> FlushResult:
         if not observation.volume.capabilities.writable:

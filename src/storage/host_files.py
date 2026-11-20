@@ -159,6 +159,42 @@ def application_config_file(
     )
 
 
+def application_data_file(
+    application_name: str,
+    filename: str,
+    *,
+    platform_name: str,
+    environment: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> Path:
+    """Return a persistent, non-roaming Host data path, outside disposable caches."""
+    _require_path_component(application_name, "application name")
+    _require_path_component(filename, "filename")
+    resolved_environment = os.environ if environment is None else environment
+    resolved_home = Path.home() if home is None else home
+    if platform_name == "windows":
+        base = _absolute_environment_path(resolved_environment, "LOCALAPPDATA")
+        if base is None:
+            base = resolved_home / "AppData" / "Local"
+        return base / application_name / filename
+    if platform_name == "macos":
+        return (
+            resolved_home
+            / "Library"
+            / "Application Support"
+            / application_name
+            / filename
+        )
+    if platform_name == "linux":
+        base = _absolute_environment_path(resolved_environment, "XDG_DATA_HOME")
+        if base is None:
+            base = resolved_home / ".local" / "share"
+        return base / application_name.casefold() / filename
+    raise UnsupportedStorageOperationError(
+        f"Storage does not support Host data files on {platform_name!r}"
+    )
+
+
 def application_cache_file(
     application_name: str,
     filename: str,

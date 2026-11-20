@@ -1025,7 +1025,7 @@ IDs with Classic Extras or the complete SQLite set; unchanged bytes and Unknown
 Data remain retained. Saved Genius Playlists use the sidecar package without
 automatic import or consumption. See ADR-0176 and [Genius data](ipod-genius.md).
 ADR-0177 adds separate immutable Genius Browse state beside that Snapshot.
-Canonical Genius Playlists, saved sidecars, and SQLite Mixes can be displayed
+Canonical Genius Playlists, saved sidecars, and Classic binary or SQLite Mixes can be displayed
 without becoming a second editable Library. The application captures optional
 sources through Storage; the GUI receives collection and Track identities only.
 
@@ -1041,16 +1041,32 @@ ADR-0184 adds Application Layer genre Mix proposals and explicit manual/automati
 ownership. Manual additions use Library Workspace intent; Sync applies Count and
 Expiry to automatic Mixes. Selective iPodDB Mix edits preserve unmentioned native
 records. Ownership and age records publish with the Library through Storage.
-Creation requires confirmed native Mix support and a supported SQLite target;
+Creation requires confirmed native Mix support and a supported Classic or SQLite target;
 saved Genius Playlist creation remains separate.
+ADR-0289 adds Classic MHYP Mix authoring with explicit target permission, mirrored
+binary records, candidate pruning, initialized result thresholds, and twelve total
+slots. Classic uses root Extras.itdb and never a Nano SQLite Library directory.
+ADR-0291 adds independent Mix artwork qualification and explicit `GeniusMixArtwork`
+Library Draft intent. Application composition injects a byte-only renderer that
+generates covers on demand from the Add Mixes painter for owned Mixes; no generated
+PNG assets or pixel cache are retained. iPodDB reconciles reverse image identities and
+native image formats after final binary/SQLite Mix reconciliation; Storage
+publishes covers with the native data and ownership. Track artwork stays separate.
 ADR-0187 adds fixed Focus, Love, Energy, and Relax Mix proposals. Library preparation
 reuses the source-bound Genius Audio Profiles already computed for candidate ranking;
 unavailable profiles supply no mood seeds. The GUI marks mood availability as
 pending analysis, and final preparation enforces the ten-seed minimum. Love also
 requires an explicit title or album cue. Native playback may leave the seed set.
+ADR-0290 replaces those mood rules with rhythm, dynamics and texture evidence and
+requires sparse-vocal evidence for Focus. Optional inference reuses one installed
+instrument-analysis worker per preparation on bounded, distributed calm-candidate
+samples. Version-2 source-bound Host profiles retain only compact measurements and
+provider identity. Unknown vocals do not qualify for Focus. The ranker balances
+feature families and excludes gain-sensitive MFCC0; native graph reachability and
+ownership remain unchanged.
 ADR-0185 adds explicit collection removal intent to the Library Workspace. A
 canonical Genius Playlist is omitted from the reviewed Library draft; a matching
-saved sidecar is recoverably removed through Storage. Selected SQLite Mixes use
+saved sidecar is recoverably removed through Storage. Selected native Mixes use
 selective native removal, with matching ownership removed in the same transaction.
 ADR-0186 reconciles Track deletion across these representations. iPodDB performs
 bounded canonical membership and seed repair; saved sidecars are transformed from
@@ -1064,6 +1080,12 @@ The Application Layer analyzes prepared Host media or retained device media thro
 Storage's pinned read-only inputs. A bounded, disposable Host cache retains compact
 successful profiles with analysis version and source facts. Audio vectors stay
 outside iPodDB and outside Synesthesia's runtime-only Track Analysis contract.
+ADR-0292 lets retained Tracks with uncached profiles use a verified Host counterpart
+from committed Sync Details or the current reviewed comparison. Both file
+observations remain publication dependencies. Original Host profiles use separate
+cache identities; correlations grant no media-write authority. Missing/stale Host
+sources fall back to device audio, and optional decode failures rejoin bounded
+device admission. Prepared incoming media keeps priority.
 Cache lookup precedes worker admission, so only uncached Tracks enter audio-analysis
 progress. After commit, matching published size and SHA-256 associate prepared Host
 profiles with final iPod identities using Storage's verified output fingerprints.
@@ -2101,6 +2123,129 @@ iOpenPod/
 
 ### `iOpenPod/app`
 
+Experimental Firmware Mod planning and pure composition live in `app/firmware`.
+The mod panel and device-load registry capture are disconnected from the active
+workflow. Device Summary shows observed firmware identity and conditionally offers
+bootloader setup or Universal Classic Firmware installation. Current versions hide
+their actions; existing releases offer updates labelled with the target version.
+Both use bundled assets and perform no firmware network requests. The Apple
+catalog controller, stock offers and package downloader have been removed.
+`app/firmware/paths` owns the persistent Host location for prepared images and
+installation records. Device mutations stay in Storage and remain independent
+of Library Sync. The fixed-size mod composer and generated C registry are
+separate from the universal release installer. See
+[ADR-0283](adr/0283-bundle-universal-classic-firmware-and-remove-stock-offers.md)
+and [Firmware mods](firmware-mods.md).
+
+`app/firmware/classic_update` is an offline qualification experiment for the
+original Classic family-33 2.0.1 IPSW. It checks exact package and payload digests,
+manifest identity, observed update parameters and the padded image's partition
+bound, then describes the vendor transfer bytes. It performs no device I/O and
+provides no execution or retry authority. Its wire encoding is distinct from a
+qualified installation workflow. `app/firmware/classic_upload` validates retained
+recovery material and journals intent and acknowledgement around each command.
+It never retries, resumes an existing journal, or reboots on completion/failure.
+A temporary lab RAM helper has verified the complete proposed write preimage and
+all 93,515,776 bytes after a successful stock reinstall. Physical interruption
+recovery remains outstanding.
+Storage owns a separate SCSI Session for bounded, serialized
+native commands. Its Windows adapter holds the retained Volume GUID handle under
+an exclusive volume lock, verifies disk and SCSI identity, respects adapter
+alignment and transfer limits, and invalidates access on ambiguous completion.
+It never retries or ejects on cleanup. Existing Filesystem Sessions must close
+before exclusive access; the Application Layer owns any installation protocol
+and persistent progress journal. Standard reads through this transport have been
+qualified on the family-33 Classic. Its first vendor upload also completed, booted
+stock 2.0.1 and passed independent full-span firmware and library comparisons.
+That success does not qualify other models or interrupted-upload recovery. See
+[ADR-0276](adr/0276-own-exclusive-scsi-sessions-in-storage.md) and
+[Classic update research](research/classic-stock-update-source-path-2026-11-17.md).
+
+BootROM DFU has no Mounted Volume. Storage therefore also owns a USB Control
+Session over retained native interface handles, with bounded immutable setup
+requests, serialized transfers, cancellation-safe buffer lifetime and connection
+invalidation. The Windows adapter retains the complete Apple driver interface
+path, including any mux suffix. A Host writer lease coordinates Storage clients;
+Apple's driver permits a second native open despite share mode zero, so this is
+not the exclusive-volume guarantee of the SCSI Session. Exact-device checks,
+boot-image selection and persistent handoff records now belong to
+`app/firmware/bootloader_install`. A separate Device Summary action guides the
+qualified Classic through DFU, installation, readback and normal-mode return.
+`bootloader_controller` owns the background worker and device reservation;
+the GUI cannot close a live writer. The filesystem session is retired before
+DFU and normal-mode return requires fresh discovery. The application bundles a
+pinned loader delta, a parameterized RAM writer and a non-secret identity record;
+no runtime dependency on lab tools or a user's retained image exists.
+Unfinished handoffs retain the selected updater family and expose read-only
+result checks without a Mounted Volume. Exact Classic source targets 24/1.1.2,
+33/2.0.1, 35/2.0.4 and 38/2.0.5 migrate to one common bootloader body through
+`shared_bootloader`. Its source deltas and RAM writer are pinned together.
+Setup selection uses model/serial independently of OS reports; overlapping 35/38
+models remain unresolved until SysCfg inspection. Device Summary identifies historical
+loader receipts and hardware families as last verified in DFU through tooltips. The Bootloader
+Report mod measures plaintext NOR before Apple's OS entry and publishes the
+retained marker, complete executable hash and SysCfg identity through native
+SysInfo VPD XML. The Application Layer's `bootloader_report` parser accepts only
+current transport bytes, binds identity and qualifies both marker and hash.
+Discovery replaces this report on refresh; saved SysInfo files cannot provide it.
+The UI tooltip identifies it as Reported by firmware, not cryptographic attestation. A current
+negative report overrides old receipts; only absent reports allow the legacy
+receipt path. See ADR-0284 and ADR-0287.
+
+The shared Classic layout now gives OSOS a 16 MiB disk slot and linked mods a
+4 MiB Mod Memory Region. The Application Layer owns these shared bounds and
+pure image composition; Storage retains exclusive device-write ownership.
+The builder relocates the intact AUPD/hash tail within the existing partition
+and reserves only actual linked RAM use from Apple's heap. Bootloader 2.1.0 is
+the expanded release's installation prerequisite; old installation journals
+retain their release-specific lengths. See ADR-0285.
+The offline builder's optional appearance mod adds native Settings resources,
+qualified rendering hooks and embedded reversible bitmap changes. The firmware
+owns its independent appearance preference; the desktop application's device
+mutation boundary remains Storage. Default Light and failed-save behavior are
+defined in [ADR-0286](adr/0286-switch-classic-appearance-through-native-settings.md).
+Hardware identity is checked separately from retail model names and the common
+OS's compatibility identity. Previous custom loaders are upgrade sources; only
+the current shared body produces an already-installed result. The shared loader
+has now booted the existing 2.0.1 and common 2.0.5 OS on one physical family-33
+MB565. The writer verified NOR and unchanged bytes outside its boot span; normal
+USB installation of the common firmware preserved library databases and visible
+disk layout. The user confirmed About, menus/clickwheel and headphone playback.
+Other families remain physically untested and power-loss recovery unqualified;
+all four are enabled by project-owner direction under ADR-0282. See
+[ADR-0279](adr/0279-guide-classic-bootloader-unlock-through-device-summary.md) and
+[ADR-0281](adr/0281-share-classic-os-and-bootloader-artifacts.md).
+See [ADR-0277](adr/0277-own-retained-usb-control-sessions-in-storage.md).
+
+The Classic loader extension accepts an explicit unsigned OS container with
+target, length, read-count and unkeyed CRC checks. The initial loader installation
+still requires BootROM authentication; subsequent custom OS builds require no
+device signing. FirmwareFS's padded virtual file size is distinct from the body
+length used for allocation and reads. Schema 2 uses a common `CLSC` target and
+2.0.5 OS bound; schema 1 remains readable for migration. After successful shared
+OS validation, the loader adapts two words in the copied SysInfo handoff without
+changing native driver identity or SysCfg. `classic_shared` owns pure common OS
+framing and complete 2.0.5 firmware composition. `scripts/firmware/build_classic`
+ports the independent About row into that base offline. `shared_release` unpacks
+the complete bundled image, including OS and resources, with bounded decompression.
+It checks the complete release hash and retains the result in Host application
+data. Preparation works offline with an empty cache and has no download fallback.
+`shared_install` owns the normal-USB plan and durable command-intent receipts
+through Storage. `shared_controller` reserves the selected
+device, retires its Filesystem Session and runs the worker; Device Summary opens
+the separate guided Install universal 2.0.5 dialog. A qualified current Bootloader
+Report enables installation without a same-Host receipt. Legacy firmware with no
+report requires that receipt. The retained SCSI Session repeats this decision
+against fresh device bytes before any write. Cancellation ends at the first update command;
+uncertain commands are never retried. An acknowledged upload and finalizer
+complete the workflow after the restart request, including a missing restart
+reply. Legacy fully uploaded receipts are completed locally when reopened.
+The completion dialog offers Close while the iPod restarts. The
+common OS's observed 38/2.0.5 selects Device Registry's 2.0.5 contracts without
+changing its physical generation. See ADR-0282,
+[ADR-0278](adr/0278-allow-host-built-unsigned-custom-firmware.md) and the
+[native boot-path evidence](research/classic33-unsigned-boot-path-2026-11-17.md).
+
 `app/services/media_tools` selects native installation channels from Storage's Host
 observations. `MediaToolsController` performs background executable checks and
 asynchronous package-manager invocations; `GUI/dialogs/media_tools_setup` presents
@@ -2680,17 +2825,17 @@ replanned safely. A read-only Volume remains loadable and reports that repair wa
 skipped. This bounded cache repair does not substitute for a Storage Transaction and
 does not authorize Sync, deletion, or database mutation.
 
-Firmware releases are cached in both SysInfo files with recorded hardware
-provenance in SysInfo Authority. Cache reuse requires the current integer authority
-version, matching hashes, and hardware provenance. Version 2 invalidates older
-caches once for every iPod model. Selection saves the observed firmware through
-metadata reconciliation; discovery never writes. Metadata-only migration cannot
-upgrade invalidated provenance. Profiles with cached firmware or firmware-dependent
-capabilities require validated release evidence before skipping the probe. Successful
-repair restores cache reuse across refreshes and connections; unchanged automatic
-polling reuses the current connection's evidence. Persisted provenance is not a
-freshness guarantee, and transport revisions never substitute for missing release
-evidence. See ADR-0220, which extends ADR-0175's cache policy.
+Firmware releases are cached in both SysInfo files with provenance in SysInfo
+Authority. The current authority version and matching hashes still protect
+metadata reconciliation, but no longer suppress live capture on a new connection,
+app discovery or explicit refresh. Only unchanged automatic polling reuses its
+connection's observation. Failed capture leaves cached values visibly historical;
+a live response supersedes cached firmware identity even when it omits a field.
+The OS installer requires current reported firmware and OS updater family,
+then compares both with another live read before upload. A changed OS identity
+retires previously loaded contracts for remembered-device reload. Transport
+revisions never substitute for firmware releases. See ADR-0284, which supersedes
+ADR-0220's cross-connection probe reuse.
 
 `DeviceController` is the thin Qt adapter around that non-visual service. It runs
 discovery, device reads, and parsing through an owned single-worker `QThreadPool`,
@@ -2915,8 +3060,9 @@ The Host-only Library setting **Navigation style** switches immediately between
 `CompactTopBar` is the default; saved navigation preferences remain authoritative.
 Both consume the same routes, Device Capabilities, action availability, and Library
 Workspace. The compact strip centers Audio, Video, Playlists, Photos, and Games;
-its left side opens Device actions and starts Sync with Host, while Maintenance and
-Settings sit on the right. Unsupported media entries follow the same visibility
+its left side opens Device actions and starts Sync with Host, followed by Review
+Changes when Draft all changes is enabled. Maintenance and Settings sit on the
+right. Unsupported media entries follow the same visibility
 policy as the sidebar. `HoverDropdown` and `HoverDropdownGroup` own the same popup
 surface, positioning, hover timing, exclusivity, dismissal, focus return, and
 keyboard policy for Device, Audio, Video, Playlists, and Maintenance. Content
@@ -3205,8 +3351,8 @@ immediately so the scrim always matches the text. All image loading remains with
 the shared Artwork provider.
 
 `DeviceSummaryPage` projects the Active iPod's profile, committed Library Snapshot,
-captured firmware and product serial, and Volume capacity without device I/O.
-Firmware and serial fields prefer current hardware evidence and withhold equally
+captured firmware, updater family ID and product serial, and Volume capacity
+without device I/O. These fields prefer current hardware evidence and withhold equally
 authoritative conflicts or missing observations. The sidebar device information
 opens it while its existing buttons retain their actions. A pencil beside the name
 opens an inline editor using the revision-bound Library Workspace rename action
@@ -3222,8 +3368,15 @@ leave usage in Other. Album artwork similarly counts the entire Artwork folder,
 including its database and unused thumbnail bytes. Games uses pink and Album
 artwork uses cyan through shared theme tokens. No file-content reads or
 page-triggered scans occur. The page
-uses the shared theme and device artwork; Restore iPod remains disabled with no
-operation attached. See ADR-0230.
+uses the shared theme and device artwork. The summary includes Mod Platform Version,
+hardware family ID and bootloader version. The Firmware section offers bootloader
+setup only when the loader is not current, then firmware installation only when
+the loader is current and the mod release differs from the bundled version.
+Updates name their target versions. When both are current, the section shows
+“Bootloader and firmware are up to date.” Both workflows use included assets;
+normal-USB installation completes after upload. No Apple catalog check or stock
+firmware download is offered. See
+ADR-0230, ADR-0282 and ADR-0283.
 
 Avoid rebuilding the same visual patterns independently on every page.
 

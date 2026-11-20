@@ -9,6 +9,7 @@ from storage.host_files import (
     AtomicHostFile,
     application_cache_file,
     application_config_file,
+    application_data_file,
 )
 from storage.testing import VirtualStoragePlatform
 
@@ -17,6 +18,53 @@ class _LinuxHostPlatform(VirtualStoragePlatform):
     @property
     def name(self) -> str:
         return "linux"
+
+
+@pytest.mark.parametrize(
+    ("platform", "variable", "suffix"),
+    [
+        ("windows", "LOCALAPPDATA", "iOpenPod/firmware"),
+        ("linux", "XDG_DATA_HOME", "iopenpod/firmware"),
+    ],
+)
+def test_persistent_data_uses_native_location(
+    tmp_path: Path,
+    platform: str,
+    variable: str,
+    suffix: str,
+) -> None:
+    assert (
+        application_data_file(
+            "iOpenPod",
+            "firmware",
+            platform_name=platform,
+            environment={variable: str(tmp_path)},
+        )
+        == tmp_path / suffix
+    )
+
+
+@pytest.mark.parametrize(
+    ("platform", "suffix"),
+    [
+        ("windows", "AppData/Local/iOpenPod/firmware"),
+        ("linux", ".local/share/iopenpod/firmware"),
+        ("macos", "Library/Application Support/iOpenPod/firmware"),
+    ],
+)
+def test_persistent_data_has_non_cache_fallbacks(
+    tmp_path: Path, platform: str, suffix: str
+) -> None:
+    assert (
+        application_data_file(
+            "iOpenPod",
+            "firmware",
+            platform_name=platform,
+            environment={},
+            home=tmp_path,
+        )
+        == tmp_path / suffix
+    )
 
 
 def test_application_settings_file_uses_each_host_platform_convention(

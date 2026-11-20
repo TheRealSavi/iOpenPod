@@ -27,7 +27,11 @@ from iOpenPod.app.genius_analysis import (
     GeniusAudioDecodeError,
 )
 from iOpenPod.app.genius_analysis_cache import GeniusProfileCache
-from iOpenPod.app.genius_audio import GeniusAudioProfile
+from iOpenPod.app.genius_audio import (
+    GeniusAudioCharacter,
+    GeniusAudioProfile,
+    GeniusVocalEvidence,
+)
 from iOpenPod.app.library_write import PreparationCancelledError
 from iOpenPod.app.media.importing import LibraryMediaSource
 from iPodDB.library import (
@@ -68,6 +72,122 @@ def _profile(
     assert sample_rate_hz == 22_050
     checkpoint()
     return GeniusAudioProfile(2.0, None, (float(pcm[0]),) * 29, None)
+
+
+def test_optional_vocal_analysis_enriches_cached_calm_profiles_and_releases_worker(
+    tmp_path: Path,
+) -> None:
+    _root, _platform, session, snapshot = _device(tmp_path)
+    decoder = _Decoder()
+    cache = AtomicHostFile(tmp_path / "profiles.json")
+
+    def calm(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        checkpoint()
+        return GeniusAudioProfile(
+            20,
+            None,
+            (85, 1100, 48400, *(0.0 for _ in range(26))),
+            None,
+            GeniusAudioCharacter(20, 0.2, 4, 0.003, 1),
+        )
+
+    class Vocals:
+        identity = "test-vocal-provider"
+        calls = 0
+        closed = 0
+
+        def analyze(
+            self, pcm: bytes, *, checkpoint: Callable[[], None]
+        ) -> GeniusVocalEvidence:
+            checkpoint()
+            self.calls += 1
+            return GeniusVocalEvidence(self.identity, 0.05, 20)
+
+        def close(self) -> None:
+            self.closed += 1
+
+    vocals = Vocals()
+    service = GeniusAnalysisService(
+        cache, decoder, profiler=calm, vocal_factory=lambda: vocals
+    )
+    first = service.analyze(snapshot, session, checkpoint=_checkpoint)
+    assert first.profiles[1].vocals is None
+    assert vocals.calls == vocals.closed == 0
+    second = service.analyze(
+        snapshot, session, checkpoint=_checkpoint, analyze_vocals=True
+    )
+    assert second.profiles[1].vocals == GeniusVocalEvidence(vocals.identity, 0.05, 20)
+    assert vocals.calls == vocals.closed == 1
+    assert len(decoder.sources) == 2
+    repeated = GeniusAnalysisService(
+        cache, decoder, profiler=calm, vocal_factory=lambda: vocals
+    )
+    assert (
+        repeated.analyze(
+            snapshot, session, checkpoint=_checkpoint, analyze_vocals=True
+        ).profiles
+        == second.profiles
+    )
+    assert vocals.calls == 1 and vocals.closed == 2
+    assert len(decoder.sources) == 2
+    vocals.identity = "updated-provider"
+    repeated.analyze(snapshot, session, checkpoint=_checkpoint, analyze_vocals=True)
+    assert vocals.calls == 2 and vocals.closed == 3
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_vocal_failure_keeps_unknown_evidence_and_cancellation_propagates(
+    tmp_path: Path, cancelled: bool
+) -> None:
+    from iOpenPod.app.genius_audio import GeniusVocalAnalysisError
+
+    _root, _platform, session, snapshot = _device(tmp_path)
+    closed: list[bool] = []
+
+    class VocalCancelledError(Exception):
+        pass
+
+    class Vocals:
+        identity = "unavailable"
+
+        def analyze(
+            self, pcm: bytes, *, checkpoint: Callable[[], None]
+        ) -> GeniusVocalEvidence:
+            if cancelled:
+                raise VocalCancelledError
+            raise GeniusVocalAnalysisError("No reliable evidence")
+
+        def close(self) -> None:
+            closed.append(True)
+
+    def calm(
+        pcm: bytes, *, sample_rate_hz: int, checkpoint: Callable[[], None]
+    ) -> GeniusAudioProfile:
+        return GeniusAudioProfile(
+            20,
+            None,
+            (85, 1100, 48400, *(0.0 for _ in range(26))),
+            None,
+            GeniusAudioCharacter(20, 0.2, 4, 0.003, 1),
+        )
+
+    service = GeniusAnalysisService(
+        decoder=_Decoder(), profiler=calm, vocal_factory=Vocals
+    )
+    if cancelled:
+        with pytest.raises(VocalCancelledError):
+            service.analyze(
+                snapshot, session, checkpoint=_checkpoint, analyze_vocals=True
+            )
+    else:
+        result = service.analyze(
+            snapshot, session, checkpoint=_checkpoint, analyze_vocals=True
+        )
+        assert result.profiles[1].character is not None
+        assert result.profiles[1].vocals is None
+    assert closed == [True]
 
 
 class _Decoder:

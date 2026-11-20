@@ -396,6 +396,7 @@ class GeniusCapabilities:
     playlists: FeatureSupport = FeatureSupport.UNSUPPORTED
     mixes: FeatureSupport = FeatureSupport.UNSUPPORTED
     mixes_minimum_firmware: tuple[int, int, int] | None = None
+    mix_artwork: FeatureSupport = field(default=FeatureSupport.UNKNOWN, kw_only=True)
 
     def __post_init__(self) -> None:
         if self.mixes_minimum_firmware is not None and (

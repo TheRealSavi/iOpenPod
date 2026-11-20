@@ -244,7 +244,11 @@ def test_mix_explains_members_and_only_requested_track_is_played(
         label(page, "pageDescription").text()
         == "Mix tracks are possible starting songs; the iPod generates the mix when you play it."
     )
-    assert "Genius Mix · 3 tracks" in label(page, "pageMeta").text()
+    section = tree(page).topLevelItem(1)
+    assert section is not None
+    item = section.child(0)
+    assert item is not None and item.data(0, DETAIL_ROLE) == "3 starting tracks"
+    assert label(page, "pageMeta").text() == "Genius Mix · 3 starting tracks"
     assert button(page, "editPlaylist").isHidden()
     assert button(page, "evaluateSmartPlaylist").isHidden()
     assert button(page, "removePlaylist").isVisible()

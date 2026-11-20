@@ -67,6 +67,14 @@ from storage.models import (
 )
 from storage.paths import DevicePath, HostPath
 from storage.portal import Storage
+from storage.scsi import (
+    ScsiCommand,
+    ScsiCommandError,
+    ScsiIdentity,
+    ScsiResponse,
+    ScsiSession,
+    ScsiSessionError,
+)
 from storage.session import FilesystemSession
 from storage.transactions import (
     FileContent,
@@ -88,6 +96,13 @@ from storage.transactions import (
     TransactionState,
     TransactionValidation,
     TransactionWrite,
+)
+from storage.usb_control import (
+    UsbControlEndpoint,
+    UsbControlError,
+    UsbControlRequest,
+    UsbControlResponse,
+    UsbControlSession,
 )
 
 __all__ = [
@@ -138,6 +153,12 @@ __all__ = [
     "ReadOnlyFilesystemError",
     "RecoverableWriteError",
     "RecoveryWriteResult",
+    "ScsiCommand",
+    "ScsiCommandError",
+    "ScsiIdentity",
+    "ScsiResponse",
+    "ScsiSession",
+    "ScsiSessionError",
     "ScsiVpdPagePlan",
     "SessionClosedError",
     "SessionInvalidatedError",
@@ -166,6 +187,11 @@ __all__ = [
     "TrashEntry",
     "UnsafeFilesystemPathError",
     "UnsupportedStorageOperationError",
+    "UsbControlEndpoint",
+    "UsbControlError",
+    "UsbControlRequest",
+    "UsbControlResponse",
+    "UsbControlSession",
     "Volume",
     "VolumeDisconnectedError",
     "VolumeId",

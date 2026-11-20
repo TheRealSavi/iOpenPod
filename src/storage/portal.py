@@ -6,16 +6,20 @@ import os
 import threading
 import uuid
 import weakref
+from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from storage._writer_lock import VolumeWriterLease
 from storage.errors import (
+    DeviceBusyError,
     EjectError,
     HostPathOnPhysicalDeviceError,
     MountInspectionError,
     NotVolumeRootError,
     ReadOnlyFilesystemError,
     StorageError,
+    UnsupportedStorageOperationError,
     VolumeDisconnectedError,
     VolumeIdentityChangedError,
 )
@@ -36,7 +40,13 @@ from storage.models import (
     VolumeObservation,
 )
 from storage.platform.native import native_platform_adapter
+from storage.scsi import ScsiChannelProvider, ScsiIdentity, ScsiSession
 from storage.session import FilesystemSession
+from storage.usb_control import (
+    UsbControlEndpoint,
+    UsbControlProvider,
+    UsbControlSession,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -61,11 +71,77 @@ class Storage:
         self._state_lock = threading.Lock()
         self._generations: dict[str, ConnectionGeneration] = {}
         self._observations: dict[str, VolumeObservation] = {}
-        self._sessions: list[weakref.ReferenceType[FilesystemSession]] = []
+        self._sessions: list[
+            weakref.ReferenceType[FilesystemSession | ScsiSession]
+        ] = []
+        self._scsi_reservations: dict[str, object] = {}
+        self._usb_reservation: object | None = None
+        self._usb_sessions: list[weakref.ReferenceType[UsbControlSession]] = []
 
     @property
     def platform_name(self) -> str:
         return self._platform.name
+
+    def discover_usb_control(
+        self,
+        interface_class: uuid.UUID,
+        vendor_id: int,
+        product_id: int,
+    ) -> tuple[UsbControlEndpoint, ...]:
+        """Discover control interfaces separately from mounted Volumes."""
+        if not isinstance(self._platform, UsbControlProvider):
+            raise UnsupportedStorageOperationError("USB control access is unsupported")
+        return self._platform.discover_usb_control(
+            interface_class, vendor_id, product_id
+        )
+
+    def open_usb_control_session(
+        self, endpoint: UsbControlEndpoint
+    ) -> UsbControlSession:
+        """Claim one endpoint; caller must qualify protocol identity on this session.
+
+        This is independent of Mounted Volumes. Close prior filesystem/SCSI
+        access before switching device mode. Native handles never reconnect.
+        """
+        if not isinstance(self._platform, UsbControlProvider):
+            raise UnsupportedStorageOperationError("USB control access is unsupported")
+        with self._state_lock:
+            if (
+                self._usb_reservation is not None
+                or self._scsi_reservations
+                or any(
+                    volume_session.is_active
+                    for ref in self._sessions
+                    if (volume_session := ref()) is not None
+                )
+                or any(
+                    usb_session.is_active
+                    for ref in self._usb_sessions
+                    if (usb_session := ref()) is not None
+                )
+            ):
+                raise DeviceBusyError(
+                    "Close existing Storage sessions before USB control access"
+                )
+            self._usb_reservation = object()
+        lease = VolumeWriterLease(
+            "usb-control:" + endpoint.interface_path.casefold(),
+            self._writer_lock_directory,
+        )
+        try:
+            lease.__enter__()
+            try:
+                channel = self._platform.open_usb_control_channel(endpoint)
+                session = UsbControlSession(endpoint, channel, lease)
+            except BaseException:
+                lease.__exit__(None, None, None)
+                raise
+            with self._state_lock:
+                self._usb_sessions.append(weakref.ref(session))
+            return session
+        finally:
+            with self._state_lock:
+                self._usb_reservation = None
 
     def host_config_file(
         self,
@@ -148,7 +224,9 @@ class Storage:
             )
             session_references = tuple(self._sessions)
 
-        remaining_references: list[weakref.ReferenceType[FilesystemSession]] = []
+        remaining_references: list[
+            weakref.ReferenceType[FilesystemSession | ScsiSession]
+        ] = []
         for reference in session_references:
             session = reference()
             if session is None:
@@ -185,6 +263,7 @@ class Storage:
         """Open one connection-bound Filesystem Session after reinspection."""
 
         with self._state_lock:
+            self._require_no_scsi_reservation(mounted_volume)
             retained_generation = self._generations.get(
                 mounted_volume.observation.connection_key
             )
@@ -226,6 +305,11 @@ class Storage:
                 "The Volume disappeared before its Filesystem Session opened"
             ) from error
         with self._state_lock:
+            try:
+                self._require_no_scsi_reservation(mounted_volume)
+            except DeviceBusyError:
+                session.close()
+                raise
             retained_generation = self._generations.get(
                 mounted_volume.observation.connection_key
             )
@@ -237,6 +321,110 @@ class Storage:
             self._sessions.append(weakref.ref(session))
         return session
 
+    def open_scsi_session(
+        self,
+        mounted_volume: MountedVolume,
+        *,
+        expected_identity: ScsiIdentity,
+    ) -> ScsiSession:
+        """Open exclusive native access after retiring ordinary filesystem access.
+
+        The caller closes existing Filesystem Sessions first. Storage never
+        forcibly dismounts a busy volume, retries a command, or ejects on close.
+        """
+
+        provider = self._platform
+        if not isinstance(provider, ScsiChannelProvider):
+            raise UnsupportedStorageOperationError(
+                "This platform does not support exclusive SCSI Sessions"
+            )
+        key = mounted_volume.physical_device.id.value
+        token = object()
+        with self._state_lock:
+            self._require_no_scsi_reservation(mounted_volume)
+            if self._generations.get(mounted_volume.observation.connection_key) != (
+                mounted_volume.connection_generation
+            ):
+                raise VolumeIdentityChangedError("The Connection Generation expired")
+            for reference in self._sessions:
+                existing = reference()
+                if (
+                    existing is not None
+                    and existing.is_active
+                    and existing.mounted_volume.physical_device.id.value == key
+                ):
+                    raise DeviceBusyError(
+                        "Close existing device sessions before exclusive SCSI access"
+                    )
+            self._scsi_reservations[key] = token
+
+        def release_reservation() -> None:
+            with self._state_lock:
+                if self._scsi_reservations.get(key) is token:
+                    del self._scsi_reservations[key]
+
+        def check_connection() -> None:
+            with self._state_lock:
+                if self._generations.get(mounted_volume.observation.connection_key) != (
+                    mounted_volume.connection_generation
+                ):
+                    raise VolumeIdentityChangedError(
+                        "The Connection Generation expired"
+                    )
+
+        with ExitStack() as cleanup:
+            cleanup.callback(release_reservation)
+            lease = VolumeWriterLease(
+                f"{key}|{mounted_volume.volume.id.value}", self._writer_lock_directory
+            )
+            cleanup.enter_context(lease)
+            current = self._platform.reinspect(mounted_volume.observation)
+            if not _same_connection(mounted_volume.observation, current):
+                self._forget_generation(mounted_volume)
+                raise VolumeIdentityChangedError(
+                    "The selected Volume changed before exclusive SCSI access"
+                )
+            if not current.volume.capabilities.safe_for_writes:
+                raise ReadOnlyFilesystemError(
+                    "The Volume is not safe for writable access"
+                )
+            try:
+                channel = provider.open_scsi_channel(current, expected_identity)
+            except VolumeIdentityChangedError:
+                self._forget_generation(mounted_volume)
+                raise
+            cleanup.callback(channel.close)
+            session = ScsiSession(
+                mounted_volume,
+                channel,
+                lease,
+                check_connection=check_connection,
+                on_invalidate=self._forget_connection,
+                on_close=release_reservation,
+            )
+            with self._state_lock:
+                if self._generations.get(current.connection_key) != (
+                    mounted_volume.connection_generation
+                ):
+                    raise VolumeIdentityChangedError(
+                        "The Connection Generation expired while opening SCSI access"
+                    )
+                self._sessions.append(weakref.ref(session))
+            cleanup.pop_all()
+            return session
+
+    def _require_no_scsi_reservation(self, mounted_volume: MountedVolume) -> None:
+        if self._usb_reservation is not None or any(
+            session.is_active
+            for ref in self._usb_sessions
+            if (session := ref()) is not None
+        ):
+            raise DeviceBusyError("A USB Control Session is opening or active")
+        # Called while holding the portal state lock, including while a native
+        # channel is opening and has not yet been registered as a session.
+        if mounted_volume.physical_device.id.value in self._scsi_reservations:
+            raise DeviceBusyError("The Physical Device has an exclusive SCSI Session")
+
     def probe_hardware(
         self,
         mounted_volume: MountedVolume,
@@ -246,6 +434,7 @@ class Storage:
         """Probe the exact current Physical Device through its native adapter."""
 
         with self._state_lock:
+            self._require_no_scsi_reservation(mounted_volume)
             retained_generation = self._generations.get(
                 mounted_volume.observation.connection_key
             )
@@ -272,6 +461,7 @@ class Storage:
         """Safely eject the exact retained Physical Device through the Host OS."""
 
         with self._state_lock:
+            self._require_no_scsi_reservation(mounted_volume)
             retained_generation = self._generations.get(
                 mounted_volume.observation.connection_key
             )

@@ -92,6 +92,29 @@ def test_missing_firmware_leaves_conditional_mix_support_unknown() -> None:
     assert _identify("MC297").mixes is FeatureSupport.UNKNOWN
 
 
+@pytest.mark.parametrize("model", ["MB029", "MB565", "MC293"])
+def test_shared_classic_205_enables_genius_without_changing_hardware_identity(
+    model: str,
+) -> None:
+    baseline = DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model)
+    assert baseline is not None
+    evidence = parse_sysinfo_extended(
+        plistlib.dumps(
+            {"ModelNumStr": model, "VisibleBuildID": "2.0.5", "UpdaterFamilyID": 38}
+        ),
+        authority=EvidenceAuthority.CURRENT_HARDWARE,
+    )
+    result = DEFAULT_DEVICE_REGISTRY.identify(evidence)
+    assert result.status is IdentificationStatus.EXACT
+    assert result.profile is not None
+    assert result.profile.model_number == baseline.model_number
+    assert result.profile.generation == baseline.generation
+    assert result.profile.capabilities.genius.playlists is FeatureSupport.SUPPORTED
+    assert result.profile.capabilities.genius.mixes is FeatureSupport.SUPPORTED
+    assert result.profile.capabilities.database == baseline.capabilities.database
+    assert DEFAULT_DEVICE_REGISTRY.profile_for_model_number(model) is baseline
+
+
 def test_hardware_version_overrides_stale_metadata_without_mutating_catalog() -> None:
     baseline = DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293")
     assert baseline is not None
@@ -106,6 +129,87 @@ def test_hardware_version_overrides_stale_metadata_without_mutating_catalog() ->
     assert baseline.capabilities.genius.mixes is FeatureSupport.UNKNOWN
     assert DEFAULT_DEVICE_REGISTRY.profile_for_model_number("MC293") is baseline
     assert _identify("MC293", (_firmware("2.0.2"),)).mixes is FeatureSupport.UNSUPPORTED
+
+
+@pytest.mark.parametrize("model", ["MB029", "MB565", "MB598"])
+@pytest.mark.parametrize(
+    ("versions", "families"),
+    [
+        (("2.0.5",), ()),
+        ((), (38,)),
+        (("2.0.5",), (33,)),
+        (("2.0.4",), (35,)),
+        (("2.0.5",), (33, 38)),
+        (("2.0.5", "2.0.1"), (38,)),
+        (("2.0.5-custom",), (38,)),
+    ],
+)
+def test_shared_genius_requires_a_qualified_classic_os_pair(
+    model: str, versions: tuple[str, ...], families: tuple[int, ...]
+) -> None:
+    result = DEFAULT_DEVICE_REGISTRY.identify(
+        parse_sysinfo(f"ModelNumStr: {model}").merged_with(
+            DeviceEvidence(
+                firmware_versions=tuple(_firmware(v) for v in versions),
+                updater_family_ids=tuple(
+                    DeviceIdentifier(
+                        f, "test OS family", EvidenceAuthority.CURRENT_HARDWARE
+                    )
+                    for f in families
+                ),
+            )
+        )
+    )
+    assert result.profile is not None
+    assert result.profile.capabilities.genius.mixes is FeatureSupport.UNSUPPORTED
+
+
+@pytest.mark.parametrize(
+    "current",
+    [
+        {"VisibleBuildID": "2.0.1", "UpdaterFamilyID": 33},
+        {"VisibleBuildID": "2.0.5"},
+        {"UpdaterFamilyID": 38},
+        {"VisibleBuildID": "invalid", "UpdaterFamilyID": 38},
+    ],
+)
+def test_current_incomplete_or_stock_os_does_not_reuse_cached_shared_genius(
+    current: dict[str, str | int],
+) -> None:
+    cached = parse_sysinfo_extended(
+        plistlib.dumps(
+            {"ModelNumStr": "MB565", "VisibleBuildID": "2.0.5", "UpdaterFamilyID": 38}
+        )
+    )
+    result = DEFAULT_DEVICE_REGISTRY.identify(
+        cached.merged_with(
+            parse_sysinfo_extended(
+                plistlib.dumps(current), authority=EvidenceAuthority.CURRENT_HARDWARE
+            )
+        )
+    )
+    assert result.profile is not None
+    assert result.profile.capabilities.genius.mixes is FeatureSupport.UNSUPPORTED
+
+
+def test_current_shared_os_overrides_cached_stock_genius() -> None:
+    cached = parse_sysinfo_extended(
+        plistlib.dumps(
+            {"ModelNumStr": "MB565", "VisibleBuildID": "2.0.1", "UpdaterFamilyID": 33}
+        )
+    )
+    current = parse_sysinfo_extended(
+        plistlib.dumps({"VisibleBuildID": "2.0.5", "UpdaterFamilyID": 38}),
+        authority=EvidenceAuthority.CURRENT_HARDWARE,
+    )
+    for evidence, support in (
+        (cached, FeatureSupport.UNSUPPORTED),
+        (cached.merged_with(current), FeatureSupport.SUPPORTED),
+        (cached, FeatureSupport.UNSUPPORTED),
+    ):
+        result = DEFAULT_DEVICE_REGISTRY.identify(evidence)
+        assert result.profile is not None
+        assert result.profile.capabilities.genius.mixes is support
 
 
 @pytest.mark.parametrize("hardware", [("2.0.2", "2.0.4"), ("2.0.3", "2.0.4"), ("bad",)])

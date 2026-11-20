@@ -301,6 +301,22 @@ class DeviceController(QObject):
         self._set_busy(True)
         return True
 
+    def prepare_firmware_mode_change(self, expected: ActiveIPod) -> bool:
+        """Reserve the device and retire its Filesystem Session before DFU.
+
+        Keep discovery suspended until the firmware workflow releases the
+        reservation. Returning from DFU always requires a fresh selection.
+        """
+        if self._active_ipod is not expected or not self.begin_exclusive_operation():
+            return False
+        try:
+            self._coordinator.deactivate()
+            self._replace_active_ipod(None, force_model_reset=True)
+        except Exception:
+            self.finish_exclusive_operation()
+            raise
+        return True
+
     def finish_library_save(self, active: ActiveIPod | None) -> None:
         """Publish a committed Library before releasing the device reservation."""
 

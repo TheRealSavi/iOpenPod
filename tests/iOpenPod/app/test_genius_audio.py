@@ -11,6 +11,7 @@ import pytest
 from iOpenPod.app import genius_audio
 from iOpenPod.app.genius_audio import (
     GENIUS_AUDIO_FEATURE_COUNT,
+    GeniusAudioCharacter,
     GeniusAudioProfile,
     profile_genius_pcm,
     rank_genius_candidates,
@@ -39,7 +40,9 @@ def _tone(frequency: float, seconds: float, sample_rate: int = 22050) -> bytes:
 
 def test_silence_and_single_sample_are_finite() -> None:
     silence = profile_genius_pcm(bytes(22050 * 4))
-    assert silence == GeniusAudioProfile(1.0, None, (0.0,) * 29, None)
+    assert silence == GeniusAudioProfile(
+        1.0, None, (0.0,) * 29, None, GeniusAudioCharacter(0, 0, 0, 0, 0)
+    )
     single = profile_genius_pcm(np.asarray([0.25], dtype="<f4").tobytes())
     assert single.duration_seconds == 1 / 22050
     assert single.intro is None and single.outro is None
@@ -80,6 +83,45 @@ def test_periodic_clicks_have_measured_tempo() -> None:
         samples[start : start + len(pulse)] = pulse
     profile = profile_genius_pcm(samples.astype("<f4").tobytes())
     assert profile.body[0] == pytest.approx(120, abs=5)
+    assert profile.character is not None
+    assert profile.character.beat_strength > 0.3
+
+
+def test_character_measures_are_stable_when_recording_gain_changes() -> None:
+    samples = np.frombuffer(_tone(220, 4), dtype="<f4").copy()
+    samples *= (0.6 + 0.4 * np.sin(np.arange(samples.size) / 22050 * 4 * np.pi)).astype(
+        np.float32
+    )
+    first = profile_genius_pcm(samples.tobytes()).character
+    quiet = profile_genius_pcm((samples * 0.1).astype("<f4").tobytes()).character
+    assert first is not None and quiet is not None
+    assert quiet.spectral_activity == pytest.approx(first.spectral_activity, rel=0.01)
+    assert quiet.beat_strength == pytest.approx(first.beat_strength, abs=0.01)
+    assert quiet.dynamic_range_db == pytest.approx(first.dynamic_range_db, abs=0.01)
+    assert quiet.spectral_flatness == pytest.approx(first.spectral_flatness, abs=1e-5)
+    assert quiet.active_fraction == first.active_fraction
+
+
+def test_ranking_does_not_match_recording_gain_instead_of_timbre() -> None:
+    source = _features(100)
+    louder = list(source)
+    louder[3] = 500
+    different = list(source)
+    different[4] = 20
+    profiles = {
+        1: GeniusAudioProfile(30, None, source, None),
+        2: GeniusAudioProfile(30, None, tuple(louder), None),
+        3: GeniusAudioProfile(30, None, tuple(different), None),
+    }
+    assert rank_genius_candidates(profiles, limit=1)[1] == (2,)
+
+
+def test_body_rhythm_and_dynamics_distinguish_otherwise_equal_timbres() -> None:
+    calm = GeniusAudioCharacter(20, 0.2, 4, 0.003, 1)
+    intense = GeniusAudioCharacter(85, 0.75, 18, 0.04, 1)
+    source = replace(_profile(120), character=calm)
+    profiles = {1: source, 2: replace(source, character=intense), 3: source}
+    assert rank_genius_candidates(profiles, limit=1)[1] == (3,)
 
 
 def test_block_boundaries_preserve_whole_segment_statistics(
@@ -91,6 +133,19 @@ def test_block_boundaries_preserve_whole_segment_statistics(
     monkeypatch.setattr("iOpenPod.app.genius_audio._BLOCK_FRAMES", 7)
     blocked = profile_genius_pcm(pcm)
     assert blocked.body == pytest.approx(whole.body, rel=1e-10, abs=1e-8)
+    assert blocked.character is not None and whole.character is not None
+    assert blocked.character.spectral_activity == pytest.approx(
+        whole.character.spectral_activity, rel=1e-10
+    )
+    assert blocked.character.beat_strength == pytest.approx(
+        whole.character.beat_strength, abs=1e-10
+    )
+    assert blocked.character.dynamic_range_db == pytest.approx(
+        whole.character.dynamic_range_db, abs=1e-10
+    )
+    assert blocked.character.spectral_flatness == pytest.approx(
+        whole.character.spectral_flatness, abs=1e-10
+    )
 
 
 def test_floor_from_a_later_loud_block_applies_to_earlier_blocks(
@@ -140,7 +195,7 @@ def test_bounded_tempo_matches_whole_segment_estimator(
     )
     monkeypatch.setattr(genius_audio, "_TEMPO_BLOCK_FRAMES", block_size)
     # Compare the bounded estimator directly with librosa's reference algorithm.
-    actual = genius_audio._segment_tempo(onset, sample_rate, lambda: None)  # pyright: ignore[reportPrivateUsage]
+    actual, _strength = genius_audio._segment_rhythm(onset, sample_rate, lambda: None)  # pyright: ignore[reportPrivateUsage]
     assert actual == float(expected[0])
 
 

@@ -79,6 +79,24 @@ def test_version_and_smoke_test_do_not_initialize_settings_or_devices(
     assert calls == [True]
 
 
+@pytest.mark.parametrize(
+    ("resource_lookup", "filename"),
+    [
+        ("iOpenPod.app.firmware.shared_bootloader.files", "manifest.json"),
+        ("iOpenPod.app.firmware.shared_release.files", "firmware.zlib"),
+    ],
+)
+def test_smoke_test_reports_missing_firmware_assets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resource_lookup: str, filename: str
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(resource_lookup, lambda _package: tmp_path)
+    report = tmp_path / "smoke.txt"
+    assert entrypoint.main(["--smoke-test", "--smoke-test-report", str(report)]) == 1
+    diagnostic = report.read_text(encoding="utf-8")
+    assert "FileNotFoundError" in diagnostic and filename in diagnostic
+
+
 def test_optional_runtime_check_requires_an_explicit_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

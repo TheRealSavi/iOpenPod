@@ -18,6 +18,7 @@ def capture_genius_browse(
     sqlite: bool,
     sidecars: tuple[PlaybackSidecar, ...] | None = None,
     sqlite_library: bytes | None = None,
+    classic_mixes: GeniusBrowse | None = None,
     excluded_sidecars: frozenset[str] = frozenset(),
 ) -> GeniusBrowse:
     """Optional display evidence never changes or becomes the editable Library."""
@@ -56,5 +57,6 @@ def capture_genius_browse(
             if sidecar.name.casefold() not in excluded_sidecars
         ),
         sqlite_library=library,
+        classic_mixes=classic_mixes if not sqlite else None,
     )
     return replace(browse, issues=(*issues, *browse.issues))

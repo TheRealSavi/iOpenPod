@@ -49,6 +49,15 @@ class MhypHeader(ChunkHeader):
     # time; that authoring convention is not proof of every firmware consumer.
     timestamp_2: int = cf(0x58, "u32")
 
+    @property
+    def is_genius_mix(self) -> bool:
+        """Classic's importer tests only the low byte of this retained word.
+
+        The historical field name covers Phase (25) and Genius Mix (32).
+        See docs/research/classic-genius-mixes-2026-11-18.md.
+        """
+        return self.phase_game_flag & 0xFF == 32
+
 
 DEFINITION: ChunkDefinition[MhypHeader] = ChunkDefinition(
     marker=b"mhyp",

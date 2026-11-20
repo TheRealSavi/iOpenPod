@@ -53,6 +53,7 @@ def _assignments(update: GeniusUpdate) -> dict[int, int]:
 
 
 def _candidates(update: GeniusUpdate) -> dict[int, tuple[int, ...]]:
+    assert update.data is not None
     tracks = {track.genius_id: track.track_id for track in update.tracks}
     result: dict[int, tuple[int, ...]] = {}
     for row in update.data.similarities:
@@ -64,6 +65,7 @@ def _candidates(update: GeniusUpdate) -> dict[int, tuple[int, ...]]:
 
 
 def _metadata(update: GeniusUpdate) -> dict[int, tuple[int, ...]]:
+    assert update.data is not None
     tracks = {track.genius_id: track.track_id for track in update.tracks}
     result: dict[int, tuple[int, ...]] = {}
     for row in update.data.metadata:
@@ -93,6 +95,7 @@ def test_small_libraries_have_complete_graphs_without_claiming_native_success(
     for track_id, candidates in _candidates(update).items():
         assert set(candidates) == set(ids) - {track_id}
         assert len(candidates) == size - 1
+    assert update.data is not None
     (config,) = update.data.configs
     assert (config.row_id, config.version) == (1, 2)
     assert (config.default_num_results, config.min_num_results) == (25, 10)
@@ -128,6 +131,7 @@ def test_homogeneous_spacing_can_relax_to_the_first_use_counter() -> None:
     )
     update = generate_genius_update(snapshot)
     keys = _metadata(update)
+    assert update.data is not None
     config = update.data.configs[0].payload
     assert isinstance(config, GeniusConfig)
     assert len(config.entries) == 2
@@ -265,6 +269,7 @@ def test_non_music_tracks_are_excluded_from_ids_metadata_and_relationships(
 
     assert set(_assignments(update)) == {1, 4}
     assert _candidates(update) == {1: (4,), 4: (1,)}
+    assert update.data is not None
     assert {row.genius_id for row in update.data.metadata} == set(
         _assignments(update).values()
     )
@@ -379,6 +384,7 @@ def test_audio_rankings_override_metadata_and_fill_missing_profiles() -> None:
         LibrarySnapshot(tracks[::-1]), profiles=dict(reversed(tuple(profiles.items())))
     )
     no_audio = generate_genius_update(LibrarySnapshot(tracks))
+    assert update.data is not None and no_audio.data is not None
     assert update.tracks == no_audio.tracks
     assert update.data.metadata == no_audio.data.metadata
     assert update.data.configs == no_audio.data.configs
@@ -490,6 +496,7 @@ def test_large_homogeneous_library_has_bounded_unique_candidates_and_global_reac
                 visited.add(candidate)
                 pending.append(candidate)
     assert visited == graph.keys()
+    assert update.data is not None
     assert sum(
         len(serialize_genius_similarities(row.payload))
         for row in update.data.similarities
@@ -505,6 +512,7 @@ def test_rehearsal_sized_library_uses_32_candidates_per_track() -> None:
     graph = _candidates(update)
     assert len(graph) == 112
     assert {len(candidates) for candidates in graph.values()} == {32}
+    assert update.data is not None
     assert sum(
         len(serialize_genius_similarities(row.payload))
         for row in update.data.similarities
@@ -516,6 +524,7 @@ def test_generated_data_round_trips_through_the_public_database_codec() -> None:
     snapshot = LibrarySnapshot(tuple(_track(index) for index in range(-8, 12)))
     update = generate_genius_update(snapshot)
 
+    assert update.data is not None
     encoded = serialize_genius_database(GeniusDatabase(update.data))
 
     decoded = parse_genius_database(encoded).data

@@ -33,6 +33,16 @@ def resolve_firmware_target(
     if len(versions) != 1 or len(families) > 1:
         return None
     identity = (profile.family, profile.generation, next(iter(versions)))
+    # The shared Classic OS reports its actual 2.0.5 firmware identity on older
+    # hardware too. Keep the physical Device Profile; select OS contracts by
+    # the independently observed release and updater family.
+    if (
+        profile.family == "iPod Classic"
+        and profile.generation in {"6th Gen", "6.5th Gen", "7th Gen"}
+        and versions == {"2.0.5"}
+        and families == {38}
+    ):
+        return FirmwareTarget.CLASSIC_UPDATER_38_2_0_5
     targets = {
         ("iPod Mini", "1st Gen", "1.4.1"): (FirmwareTarget.MINI_1_1_4_1, {3, 6}),
         ("iPod Mini", "2nd Gen", "1.4.1"): (FirmwareTarget.MINI_2_1_4_1, {7}),

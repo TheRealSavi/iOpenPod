@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import ssl
+from dataclasses import dataclass
 from time import monotonic
 from typing import TYPE_CHECKING, Protocol, cast
 from urllib.error import HTTPError
@@ -77,6 +78,14 @@ class DownloadAsset(Protocol):
     def sha256(self) -> str: ...
 
 
+@dataclass(frozen=True, slots=True)
+class DownloadedFile:
+    """Locally measured bytes; this is not a publisher signature or checksum."""
+
+    size: int
+    sha256: str
+
+
 class UpdateTransport:
     def __init__(
         self,
@@ -147,6 +156,51 @@ class UpdateTransport:
                 if received > self._metadata_limit:
                     raise ValueError("Update metadata exceeds its size limit")
                 chunks.append(chunk)
+
+    def download_file(
+        self,
+        url: str,
+        path: Path,
+        cancel: Event,
+        progress: Callable[[int, int | None], None],
+        *,
+        max_bytes: int,
+    ) -> DownloadedFile:
+        """Stream an HTTPS file without an externally supplied digest into staging."""
+        import os
+
+        digest = hashlib.sha256()
+        received = 0
+        deadline = monotonic() + 30 * 60
+        if cancel.is_set():
+            raise InterruptedError("Download canceled")
+        with self._open(url) as response:
+            if response.status != 200:
+                raise ValueError("Expected a complete download response")
+            length = response.headers.get("Content-Length")
+            total = int(length) if length is not None else None
+            if total is not None and not 0 < total <= max_bytes:
+                raise ValueError("Download exceeds its size limit or is empty")
+            with path.open("xb") as stream:
+                while True:
+                    if cancel.is_set():
+                        raise InterruptedError("Download canceled")
+                    if monotonic() > deadline:
+                        raise TimeoutError("Download exceeded 30 minutes")
+                    chunk = response.read1(min(256 * 1024, max_bytes - received + 1))
+                    if not chunk:
+                        break
+                    received += len(chunk)
+                    if received > max_bytes or (total is not None and received > total):
+                        raise ValueError("Download exceeds its size limit")
+                    stream.write(chunk)
+                    digest.update(chunk)
+                    progress(received, total)
+                if not received or (total is not None and received != total):
+                    raise ValueError("Incomplete download")
+                stream.flush()
+                os.fsync(stream.fileno())
+        return DownloadedFile(received, digest.hexdigest())
 
     def download(
         self,

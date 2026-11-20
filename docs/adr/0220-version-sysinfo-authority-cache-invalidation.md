@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-31
+- Cross-connection probe reuse superseded by: [ADR-0284](0284-separate-reported-firmware-from-hardware-and-bootloader-evidence.md)
 
 Legacy transport revisions can survive as firmware in a consistent SysInfo cache,
 including one carrying a RetailOS provenance marker. Preserve ADR-0175's cache

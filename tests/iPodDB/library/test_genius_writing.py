@@ -254,7 +254,9 @@ def test_track_removal_prunes_graph_and_surviving_mix_membership(sqlite: bool) -
     assert data.similarities == (
         GeniusSimilaritiesRow(1001, 2, GeniusSimilarities(())),
     )
-    assert data.configs == update().data.configs
+    original = update().data
+    assert original is not None
+    assert data.configs == original.configs
 
 
 @pytest.mark.parametrize("case", ["track", "candidate", "metadata", "mix", "duplicate"])
@@ -262,23 +264,23 @@ def test_invalid_genius_references_fail_without_partial_preparation(case: str) -
     source = library()
     original = source.serialize()
     intent = update(mix=True)
+    data = intent.data
+    assert data is not None
     if case == "track":
         intent = replace(intent, tracks=(GeniusTrack(999, 1001), GeniusTrack(2, 1002)))
     elif case == "candidate":
         intent = replace(
             intent,
             data=replace(
-                intent.data,
+                data,
                 similarities=(
                     GeniusSimilaritiesRow(1001, 2, GeniusSimilarities((999,))),
-                    intent.data.similarities[1],
+                    data.similarities[1],
                 ),
             ),
         )
     elif case == "metadata":
-        intent = replace(
-            intent, data=replace(intent.data, metadata=intent.data.metadata[:1])
-        )
+        intent = replace(intent, data=replace(data, metadata=data.metadata[:1]))
     elif case == "mix":
         intent = replace(intent, mixes=(GeniusMix(900, "Invalid", (999,)),))
     else:
@@ -293,11 +295,13 @@ def test_invalid_genius_references_fail_without_partial_preparation(case: str) -
     assert source.serialize() == original
 
 
-def test_mix_authoring_requires_sqlite_target() -> None:
+def test_mix_authoring_requires_supported_target() -> None:
     source = library()
     plan = source.analyze(source.begin_draft(genius_update=update(mix=True)))
     assert plan.blocked
-    assert any(issue.code == "genius.mix_requires_sqlite" for issue in plan.issues)
+    assert any(
+        issue.code == "genius.mix_requires_supported_target" for issue in plan.issues
+    )
     assert source.prepare(plan).prepared is None
 
 
@@ -338,10 +342,18 @@ def test_native_verification_rejects_tampered_authored_genius_id(
 
 
 @pytest.mark.parametrize(
-    ("sqlite", "preserve_mixes"), ((False, False), (True, False), (True, True))
+    ("sqlite", "classic", "preserve_mixes"),
+    (
+        (False, False, False),
+        (True, False, False),
+        (True, False, True),
+        (False, True, False),
+        (False, True, True),
+    ),
 )
 def test_new_track_assignments_and_mix_seeds_follow_allocated_identity(
     sqlite: bool,
+    classic: bool,
     preserve_mixes: bool,
 ) -> None:
     source = library()
@@ -359,6 +371,7 @@ def test_new_track_assignments_and_mix_seeds_follow_allocated_identity(
         ),
     )
     base = update()
+    assert base.data is not None
     intent = GeniusUpdate(
         replace(
             base.data,
@@ -375,7 +388,7 @@ def test_new_track_assignments_and_mix_seeds_follow_allocated_identity(
         None
         if preserve_mixes
         else (GeniusMix(900, "New seed", (-1, 1), seed_track_id=-1),)
-        if sqlite
+        if sqlite or classic
         else (),
     )
     result = source.prepare(
@@ -384,7 +397,7 @@ def test_new_track_assignments_and_mix_seeds_follow_allocated_identity(
                 replace(source.snapshot, tracks=(*source.snapshot.tracks, added)),
                 genius_update=intent,
             ),
-            WriteTarget(sqlite_database=sqlite),
+            WriteTarget(sqlite_database=sqlite, classic_genius_mixes=classic),
         ),
         WriteResources(
             pending_playback_sidecars=False,
@@ -425,6 +438,13 @@ def test_new_track_assignments_and_mix_seeds_follow_allocated_identity(
         else:
             assert state.mixes[0].item_pids == (new_track.ipod.db_track_id, 101)
             assert state.mixes[0].seed_pids == (new_track.ipod.db_track_id,)
+    elif classic:
+        mixes = IPodLibrary(output.itunes).classic_genius_mixes()
+        assert not mixes.issues
+        if preserve_mixes:
+            assert mixes.collections == ()
+        else:
+            assert mixes.collections[0].track_ids == (assigned, 1)
 
 
 @pytest.mark.parametrize("assignment", ("all", "first", "none"))
@@ -434,6 +454,7 @@ def test_graph_only_refresh_preserves_native_mixes_and_prunes_unassigned_seeds(
     first = authored(sqlite=True)
     source = IPodLibrary(first.itunes)
     base = update()
+    assert base.data is not None
     expected_members: tuple[int, ...]
     expected_seed: tuple[int, ...]
     if assignment == "all":
@@ -516,6 +537,7 @@ def test_bulk_genius_assignment_preserves_track_children_and_unrelated_branches(
         replace(selection.chunk, children=(replace(track_list, children=originals),)),
     )
     base = update()
+    assert base.data is not None
     intent = GeniusUpdate(
         replace(
             base.data,

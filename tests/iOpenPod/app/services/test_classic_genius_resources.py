@@ -97,6 +97,7 @@ def _updated_plan(device: _Device) -> LibraryWritePlan:
         tracks=(replace(snapshot.tracks[0], title="Updated"), snapshot.tracks[1]),
     )
     intent = update()
+    assert intent.data is not None
     intent = replace(
         intent,
         data=replace(

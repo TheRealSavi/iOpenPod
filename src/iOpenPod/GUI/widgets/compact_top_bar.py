@@ -338,11 +338,16 @@ class CompactTopBar(QFrame):
         self._sync = self._button("compactSyncWithHost", self._left)
         self._sync.setCheckable(False)
         self._sync.clicked.connect(self.syncRequested.emit)
+        self._review = self._button("compactReviewLibraryChanges", self._left)
+        self._review.setCheckable(False)
+        self._review.setEnabled(False)
+        self._review.clicked.connect(self.reviewChangesRequested.emit)
         self._choose_button = self._button("compactChooseDevice", self._left)
         self._choose_button.setCheckable(False)
         self._choose_button.clicked.connect(self.chooseDeviceRequested.emit)
         left.addWidget(self._device)
         left.addWidget(self._sync)
+        left.addWidget(self._review)
         left.addWidget(self._choose_button)
         left.addStretch(1)
 
@@ -386,11 +391,7 @@ class CompactTopBar(QFrame):
         self._scrobble = QAction(self._maintenance_menu)
         self._scrobble.setEnabled(False)
         self._scrobble.triggered.connect(self.scrobbleRequested.emit)
-        self._review = QAction(self._maintenance_menu)
-        self._review.setEnabled(False)
-        self._review.triggered.connect(self.reviewChangesRequested.emit)
         self._maintenance_menu.add_item(self._scrobble)
-        self._maintenance_menu.add_item(self._review)
         self._settings = self._button(
             "compactSettings", self._right, glyph="settings-sliders"
         )
@@ -477,7 +478,6 @@ class CompactTopBar(QFrame):
             (self._choose, "ipod"),
             (self._eject, "eject"),
             (self._scrobble, "broadcast"),
-            (self._review, "list"),
         ):
             self._set_action_glyph(action, glyph)
         for action in self.playlist_tree.creation_menu.actions():
@@ -565,6 +565,7 @@ class CompactTopBar(QFrame):
 
     def set_review_visible(self, visible: bool) -> None:
         self._review.setVisible(visible)
+        self._balance_columns()
 
     def set_normalization_count(self, count: int) -> None:
         self._normalization_count = max(0, count)

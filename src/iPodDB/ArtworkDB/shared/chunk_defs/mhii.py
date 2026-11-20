@@ -17,6 +17,8 @@ class MhiiHeader(ChunkHeader):
     child_count: int = cf(0x0C, "u32", counts_children=True)
     image_id: int = cf(0x10, "u32")
     db_track_id_ref: int = cf(0x14, "u64")
+    # Also the Mix persistent identity for qualified Classic/Nano 7 covers.
+    # The historical field name must not restrict this native reverse lookup.
     # Ignored by Classic 120GB 2.0.1's built-in ArtworkDB/PhotosDB paths:
     # discarded with the temporary header, with no later native/API reread.
     # Preserve the bytes; this conclusion is not verified for other firmware.

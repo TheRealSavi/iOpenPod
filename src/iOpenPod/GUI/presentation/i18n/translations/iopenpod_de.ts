@@ -8,6 +8,14 @@
         <translation>Genius-Mixe hinzufügen</translation>
     </message>
     <message>
+        <source>Very calm music with little singing. Uses optional instrument analysis from Settings.</source>
+        <translation>Sehr ruhige Musik mit wenig Gesang. Verwendet die optionale Instrumentenanalyse aus den Einstellungen.</translation>
+    </message>
+    <message>
+        <source>%1 selected · %2 new mix slots available</source>
+        <translation>%1 ausgewählt · %2 Plätze für neue Mixe verfügbar</translation>
+    </message>
+    <message>
         <source>%1 selected</source>
         <translation>%1 ausgewählt</translation>
     </message>
@@ -1271,6 +1279,289 @@ iOpenPod kann den Timer über diese Verbindung weder auslesen noch ändern.</tra
     </message>
 </context>
 <context>
+    <name>BootloaderUnlockDialog</name>
+    <message>
+        <source>The selected iPod is no longer available. Close setup and select it again.</source>
+        <translation>Der ausgewählte iPod ist nicht mehr verfügbar. Schließe die Einrichtung und wähle ihn erneut aus.</translation>
+    </message>
+    <message>
+        <source>Unlock bootloader</source>
+        <translation type="vanished">Bootloader entsperren</translation>
+    </message>
+    <message>
+        <source>Leave the iPod connected and turn Hold off. Hold Menu + Center through the restart until the screen goes black again (about 12 seconds), then release both. The screen should stay black. Dismiss any iTunes Restore prompt.</source>
+        <translation type="vanished">Lass den iPod angeschlossen und schalte Hold aus. Halte Menu + die Mitteltaste während des Neustarts gedrückt, bis der Bildschirm erneut schwarz wird (etwa 12 Sekunden), und lass dann beide Tasten los. Der Bildschirm sollte schwarz bleiben. Schließe eine eventuelle Wiederherstellungsaufforderung von iTunes.</translation>
+    </message>
+    <message>
+        <source>Enable custom firmware</source>
+        <translation type="vanished">Angepasste Firmware ermöglichen</translation>
+    </message>
+    <message>
+        <source>Install iOpenPod Bootloader 1.0.0 on {name} ({serial}). This keeps the installed Apple OS and music and allows future custom firmware updates without DFU.
+
+Keep the iPod charged and connected throughout installation. The next step walks you into DFU mode. Installation replaces the bootloader; an interruption while writing may require DFU recovery.</source>
+        <translation type="vanished">Installiere iOpenPod Bootloader 1.0.0 auf {name} ({serial}). Das installierte Apple-Betriebssystem und die Musik bleiben erhalten. Künftige Aktualisierungen angepasster Firmware sind ohne DFU möglich.
+
+Lass den geladenen iPod während der gesamten Installation angeschlossen. Der nächste Schritt führt dich in den DFU-Modus. Die Installation ersetzt den Bootloader; eine Unterbrechung beim Schreiben kann eine DFU-Wiederherstellung erfordern.</translation>
+    </message>
+    <message>
+        <source>Install iOpenPod Bootloader 2.0.0 on {name} ({serial}). This shared Classic bootloader supports the common 2.0.5 custom OS and future compatible updates without DFU. This step installs only the bootloader.
+
+Keep the iPod charged and connected throughout installation. The next step walks you into DFU mode. Installation replaces the bootloader; an interruption while writing may require DFU recovery.</source>
+        <translation type="vanished">Installiere iOpenPod Bootloader 2.0.0 auf {name} ({serial}). Dieser gemeinsame Classic-Bootloader unterstützt das gemeinsame angepasste Betriebssystem 2.0.5 und zukünftige kompatible Updates ohne DFU. In diesem Schritt wird nur der Bootloader installiert.
+
+Lasse den iPod während der Installation geladen und verbunden. Der nächste Schritt führt dich in den DFU-Modus. Die Installation ersetzt den Bootloader; eine Unterbrechung beim Schreiben kann eine DFU-Wiederherstellung erfordern.</translation>
+    </message>
+    <message>
+        <source>Install unlocked bootloader</source>
+        <translation>Entsperrten Bootloader installieren</translation>
+    </message>
+    <message>
+        <source>Install universal unlocked Bootloader {version} on {name} ({serial}). It is included with iOpenPod and supports universal Classic firmware 2.0.5 and the expanded mod space. This step installs only the bootloader.
+
+Keep the iPod charged and connected throughout installation. The next step walks you into DFU mode. Installation replaces the bootloader; an interruption while writing may require DFU recovery.</source>
+        <translation type="vanished">Installiere den universellen entsperrten Bootloader {version} auf {name} ({serial}). Er ist in iOpenPod enthalten und unterstützt die universelle Classic-Firmware 2.0.5 sowie den erweiterten Speicher für Mods. Dieser Schritt installiert nur den Bootloader.
+
+Halte den iPod während der gesamten Installation geladen und verbunden. Der nächste Schritt führt dich in den DFU-Modus. Die Installation ersetzt den Bootloader; eine Unterbrechung beim Schreiben kann eine DFU-Wiederherstellung erfordern.</translation>
+    </message>
+    <message>
+        <source>Put your iPod in DFU mode</source>
+        <translation type="vanished">Versetze deinen iPod in den DFU-Modus</translation>
+    </message>
+    <message>
+        <source>Waiting for your iPod. Installation will begin automatically when the selected Classic is detected.</source>
+        <translation type="vanished">Warte auf deinen iPod. Die Installation beginnt automatisch, sobald der ausgewählte Classic erkannt wird.</translation>
+    </message>
+    <message>
+        <source>Preparing your iPod</source>
+        <translation type="vanished">Dein iPod wird vorbereitet</translation>
+    </message>
+    <message>
+        <source>Checking the selected iPod and preparing its bootloader. Keep it connected with the screen black.</source>
+        <translation type="vanished">Der ausgewählte iPod wird geprüft und sein Bootloader vorbereitet. Lass ihn angeschlossen; der Bildschirm muss schwarz bleiben.</translation>
+    </message>
+    <message>
+        <source>Installing bootloader</source>
+        <translation type="vanished">Bootloader wird installiert</translation>
+    </message>
+    <message>
+        <source>Keep the iPod connected. Do not press any buttons or close iOpenPod. This usually takes about two minutes; the screen stays black.</source>
+        <translation type="vanished">Lass den iPod angeschlossen. Drücke keine Tasten und schließe iOpenPod nicht. Dies dauert normalerweise etwa zwei Minuten; der Bildschirm bleibt schwarz.</translation>
+    </message>
+    <message>
+        <source>Verifying installation</source>
+        <translation type="vanished">Installation wird überprüft</translation>
+    </message>
+    <message>
+        <source>Checking the bootloader written to your iPod. Keep it connected with the screen black.</source>
+        <translation type="vanished">Der auf deinen iPod geschriebene Bootloader wird geprüft. Lass ihn angeschlossen; der Bildschirm muss schwarz bleiben.</translation>
+    </message>
+    <message>
+        <source>Already unlocked</source>
+        <translation>Bereits entsperrt</translation>
+    </message>
+    <message>
+        <source>Bootloader installed and verified</source>
+        <translation type="vanished">Bootloader installiert und überprüft</translation>
+    </message>
+    <message>
+        <source>Hold Menu + Center until the Apple logo appears, then release both and let the iPod boot normally. Unplug and reconnect USB if needed.
+
+Close this window, select the iPod again, and choose Install universal 2.0.5 on Device Summary. Its current OS and music are unchanged.</source>
+        <translation type="vanished">Halte Menü + Mitte gedrückt, bis das Apple-Logo erscheint. Lass dann beide Tasten los und den iPod normal starten. Trenne bei Bedarf die USB-Verbindung und stelle sie wieder her.
+
+Schließe dieses Fenster, wähle den iPod erneut aus und klicke in der Geräteübersicht auf „Universelle 2.0.5 installieren“. Das aktuelle Betriebssystem und die Musik sind unverändert.</translation>
+    </message>
+    <message>
+        <source>Hold Menu + Center until the Apple logo appears, then release both and let the iPod boot normally. Unplug and reconnect USB if needed.
+
+Close this window, select the iPod again, and choose Install iOpenPod firmware on Device Summary. Its current OS and music are unchanged.</source>
+        <translation type="vanished">Halte Menü + Mitte gedrückt, bis das Apple-Logo erscheint. Lasse dann beide Tasten los und den iPod normal starten. Trenne bei Bedarf die USB-Verbindung und verbinde ihn erneut.
+
+Schließe dieses Fenster, wähle den iPod erneut aus und klicke in der Geräteübersicht auf iOpenPod-Firmware installieren. Sein aktuelles Betriebssystem und seine Musik sind unverändert.</translation>
+    </message>
+    <message>
+        <source>Hold Menu + Center until the Apple logo appears, then release both and let the iPod boot normally. Unplug and reconnect USB if needed.
+
+You can close this window and select the iPod again. Its Apple OS and music are unchanged.</source>
+        <translation type="vanished">Halte Menu + die Mitteltaste gedrückt, bis das Apple-Logo erscheint. Lass dann beide Tasten los und den iPod normal starten. Trenne bei Bedarf die USB-Verbindung und stelle sie wieder her.
+
+Du kannst dieses Fenster schließen und den iPod erneut auswählen. Sein Apple-Betriebssystem und seine Musik sind unverändert.</translation>
+    </message>
+    <message>
+        <source>Your iPod is unlocked</source>
+        <translation>Dein iPod ist entsperrt</translation>
+    </message>
+    <message>
+        <source>The bootloader is verified and this iPod has reconnected normally. Future compatible custom firmware updates can use the normal USB update path.</source>
+        <translation type="vanished">Der Bootloader wurde überprüft und dieser iPod hat sich wieder normal verbunden. Künftige kompatible Aktualisierungen angepasster Firmware können den normalen USB-Aktualisierungsweg verwenden.</translation>
+    </message>
+    <message>
+        <source>Setup canceled</source>
+        <translation>Einrichtung abgebrochen</translation>
+    </message>
+    <message>
+        <source>No installation was started. If the screen is black, hold Menu + Center until the Apple logo appears, then release and let it boot normally.</source>
+        <translation type="vanished">Es wurde keine Installation gestartet. Falls der Bildschirm schwarz ist, halte Menu + die Mitteltaste gedrückt, bis das Apple-Logo erscheint. Lass dann los und den iPod normal starten.</translation>
+    </message>
+    <message>
+        <source>Setup needs attention</source>
+        <translation>Einrichtung erfordert Aufmerksamkeit</translation>
+    </message>
+    <message>
+        <source>No installation is retried automatically. If a write was started, keep the iPod connected and reopen setup to check its result before restarting it.</source>
+        <translation type="vanished">Eine Installation wird nicht automatisch wiederholt. Falls ein Schreibvorgang gestartet wurde, lass den iPod angeschlossen und öffne die Einrichtung erneut, um das Ergebnis vor einem Neustart zu prüfen.</translation>
+    </message>
+    <message>
+        <source>The shared bootloader has passed offline validation but has not yet been tested on a physical iPod.</source>
+        <translation type="vanished">Der gemeinsame Bootloader hat die Offline-Prüfung bestanden, wurde aber noch nicht auf einem echten iPod getestet.</translation>
+    </message>
+    <message>
+        <source>This Classic family&apos;s bootloader has passed offline validation but has not yet been tested on a physical iPod.</source>
+        <translation type="vanished">Der Bootloader für diese Classic-Familie hat die Offline-Prüfung bestanden, wurde aber noch nicht auf einem echten iPod getestet.</translation>
+    </message>
+    <message>
+        <source>Check unfinished installation</source>
+        <translation>Unvollständige Installation prüfen</translation>
+    </message>
+    <message>
+        <source>An installation for iPod {serial} has not been verified. Keep that iPod connected with its screen black. Check result reads the previous installation report; it does not install again.</source>
+        <translation type="vanished">Eine Installation für den iPod {serial} wurde noch nicht überprüft. Lass diesen iPod mit schwarzem Bildschirm angeschlossen. Ergebnis prüfen liest den Bericht der vorherigen Installation; es wird nichts erneut installiert.</translation>
+    </message>
+    <message>
+        <source>CUSTOM FIRMWARE  /  STEP 1 OF 2</source>
+        <translation>CUSTOM-FIRMWARE  /  SCHRITT 1 VON 2</translation>
+    </message>
+    <message>
+        <source>iPod Classic</source>
+        <translation>iPod Classic</translation>
+    </message>
+    <message>
+        <source>Unlock your Classic</source>
+        <translation>Classic entsperren</translation>
+    </message>
+    <message>
+        <source>Install Bootloader {version} to enable iOpenPod firmware. Your current firmware and music stay in place.
+
+Next, we&apos;ll guide you into DFU mode using two buttons on your iPod.</source>
+        <translation>Installieren Sie Bootloader {version}, um iOpenPod-Firmware nutzen zu können. Ihre aktuelle Firmware und Musik bleiben erhalten.
+
+Danach führen wir Sie mit zwei Tasten am iPod in den DFU-Modus.</translation>
+    </message>
+    <message>
+        <source>Enter DFU mode</source>
+        <translation>DFU-Modus starten</translation>
+    </message>
+    <message>
+        <source>Keep USB connected and turn Hold off so no orange is showing.</source>
+        <translation>Lassen Sie USB verbunden und schalten Sie Hold aus, sodass kein Orange zu sehen ist.</translation>
+    </message>
+    <message>
+        <source>Your iPod is connected</source>
+        <translation>Ihr iPod ist verbunden</translation>
+    </message>
+    <message>
+        <source>Checking its identity and preparing the bootloader. Leave the screen black and USB connected.</source>
+        <translation>Die Geräteidentität wird geprüft und der Bootloader vorbereitet. Lassen Sie den Bildschirm schwarz und USB verbunden.</translation>
+    </message>
+    <message>
+        <source>Installing the bootloader</source>
+        <translation>Bootloader wird installiert</translation>
+    </message>
+    <message>
+        <source>Keep USB connected and leave the buttons alone. The iPod&apos;s screen will stay black during installation.</source>
+        <translation>Lassen Sie USB verbunden und drücken Sie keine Tasten. Der Bildschirm bleibt während der Installation schwarz.</translation>
+    </message>
+    <message>
+        <source>Checking the installation</source>
+        <translation>Installation wird geprüft</translation>
+    </message>
+    <message>
+        <source>Verifying the bootloader on your iPod. Keep it connected with the screen black.</source>
+        <translation>Der Bootloader auf Ihrem iPod wird geprüft. Lassen Sie ihn mit schwarzem Bildschirm verbunden.</translation>
+    </message>
+    <message>
+        <source>Bootloader installed</source>
+        <translation>Bootloader installiert</translation>
+    </message>
+    <message>
+        <source>Hold Menu + Select until the Apple logo appears, then release both. Let your iPod start normally.
+
+Close this window and select the iPod again. In Device Summary, choose Install universal 2.0.5.</source>
+        <translation>Halten Sie Menu + Select gedrückt, bis das Apple-Logo erscheint. Lassen Sie dann beide Tasten los und den iPod normal starten.
+
+Schließen Sie dieses Fenster und wählen Sie den iPod erneut aus. Wählen Sie in der Geräteübersicht „Universelle 2.0.5 installieren“.</translation>
+    </message>
+    <message>
+        <source>The bootloader is verified and your iPod has reconnected. You can now install iOpenPod firmware from Device Summary.</source>
+        <translation>Der Bootloader wurde geprüft und Ihr iPod ist wieder verbunden. Sie können die iOpenPod-Firmware jetzt über die Geräteübersicht installieren.</translation>
+    </message>
+    <message>
+        <source>No installation was started. If the screen is black, hold Menu + Select until the Apple logo appears, then release.</source>
+        <translation>Es wurde keine Installation gestartet. Ist der Bildschirm schwarz, halten Sie Menu + Select gedrückt, bis das Apple-Logo erscheint. Lassen Sie dann los.</translation>
+    </message>
+    <message>
+        <source>Charge your iPod first and keep USB connected. An interrupted bootloader write may require DFU recovery.</source>
+        <translation>Laden Sie Ihren iPod vorher auf und lassen Sie USB verbunden. Wird das Schreiben des Bootloaders unterbrochen, kann eine DFU-Wiederherstellung nötig sein.</translation>
+    </message>
+    <message>
+        <source>If iTunes offers to restore the iPod, dismiss that prompt.</source>
+        <translation>Falls iTunes eine Wiederherstellung anbietet, schließen Sie diese Aufforderung.</translation>
+    </message>
+    <message>
+        <source>Waiting for DFU · Installation starts automatically when detected.</source>
+        <translation>Warten auf DFU · Die Installation startet automatisch nach der Erkennung.</translation>
+    </message>
+    <message>
+        <source>Keep your iPod connected</source>
+        <translation>Lassen Sie Ihren iPod verbunden</translation>
+    </message>
+    <message>
+        <source>{percent}% complete · Keep USB connected</source>
+        <translation>{percent}% abgeschlossen · USB verbunden lassen</translation>
+    </message>
+    <message>
+        <source>Bootloader verified</source>
+        <translation>Bootloader geprüft</translation>
+    </message>
+    <message>
+        <source>If it does not reconnect after starting, unplug and reconnect USB.</source>
+        <translation>Falls er sich nach dem Start nicht erneut verbindet, ziehen Sie USB ab und stecken Sie es wieder ein.</translation>
+    </message>
+    <message>
+        <source>Setup stopped</source>
+        <translation>Einrichtung angehalten</translation>
+    </message>
+    <message>
+        <source>No write is retried automatically. If installation started, keep the iPod connected and reopen setup to check its result before restarting.</source>
+        <translation>Kein Schreibvorgang wird automatisch wiederholt. Falls die Installation begonnen hat, lassen Sie den iPod verbunden. Öffnen Sie die Einrichtung erneut, um das Ergebnis vor einem Neustart zu prüfen.</translation>
+    </message>
+    <message>
+        <source>Keep iPod {serial} connected with its screen black. Check result verifies the previous installation; it does not install again.</source>
+        <translation>Lassen Sie iPod {serial} mit schwarzem Bildschirm verbunden. „Ergebnis prüfen“ prüft die vorherige Installation, ohne erneut zu installieren.</translation>
+    </message>
+    <message>
+        <source>Previous installation needs verification</source>
+        <translation>Vorherige Installation muss geprüft werden</translation>
+    </message>
+    <message>
+        <source>Check result</source>
+        <translation>Ergebnis prüfen</translation>
+    </message>
+    <message>
+        <source>Start DFU setup</source>
+        <translation>DFU-Einrichtung starten</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="obsolete">Abbrechen</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation type="obsolete">Schließen</translation>
+    </message>
+</context>
+<context>
     <name>CalendarEditor</name>
     <message>
         <source>Starts</source>
@@ -2512,6 +2803,13 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         </translation>
     </message>
     <message numerus="yes">
+        <source>%n starting track(s)</source>
+        <translation>
+            <numerusform>%n möglicher Starttitel</numerusform>
+            <numerusform>%n mögliche Starttitel</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
         <source>%n album(s)</source>
         <translation>
             <numerusform>%n Album</numerusform>
@@ -2869,16 +3167,136 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
 <context>
     <name>DeviceSummaryPage</name>
     <message>
+        <source>Firmware status not checked.</source>
+        <translation type="vanished">Firmwarestatus nicht geprüft.</translation>
+    </message>
+    <message>
+        <source>Checking Apple&apos;s firmware catalog…</source>
+        <translation type="vanished">Apples Firmwarekatalog wird geprüft…</translation>
+    </message>
+    <message>
+        <source>Up to date — latest firmware: {version}.</source>
+        <translation type="vanished">Auf dem neuesten Stand — neueste Firmware: {version}.</translation>
+    </message>
+    <message>
+        <source>Update available: {version}.</source>
+        <translation type="vanished">Update verfügbar: {version}.</translation>
+    </message>
+    <message>
+        <source>Installed firmware is newer than Apple&apos;s catalog ({version}).</source>
+        <translation type="vanished">Die installierte Firmware ist neuer als Apples Katalog ({version}).</translation>
+    </message>
+    <message>
+        <source>Updater family ID unavailable; cannot check Apple&apos;s catalog.</source>
+        <translation type="vanished">Updater-Familien-ID nicht verfügbar; Apples Katalog kann nicht geprüft werden.</translation>
+    </message>
+    <message>
+        <source>Latest firmware: {version}. Current version cannot be compared.</source>
+        <translation type="vanished">Neueste Firmware: {version}. Die aktuelle Version kann nicht verglichen werden.</translation>
+    </message>
+    <message>
+        <source>No firmware found for this updater family in Apple&apos;s catalog.</source>
+        <translation type="vanished">Keine Firmware für diese Updater-Familie in Apples Katalog gefunden.</translation>
+    </message>
+    <message>
+        <source>Could not check Apple&apos;s catalog. Try again.</source>
+        <translation type="vanished">Apples Katalog konnte nicht geprüft werden. Bitte erneut versuchen.</translation>
+    </message>
+    <message>
+        <source>Check now</source>
+        <translation type="vanished">Jetzt prüfen</translation>
+    </message>
+    <message>
         <source>Summary</source>
         <translation>Übersicht</translation>
     </message>
     <message>
-        <source>Restore iPod</source>
-        <translation>iPod wiederherstellen</translation>
+        <source>Check bootloader result</source>
+        <translation>Bootloader-Ergebnis prüfen</translation>
     </message>
     <message>
-        <source>Coming soon</source>
-        <translation>Demnächst verfügbar</translation>
+        <source>Unlock bootloader</source>
+        <translation type="vanished">Bootloader entsperren</translation>
+    </message>
+    <message>
+        <source>Check firmware installation</source>
+        <translation type="vanished">Firmware-Installation prüfen</translation>
+    </message>
+    <message>
+        <source>Install iOpenPod firmware</source>
+        <translation type="vanished">iOpenPod-Firmware installieren</translation>
+    </message>
+    <message>
+        <source>Finish checking the previous installation</source>
+        <translation type="vanished">Prüfung der vorherigen Installation abschließen</translation>
+    </message>
+    <message>
+        <source>Apple 2.0.5 · Mod Version {mod_version}</source>
+        <translation type="vanished">Apple 2.0.5 · Mod-Version {mod_version}</translation>
+    </message>
+    <message>
+        <source>First unlock the bootloader, then install the shared firmware</source>
+        <translation type="vanished">Zuerst den Bootloader entsperren, dann die gemeinsame Firmware installieren</translation>
+    </message>
+    <message>
+        <source>Enable custom firmware updates</source>
+        <translation type="vanished">Aktualisierungen angepasster Firmware ermöglichen</translation>
+    </message>
+    <message>
+        <source>Available on Windows for the 120 GB Classic with Apple 2.0.1</source>
+        <translation type="vanished">Unter Windows für den 120-GB-Classic mit Apple 2.0.1 verfügbar</translation>
+    </message>
+    <message>
+        <source>Restore iPod</source>
+        <translation type="vanished">iPod wiederherstellen</translation>
+    </message>
+    <message>
+        <source>Update iPod</source>
+        <translation type="vanished">iPod aktualisieren</translation>
+    </message>
+    <message>
+        <source>Install unlocked bootloader</source>
+        <translation>Entsperrten Bootloader installieren</translation>
+    </message>
+    <message>
+        <source>Bootloader 2.0.0 · Hardware family {family} · Last verified in DFU</source>
+        <translation type="vanished">Bootloader 2.0.0 · Hardwarefamilie {family} · Zuletzt in DFU geprüft</translation>
+    </message>
+    <message>
+        <source>Bootloader: not verified on this computer</source>
+        <translation type="vanished">Bootloader: auf diesem Computer nicht geprüft</translation>
+    </message>
+    <message>
+        <source>Normal USB does not expose the bootloader flag. The saved result is historical; run bootloader setup to check the installed loader in DFU. A matching loader is left unchanged.</source>
+        <translation type="vanished">Im normalen USB-Modus ist die Bootloader-Kennung nicht lesbar. Das gespeicherte Ergebnis stammt von einer früheren Prüfung. Starte die Bootloader-Einrichtung, um den installierten Loader in DFU zu prüfen. Ein passender Loader bleibt unverändert.</translation>
+    </message>
+    <message>
+        <source>Install universal 2.0.5</source>
+        <translation>Universelle 2.0.5 installieren</translation>
+    </message>
+    <message>
+        <source>Step 2 · Mod Version {mod_version} · Normal USB installation</source>
+        <translation type="vanished">Schritt 2 · Mod-Version {mod_version} · Installation über normales USB</translation>
+    </message>
+    <message>
+        <source>Refresh the iPod to read its current firmware</source>
+        <translation>iPod aktualisieren, um die aktuelle Firmware auszulesen</translation>
+    </message>
+    <message>
+        <source>Step 2 · Install the unlocked bootloader first</source>
+        <translation type="vanished">Schritt 2 · Zuerst den entsperrten Bootloader installieren</translation>
+    </message>
+    <message>
+        <source>Step 1 · Universal bootloader 2.0.0 · Guided DFU setup</source>
+        <translation type="vanished">Schritt 1 · Universeller Bootloader 2.0.0 · Geführte DFU-Einrichtung</translation>
+    </message>
+    <message>
+        <source>Universal Classic firmware</source>
+        <translation type="vanished">Universelle Classic-Firmware</translation>
+    </message>
+    <message>
+        <source>Included with iOpenPod. No download required.</source>
+        <translation type="vanished">In iOpenPod enthalten. Kein Download erforderlich.</translation>
     </message>
     <message>
         <source>Name</source>
@@ -2889,8 +3307,12 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Kapazität</translation>
     </message>
     <message>
-        <source>Software version</source>
-        <translation>Softwareversion</translation>
+        <source>Firmware version</source>
+        <translation type="vanished">Firmwareversion</translation>
+    </message>
+    <message>
+        <source>Updater family ID</source>
+        <translation type="vanished">Updater-Familien-ID</translation>
     </message>
     <message>
         <source>Serial number</source>
@@ -2933,8 +3355,198 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Nicht verfügbar</translation>
     </message>
     <message>
+        <source>{value} (cached)</source>
+        <translation>{value} (zwischengespeichert)</translation>
+    </message>
+    <message>
+        <source>Bootloader {version} · Hardware family {family} · Last verified in DFU</source>
+        <translation type="vanished">Bootloader {version} · Hardwarefamilie {family} · Zuletzt im DFU-Modus überprüft</translation>
+    </message>
+    <message>
+        <source>This firmware provides no current bootloader report. The saved DFU result is historical. New iOpenPod firmware can report the bootloader over normal USB.</source>
+        <translation type="vanished">Diese Firmware liefert keinen aktuellen Bootloader-Bericht. Das gespeicherte DFU-Ergebnis stammt aus einer früheren Prüfung. Neue iOpenPod-Firmware kann den Bootloader über die normale USB-Verbindung melden.</translation>
+    </message>
+    <message>
+        <source>Bootloader {version} · Hardware family {family} · Reported by firmware</source>
+        <translation type="vanished">Bootloader {version} · Hardwarefamilie {family} · Von der Firmware gemeldet</translation>
+    </message>
+    <message>
+        <source>Bootloader: unrecognized code</source>
+        <translation type="vanished">Bootloader: unbekannter Code</translation>
+    </message>
+    <message>
+        <source>Bootloader: encrypted · Version unavailable</source>
+        <translation type="vanished">Bootloader: verschlüsselt · Version nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>Bootloader: could not read boot flash</source>
+        <translation type="vanished">Bootloader: Boot-Flash konnte nicht gelesen werden</translation>
+    </message>
+    <message>
+        <source>Bootloader: unsupported flash layout</source>
+        <translation type="vanished">Bootloader: nicht unterstützte Flash-Aufteilung</translation>
+    </message>
+    <message>
+        <source>Bootloader: invalid firmware report</source>
+        <translation type="vanished">Bootloader: ungültiger Firmware-Bericht</translation>
+    </message>
+    <message>
+        <source>Measured from boot flash when the iPod started; received over USB on this connection. Installation requires a recognized version and full code hash.</source>
+        <translation type="vanished">Beim Start des iPod aus dem Boot-Flash gelesen und über die aktuelle USB-Verbindung empfangen. Die Installation erfordert eine bekannte Version und den Hash des vollständigen Codes.</translation>
+    </message>
+    <message>
+        <source>Last verified in DFU</source>
+        <translation>Zuletzt im DFU-Modus verifiziert</translation>
+    </message>
+    <message>
+        <source>Reported by firmware</source>
+        <translation>Von der Firmware gemeldet</translation>
+    </message>
+    <message>
+        <source>Update bootloader to {version}</source>
+        <translation>Bootloader auf {version} aktualisieren</translation>
+    </message>
+    <message>
+        <source>Installation needs attention</source>
+        <translation>Installation erfordert Aufmerksamkeit</translation>
+    </message>
+    <message>
+        <source>Update firmware to {mod_version}</source>
+        <translation>Firmware auf {mod_version} aktualisieren</translation>
+    </message>
+    <message>
+        <source>The previous firmware upload was interrupted</source>
+        <translation>Die vorherige Firmware-Übertragung wurde unterbrochen</translation>
+    </message>
+    <message>
+        <source>Install over USB</source>
+        <translation>Installation über USB</translation>
+    </message>
+    <message>
+        <source>Mod version {mod_version} · Install over USB</source>
+        <translation>Mod-Version {mod_version} · Installation über USB</translation>
+    </message>
+    <message>
+        <source>Check the bootloader report or run bootloader setup</source>
+        <translation>Bootloader-Bericht prüfen oder Bootloader-Einrichtung starten</translation>
+    </message>
+    <message>
+        <source>Step 1 · Universal bootloader {version} · Guided DFU setup</source>
+        <translation type="vanished">Schritt 1 · Universeller Bootloader {version} · Geführte DFU-Einrichtung</translation>
+    </message>
+    <message>
+        <source>Install the unlocked bootloader first</source>
+        <translation>Zuerst den entsperrten Bootloader installieren</translation>
+    </message>
+    <message>
+        <source>Guided DFU setup</source>
+        <translation>Geführte DFU-Einrichtung</translation>
+    </message>
+    <message>
+        <source>Firmware</source>
+        <translation>Firmware</translation>
+    </message>
+    <message>
+        <source>Bootloader and firmware are up to date.</source>
+        <translation>Bootloader und Firmware sind auf dem neuesten Stand.</translation>
+    </message>
+    <message>
+        <source>Reported firmware</source>
+        <translation>Gemeldete Firmware</translation>
+    </message>
+    <message>
+        <source>Mod version</source>
+        <translation>Mod-Version</translation>
+    </message>
+    <message>
+        <source>Hardware family ID</source>
+        <translation>Hardware-Familien-ID</translation>
+    </message>
+    <message>
+        <source>Bootloader version</source>
+        <translation>Bootloader-Version</translation>
+    </message>
+    <message>
+        <source>OS updater family</source>
+        <translation>OS-Updater-Familie</translation>
+    </message>
+    <message>
+        <source>The OS-reported version is independent of the hardware and bootloader. Cached values have not been confirmed on this connection.</source>
+        <translation>Die vom Betriebssystem gemeldete Version ist unabhängig von Hardware und Bootloader. Zwischengespeicherte Werte wurden für diese Verbindung nicht bestätigt.</translation>
+    </message>
+    <message>
+        <source>The running OS reports this updater family. Modified firmware can report a different family from the physical iPod.</source>
+        <translation>Das laufende Betriebssystem meldet diese Updater-Familie. Modifizierte Firmware kann eine andere Familie als die Hardware des iPod melden.</translation>
+    </message>
+    <message>
         <source>iPod</source>
         <translation>iPod</translation>
+    </message>
+    <message>
+        <source>Downloads only</source>
+        <translation type="vanished">Nur Download</translation>
+    </message>
+    <message>
+        <source>Download and keep firmware on this computer. Does not install it.</source>
+        <translation type="vanished">Firmware auf diesem Computer herunterladen und behalten. Sie wird nicht installiert.</translation>
+    </message>
+    <message>
+        <source>Checking saved firmware / starting download…</source>
+        <translation type="vanished">Gespeicherte Firmware wird geprüft / Download wird gestartet…</translation>
+    </message>
+    <message>
+        <source>Available on Windows for iPod Classic families 24, 33, 35 and 38</source>
+        <translation>Unter Windows für die iPod-Classic-Familien 24, 33, 35 und 38 verfügbar</translation>
+    </message>
+    <message>
+        <source>Downloading firmware: {received} MiB</source>
+        <translation type="vanished">Firmware wird heruntergeladen: {received} MiB</translation>
+    </message>
+    <message>
+        <source>Firmware saved: {path}</source>
+        <translation type="vanished">Firmware gespeichert: {path}</translation>
+    </message>
+    <message>
+        <source>Firmware download failed. Click Restore or Update to retry.</source>
+        <translation type="vanished">Firmware-Download fehlgeschlagen. Zum Wiederholen auf Wiederherstellen oder Aktualisieren klicken.</translation>
+    </message>
+</context>
+<context>
+    <name>DfuDiagram</name>
+    <message>
+        <source>iPod Classic button guide</source>
+        <translation>Tastenhilfe für iPod Classic</translation>
+    </message>
+    <message>
+        <source>Menu is at the top of the clickwheel. Select is the round button in the middle. Hold both together.</source>
+        <translation>Menu befindet sich oben auf dem Clickwheel. Select ist die runde Taste in der Mitte. Halten Sie beide gleichzeitig gedrückt.</translation>
+    </message>
+    <message>
+        <source>Menu + Select</source>
+        <translation>Menu + Select</translation>
+    </message>
+</context>
+<context>
+    <name>DfuGuide</name>
+    <message>
+        <source>Step {number}</source>
+        <translation>Schritt {number}</translation>
+    </message>
+    <message>
+        <source>1. Hold Menu + Select</source>
+        <translation>1. Menu + Select gedrückt halten</translation>
+    </message>
+    <message>
+        <source>Select is the center button. The screen goes black, then shows the Apple logo. Keep holding both buttons.</source>
+        <translation>Select ist die mittlere Taste. Der Bildschirm wird schwarz, dann erscheint das Apple-Logo. Halten Sie beide Tasten weiter gedrückt.</translation>
+    </message>
+    <message>
+        <source>2. Release when it goes black again</source>
+        <translation>2. Beim zweiten schwarzen Bildschirm loslassen</translation>
+    </message>
+    <message>
+        <source>Let go of both buttons at the second black screen. Leave your iPod connected with its screen black.</source>
+        <translation>Lassen Sie beide Tasten los, wenn der Bildschirm zum zweiten Mal schwarz wird. Lassen Sie den iPod mit schwarzem Bildschirm verbunden.</translation>
     </message>
 </context>
 <context>
@@ -3257,6 +3869,107 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     <message>
         <source>This field cannot be edited.</source>
         <translation>Dieses Feld kann nicht bearbeitet werden.</translation>
+    </message>
+</context>
+<context>
+    <name>FirmwareModsPanel</name>
+    <message>
+        <source>Firmware mods</source>
+        <translation>Firmware-Mods</translation>
+    </message>
+    <message>
+        <source>Include in next build</source>
+        <translation>In den nächsten Build aufnehmen</translation>
+    </message>
+    <message>
+        <source>Review build</source>
+        <translation>Build prüfen</translation>
+    </message>
+    <message>
+        <source>Clear selection</source>
+        <translation>Auswahl aufheben</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>Nicht verfügbar</translation>
+    </message>
+    <message>
+        <source>Installed mods have not been inspected.</source>
+        <translation>Installierte Mods wurden noch nicht geprüft.</translation>
+    </message>
+    <message>
+        <source>Recorded installed build: {mods}</source>
+        <translation>Erfasster installierter Build: {mods}</translation>
+    </message>
+    <message>
+        <source>No mods</source>
+        <translation>Keine Mods</translation>
+    </message>
+    <message>
+        <source>Not recorded</source>
+        <translation>Nicht erfasst</translation>
+    </message>
+    <message>
+        <source>No installed-mod registry was found.</source>
+        <translation>Es wurde kein Verzeichnis installierter Mods gefunden.</translation>
+    </message>
+    <message>
+        <source>The installed-mod registry could not be read.</source>
+        <translation>Das Verzeichnis installierter Mods konnte nicht gelesen werden.</translation>
+    </message>
+    <message>
+        <source>Mod platform version: {version}</source>
+        <translation>Version der Mod-Plattform: {version}</translation>
+    </message>
+    <message>
+        <source>Required by another selected mod.</source>
+        <translation>Von einem anderen ausgewählten Mod benötigt.</translation>
+    </message>
+    <message>
+        <source>Firmware mod builds are not yet available for this device and Apple firmware version.</source>
+        <translation>Firmware-Mod-Builds sind für dieses Gerät und diese Apple-Firmware-Version noch nicht verfügbar.</translation>
+    </message>
+    <message>
+        <source>Choose mods to review the next build. Firmware compilation and installation are still in development; selections do not change your iPod.</source>
+        <translation>Wähle Mods aus, um den nächsten Build zu prüfen. Firmware-Kompilierung und Installation sind noch in Entwicklung; die Auswahl verändert deinen iPod nicht.</translation>
+    </message>
+    <message>
+        <source>Apple firmware: {version}</source>
+        <translation>Apple-Firmware: {version}</translation>
+    </message>
+    <message>
+        <source>Mod platform: {version}</source>
+        <translation>Mod-Plattform: {version}</translation>
+    </message>
+    <message>
+        <source>Removed in this build: {mods}</source>
+        <translation>In diesem Build entfernt: {mods}</translation>
+    </message>
+    <message>
+        <source>This is a build plan. No firmware has been built or installed.</source>
+        <translation>Dies ist ein Build-Plan. Es wurde keine Firmware erstellt oder installiert.</translation>
+    </message>
+    <message>
+        <source>Review firmware build</source>
+        <translation>Firmware-Build prüfen</translation>
+    </message>
+</context>
+<context>
+    <name>FirmwareSetupView</name>
+    <message>
+        <source>Installation progress</source>
+        <translation>Installationsfortschritt</translation>
+    </message>
+</context>
+<context>
+    <name>FirmwareVersions</name>
+    <message>
+        <source>Apple firmware</source>
+        <translation>Apple-Firmware</translation>
+    </message>
+    <message>
+        <source>Mod version</source>
+        <translation>Mod-Version</translation>
     </message>
 </context>
 <context>
@@ -3614,6 +4327,10 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Abgelaufene Mixe werden bei der nächsten Synchronisierung durch einen anderen, zufällig ausgewählten Mix ersetzt. Ist keiner verfügbar, bleibt der aktuelle Mix erhalten. Manuelle Mixe laufen nie ab und werden nicht mitgezählt. Wenn Sie die Anzahl verringern, werden überzählige automatische Mixe bei der nächsten Synchronisierung entfernt.</translation>
     </message>
     <message>
+        <source>This iPod can show %1 mixes in total. Automatic mixes use the space left by your other mixes.</source>
+        <translation>Dieser iPod kann insgesamt %1 Mixe anzeigen. Automatische Mixe nutzen die Plätze, die deine anderen Mixe frei lassen.</translation>
+    </message>
+    <message>
         <source>Cancel</source>
         <translation type="vanished">Abbrechen</translation>
     </message>
@@ -3649,6 +4366,18 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Genius-Mixe hinzufügen</translation>
     </message>
     <message>
+        <source>Pending save</source>
+        <translation>Noch nicht gespeichert</translation>
+    </message>
+    <message>
+        <source>This Mix will appear on your iPod after your changes are saved.</source>
+        <translation>Dieser Mix erscheint auf deinem iPod, nachdem deine Änderungen gespeichert wurden.</translation>
+    </message>
+    <message>
+        <source>This firmware supports Genius Mixes, but iOpenPod cannot create Mixes for this iPod yet.</source>
+        <translation>Diese Firmware unterstützt Genius-Mixe, aber iOpenPod kann für diesen iPod noch keine Mixe erstellen.</translation>
+    </message>
+    <message>
         <source>Could not add Genius Mixes</source>
         <translation>Genius-Mixe konnten nicht hinzugefügt werden</translation>
     </message>
@@ -3657,8 +4386,24 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Die Einstellungen für Genius-Mixe konnten nicht gespeichert werden</translation>
     </message>
     <message>
+        <source>iPod changed</source>
+        <translation>iPod geändert</translation>
+    </message>
+    <message>
+        <source>The iPod or its library changed. Reopen the dialog and try again.</source>
+        <translation>Der iPod oder seine Mediathek hat sich geändert. Öffne den Dialog erneut und versuche es noch einmal.</translation>
+    </message>
+    <message>
         <source>Connect and choose an iPod to browse its Genius collections.</source>
         <translation>Verbinden Sie einen iPod und wählen Sie ihn aus, um seine Genius-Sammlungen anzuzeigen.</translation>
+    </message>
+    <message>
+        <source>Mixes are pending. Open Review Changes to save them to your iPod.</source>
+        <translation>Mixe sind noch nicht gespeichert. Öffne „Änderungen prüfen“, um sie auf deinem iPod zu speichern.</translation>
+    </message>
+    <message>
+        <source>New Mixes are pending until your changes are saved.</source>
+        <translation>Neue Mixe bleiben ausstehend, bis deine Änderungen gespeichert wurden.</translation>
     </message>
     <message>
         <source>No Genius collections were found on this iPod.</source>
@@ -4461,6 +5206,14 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Warte, bis der laufende iPod-Vorgang abgeschlossen ist, bevor du iOpenPod aktualisierst.</translation>
     </message>
     <message>
+        <source>Install universal 2.0.5</source>
+        <translation>Universelle 2.0.5 installieren</translation>
+    </message>
+    <message>
+        <source>Install unlocked bootloader</source>
+        <translation>Entsperrten Bootloader installieren</translation>
+    </message>
+    <message>
         <source>Choose Photo Export Folder</source>
         <translation>Exportordner für Fotos auswählen</translation>
     </message>
@@ -4515,6 +5268,22 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     <message>
         <source>Export Complete</source>
         <translation>Export abgeschlossen</translation>
+    </message>
+    <message>
+        <source>Install iOpenPod firmware</source>
+        <translation type="vanished">iOpenPod-Firmware installieren</translation>
+    </message>
+    <message>
+        <source>Save or discard the Library Draft before installing firmware.</source>
+        <translation>Speichere oder verwirf den Mediatheksentwurf, bevor du Firmware installierst.</translation>
+    </message>
+    <message>
+        <source>Unlock bootloader</source>
+        <translation type="vanished">Bootloader entsperren</translation>
+    </message>
+    <message>
+        <source>Save or discard the Library Draft before unlocking the bootloader.</source>
+        <translation>Speichere oder verwirf den Mediatheksentwurf, bevor du den Bootloader entsperrst.</translation>
     </message>
     <message>
         <source>Convert to tone</source>
@@ -7345,6 +8114,10 @@ Wählen Sie „Herunterladen und installieren“, um Python, Analysebibliotheken
         <translation>Keine Treffer. Versuchen Sie eine andere Suche.</translation>
     </message>
     <message>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
         <source>No tracks in this folder&apos;s playlists.</source>
         <translation>Keine Titel in den Wiedergabelisten dieses Ordners.</translation>
     </message>
@@ -8943,6 +9716,285 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     <message>
         <source>Overrides saved on the Active iPod</source>
         <translation>Eigene Werte auf dem aktiven iPod gespeichert</translation>
+    </message>
+</context>
+<context>
+    <name>SharedFirmwareDialog</name>
+    <message>
+        <source>Firmware uploaded</source>
+        <translation type="vanished">Firmware hochgeladen</translation>
+    </message>
+    <message>
+        <source>The upload finished, but USB did not confirm the restart. Your iPod may already be restarting.
+
+Wait for Connected / Do not disconnect, then choose Check installation. This verifies the previous upload without installing again.</source>
+        <translation type="vanished">Die Übertragung ist abgeschlossen, aber USB hat den Neustart nicht bestätigt. Ihr iPod startet möglicherweise bereits neu.
+
+Warten Sie, bis „Verbunden / Nicht trennen“ angezeigt wird, und wählen Sie dann „Installation prüfen“. So wird die vorherige Übertragung geprüft, ohne erneut zu installieren.</translation>
+    </message>
+    <message>
+        <source>Select the same iPod again before continuing.</source>
+        <translation>Wähle denselben iPod erneut aus, bevor du fortfährst.</translation>
+    </message>
+    <message>
+        <source>CUSTOM FIRMWARE  /  STEP 2 OF 2</source>
+        <translation>CUSTOM-FIRMWARE  /  SCHRITT 2 VON 2</translation>
+    </message>
+    <message>
+        <source>iPod Classic</source>
+        <translation>iPod Classic</translation>
+    </message>
+    <message>
+        <source>Install iOpenPod firmware</source>
+        <translation>iOpenPod-Firmware installieren</translation>
+    </message>
+    <message>
+        <source>Give your Classic the bundled firmware and mods. This step uses normal USB, with no download or DFU mode needed.</source>
+        <translation>Installieren Sie die mitgelieferte Firmware und Mods auf Ihrem Classic. Dieser Schritt nutzt normales USB und benötigt weder Download noch DFU-Modus.</translation>
+    </message>
+    <message>
+        <source>Preparing your firmware</source>
+        <translation>Firmware wird vorbereitet</translation>
+    </message>
+    <message>
+        <source>Unpacking and checking the firmware included with iOpenPod. You can cancel before writing begins.</source>
+        <translation>Die mit iOpenPod gelieferte Firmware wird entpackt und geprüft. Sie können abbrechen, bevor das Schreiben beginnt.</translation>
+    </message>
+    <message>
+        <source>Checking its identity, firmware space and music library before installation.</source>
+        <translation>Geräteidentität, Firmware-Speicherplatz und Mediathek werden vor der Installation geprüft.</translation>
+    </message>
+    <message>
+        <source>Keep USB connected and leave the buttons alone. Your iPod will restart after the upload finishes.</source>
+        <translation>Lassen Sie USB verbunden und drücken Sie keine Tasten. Ihr iPod startet nach der Übertragung neu.</translation>
+    </message>
+    <message>
+        <source>Firmware installed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Apple 2.0.5 and Mod Version {mod_version} have been uploaded. Your iPod is restarting.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Installation complete</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Keep USB connected until your iPod finishes restarting.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Let your iPod restart</source>
+        <translation type="vanished">iPod neu starten lassen</translation>
+    </message>
+    <message>
+        <source>Wait for Connected / Do not disconnect on its screen. Then choose Check installation.
+
+This checks the previous upload; it does not install again.</source>
+        <translation type="vanished">Warten Sie, bis „Verbunden / Nicht trennen“ auf dem Bildschirm erscheint. Wählen Sie dann „Installation prüfen“.
+
+Dies prüft die vorherige Übertragung, ohne erneut zu installieren.</translation>
+    </message>
+    <message>
+        <source>Checking the installation</source>
+        <translation type="vanished">Installation wird geprüft</translation>
+    </message>
+    <message>
+        <source>Reading the running firmware version and checking the disk layout and library.</source>
+        <translation type="vanished">Die laufende Firmware-Version wird gelesen und das Datenträgerlayout sowie die Mediathek werden geprüft.</translation>
+    </message>
+    <message>
+        <source>One final check on your iPod</source>
+        <translation type="vanished">Letzte Prüfung auf Ihrem iPod</translation>
+    </message>
+    <message>
+        <source>Your iPod has been safely ejected. Unplug USB and open Settings → About. Cycle through the pages and check for Version 2.0.5 and Mod Version {mod_version}.</source>
+        <translation type="vanished">Ihr iPod wurde sicher ausgeworfen. Ziehen Sie USB ab und öffnen Sie Einstellungen → Über. Blättern Sie durch die Seiten und prüfen Sie Version 2.0.5 und Mod Version {mod_version}.</translation>
+    </message>
+    <message>
+        <source>Your Classic is ready</source>
+        <translation type="vanished">Ihr Classic ist bereit</translation>
+    </message>
+    <message>
+        <source>Apple 2.0.5 and Mod Version {mod_version} are installed.</source>
+        <translation type="vanished">Apple 2.0.5 und Mod-Version {mod_version} sind installiert.</translation>
+    </message>
+    <message>
+        <source>Requires unlocked Bootloader {version}. Your music and disk layout are preserved. Keep your iPod charged and connected.</source>
+        <translation>Erfordert den entsperrten Bootloader {version}. Musik und Datenträgeraufteilung bleiben erhalten. Halten Sie Ihren iPod geladen und verbunden.</translation>
+    </message>
+    <message>
+        <source>If it has finished starting but has not reconnected, unplug and reconnect USB.</source>
+        <translation type="vanished">Falls er fertig gestartet ist, sich aber nicht erneut verbunden hat, ziehen Sie USB ab und stecken Sie es wieder ein.</translation>
+    </message>
+    <message>
+        <source>Upload complete · Waiting for your iPod</source>
+        <translation type="vanished">Übertragung abgeschlossen · Warten auf Ihren iPod</translation>
+    </message>
+    <message>
+        <source>Safely ejected · Confirm the versions above</source>
+        <translation type="vanished">Sicher ausgeworfen · Versionen oben bestätigen</translation>
+    </message>
+    <message>
+        <source>Installation confirmed</source>
+        <translation type="vanished">Installation bestätigt</translation>
+    </message>
+    <message>
+        <source>Future compatible firmware updates use normal USB.</source>
+        <translation type="vanished">Künftige kompatible Firmware-Updates nutzen normales USB.</translation>
+    </message>
+    <message>
+        <source>Installation stopped</source>
+        <translation>Installation angehalten</translation>
+    </message>
+    <message>
+        <source>No upload is retried automatically. Keep your iPod connected if the upload was interrupted.</source>
+        <translation>Keine Übertragung wird automatisch wiederholt. Lassen Sie Ihren iPod verbunden, falls die Übertragung unterbrochen wurde.</translation>
+    </message>
+    <message>
+        <source>Keep your iPod connected</source>
+        <translation>Lassen Sie Ihren iPod verbunden</translation>
+    </message>
+    <message>
+        <source>{percent}% complete · Keep USB connected</source>
+        <translation>{percent}% abgeschlossen · USB verbunden lassen</translation>
+    </message>
+    <message>
+        <source>Versions match</source>
+        <translation type="vanished">Versionen stimmen überein</translation>
+    </message>
+    <message>
+        <source>Install shared Classic firmware</source>
+        <translation type="vanished">Gemeinsame Classic-Firmware installieren</translation>
+    </message>
+    <message>
+        <source>Install Apple 2.0.5 with Mod Version {mod_version}. Your shared bootloader must already be unlocked. Music and the disk layout are preserved.
+
+iOpenPod downloads and keeps the required files, installs over normal USB, and restarts the iPod. Keep it charged and connected until installation finishes.</source>
+        <translation type="vanished">Installiere Apple 2.0.5 mit Mod-Version {mod_version}. Der gemeinsame Bootloader muss bereits entsperrt sein. Musik und Festplattenaufteilung bleiben erhalten.
+
+iOpenPod lädt die benötigten Dateien herunter, behält sie, installiert über die normale USB-Verbindung und startet den iPod neu. Sorge für ausreichend Akkuladung und lasse ihn bis zum Ende der Installation angeschlossen.</translation>
+    </message>
+    <message>
+        <source>Preparing firmware</source>
+        <translation type="vanished">Firmware wird vorbereitet</translation>
+    </message>
+    <message>
+        <source>Downloading or checking saved firmware and preparing the shared image. You can cancel before writing begins.</source>
+        <translation type="vanished">Firmware wird heruntergeladen oder geprüft und das gemeinsame Abbild vorbereitet. Du kannst vor Beginn des Schreibvorgangs abbrechen.</translation>
+    </message>
+    <message>
+        <source>Install universal 2.0.5</source>
+        <translation>Universelle 2.0.5 installieren</translation>
+    </message>
+    <message>
+        <source>Install universal Classic 2.0.5</source>
+        <translation type="vanished">Universelle Classic-Firmware 2.0.5 installieren</translation>
+    </message>
+    <message>
+        <source>Install universal Classic firmware 2.0.5 with Mod Version {mod_version}. Install the universal unlocked bootloader first. Music and the disk layout are preserved.
+
+The complete firmware is included with iOpenPod and works offline. Installation uses normal USB and restarts the iPod. Keep it charged and connected until installation finishes.</source>
+        <translation type="vanished">Installiere die universelle Classic-Firmware 2.0.5 mit Mod-Version {mod_version}. Installiere zuerst den universellen entsperrten Bootloader. Musik und Datenträgerlayout bleiben erhalten.
+
+Die vollständige Firmware ist in iOpenPod enthalten und funktioniert offline. Die Installation erfolgt über normales USB und startet den iPod neu. Halte ihn geladen und verbunden, bis die Installation abgeschlossen ist.</translation>
+    </message>
+    <message>
+        <source>Preparing bundled firmware</source>
+        <translation type="vanished">Enthaltene Firmware wird vorbereitet</translation>
+    </message>
+    <message>
+        <source>Checking the saved image or unpacking the firmware included with iOpenPod. No download is needed. You can cancel before writing begins.</source>
+        <translation type="vanished">Das gespeicherte Abbild wird geprüft oder die in iOpenPod enthaltene Firmware entpackt. Ein Download ist nicht nötig. Du kannst vor Beginn des Schreibvorgangs abbrechen.</translation>
+    </message>
+    <message>
+        <source>Checking your iPod</source>
+        <translation>iPod wird geprüft</translation>
+    </message>
+    <message>
+        <source>Checking its identity, available firmware space and music library before installation.</source>
+        <translation type="vanished">Identität, verfügbarer Firmware-Speicher und Musikmediathek werden vor der Installation geprüft.</translation>
+    </message>
+    <message>
+        <source>Installing firmware</source>
+        <translation>Firmware wird installiert</translation>
+    </message>
+    <message>
+        <source>Keep the iPod connected. Do not press buttons or close iOpenPod. It will restart after the upload finishes.</source>
+        <translation type="vanished">Lasse den iPod angeschlossen. Drücke keine Tasten und schließe iOpenPod nicht. Nach der Übertragung startet er neu.</translation>
+    </message>
+    <message>
+        <source>Wait for your iPod to reconnect</source>
+        <translation type="vanished">Warte, bis sich dein iPod wieder verbindet</translation>
+    </message>
+    <message>
+        <source>Let the iPod finish restarting. It should show Connected / Do not disconnect. Reconnect USB if needed, then choose Check installation. This checks the previous upload; it does not install again.</source>
+        <translation type="vanished">Warte, bis der iPod neu gestartet ist. Er sollte Verbunden / Nicht trennen anzeigen. Verbinde ihn bei Bedarf erneut per USB und wähle Installation prüfen. Dabei wird die vorherige Übertragung geprüft und nicht erneut installiert.</translation>
+    </message>
+    <message>
+        <source>Checking installation</source>
+        <translation type="vanished">Installation wird geprüft</translation>
+    </message>
+    <message>
+        <source>Checking the running firmware and unchanged library, then safely ejecting the iPod.</source>
+        <translation type="vanished">Die laufende Firmware und die unveränderte Mediathek werden geprüft. Anschließend wird der iPod sicher ausgeworfen.</translation>
+    </message>
+    <message>
+        <source>Check the version on your iPod</source>
+        <translation type="vanished">Prüfe die Version auf deinem iPod</translation>
+    </message>
+    <message>
+        <source>Your iPod booted Apple 2.0.5 and was safely ejected. Unplug USB and open Settings → About. Cycle through its pages and confirm both Version 2.0.5 and Mod Version {mod_version} are shown.</source>
+        <translation type="vanished">Dein iPod hat Apple 2.0.5 gestartet und wurde sicher ausgeworfen. Trenne USB und öffne Einstellungen → Über. Blättere durch die Seiten und bestätige, dass Version 2.0.5 und Mod Version {mod_version} angezeigt werden.</translation>
+    </message>
+    <message>
+        <source>Universal firmware installed</source>
+        <translation type="vanished">Universelle Firmware installiert</translation>
+    </message>
+    <message>
+        <source>iOpenPod firmware installed</source>
+        <translation type="vanished">iOpenPod-Firmware installiert</translation>
+    </message>
+    <message>
+        <source>Apple 2.0.5 and Mod Version {mod_version} are installed. Your music library is unchanged. Future compatible firmware updates can use normal USB without DFU.</source>
+        <translation type="vanished">Apple 2.0.5 und Mod-Version {mod_version} sind installiert. Deine Musikmediathek ist unverändert. Zukünftige kompatible Firmware-Updates können über normales USB ohne DFU erfolgen.</translation>
+    </message>
+    <message>
+        <source>Installation canceled</source>
+        <translation>Installation abgebrochen</translation>
+    </message>
+    <message>
+        <source>No firmware was written. Select your iPod again when you are ready.</source>
+        <translation>Es wurde keine Firmware geschrieben. Wähle deinen iPod erneut aus, wenn du bereit bist.</translation>
+    </message>
+    <message>
+        <source>Installation needs attention</source>
+        <translation>Installation erfordert Aufmerksamkeit</translation>
+    </message>
+    <message>
+        <source>No upload is retried automatically. Keep the iPod connected if the upload was interrupted.</source>
+        <translation type="vanished">Eine Übertragung wird nicht automatisch wiederholt. Lasse den iPod angeschlossen, falls die Übertragung unterbrochen wurde.</translation>
+    </message>
+    <message>
+        <source>Both versions are correct</source>
+        <translation type="vanished">Beide Versionen sind korrekt</translation>
+    </message>
+    <message>
+        <source>Check installation</source>
+        <translation type="vanished">Installation prüfen</translation>
+    </message>
+    <message>
+        <source>Install firmware</source>
+        <translation>Firmware installieren</translation>
+    </message>
+    <message>
+        <source>Library files have changed since the upload, so an unchanged library could not be confirmed. This check left them untouched.</source>
+        <translation type="vanished">Die Mediatheksdateien haben sich seit der Übertragung geändert. Daher konnte nicht bestätigt werden, dass die Mediathek unverändert ist. Diese Prüfung hat die Dateien nicht verändert.</translation>
+    </message>
+    <message>
+        <source>The checked library files are unchanged.</source>
+        <translation type="vanished">Die geprüften Mediatheksdateien sind unverändert.</translation>
     </message>
 </context>
 <context>
@@ -14909,6 +15961,14 @@ Playlists: %3</translation>
         <translation>Akustische Analyse · librosa · CPU</translation>
     </message>
     <message>
+        <source>Mix artwork requires a qualified firmware target.</source>
+        <translation>Cover für Mixe erfordern eine verifizierte Ziel-Firmware.</translation>
+    </message>
+    <message>
+        <source>Native Genius Mix authoring requires a supported Classic or SQLite target.</source>
+        <translation>Das Erstellen nativer Genius-Mixe erfordert einen unterstützten Classic oder ein unterstütztes SQLite-Ziel.</translation>
+    </message>
+    <message>
         <source>Phase · {detail} · {completed}/{total} tracks</source>
         <translation>Phase · {detail} · {completed}/{total} Titel</translation>
     </message>
@@ -16376,7 +17436,7 @@ Verifizierte Firmware für Updater-Familie {family}: {firmware}.</translation>
     </message>
     <message>
         <source>Native Genius Mix authoring requires a SQLite artifact target.</source>
-        <translation>Zum Erstellen nativer Genius-Mixe ist ein Ziel mit SQLite-Datenbanken erforderlich.</translation>
+        <translation type="vanished">Zum Erstellen nativer Genius-Mixe ist ein Ziel mit SQLite-Datenbanken erforderlich.</translation>
     </message>
     <message>
         <source>Native Genius Playlists are read-only.</source>

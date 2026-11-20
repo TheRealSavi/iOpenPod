@@ -47,11 +47,8 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.genius_mixes import MIX_CATALOG, MixPolicy, MixProposal
+from iOpenPod.GUI.presentation.genius_mix_artwork import mix_colors, paint_mix_artwork
 from iOpenPod.GUI.presentation.icons import glyph_icon
-from iOpenPod.GUI.presentation.theme.dynamic import (
-    GeniusArtworkColors,
-    genius_artwork_colors,
-)
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import (
     LAYOUT,
@@ -87,46 +84,9 @@ _MIX_LABELS = {
     "relax": QT_TRANSLATE_NOOP("GeniusMixNames", "Relax Mix"),
 }
 
-_MIX_COLOR_INDEX = {
-    "rock": 3,
-    "alternative": 1,
-    "pop": 2,
-    "hard-rock": 0,
-    "metal": 4,
-    "punk": 3,
-    "electronic": 0,
-    "dance": 3,
-    "hip-hop": 2,
-    "soul": 4,
-    "jazz": 0,
-    "blues": 5,
-    "country": 2,
-    "folk": 1,
-    "classical": 4,
-    "reggae": 1,
-    "latin": 3,
-    "soundtracks": 5,
-    "focus": 0,
-    "love": 3,
-    "energy": 2,
-    "relax": 4,
-}
-
-
-def _mix_colors(key: str, tokens: ThemeTokens) -> GeniusArtworkColors:
-    accents = (
-        tokens.artwork_blue,
-        tokens.artwork_green,
-        tokens.artwork_gold,
-        tokens.artwork_coral,
-        tokens.artwork_violet,
-        tokens.artwork_slate,
-    )
-    return genius_artwork_colors(accents[_MIX_COLOR_INDEX[key]], tokens)
-
 
 def _mix_icon(proposal: MixProposal, tokens: ThemeTokens) -> QIcon:
-    colors = _mix_colors(proposal.definition.key, tokens)
+    colors = mix_colors(proposal.definition.key, tokens)
     return glyph_icon(f"genius-mixes/{proposal.definition.key}", 80, colors.ink)
 
 
@@ -227,7 +187,7 @@ class _MixCardDelegate(QStyledItemDelegate):
         focused = bool(state & QStyle.StateFlag.State_HasFocus)
         pressed = enabled and index == self._view.pressed_index
         key = str(index.data(Qt.ItemDataRole.UserRole))
-        colors = _mix_colors(key, tokens)
+        colors = mix_colors(key, tokens)
         card = QRectF(option.rect).adjusted(4, 4, -4, -4)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -251,29 +211,7 @@ class _MixCardDelegate(QStyledItemDelegate):
         clip.addRoundedRect(card, LAYOUT.radius_panel, LAYOUT.radius_panel)
         painter.save()
         painter.setClipPath(clip)
-        painter.fillRect(
-            artwork, colors.field if enabled else QColor(tokens.surface_alt)
-        )
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(colors.line if enabled else QColor(tokens.border), 1))
-        center = artwork.center()
-        for diameter in (112, 140, 168):
-            orbit = QRectF(
-                center.x() - diameter / 2,
-                center.y() - diameter / 2,
-                diameter,
-                diameter,
-            )
-            painter.drawArc(orbit, 25 * 16, 130 * 16)
-            painter.drawArc(orbit, 205 * 16, 130 * 16)
-        icon = index.data(Qt.ItemDataRole.DecorationRole)
-        if isinstance(icon, QIcon):
-            icon.paint(
-                painter,
-                QRectF(center.x() - 40, center.y() - 40, 80, 80).toRect(),
-                Qt.AlignmentFlag.AlignCenter,
-                QIcon.Mode.Normal if enabled else QIcon.Mode.Disabled,
-            )
+        paint_mix_artwork(painter, artwork, key, tokens, enabled=enabled)
         painter.restore()
 
         # A persistent checkbox affordance makes multi-selection discoverable.
@@ -355,6 +293,8 @@ class AddGeniusMixesDialog(QDialog):
         parent: QWidget | None = None,
         *,
         theme_manager: ThemeManager | None = None,
+        available_slots: int | None = None,
+        retained_keys: frozenset[str] = frozenset(),
     ) -> None:
         super().__init__(parent)
         self.setObjectName("addGeniusMixesDialog")
@@ -362,6 +302,8 @@ class AddGeniusMixesDialog(QDialog):
         self.resize(920, 424)
         self.setMinimumWidth(520)
         self._theme_manager = theme_manager
+        self._available_slots = available_slots
+        self._retained_keys = retained_keys
         self._proposals = tuple(proposal for proposal in proposals if proposal.eligible)
         tokens = theme_manager.tokens if theme_manager is not None else LIGHT_TOKENS
         typography = (
@@ -481,6 +423,10 @@ class AddGeniusMixesDialog(QDialog):
                 )
             )
             instruction = self.tr("Select to add this mix")
+            if proposal.definition.key == "focus":
+                instruction = self.tr(
+                    "Very calm music with little singing. Uses optional instrument analysis from Settings."
+                )
             item.setToolTip(f"{item.text()}\n{instruction}")
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))
         self._add.setText(self.tr("Add"))
@@ -488,9 +434,17 @@ class AddGeniusMixesDialog(QDialog):
 
     def _update_selection(self) -> None:
         count = len(self.selected_keys)
-        self._add.setEnabled(count > 0)
+        needs_slot = len(set(self.selected_keys) - self._retained_keys)
+        self._add.setEnabled(
+            count > 0
+            and (self._available_slots is None or needs_slot <= self._available_slots)
+        )
         self._selection.setText(
-            self.tr("%1 selected").replace("%1", str(count))
+            self.tr("%1 selected · %2 new mix slots available")
+            .replace("%1", str(count))
+            .replace("%2", str(self._available_slots))
+            if self._available_slots is not None
+            else self.tr("%1 selected").replace("%1", str(count))
             if count
             else self.tr("Select your mixes")
             if self._proposals
@@ -523,8 +477,15 @@ class AddGeniusMixesDialog(QDialog):
 
 
 class GeniusMixSettingsDialog(QDialog):
-    def __init__(self, policy: MixPolicy, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        policy: MixPolicy,
+        parent: QWidget | None = None,
+        *,
+        max_count: int | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._max_count = max_count
         self.setObjectName("geniusMixSettingsDialog")
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setMinimumWidth(420)
@@ -534,7 +495,9 @@ class GeniusMixSettingsDialog(QDialog):
         self._count = QSpinBox(self)
         self._count.setObjectName("automaticGeniusMixCount")
         self._count.setMinimumHeight(LAYOUT.control_height)
-        self._count.setRange(0, len(MIX_CATALOG))
+        self._count.setRange(
+            0, max_count if max_count is not None else len(MIX_CATALOG)
+        )
         self._count.setValue(policy.count)
         self._count_label.setBuddy(self._count)
         self._expiry_label = QLabel(self)
@@ -587,6 +550,14 @@ class GeniusMixSettingsDialog(QDialog):
         self._help.setText(
             self.tr(
                 "Expired mixes are replaced with a different random mix at the next Sync. If none is available, the current mix stays. Manual mixes never expire and do not count toward Count. Reducing Count removes excess automatic mixes at the next Sync."
+            )
+            + (
+                "\n\n"
+                + self.tr(
+                    "This iPod can show %1 mixes in total. Automatic mixes use the space left by your other mixes."
+                ).replace("%1", str(self._max_count))
+                if self._max_count is not None
+                else ""
             )
         )
         self._cancel.setText(QCoreApplication.translate("CommonActions", "Cancel"))

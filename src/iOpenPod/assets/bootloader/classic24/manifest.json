@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "identifier": "iOpenPod-Bootloader-v1",
+  "version": "1.0.0",
+  "family": 24,
+  "hardware": 1245184,
+  "stock_sha256": "460368ec325ab567b3ea1d0c5e2eb09df7dac0502c1141257ffb32d661248f96",
+  "unmarked_sha256": "42d18c4828a7fe84380d85dfd759948f511af8a9fd35bea0a53b2656787a169c",
+  "target_sha256": "2f29ceef5ad494885cc81e390261b34227bdc6d14ec455224c7e4272e052f5cf",
+  "bootrom_sha256": "69c087afc5753d7f0f11f09b141b372af753a854bc526673ea444c486d6003e4",
+  "marker_offset": 109936,
+  "marker_hex": "694f70656e506f642d426f6f746c6f616465722d76310000000000000000000001000000010000001800000000001300312e302e300000000000000000000000",
+  "gap_start": 110000,
+  "seccore_offset": 128240,
+  "max_body_bytes": 9930752,
+  "slots": {
+    "expected_after_full": {
+      "offset": 5860,
+      "size": 32
+    },
+    "expected_target": {
+      "offset": 5828,
+      "size": 32
+    },
+    "expected_outside": {
+      "offset": 5796,
+      "size": 32
+    },
+    "expected_syscfg": {
+      "offset": 5764,
+      "size": 32
+    },
+    "expected_original_boot": {
+      "offset": 5732,
+      "size": 32
+    },
+    "expected_original_full": {
+      "offset": 5700,
+      "size": 32
+    },
+    "run_nonce": {
+      "offset": 5684,
+      "size": 16
+    },
+    "packed_header": {
+      "offset": 6180,
+      "size": 80
+    },
+    "packed_body": {
+      "offset": 6260,
+      "size": 110784
+    }
+  },
+  "files": {
+    "stock.delta": "4d5bf1a0d554a5b2d09088c96eedc628dad33086d30e0c0ce72e419e4885afe8",
+    "writer.dfu": "eed5c21685a7001eae9456d3a41e4a0df1df90d5dcd8b59312e9d4df317372b7"
+  }
+}

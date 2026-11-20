@@ -22,6 +22,7 @@ from iOpenPod.app.library_write_inspection import inspect_library_write
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.services import device_coordinator, library_resources
 from iOpenPod.app.services.device_coordinator import DeviceCoordinator
+from iOpenPod.GUI.presentation.genius_mix_artwork import render_mix_cover
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhif import MhifHeader
 from iPodDB.ArtworkDB.writer.write_ArtworkDB import write_ArtworkDB
@@ -117,6 +118,7 @@ def build_device(
     photos: bool = False,
     media_payload: bytes | None = None,
     artwork_size_multiplier: int = 1,
+    artwork_format: CoverFormat | None = None,
     model: str = "MB565",
     compressed_database: bool = False,
     host_recovery: bool = False,
@@ -126,9 +128,12 @@ def build_device(
         target=replace(
             TARGET,
             cover_formats=(
-                CoverFormat(1055, 128, 128, 256, CoverPixelFormat.RGB565_LE)
-                if model == "MB565"
-                else CoverFormat(1060, 320, 320, 640, CoverPixelFormat.RGB565_LE),
+                artwork_format
+                or (
+                    CoverFormat(1055, 128, 128, 256, CoverPixelFormat.RGB565_LE)
+                    if model == "MB565"
+                    else CoverFormat(1060, 320, 320, 640, CoverPixelFormat.RGB565_LE)
+                ),
             ),
         )
     )
@@ -218,7 +223,7 @@ def build_device(
         writer_lock_directory=tmp_path / "locks",
         transaction_recovery_directory=tmp_path / "recovery" if host_recovery else None,
     )
-    coordinator = DeviceCoordinator(storage)
+    coordinator = DeviceCoordinator(storage, mix_cover_renderer=render_mix_cover)
     coordinator.select_device(coordinator.discover_devices().candidates[0].id)
     return Device(root, storage, platform, coordinator, files)
 

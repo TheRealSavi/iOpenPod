@@ -23,7 +23,6 @@ from device_registry import (
     IdentificationResult,
     IdentificationStatus,
     UsbIdentifier,
-    authority_covers_metadata,
     normalize_product_serial,
     parse_sysinfo,
     parse_sysinfo_extended,
@@ -45,9 +44,20 @@ from iOpenPod.app.core.settings.device import (
     save_device_settings,
 )
 from iOpenPod.app.display_text import exception_text, source_text
+from iOpenPod.app.firmware.bootloader_report import read_bootloader_report
 from iOpenPod.app.genius_analysis import GeniusAnalysisService
 from iOpenPod.app.genius_generation import generate_genius_update
-from iOpenPod.app.genius_mixes import MixState, supports_mix_creation
+from iOpenPod.app.genius_mix_artwork import (
+    MixCoverRenderer,
+    mix_artwork_format,
+    mix_artwork_updates,
+)
+from iOpenPod.app.genius_mixes import (
+    GENIUS_MIX_POLICY,
+    MixPolicy,
+    MixState,
+    supports_mix_creation,
+)
 from iOpenPod.app.library_sync_helper import (
     LIBRARY_SYNC_HELPER_PATH,
     IPodMediaLibrary,
@@ -116,6 +126,7 @@ from iOpenPod.app.services.device_storage import (
 )
 from iOpenPod.app.services.genius_browse import capture_genius_browse
 from iOpenPod.app.services.genius_mixes import (
+    capture_mix_ownership,
     load_mix_state,
     prepare_mix_changes,
     prune_mix_ownership,
@@ -140,7 +151,11 @@ from iPodDB.library import (
     PlaylistKind,
     resolve_phase_playlist,
 )
-from iPodDB.library.genius import GeniusCollectionKind, project_genius_browse
+from iPodDB.library.genius import (
+    GeniusCollectionKind,
+    GeniusUpdate,
+    project_genius_browse,
+)
 from storage import (
     AccessMode,
     ConnectionGeneration,
@@ -198,6 +213,7 @@ if TYPE_CHECKING:
     from iOpenPod.app.playlist_sync import PlaylistAssociation
     from iPodDB.library import (
         ArtworkGroupReference,
+        GeniusMixArtwork,
         Hash72Material,
         LibraryWritePlan,
         Photo,
@@ -403,6 +419,7 @@ class DeviceCoordinator:
         ithmb_cache_byte_limit: int = 16 * 1024 * 1024,
         ipod_media_scanner: IPodMediaScanner | None = None,
         genius_analysis: GeniusAnalysisService | None = None,
+        mix_cover_renderer: MixCoverRenderer | None = None,
         phase_analysis: PhaseAnalysisService | None = None,
         volume_presentation_enabled: bool = True,
     ) -> None:
@@ -432,6 +449,7 @@ class DeviceCoordinator:
         self._podcast_store = PodcastDeviceStore()
         self._ipod_media_scanner = ipod_media_scanner or IPodMediaScanner()
         self._genius_analysis = genius_analysis or GeniusAnalysisService()
+        self._mix_cover_renderer = mix_cover_renderer
         self._phase_analysis = phase_analysis or PhaseAnalysisService()
         self._recovery_observations: dict[
             str, tuple[MountedVolume, FileFingerprint]
@@ -2154,6 +2172,11 @@ class DeviceCoordinator:
                 max_database_bytes=capabilities.database.max_database_bytes,
                 compressed_database=capabilities.database.supports_compressed_database,
                 sqlite_database=capabilities.database.uses_sqlite_database,
+                classic_genius_mixes=(
+                    expected.profile.family == "iPod Classic"
+                    and supports_mix_creation(expected.profile)
+                ),
+                genius_mix_artwork_format=mix_artwork_format(expected.profile),
                 sqlite_checksum=sqlite_checksum,
                 hash72_material=hash72_material,
                 sqlite_postprocess_commands=sqlite_postprocess_commands,
@@ -2246,7 +2269,10 @@ class DeviceCoordinator:
                 request.add_genius_mixes or request.rotate_genius_mixes or mix_removals
             ) and (
                 not supports_mix_creation(expected.profile)
-                or not request.regenerate_genius
+                or (
+                    (request.add_genius_mixes or request.rotate_genius_mixes)
+                    and not request.regenerate_genius
+                )
             ):
                 raise ValueError(
                     "Native Genius Mix creation is unavailable for this iPod."
@@ -2309,6 +2335,14 @@ class DeviceCoordinator:
                     )
                 )
                 analysis_ids = {t.track_id for t in analysis_snapshot.tracks}
+                mix_policy = dict(expected.settings.values).get(
+                    GENIUS_MIX_POLICY.key, GENIUS_MIX_POLICY.default
+                )
+                automatic_mixes_enabled = (
+                    request.rotate_genius_mixes
+                    and GENIUS_MIX_POLICY.validate(mix_policy)
+                    and MixPolicy.decode(mix_policy).count > 0
+                )
                 genius_analysis = self._genius_analysis.analyze(
                     analysis_snapshot,
                     active.session,
@@ -2317,8 +2351,12 @@ class DeviceCoordinator:
                         for source in request.media
                         if source.media.track_id in analysis_ids
                     ),
+                    host_sources=request.genius_host_sources,
                     checkpoint=genius_checkpoint,
                     progress=genius_progress,
+                    analyze_vocals=(
+                        "focus" in request.add_genius_mixes or automatic_mixes_enabled
+                    ),
                     skip_requested=(
                         request.genius_analysis_skip.is_set
                         if request.genius_analysis_skip is not None
@@ -2340,20 +2378,23 @@ class DeviceCoordinator:
                     profiles=genius_analysis.profiles,
                     checkpoint=genius_checkpoint,
                 )
-                if (
-                    request.add_genius_mixes
-                    or request.rotate_genius_mixes
-                    or mix_removals
-                ):
-                    genius_update, genius_mix_state, mix_preconditions, mix_write = (
-                        prepare_mix_changes(
-                            active.session,
-                            request,
-                            genius_update,
-                            profiles=genius_analysis.profiles,
-                            remove_ids=mix_removals,
-                        )
+            if request.add_genius_mixes or request.rotate_genius_mixes or mix_removals:
+                genius_update, genius_mix_state, mix_preconditions, mix_write = (
+                    prepare_mix_changes(
+                        active.session,
+                        request,
+                        genius_update
+                        if genius_update is not None
+                        else GeniusUpdate(None),
+                        profiles=(
+                            None
+                            if genius_analysis is None
+                            else genius_analysis.profiles
+                        ),
+                        remove_ids=mix_removals,
+                        reserved_artwork_ids=source.artwork_owner_ids,
                     )
+                )
             snapshot = refresh_smart_playlists(
                 snapshot,
                 checkpoint=lambda: checkpoint(
@@ -2366,6 +2407,53 @@ class DeviceCoordinator:
                 prepared_snapshot=prepared_snapshot,
             )
             checkpoint("draft.analysis", "Analyzing changes")
+            mix_covers: tuple[GeniusMixArtwork, ...] = ()
+            if (
+                target.genius_mix_artwork_format is not None
+                and not expected.genius_mix_state.error
+            ):
+                planned_mix_state = genius_mix_state or expected.genius_mix_state
+                known_mix_ids = {
+                    collection.native_playlist_id
+                    for collection in expected.genius.collections
+                    if collection.kind is GeniusCollectionKind.MIX
+                }
+                if genius_update is not None:
+                    known_mix_ids.update(
+                        m.container_id for m in genius_update.mix_additions
+                    )
+                before = replace(
+                    expected.genius_mix_state,
+                    entries=tuple(
+                        e
+                        for e in expected.genius_mix_state.entries
+                        if e.container_id in known_mix_ids
+                    ),
+                )
+                after = replace(
+                    planned_mix_state,
+                    entries=tuple(
+                        e
+                        for e in planned_mix_state.entries
+                        if e.container_id in known_mix_ids
+                    ),
+                )
+                mix_covers = mix_artwork_updates(
+                    before,
+                    after,
+                    render_cover=self._mix_cover_renderer,
+                    size=target.genius_mix_artwork_format.width,
+                )
+                if mix_covers:
+                    ownership = capture_mix_ownership(
+                        active.session, expected.genius_mix_state
+                    )
+                    mix_preconditions = (
+                        *tuple(
+                            p for p in mix_preconditions if p.path != ownership.path
+                        ),
+                        ownership,
+                    )
             plan = source.analyze(
                 source.begin_draft(
                     snapshot,
@@ -2388,6 +2476,7 @@ class DeviceCoordinator:
                         and playlist.playlist_id in retained_live_smart_ids
                     ),
                     genius_update=genius_update,
+                    genius_mix_artwork=mix_covers,
                 ),
                 target,
             )
@@ -2418,6 +2507,9 @@ class DeviceCoordinator:
                 source_artwork_display_times=source.artwork_display_times,
                 source_artwork_paths=source_artwork_paths,
                 source_artwork_file_paths=source.artwork_file_paths,
+                source_mix_artwork_paths=source.genius_mix_artwork_paths(
+                    tuple(u.mix_id for u in mix_covers)
+                ),
                 additional_preconditions=(
                     *sqlite_postprocess_preconditions,
                     *mix_preconditions,
@@ -2441,25 +2533,35 @@ class DeviceCoordinator:
             if genius_analysis is not None:
                 genius_analysis = genius_analysis.with_tagged_media(resources.lyrics)
             result = source.prepare(plan, resources, progress=database_progress)
-            if result.prepared is not None and result.prepared.sqlite is not None:
+            if result.prepared is not None and (
+                plan.draft.delete_omissions
+                or plan.draft.replace_media
+                or plan.draft.genius_update is not None
+            ):
                 planned_state = genius_mix_state or expected.genius_mix_state
-                live_tracks = {t.track_id for t in result.prepared.snapshot.tracks}
-                depleted = frozenset(
+                prior_mix_ids = frozenset(
                     collection.native_playlist_id
                     for collection in expected.genius.collections
                     if collection.kind is GeniusCollectionKind.MIX
-                    and collection.track_ids
-                    and not live_tracks.intersection(collection.track_ids)
                     and collection.native_playlist_id is not None
                 )
-                if any(e.container_id in depleted for e in planned_state.entries):
+                if any(e.container_id in prior_mix_ids for e in planned_state.entries):
                     final_browse = project_genius_browse(
                         replace(result.prepared.snapshot, playlists=()),
-                        sqlite_library=result.prepared.sqlite.library,
+                        sqlite_library=(
+                            result.prepared.sqlite.library
+                            if result.prepared.sqlite is not None
+                            else None
+                        ),
+                        classic_mixes=(
+                            IPodLibrary(result.prepared.itunes).classic_genius_mixes()
+                            if result.prepared.sqlite is None
+                            else None
+                        ),
                     )
                     if final_browse.issues:
                         raise ValueError("Prepared Genius Mixes could not be verified.")
-                    removed_mix_ids = depleted - {
+                    removed_mix_ids = prior_mix_ids - {
                         collection.native_playlist_id
                         for collection in final_browse.collections
                     }
@@ -2609,7 +2711,7 @@ class DeviceCoordinator:
                     primary_database=library_resources.database_path(
                         expected.database_name
                     ),
-                    allow_unchanged=allow_unchanged,
+                    allow_unchanged=allow_unchanged or bool(mix_covers),
                 )
                 if podcast_state is not None:
                     history = self._podcast_store.state_transaction(
@@ -2946,6 +3048,11 @@ class DeviceCoordinator:
                         session,
                         updated_source.snapshot,
                         sqlite=expected.profile.capabilities.database.uses_sqlite_database,
+                        classic_mixes=(
+                            updated_source.classic_genius_mixes()
+                            if not expected.profile.capabilities.database.uses_sqlite_database
+                            else None
+                        ),
                         excluded_sidecars=frozenset(
                             removal.path.name.casefold()
                             for removal in transaction.removals
@@ -3537,6 +3644,11 @@ class DeviceCoordinator:
                     session,
                     library.snapshot,
                     sqlite=profile.capabilities.database.uses_sqlite_database,
+                    classic_mixes=(
+                        library.classic_genius_mixes()
+                        if not profile.capabilities.database.uses_sqlite_database
+                        else None
+                    ),
                     sidecars=sidecars,
                 )
                 phase_id, phase_precondition = capture_phase_selection(session)
@@ -3612,6 +3724,26 @@ class DeviceCoordinator:
                     genius_mix_state=load_mix_state(session),
                     firmware_version=_summary_identifier(
                         summary_evidence.firmware_versions
+                    ),
+                    updater_family_id=_summary_updater_family(
+                        summary_evidence.updater_family_ids
+                    ),
+                    firmware_version_current=bool(
+                        _summary_identifier(current.hardware_evidence.firmware_versions)
+                    ),
+                    updater_family_current=(
+                        _summary_updater_family(
+                            current.hardware_evidence.updater_family_ids
+                        )
+                        is not None
+                    ),
+                    bootloader_report=read_bootloader_report(
+                        current.live_sysinfo_extended,
+                        serial=_summary_identifier(
+                            summary_evidence.product_serials,
+                            normalize=normalize_product_serial,
+                        ),
+                        model=profile.model_number,
                     ),
                     serial_number=_summary_identifier(
                         summary_evidence.product_serials,
@@ -4433,6 +4565,20 @@ class DeviceCoordinator:
             )
         return active, path
 
+    def firmware_volume(self, expected: ActiveIPod) -> MountedVolume:
+        """Capture the selected connection before retiring its filesystem access."""
+        with self._lock:
+            active = self._active
+            if (
+                active is None
+                or active.active_ipod is not expected
+                or not active.session.is_active
+            ):
+                raise DeviceChangedError(
+                    "The selected iPod changed before firmware installation"
+                )
+            return active.record.mounted_volume
+
     def deactivate(self) -> None:
         """End the Active iPod Filesystem Session and clear device state."""
 
@@ -4583,15 +4729,9 @@ class DeviceCoordinator:
                 if not preflight_session.exists(_IPOD_CONTROL_PATH):
                     return None
                 self._check_sync_recovery(preflight_session)
-                if not _hardware_probe_required(
-                    preflight_session,
-                    self._registry,
-                    hardware_evidence,
-                ):
-                    return self._inspect_open_session(
-                        preflight_session,
-                        hardware_evidence,
-                    )
+                # Files on the data partition can survive a firmware replacement.
+                # Probe once per discovery/explicit refresh; background polling
+                # already reuses records within the same connection generation.
         except StorageError as error:
             return _inspection_failed_record(
                 mounted,
@@ -4661,6 +4801,13 @@ class DeviceCoordinator:
         mounted = session.mounted_volume
         evidence = hardware_evidence or _hardware_evidence(mounted)
         metadata_evidence, metadata_issues = _read_device_metadata(session)
+        if live_sysinfo_extended:
+            # A live OS response supersedes the whole cached firmware identity,
+            # including fields it omits. Never combine a new version with an old
+            # updater family to qualify a Preferences/Extras contract.
+            metadata_evidence = replace(
+                metadata_evidence, firmware_versions=(), updater_family_ids=()
+            )
         issues = (*persistent_issues, *metadata_issues)
         device_evidence = evidence.merged_with(metadata_evidence)
         identification = self._registry.identify(device_evidence)
@@ -4972,6 +5119,21 @@ class DeviceCoordinator:
             self._deactivate_locked()
             return None
 
+        firmware_version = _summary_identifier(
+            current.device_evidence.firmware_versions
+        )
+        updater_family = _summary_updater_family(
+            current.device_evidence.updater_family_ids
+        )
+        if refresh_candidate and (
+            firmware_version != active.active_ipod.firmware_version
+            or updater_family != active.active_ipod.updater_family_id
+        ):
+            # Preferences and feature contracts were loaded against the old OS.
+            # Let DeviceController reload the remembered device under new evidence.
+            self._deactivate_locked()
+            return None
+
         active.record = current
         cleanup_changed = tuple(
             issue
@@ -4982,12 +5144,25 @@ class DeviceCoordinator:
             for issue in current.candidate.issues
             if issue.code in _TRANSACTION_CLEANUP_ISSUE_CODES
         )
-        if (
-            refresh_candidate or cleanup_changed
-        ) and active.active_ipod.candidate != current.candidate:
-            active.active_ipod = replace(
-                active.active_ipod, candidate=current.candidate
+        if refresh_candidate or cleanup_changed:
+            refreshed = replace(
+                active.active_ipod,
+                candidate=current.candidate,
+                firmware_version_current=bool(
+                    _summary_identifier(current.hardware_evidence.firmware_versions)
+                ),
+                updater_family_current=_summary_updater_family(
+                    current.hardware_evidence.updater_family_ids
+                )
+                is not None,
+                bootloader_report=read_bootloader_report(
+                    current.live_sysinfo_extended,
+                    serial=active.active_ipod.serial_number,
+                    model=active.active_ipod.profile.model_number,
+                ),
             )
+            if refreshed != active.active_ipod:
+                active.active_ipod = refreshed
         return candidate_id
 
     def _discard_prepared_write(self) -> None:
@@ -5251,46 +5426,6 @@ def _backup_device_context(active: _ActiveConnection) -> BackupDeviceContext:
     )
 
 
-def _hardware_probe_required(
-    session: FilesystemSession,
-    registry: DeviceRegistry,
-    hardware_evidence: DeviceEvidence,
-) -> bool:
-    if not session.exists(_IPOD_CONTROL_PATH):
-        return False
-    sysinfo, _sysinfo_fingerprint = _read_optional_metadata(
-        session,
-        _SYSINFO_PATH,
-    )
-    extended, _extended_fingerprint = _read_optional_metadata(
-        session,
-        _SYSINFO_EXTENDED_PATH,
-    )
-    authority, _authority_fingerprint = _read_optional_metadata(
-        session,
-        _SYSINFO_AUTHORITY_PATH,
-    )
-    metadata_evidence = parse_sysinfo(sysinfo).merged_with(
-        parse_sysinfo_extended(extended)
-    )
-    identification = registry.identify(hardware_evidence.merged_with(metadata_evidence))
-    profile = identification.profile
-    if profile is None:
-        return True
-    return not authority_covers_metadata(
-        authority,
-        sysinfo=sysinfo,
-        sysinfo_extended=extended,
-        require_firmware_version=(
-            # An old firmware value must not be certified by metadata-only
-            # migration, including on models without firmware-gated features.
-            bool(metadata_evidence.firmware_versions)
-            or profile.capabilities.supports_games
-            or profile.capabilities.genius.mixes_minimum_firmware is not None
-        ),
-    )
-
-
 def _inspection_failed_record(
     mounted: MountedVolume,
     identification: IdentificationResult,
@@ -5493,6 +5628,17 @@ def _product_serial_identifier(
 ) -> tuple[DeviceIdentifier[str], ...]:
     serial = normalize_product_serial(value)
     return _current_text_identifier(serial, source)
+
+
+def _summary_updater_family(
+    identifiers: tuple[DeviceIdentifier[int], ...],
+) -> int | None:
+    """Expose one observed updater ID without deriving it from a model/release."""
+    observed = tuple(
+        item for item in identifiers if item.authority > EvidenceAuthority.DERIVED
+    )
+    values = set(strongest_values(observed))
+    return next(iter(values)) if len(values) == 1 else None
 
 
 def _summary_identifier(

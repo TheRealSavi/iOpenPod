@@ -8,7 +8,12 @@ import math
 import time
 from typing import TYPE_CHECKING, cast
 
-from iOpenPod.app.genius_audio import GENIUS_AUDIO_PROFILE_VERSION, GeniusAudioProfile
+from iOpenPod.app.genius_audio import (
+    GENIUS_AUDIO_PROFILE_VERSION,
+    GeniusAudioCharacter,
+    GeniusAudioProfile,
+    GeniusVocalEvidence,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -79,6 +84,22 @@ class GeniusProfileCache:
             profile.intro,
             profile.body,
             profile.outro,
+            None
+            if profile.character is None
+            else [
+                profile.character.spectral_activity,
+                profile.character.beat_strength,
+                profile.character.dynamic_range_db,
+                profile.character.spectral_flatness,
+                profile.character.active_fraction,
+            ],
+            None
+            if profile.vocals is None
+            else [
+                profile.vocals.provider,
+                profile.vocals.vocal_fraction,
+                profile.vocals.sampled_seconds,
+            ],
         ]
         encoded = _json(row)
         _decode(json.loads(encoded))
@@ -156,9 +177,9 @@ def _decode(value: object) -> tuple[str, GeniusAudioProfile]:
     if not isinstance(value, list):
         raise ValueError("Invalid Genius acoustic cache record")
     fields = cast("list[object]", value)
-    if len(fields) != 5:
+    if len(fields) != 7:
         raise ValueError("Invalid Genius acoustic cache record")
-    key, duration, intro, body, outro = fields
+    key, duration, intro, body, outro, character, vocals = fields
     if (
         not isinstance(key, str)
         or len(key) != 64
@@ -175,8 +196,38 @@ def _decode(value: object) -> tuple[str, GeniusAudioProfile]:
     if (intro_profile is None) != (outro_profile is None):
         raise ValueError("Genius acoustic ending segments must occur together")
     return key, GeniusAudioProfile(
-        duration_seconds, intro_profile, _segment(body), outro_profile
+        duration_seconds,
+        intro_profile,
+        _segment(body),
+        outro_profile,
+        _character(character),
+        _vocals(vocals),
     )
+
+
+def _character(value: object) -> GeniusAudioCharacter | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError("Invalid Genius audio character record")
+    values = cast("list[object]", value)
+    if len(values) != 5:
+        raise ValueError("Invalid Genius audio character record")
+    return GeniusAudioCharacter(*(_number(item) for item in values))
+
+
+def _vocals(value: object) -> GeniusVocalEvidence | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError("Invalid Genius vocal evidence record")
+    fields = cast("list[object]", value)
+    if len(fields) != 3:
+        raise ValueError("Invalid Genius vocal evidence record")
+    provider, fraction, duration = fields
+    if not isinstance(provider, str):
+        raise ValueError("Invalid Genius vocal provider")
+    return GeniusVocalEvidence(provider, _number(fraction), _number(duration))
 
 
 def _segment(value: object) -> tuple[float, ...]:

@@ -5,28 +5,128 @@ from pathlib import Path
 from threading import Event
 
 import pytest
-from tests.iOpenPod.app.services.test_library_resources import build_device
+from tests.iOpenPod.app.services.test_library_resources import Device, build_device
+from tests.iOpenPod.app.test_classic_genius_mix_publication import classic_device
+from tests.iOpenPod.app.test_library_write_controller import wait_for
+from tests.iOpenPod.app.test_nano7_mix_artwork_publication import nano7_device
 from tests.iOpenPod.app.test_sync_genius import (
     _refresh_request,  # pyright: ignore[reportPrivateUsage]
 )
+from tests.iOpenPod.GUI.application_shell_test_support import build_context
 from whenever import Instant, patch_current_time
 
 from iOpenPod.app import genius_mixes
+from iOpenPod.app.core.settings.definitions import DRAFT_ALL_CHANGES
+from iOpenPod.app.genius_analysis import GeniusAnalysisService
 from iOpenPod.app.genius_mixes import GENIUS_MIX_POLICY, MixPolicy
 from iOpenPod.app.library_workspace import LibraryWorkspace
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
     PreparationCancelledError,
 )
+from iOpenPod.app.library_write_controller import PreparationState
 from iOpenPod.app.services import genius_mixes as mix_service
 from iOpenPod.app.sync_execution import SyncExecutionStatus, SyncExecutor
+from iPodDB.library.genius import parse_genius_database
+
+
+@pytest.fixture(params=("nano", "classic", "nano7"))
+def mix_device(tmp_path: Path, request: pytest.FixtureRequest) -> Device:
+    device = (
+        nano7_device(tmp_path)
+        if request.param == "nano7"
+        else classic_device(tmp_path)
+        if request.param == "classic"
+        else build_device(tmp_path, model="MD479", compressed_database=True)
+    )
+    request.addfinalizer(device.coordinator.close)
+    return device
+
+
+@pytest.mark.parametrize("delete_track", (False, True))
+def test_removing_mix_through_save_controller_does_not_analyze_music(
+    mix_device: Device, monkeypatch: pytest.MonkeyPatch, delete_track: bool
+) -> None:
+    monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
+    device = mix_device
+    initial = device.active
+    desired = replace(
+        initial.library,
+        tracks=(
+            replace(initial.library.tracks[0], genre="Rock"),
+            replace(initial.library.tracks[1], genre="Pop"),
+        ),
+    )
+    created = device.coordinator.prepare_library(
+        LibraryPreparationRequest(
+            desired,
+            initial,
+            1,
+            1,
+            regenerate_genius=True,
+            add_genius_mixes=("rock", "pop"),
+        ),
+        lambda _: None,
+        Event(),
+    )
+    saved = device.save(created)
+    assert saved.active is not None, saved.issues
+    active = saved.active
+    mix = next(c for c in active.genius.collections if c.name == "Rock Mix")
+    retained = next(c for c in active.genius.collections if c.name == "Pop Mix")
+    graph_path = device.root / "iPod_Control/iTunes/Extras.itdb"
+    if not graph_path.exists():
+        graph_path = device.root / "iPod_Control/iTunes/iTunes Library.itlp/Genius.itdb"
+    graph_before = graph_path.read_bytes()
+    analyzed: list[bool] = []
+
+    def unexpected_analysis(
+        _service: GeniusAnalysisService, *args: object, **kwargs: object
+    ) -> None:
+        analyzed.append(True)
+        raise AssertionError("Removing a Mix must not analyze music")
+
+    monkeypatch.setattr(GeniusAnalysisService, "analyze", unexpected_analysis)
+    context = build_context(device_coordinator=device.coordinator)
+    context.settings.set_global(DRAFT_ALL_CHANGES, True)
+    workspace = context.library_workspace
+    workspace.load(active.library)
+    controller = context.library_write_controller
+    try:
+        workspace.remove_genius_collection(mix, workspace.edit_revision)
+        if delete_track:
+            workspace.remove_tracks(
+                (active.library.tracks[0].track_id,), workspace.edit_revision
+            )
+        controller.prepare()
+        wait_for(lambda: controller.state is not PreparationState.PREPARING)
+        assert analyzed == [], "Mix removal unexpectedly analyzed music"
+        assert (controller.state,) == (PreparationState.READY,)
+        controller.save()
+        wait_for(lambda: controller.state is not PreparationState.SAVING)
+        assert controller.state is PreparationState.SAVED, controller.save_result
+        remaining = active.library.tracks[1:] if delete_track else active.library.tracks
+        assert device.active.library.tracks == remaining
+        assert device.active.genius.collections == (retained,)
+        assert device.active.genius_mix_state.entries == tuple(
+            e for e in active.genius_mix_state.entries if e.definition_key == "pop"
+        )
+        if delete_track:
+            assert {
+                r.genius_id
+                for r in parse_genius_database(graph_path.read_bytes()).data.metadata
+            } == {t.ipod.genius_id for t in remaining if t.ipod is not None}
+        else:
+            assert graph_path.read_bytes() == graph_before
+    finally:
+        context.shutdown()
 
 
 def test_track_deletion_removes_only_the_emptied_mix_and_its_ownership(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mix_device: Device, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
-    device = build_device(tmp_path, model="MD479", compressed_database=True)
+    device = mix_device
     try:
         active = device.active
         desired = replace(
@@ -84,12 +184,12 @@ def test_track_deletion_removes_only_the_emptied_mix_and_its_ownership(
 
 
 def test_manual_add_is_staged_and_ownership_rolls_back_with_native_mix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mix_device: Device, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The common virtual fixture has two Tracks; catalog eligibility is tested
     # separately with the real ten-Track minimum.
     monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
-    device = build_device(tmp_path, model="MD479", compressed_database=True)
+    device = mix_device
     try:
         active = device.active
         desired = replace(
@@ -123,10 +223,10 @@ def test_manual_add_is_staged_and_ownership_rolls_back_with_native_mix(
 
 @pytest.mark.parametrize("owned", (True, False))
 def test_explicit_mix_removal_updates_native_collection_and_ownership(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owned: bool
+    mix_device: Device, monkeypatch: pytest.MonkeyPatch, owned: bool
 ) -> None:
     monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
-    device = build_device(tmp_path, model="MD479", compressed_database=True)
+    device = mix_device
     try:
         active = device.active
         desired = replace(
@@ -163,7 +263,6 @@ def test_explicit_mix_removal_updates_native_collection_and_ownership(
                 active,
                 2,
                 2,
-                regenerate_genius=True,
                 remove_genius_collections=(mix.collection_id,),
             ),
             lambda _: None,
@@ -184,10 +283,10 @@ def test_explicit_mix_removal_updates_native_collection_and_ownership(
 
 
 def test_sync_uses_saved_settings_rotates_and_reloads_ownership(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mix_device: Device, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
-    device = build_device(tmp_path, model="MD479", compressed_database=True)
+    device = mix_device
     try:
         active = device.active
         desired = replace(
@@ -238,10 +337,10 @@ def test_sync_uses_saved_settings_rotates_and_reloads_ownership(
 
 
 def test_cancel_and_changed_settings_cannot_publish_mix_ownership(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    mix_device: Device, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(genius_mixes, "MIN_MIX_TRACKS", 1)
-    device = build_device(tmp_path, model="MD479", compressed_database=True)
+    device = mix_device
     try:
         active = device.active
         desired = replace(

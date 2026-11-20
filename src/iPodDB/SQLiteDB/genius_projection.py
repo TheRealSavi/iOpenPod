@@ -233,7 +233,7 @@ def project_genius_mixes(
                 )
                 live = (
                     frozenset(_s64(pid) for pid in pids.values()) - replaced_tracks
-                    if update is None
+                    if update is None or update.data is None
                     else frozenset(
                         _s64(pids[track.track_id]) for track in update.tracks
                     )
@@ -304,6 +304,12 @@ def validate_genius_update(update: SQLiteGeniusUpdate, pids: Mapping[int, int]) 
     """Validate explicit native input against checked semantic Track identities."""
 
     genius_mix_ids((), update)
+    if update.data is None:
+        if update.tracks or update.mixes is not None or update.mix_additions:
+            raise ValueError(
+                "Preserving the Genius graph allows only selective Mix removals"
+            )
+        return
     assignments = {track.track_id: track.genius_id for track in update.tracks}
     ids = set(assignments.values())
     if len(assignments) != len(update.tracks) or len(ids) != len(update.tracks):
@@ -368,7 +374,7 @@ def reconcile_genius(
     dynamic_columns = {
         row[1] for row in dynamic.execute("PRAGMA table_info(item_stats)")
     }
-    if update is not None:
+    if update is not None and update.data is not None:
         library.execute("UPDATE item SET genius_id=0")
         if "genius_id" in dynamic_columns:
             dynamic.execute("UPDATE item_stats SET genius_id=0")

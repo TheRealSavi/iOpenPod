@@ -16,8 +16,13 @@ from iOpenPod.app.core.settings.stores import (
 from iOpenPod.app.core.status import ApplicationStatus
 from iOpenPod.app.device_controller import DeviceController
 from iOpenPod.app.extras_controller import ExtrasController
+from iOpenPod.app.firmware.bootloader_controller import BootloaderController
+from iOpenPod.app.firmware.bootloader_install import BootloaderInstaller
+from iOpenPod.app.firmware.shared_controller import SharedFirmwareController
+from iOpenPod.app.firmware.shared_install import SharedFirmwareInstaller
 from iOpenPod.app.games_controller import GamesController
 from iOpenPod.app.genius_analysis import FFmpegGeniusPCMDecoder, GeniusAnalysisService
+from iOpenPod.app.genius_vocals import installed_genius_vocals
 from iOpenPod.app.host_media_controller import HostMediaScanController
 from iOpenPod.app.host_media_fingerprint import FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaScanner
@@ -49,6 +54,7 @@ from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnalyzer
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
 from iOpenPod.app.tone_conversion_controller import ToneConversionController
+from iOpenPod.GUI.presentation.genius_mix_artwork import render_mix_cover
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iPodDB.library import MediaKind
@@ -91,6 +97,8 @@ class AppContext:
         default_factory=MediaStreamPreferences
     )
     playback_video_output: PlaybackVideoOutput | None = None
+    bootloader_controller: BootloaderController | None = None
+    shared_firmware_controller: SharedFirmwareController | None = None
     games_controller: GamesController = field(init=False)
     extras_controller: ExtrasController = field(init=False)
     tone_conversion_controller: ToneConversionController = field(init=False)
@@ -189,12 +197,14 @@ class AppContext:
         )
         device_coordinator = DeviceCoordinator(
             storage,
+            mix_cover_renderer=render_mix_cover,
             phase_analysis=PhaseAnalysisService(find_tool=media_tools.find),
             genius_analysis=GeniusAnalysisService(
                 cache_file=storage.host_cache_file(
-                    "iOpenPod", "genius-acoustic-v1.json"
+                    "iOpenPod", "genius-acoustic-v2.json"
                 ),
                 decoder=FFmpegGeniusPCMDecoder(find_tool=media_tools.find),
+                vocal_factory=installed_genius_vocals,
             ),
             ipod_media_scanner=IPodMediaScanner(
                 fingerprinter=FpcalcFingerprinter(find_tool=media_tools.find),
@@ -322,11 +332,24 @@ class AppContext:
             find_media_tool=media_tools.find,
             theme_manager=theme_manager,
             i18n_manager=i18n_manager,
+            bootloader_controller=BootloaderController(
+                BootloaderInstaller(storage), device_controller, application
+            ),
+            shared_firmware_controller=SharedFirmwareController(
+                SharedFirmwareInstaller(storage),
+                device_controller,
+                device_coordinator,
+                application,
+            ),
         )
 
     def shutdown(self) -> None:
         """Flush persistent state and remove installed translators."""
 
+        if self.bootloader_controller is not None:
+            self.bootloader_controller.shutdown()
+        if self.shared_firmware_controller is not None:
+            self.shared_firmware_controller.shutdown()
         self.synesthesia_controller.shutdown()
         self.lyrics_controller.shutdown()
         self.playback_controller.shutdown()

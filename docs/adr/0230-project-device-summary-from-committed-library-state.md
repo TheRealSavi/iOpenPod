@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-03
 - Extends: ADR-0019
+- Firmware offers superseded by: [ADR-0283](0283-bundle-universal-classic-firmware-and-remove-stock-offers.md)
 
 ## Context
 
@@ -20,8 +21,54 @@ committed Library Snapshot, captured content-folder sizes, and Device Candidate
 capacity observation. Non-button
 areas of the sidebar device information open the page; existing device controls
 keep their actions. The page uses the shared theme, typography, and bundled device
-artwork. Its Restore iPod button is always disabled beside “Coming soon” and has no
-device operation attached.
+artwork. Its Restore iPod and Update iPod buttons download and retain the offered
+firmware package on the Host, beside a “Downloads only” label. They have no device
+operations attached. The summary displays the
+observed current firmware version and updater family ID; missing or equally
+authoritative conflicting observations display “Unavailable”.
+
+Opening Summary performs one background Apple firmware catalog check for the
+selected connection, updater family and reported release. A Check now action
+can refresh it. The Application Layer fetches only
+`https://itunes.apple.com/check/version`, using the existing bounded HTTPS
+transport with an `itunes.apple.com` redirect allowlist and a 16 MiB limit.
+No serial, model or device identifier is transmitted. Catalog response bytes
+stay in memory; opening the page does not request firmware packages or documentation.
+
+The exact `iPodSoftwareVersions` entry must agree with its `UpdaterFamilyID`
+and package filename. Legacy packed `VisibleBuildID` values are cross-checked
+against the filename; later Nano filenames supply the visible release when that
+field is absent. Internal `BuildID` does not substitute for the visible version.
+Numeric release comparison distinguishes up to date, update available and a
+newer installed release, with unavailable states for missing evidence, missing
+catalog entries and request/parser failures. No comparison grants installation
+permission. A valid exact-family offer enables both download buttons, including
+when the installed release is already current or cannot be compared.
+
+Both buttons invoke the same explicit package acquisition. Known Apple download
+aliases map to `https://secure-appldnld.apple.com`, preserving the catalog path;
+requests and redirects require an allowlisted Apple HTTPS origin. The streaming
+download has a 512 MiB limit, a 30-minute deadline, cancellation and response-length
+checks. An IPSW ZIP container is required before publication. A partial file stays
+beside its destination under a per-file Host lease, then replaces the destination
+only after completion; failed and canceled attempts remove their partial file.
+No package is extracted or installed.
+
+Completed IPSWs live in persistent application data: `%LOCALAPPDATA%/iOpenPod/firmware`
+on Windows, `~/Library/Application Support/iOpenPod/firmware` on macOS, and
+`${XDG_DATA_HOME:-~/.local/share}/iopenpod/firmware` on Linux. A local receipt records
+the catalog identity, URL, length and measured SHA-256. Later clicks reuse the file
+only when those values still agree. This local checksum detects corruption; it is
+not an Apple signature or installation qualification. Packages are retained across
+application launches and are not part of disposable cache or temporary storage.
+
+The controller publishes results on the GUI thread, cancels obsolete work and
+rejects results for an earlier connection or identity. Repeated page refreshes
+and translation changes do not restart the request. Shutdown cancels the check
+without blocking the UI on a network response. The same lifecycle protects download
+progress and completion; both download buttons and catalog refresh are disabled
+during acquisition. Unit tests inject a checker and downloader;
+ordinary synthetic application contexts do not create a network service.
 
 The name field also offers a pencil button for inline renaming through the
 existing Library Workspace workflow. Enter, focus loss, or Apply validates the

@@ -224,5 +224,6 @@ def project_playlists(
         for selection in selections
         if not selection.chunk.header.master_flag & 1
         and selection.chunk.header.mhsd_5_type == 0
+        and not selection.chunk.header.is_genius_mix
     )
     return _repair_hierarchy(playlists), device_name

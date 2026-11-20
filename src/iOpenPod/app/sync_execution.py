@@ -24,6 +24,7 @@ from iOpenPod.app.artwork_policy import (
 )
 from iOpenPod.app.back_sync import back_sync_ratings
 from iOpenPod.app.display_text import exception_text, source_text
+from iOpenPod.app.genius_host_sources import GeniusHostSource
 from iOpenPod.app.genius_mixes import supports_mix_creation
 from iOpenPod.app.host_media_fingerprint import FpcalcError, FpcalcFingerprinter
 from iOpenPod.app.host_media_library import HostMediaFileKind
@@ -2625,6 +2626,36 @@ def _song_with_output(song: ImportedSong, output: PreparedTranscode) -> Imported
     )
 
 
+def _genius_host_sources(request: SyncExecutionRequest) -> tuple[GeniusHostSource, ...]:
+    """Use reviewed, unchanged audio correlations even before a first Sync commit."""
+    if not (request.options.analyze_for_genius or request.options.compute_missing_bpm):
+        return ()
+    sources = {host_path_identity(str(s.path)): s for s in request.host.sources}
+    records = {r.track_id: r for r in request.ipod.tracks}
+    result: list[GeniusHostSource] = []
+    for item in request.plan.items:
+        if (
+            item.media_kind is not SyncPlanMediaKind.TRACK
+            or item.action not in {SyncPlanAction.UNCHANGED, SyncPlanAction.UPDATE}
+            or item.audio_payload_changed
+            or item.stream_selection is not None
+            or item.applied_stream_selection_sha256 is not None
+            or item.host_path is None
+            or item.ipod_id is None
+        ):
+            continue
+        host = sources.get(host_path_identity(item.host_path))
+        record = records.get(item.ipod_id)
+        if host is None or record is None:
+            continue
+        if record.sync is not None and record.sync.stream_selection_sha256 is not None:
+            continue
+        result.append(
+            GeniusHostSource(record, host.path, host.size_bytes, host.modified_ns)
+        )
+    return tuple(result)
+
+
 def _draft(
     request: SyncExecutionRequest,
     prepared: list[_PreparedTrack],
@@ -2938,6 +2969,7 @@ def _draft(
         delete_omissions=bool(podcast_removed)
         or any(item.action is SyncPlanAction.REMOVE for item in completed),
         media=tuple(media),
+        genius_host_sources=_genius_host_sources(request),
         artwork=tuple(artwork),
         artwork_dependencies=tuple(
             repair.dependency

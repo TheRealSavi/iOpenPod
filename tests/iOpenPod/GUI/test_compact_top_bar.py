@@ -148,6 +148,50 @@ def test_compact_navigation_is_centered_in_a_thin_strip() -> None:
         bar.close()
 
 
+def test_review_changes_beside_sync_tracks_visibility_and_availability() -> None:
+    bar = CompactTopBar(playlists=_workspace())
+    bar.set_active_ipod(_active_ipod())
+    requested: list[None] = []
+    bar.reviewChangesRequested.connect(lambda: requested.append(None))
+    try:
+        _show(bar)
+        review = _button(bar, "compactReviewLibraryChanges")
+        sync = _button(bar, "compactSyncWithHost")
+        assert review.isHidden()
+
+        bar.set_review_visible(True)
+        APPLICATION.processEvents()
+        assert review.isVisible()
+        assert review.text() == "Review Changes"
+        assert not review.isCheckable()
+        assert review.parentWidget() is sync.parentWidget()
+        assert review.geometry().left() > sync.geometry().right()
+        assert review.geometry().center().y() == sync.geometry().center().y()
+        center = bar.findChild(QWidget, "compactNavigation")
+        assert center is not None
+        assert abs(center.geometry().center().x() - bar.rect().center().x()) <= 1
+        assert "Review Changes" not in [
+            action.text() for action in _dropdown(bar, "compactMaintenance").actions()
+        ]
+
+        assert not review.isEnabled()
+        QTest.mouseClick(review, Qt.MouseButton.LeftButton)
+        assert requested == []
+        bar.set_review_available(True)
+        QTest.mouseClick(review, Qt.MouseButton.LeftButton)
+        assert requested == [None]
+        bar.set_review_available(False)
+        QTest.mouseClick(review, Qt.MouseButton.LeftButton)
+        assert requested == [None]
+
+        bar.set_review_visible(False)
+        APPLICATION.processEvents()
+        assert review.isHidden()
+        assert abs(center.geometry().center().x() - bar.rect().center().x()) <= 1
+    finally:
+        bar.close()
+
+
 @pytest.mark.parametrize(
     "language,device_label", [("de", "Gerät"), ("es", "Dispositivo")]
 )
@@ -564,9 +608,6 @@ def test_routes_availability_and_current_page_markers() -> None:
         assert device.actions()[1].isEnabled()
         bar.set_device_busy(True)
         assert not device.actions()[2].isEnabled()
-        bar.set_review_visible(True)
-        bar.set_review_available(True)
-        assert _dropdown(bar, "compactMaintenance").actions()[-1].isEnabled()
         active = _active_ipod()
         profile = next(
             p

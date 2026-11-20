@@ -371,6 +371,7 @@ def capture(
     source_artwork_display_times: Callable[[int], tuple[int, ...]],
     source_artwork_paths: Callable[[ArtworkGroupReference], tuple[str, ...]],
     source_artwork_file_paths: Callable[[], tuple[str, ...]] | None = None,
+    source_mix_artwork_paths: tuple[str, ...] = (),
     additional_preconditions: tuple[FilePrecondition, ...] = (),
     volume_presentation_enabled: bool = True,
     itunes_107_artwork: bool = False,
@@ -425,7 +426,9 @@ def capture(
         else:
             files.append(FilePrecondition(CLASSIC_GENIUS, None))
     sqlite_sources: list[SQLiteSource] = []
-    if plan.changes_sqlite:
+    if plan.changes_sqlite or (
+        plan.target.sqlite_database and plan.draft.genius_mix_artwork
+    ):
         for path in SQLITE_DATABASE_PATHS:
             checkpoint()
             if session.exists(path) and path.name.endswith(".itdb"):
@@ -652,6 +655,9 @@ def capture(
     reserved_artwork: list[str] = []
     artwork_issues: list[WriteIssue] = []
     geometry_paths = {p.casefold() for p in plan.artwork_geometry_paths}
+    mix_paths = {
+        str(_artwork_source_path(p)).casefold() for p in source_mix_artwork_paths
+    }
     if plan.requires_artwork_inventory and session.exists(_ARTWORK):
         entries = list(session.list_directory(_ARTWORK))
         listed_paths = {str(entry.path).casefold() for entry in entries}
@@ -694,14 +700,18 @@ def capture(
                 )
             # Capture appendable prefixes and any full source shards needed to
             # decode a retained frame for a missing representation.
-            if str(entry.path).casefold() in geometry_paths or (
-                request.artwork
-                and (
-                    str(entry.path).casefold() in retained_source_paths
-                    or (
-                        entry.path.parent == _ARTWORK
-                        and entry.path.name.casefold().startswith(cover_prefixes)
-                        and entry.size < plan.target.max_artwork_file_bytes
+            if (
+                (str(entry.path).casefold() in mix_paths)
+                or str(entry.path).casefold() in geometry_paths
+                or (
+                    request.artwork
+                    and (
+                        str(entry.path).casefold() in retained_source_paths
+                        or (
+                            entry.path.parent == _ARTWORK
+                            and entry.path.name.casefold().startswith(cover_prefixes)
+                            and entry.size < plan.target.max_artwork_file_bytes
+                        )
                     )
                 )
             ):

@@ -1,6 +1,7 @@
 # ADR-0184: Manage manual and automatic Genius Mixes
 
 - Status: Accepted
+- Amended by: [ADR-0289](0289-author-classic-genius-mixes-in-binary-playlist-datasets.md), which extends management to Classic Mixes
 - Date: 2026-10-24
 - Extends: ADR-0126, ADR-0176, ADR-0177, and ADR-0178
 
@@ -30,6 +31,14 @@ multi-selection grid and stages manual intent in the shared Library Workspace.
 The existing automatic Library save applies it by default; the user's explicit
 Draft all changes preference continues to defer publication. Stale dialogs,
 disconnects, and locked workspaces cannot submit additions to another Library.
+
+Pending additions appear immediately in the Genius list with a **Pending save**
+status, including before explicit draft publication. They remain Host intent,
+not native Genius Browse collections. Promotion of an existing automatic Mix
+marks its existing row instead of duplicating it. Resetting or saving the draft
+removes the pending presentation. Status-only Active iPod refreshes keep dialogs
+valid when the candidate, captured Library, firmware capabilities, and Genius
+state are unchanged; changed sources reject submission with visible feedback.
 
 Settings saves Count and Expiry together through the existing portable iPod
 settings workflow. Count defaults to zero (off); Expiry defaults to 30 days.

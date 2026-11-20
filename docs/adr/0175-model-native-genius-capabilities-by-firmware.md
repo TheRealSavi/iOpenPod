@@ -1,6 +1,8 @@
 # ADR-0175: Model native Genius capabilities by firmware
 
 - Status: Accepted
+- Amended by: [ADR-0288](0288-resolve-classic-genius-from-qualified-running-firmware.md)
+  qualifies shared Classic 2.0.5 on older hardware without changing its identity.
 - Cache version policy extended by: [ADR-0220](0220-version-sysinfo-authority-cache-invalidation.md)
 - Date: 2026-10-24
 - Extends: ADR-0010 and ADR-0013

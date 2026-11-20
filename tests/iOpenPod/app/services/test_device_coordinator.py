@@ -7,6 +7,7 @@ import os
 import plistlib
 import sqlite3
 import struct
+import xml.etree.ElementTree as ET
 from dataclasses import replace
 from pathlib import Path
 from threading import Event, Thread
@@ -15,6 +16,7 @@ import pytest
 from PIL import Image
 from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
 from tests.iOpenPod.app.phase_test_support import StubPhaseAnalysis
+from tests.iOpenPod.boot_report_helpers import REPORT_XML
 from tests.iPodDB.sidecars.test_sidecar_readers import counts, otg
 
 import device_registry.authority as authority_module
@@ -223,6 +225,10 @@ def test_discovery_identifies_candidate_and_selection_loads_its_library(
         AccessMode.READ_ONLY,
         AccessMode.READ_WRITE,
     }
+    firmware_volume = coordinator.firmware_volume(active)
+    assert firmware_volume.mount_point.path == root
+    with pytest.raises(DeviceChangedError):
+        coordinator.firmware_volume(replace(active, serial_number="different"))
 
     coordinator.close()
 
@@ -685,7 +691,7 @@ def test_discovery_uses_retailos_for_genius_and_keeps_transport_revision_separat
         coordinator.close()
 
 
-def test_valid_authority_avoids_repeating_a_live_hardware_probe(
+def test_poll_reuses_current_probe_but_explicit_refresh_recaptures(
     tmp_path: Path,
 ) -> None:
     platform = _ProbeCountingPlatform()
@@ -718,7 +724,7 @@ def test_valid_authority_avoids_repeating_a_live_hardware_probe(
 
     assert platform.probe_count == 1
     coordinator.discover_devices()
-    assert platform.probe_count == 1
+    assert platform.probe_count == 2
     coordinator.close()
 
 
@@ -737,7 +743,7 @@ def test_valid_authority_avoids_repeating_a_live_hardware_probe(
         ("M9160", "1.4.1", FeatureSupport.UNSUPPORTED),
     ],
 )
-def test_legacy_authority_recaptures_firmware_once_and_reuses_cache_after_reconnecting(
+def test_legacy_authority_repairs_cache_and_recaptures_after_reconnecting(
     tmp_path: Path,
     cached_release: str | None,
     keep_stale_extended: bool,
@@ -826,7 +832,7 @@ def test_legacy_authority_recaptures_firmware_once_and_reuses_cache_after_reconn
         platform.reconnect(root)
         coordinator = DeviceCoordinator(Storage(platform))
         candidate = coordinator.discover_devices().candidates[0]
-        assert platform.probe_count == 1
+        assert platform.probe_count == 2
         assert candidate.profile is not None
         assert candidate.profile.capabilities.genius.mixes is support
         coordinator.select_device(candidate.id)
@@ -893,7 +899,7 @@ def test_failed_firmware_recapture_remains_eligible_for_retry(
 
 
 @pytest.mark.parametrize("invalidate", [False, True])
-def test_authority_version_controls_firmware_recapture_after_reconnect(
+def test_firmware_recapture_after_reconnect_is_independent_of_authority_version(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     invalidate: bool,
@@ -911,8 +917,8 @@ def test_authority_version_controls_firmware_recapture_after_reconnect(
                     "SYSINFO_AUTHORITY_VERSION",
                     SYSINFO_AUTHORITY_VERSION + 1,
                 )
-            probe_count = connection if invalidate else 1
-            cached_release = release if invalidate else "1.2.1"
+            probe_count = connection
+            cached_release = release
             payload = plistlib.dumps(
                 {
                     "ModelNumStr": "MA450",
@@ -3175,6 +3181,42 @@ def test_device_summary_identity_uses_observed_unambiguous_metadata(
         coordinator.close()
 
 
+@pytest.mark.parametrize(
+    ("cached", "extended", "expected"),
+    (
+        (33, 33, 33),
+        (33, 38, None),
+        (None, None, None),
+        (None, 39, 39),
+        (999, None, 999),
+    ),
+)
+def test_device_summary_updater_family_uses_observed_unambiguous_metadata(
+    tmp_path: Path, cached: int | None, extended: int | None, expected: int | None
+) -> None:
+    platform = VirtualStoragePlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    metadata = root / "iPod_Control/Device"
+    (metadata / "SysInfo").write_text(
+        "ModelNumStr: MB565\n"
+        + (f"UpdaterFamilyID: {cached}\n" if cached is not None else ""),
+        encoding="utf-8",
+    )
+    (metadata / "SysInfoExtended").write_bytes(
+        plistlib.dumps({"UpdaterFamilyID": extended} if extended is not None else {})
+    )
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(Storage(platform))
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        active = coordinator.select_device(
+            candidate.id, reconcile_metadata=False, reconcile_sidecars=False
+        )
+        assert active.updater_family_id == expected
+    finally:
+        coordinator.close()
+
+
 def test_device_summary_identity_prefers_live_hardware_over_stale_metadata(
     tmp_path: Path,
 ) -> None:
@@ -3182,7 +3224,8 @@ def test_device_summary_identity_prefers_live_hardware_over_stale_metadata(
     root = _ipod_volume(tmp_path / "classic", model_number="MB565")
     metadata = root / "iPod_Control/Device"
     (metadata / "SysInfo").write_text(
-        "ModelNumStr: MB565\nvisibleBuildID: 2.0.0\npszSerialNumber: ABCD12342C7\n",
+        "ModelNumStr: MB565\nvisibleBuildID: 2.0.0\npszSerialNumber: ABCD12342C7\n"
+        "UpdaterFamilyID: 38\n",
         encoding="utf-8",
     )
     platform.add_volume(
@@ -3201,7 +3244,11 @@ def test_device_summary_identity_prefers_live_hardware_over_stale_metadata(
                     product="iPod",
                     firmware_revision="1.62",
                     vendor_payload=plistlib.dumps(
-                        {"ModelNumStr": "MB565", "VisibleBuildID": "2.0.1"}
+                        {
+                            "ModelNumStr": "MB565",
+                            "VisibleBuildID": "2.0.1",
+                            "UpdaterFamilyID": 33,
+                        }
                     ),
                 ),
             )
@@ -3215,6 +3262,7 @@ def test_device_summary_identity_prefers_live_hardware_over_stale_metadata(
         )
 
         assert active.firmware_version == "2.0.1"
+        assert active.updater_family_id == 33
         assert active.serial_number == "8P840FN62C7"
     finally:
         coordinator.close()
@@ -3516,3 +3564,202 @@ def _string_mhod(mhod_type: int, value: str) -> bytes:
         body,
         fields=struct.pack("<III", mhod_type, 0, 0),
     )
+
+
+@pytest.mark.parametrize(
+    "live_version, live_family", [("2.0.5", 38), ("7.26.0-custom", 99)]
+)
+def test_refresh_reloads_modified_firmware_without_changing_physical_profile(
+    tmp_path: Path,
+    live_version: str,
+    live_family: int,
+) -> None:
+    platform = _ProbeCountingPlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+
+    def result(version: str, family: int) -> HardwareProbeResult:
+        return HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="windows_scsi",
+                    vendor="Apple",
+                    product="iPod",
+                    vendor_payload=plistlib.dumps(
+                        {
+                            "ModelNumStr": "MB565",
+                            "VisibleBuildID": version,
+                            "UpdaterFamilyID": family,
+                        }
+                    ),
+                ),
+            )
+        )
+
+    platform.add_volume(root, probe_result=result("2.0.1", 33))
+    coordinator = DeviceCoordinator(
+        Storage(platform), volume_presentation_enabled=False
+    )
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        first = coordinator.select_device(candidate.id)
+        assert first.firmware_version_current and first.updater_family_current
+        assert first.profile.capabilities.genius.mixes is FeatureSupport.UNSUPPORTED
+        platform.add_volume(root, probe_result=result(live_version, live_family))
+        candidate = coordinator.discover_devices().candidates[0]
+        assert coordinator.active_ipod is None  # Reload OS-specific contracts.
+        active = coordinator.select_device(candidate.id)
+        assert active.firmware_version == live_version
+        assert active.updater_family_id == live_family
+        assert active.profile.model_number == "MB565"
+        assert active.profile.generation == "6.5th Gen"
+        assert active.firmware_version_current and active.updater_family_current
+        assert active.profile.capabilities.genius.mixes is (
+            FeatureSupport.SUPPORTED
+            if (live_version, live_family) == ("2.0.5", 38)
+            else FeatureSupport.UNSUPPORTED
+        )
+        before = platform.probe_count
+        coordinator.discover_devices(refresh_known=False)
+        assert platform.probe_count == before
+        platform.add_volume(root, probe_result=result("2.0.1", 33))
+        candidate = coordinator.discover_devices().candidates[0]
+        assert coordinator.active_ipod is None
+        restored = coordinator.select_device(candidate.id)
+        assert restored.profile.generation == "6.5th Gen"
+        assert restored.profile.capabilities.genius.mixes is FeatureSupport.UNSUPPORTED
+    finally:
+        coordinator.close()
+
+
+def test_missing_live_report_leaves_cache_labelled_historical(tmp_path: Path) -> None:
+    platform = _ProbeCountingPlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    metadata = root / "iPod_Control/Device/SysInfo"
+    metadata.write_text(
+        "ModelNumStr: MB565\nvisibleBuildID: 2.0.1\nUpdaterFamilyID: 33\n"
+    )
+    platform.add_volume(root)
+    coordinator = DeviceCoordinator(
+        Storage(platform), volume_presentation_enabled=False
+    )
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        active = coordinator.select_device(candidate.id)
+        assert active.firmware_version == "2.0.1" and active.updater_family_id == 33
+        assert not active.firmware_version_current and not active.updater_family_current
+    finally:
+        coordinator.close()
+
+
+def test_bootloader_report_comes_only_from_current_probe_and_refresh_replaces_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    platform = _ProbeCountingPlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    basic = plistlib.dumps(
+        {
+            "ModelNumStr": "MB565",
+            "SerialNumber": "TEST12345678",
+            "VisibleBuildID": "2.0.5",
+            "UpdaterFamilyID": 38,
+        }
+    )
+    document = ET.fromstring(basic)
+    document[0].extend(list(ET.fromstring(REPORT_XML)[0]))
+    measured = ET.tostring(document)
+    (root / "iPod_Control/Device/SysInfoExtended").write_bytes(measured)
+
+    def probe(payload: bytes) -> HardwareProbeResult:
+        return HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="windows_scsi",
+                    vendor="Apple",
+                    product="iPod",
+                    vendor_payload=payload,
+                ),
+            )
+        )
+
+    live_payload = basic
+
+    def current_probe(
+        observation: VolumeObservation,
+        page_plan: ScsiVpdPagePlan | None = None,
+    ) -> HardwareProbeResult:
+        return probe(live_payload)
+
+    platform.add_volume(root)
+    monkeypatch.setattr(platform, "probe", current_probe)
+    coordinator = DeviceCoordinator(
+        Storage(platform), volume_presentation_enabled=False
+    )
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        active = coordinator.select_device(candidate.id)
+        assert (
+            active.bootloader_report is None
+        )  # Saved XML is never current NOR evidence.
+        live_payload = measured
+        coordinator.discover_devices()
+        current = coordinator.active_ipod
+        assert current is not None and current.library is active.library
+        assert current.bootloader_report is not None
+        assert current.bootloader_report.version == "2.1.0"
+        assert current.bootloader_report.hardware_family == 33
+        assert current.updater_family_id == 38
+        live_payload = basic
+        coordinator.discover_devices()
+        current = coordinator.active_ipod
+        assert current is not None and current.bootloader_report is None
+    finally:
+        coordinator.close()
+
+
+@pytest.mark.parametrize("missing", ["VisibleBuildID", "UpdaterFamilyID"])
+def test_live_response_never_inherits_an_omitted_cached_firmware_field(
+    tmp_path: Path, missing: str
+) -> None:
+    platform = _ProbeCountingPlatform()
+    root = _ipod_volume(tmp_path / "classic", model_number="MB565")
+    (root / "iPod_Control/Device/SysInfo").write_text(
+        "ModelNumStr: MB565\nvisibleBuildID: 2.0.5\nUpdaterFamilyID: 38\n"
+    )
+    values: dict[str, object] = {
+        "ModelNumStr": "MB565",
+        "VisibleBuildID": "2.0.5",
+        "UpdaterFamilyID": 38,
+    }
+    values.pop(missing)
+    platform.add_volume(
+        root,
+        probe_result=HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="windows_scsi",
+                    vendor="Apple",
+                    product="iPod",
+                    vendor_payload=plistlib.dumps(values),
+                ),
+            )
+        ),
+    )
+    coordinator = DeviceCoordinator(
+        Storage(platform), volume_presentation_enabled=False
+    )
+    try:
+        candidate = coordinator.discover_devices().candidates[0]
+        active = coordinator.select_device(candidate.id)
+        if missing == "VisibleBuildID":
+            assert active.firmware_version == "" and not active.firmware_version_current
+            assert active.updater_family_id == 38 and active.updater_family_current
+        else:
+            assert (
+                active.updater_family_id is None and not active.updater_family_current
+            )
+            assert (
+                active.firmware_version == "2.0.5" and active.firmware_version_current
+            )
+    finally:
+        coordinator.close()

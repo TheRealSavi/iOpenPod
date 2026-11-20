@@ -229,6 +229,8 @@ def check_runtime() -> None:
     configure_frozen_runtime()
 
     from iOpenPod.app.app import start_ui
+    from iOpenPod.app.firmware.shared_bootloader import SharedBootloaderBundle
+    from iOpenPod.app.firmware.shared_release import bundled_firmware
     from iOpenPod.app.playback.runtime_check import check_playback_runtime
     from iOpenPod.app.synesthesia import DeterministicMusicAnalyzer
     from iOpenPod.GUI.presentation.application_icon import application_icon
@@ -264,6 +266,9 @@ def check_runtime() -> None:
     assert version("iOpenPod")
     app = QApplication.instance() or QApplication([])
     assert not application_icon().isNull(), "Application icon missing"
+    # Verify the shipped bytes directly, even if the host already has a firmware cache.
+    SharedBootloaderBundle()
+    bundled_firmware()
     resources = files("iOpenPod")
     for relative in (
         "assets/phase_runtime/worker.py",

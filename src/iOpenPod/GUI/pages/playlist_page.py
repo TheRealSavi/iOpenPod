@@ -24,7 +24,10 @@ from iOpenPod.GUI.dialogs.playlist_editor import (
     kind_label,
 )
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
-from iOpenPod.GUI.presentation.i18n.text import track_count_text
+from iOpenPod.GUI.presentation.i18n.text import (
+    mix_starting_track_count_text,
+    track_count_text,
+)
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
@@ -555,16 +558,17 @@ class PlaylistPage(QWidget):
         self._description.setVisible(collection is not None)
         if collection is None:
             self._summary.clear()
+        elif collection.kind is GeniusCollectionKind.MIX:
+            self._summary.setText(
+                self.tr("%1 · %2")
+                .replace("%1", self.tr("Genius Mix"))
+                .replace("%2", mix_starting_track_count_text(len(tracks)))
+            )
         else:
             minutes = sum(track.length_ms for track in tracks) / 60_000
-            kind = (
-                self.tr("Genius Mix")
-                if collection.kind is GeniusCollectionKind.MIX
-                else kind_label(PlaylistKind.GENIUS)
-            )
             self._summary.setText(
                 self.tr("%1 · %2 · %3 min")
-                .replace("%1", kind)
+                .replace("%1", kind_label(PlaylistKind.GENIUS))
                 .replace("%2", track_count_text(len(tracks)))
                 .replace("%3", f"{minutes:,.0f}")
             )

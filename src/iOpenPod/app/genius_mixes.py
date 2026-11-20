@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import random
 import re
 from dataclasses import dataclass
@@ -12,8 +11,13 @@ from uuid import uuid4
 
 from device_registry import FeatureSupport
 from iOpenPod.app.core.settings.definitions import SettingDefinition
+from iOpenPod.app.genius_mood import mood_matches
 from iPodDB.library import MediaKind, is_video_track
-from iPodDB.library.genius import GeniusCollectionKind, GeniusMix
+from iPodDB.library.genius import (
+    CLASSIC_GENIUS_MIX_LIMIT,
+    GeniusCollectionKind,
+    GeniusMix,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -181,8 +185,16 @@ def supports_mix_creation(profile: DeviceProfile) -> bool:
     return (
         capabilities.genius.mixes is FeatureSupport.SUPPORTED
         and capabilities.genius.playlists is FeatureSupport.SUPPORTED
-        and capabilities.database.uses_sqlite_database
+        and (
+            capabilities.database.uses_sqlite_database
+            or profile.family == "iPod Classic"
+        )
     )
+
+
+def mix_limit(profile: DeviceProfile) -> int | None:
+    """Classic's native browser has twelve slots, including externally owned Mixes."""
+    return CLASSIC_GENIUS_MIX_LIMIT if profile.family == "iPod Classic" else None
 
 
 def _genre(value: str) -> str:
@@ -193,38 +205,9 @@ _LOVE_CUE = re.compile(r"\b(?:love|lover|loving|romance|romantic|amor|amour)\b",
 
 
 def _mood_matches(key: str, track: Track, profile: GeniusAudioProfile) -> bool:
-    """Conservative, explainable acoustic rules; these are seed suggestions."""
-    from iOpenPod.app.genius_audio import GENIUS_AUDIO_FEATURE_COUNT
-
-    if len(profile.body) != GENIUS_AUDIO_FEATURE_COUNT or not all(
-        math.isfinite(value) for value in profile.body
-    ):
-        return False
-    tempo, centroid, centroid_variance = profile.body[:3]
-    if centroid <= 200 or centroid_variance < 0 or tempo < 0:
-        return False
-    texture_change = centroid_variance / max(centroid * centroid, 1.0)
-    if key == "focus":
-        return (
-            (tempo == 0 or 60 <= tempo <= 145)
-            and centroid <= 2800
-            and texture_change <= 0.8
-        )
-    if key == "energy":
-        return tempo >= 105 and centroid >= 1200 and (tempo >= 125 or centroid >= 2400)
-    if key == "relax":
-        return (
-            (tempo == 0 or 50 <= tempo <= 110)
-            and centroid <= 2200
-            and texture_change <= 1.0
-        )
-    if key == "love":
-        return (
-            bool(_LOVE_CUE.search(f"{track.title} {track.album}"))
-            and (tempo == 0 or 50 <= tempo <= 140)
-            and centroid <= 3000
-        )
-    return False
+    return mood_matches(key, profile) and (
+        key != "love" or bool(_LOVE_CUE.search(f"{track.title} {track.album}"))
+    )
 
 
 def propose_mixes(
@@ -289,6 +272,9 @@ def plan_mixes(
     profiles: Mapping[int, GeniusAudioProfile] | None = None,
     now: int,
     rng: random.Random | None = None,
+    max_mixes: int | None = None,
+    reserved_ids: frozenset[int] = frozenset(),
+    unique_low_words: bool = False,
 ) -> MixPlan:
     """Rotation removes only owned automatic Mixes; explicit removals may be external."""
     if state.error:
@@ -310,6 +296,11 @@ def plan_mixes(
     additions: list[GeniusMix] = []
     removals: list[int] = []
     used_ids = native_ids | {playlist.playlist_id for playlist in snapshot.playlists}
+    used_ids.update(reserved_ids)
+    used_ids.update(t.ipod.db_track_id for t in snapshot.tracks if t.ipod is not None)
+    used_low_words = {
+        identity & 0xFFFFFFFF for identity in native_ids if identity is not None
+    }
     choose = rng if rng is not None else random.SystemRandom()
 
     if len(set(remove_ids)) != len(remove_ids) or not set(remove_ids) <= native_ids:
@@ -322,11 +313,23 @@ def plan_mixes(
         removals.append(identity)
 
     def add(key: str, added_at: int | None) -> None:
+        if (
+            max_mixes is not None
+            and len(native_ids - set(removals)) + len(additions) >= max_mixes
+        ):
+            raise ValueError(
+                "This iPod displays at most 12 Genius Mixes. Remove a Mix before adding another."
+            )
         proposal = proposals[key]
         identity = uuid4().int & ((1 << 64) - 1)
-        while not identity or identity in used_ids:
+        while (
+            not identity
+            or identity in used_ids
+            or (unique_low_words and identity & 0xFFFFFFFF in used_low_words)
+        ):
             identity = uuid4().int & ((1 << 64) - 1)
         used_ids.add(identity)
+        used_low_words.add(identity & 0xFFFFFFFF)
         additions.append(
             GeniusMix(identity, proposal.definition.name, proposal.track_ids)
         )
@@ -335,6 +338,11 @@ def plan_mixes(
 
     for key in dict.fromkeys(manual_keys):
         if key not in proposals or not proposals[key].eligible:
+            if key == "focus":
+                raise ValueError(
+                    "Focus Mix needs at least 10 very calm Tracks with little detected singing. "
+                    "Vocal detection uses optional instrument analysis, available in Settings."
+                )
             if key in proposals and proposals[key].definition.kind == "mood":
                 raise ValueError(
                     "This mood Mix needs at least 10 analyzed matching music Tracks."
@@ -362,6 +370,13 @@ def plan_mixes(
             removals.append(entry.container_id)
         for entry in automatic[excess:]:
             assert entry.added_at is not None
+            if (
+                max_mixes is not None
+                and len(native_ids - set(removals)) + len(additions) > max_mixes
+            ):
+                # Retained external collections can already exceed the firmware's
+                # display limit. Preserve them without making automatic Sync fail.
+                continue
             # Host policy measures elapsed 24-hour days, not local calendar
             # anniversaries; a clock setback does not expire a future entry.
             if now - entry.added_at <= policy.expiry_days * 86400:
@@ -379,6 +394,11 @@ def plan_mixes(
             removals.append(entry.container_id)
             add(key, now)
         while sum(entry.added_at is not None for entry in entries) < policy.count:
+            if (
+                max_mixes is not None
+                and len(native_ids - set(removals)) + len(additions) >= max_mixes
+            ):
+                break
             choices = [
                 key
                 for key, proposal in proposals.items()

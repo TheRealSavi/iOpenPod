@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from iPodDB.sidecars import PlaybackSidecar
 
 _U64 = (1 << 64) - 1
+CLASSIC_GENIUS_MIX_LIMIT = 12
 
 
 class GeniusCollectionKind(StrEnum):
@@ -318,6 +319,7 @@ def project_genius_browse(
     sidecars: tuple[PlaybackSidecar, ...] = (),
     *,
     sqlite_library: bytes | None = None,
+    classic_mixes: GeniusBrowse | None = None,
 ) -> GeniusBrowse:
     """Project captured firmware collections without importing or consuming them.
 
@@ -348,6 +350,9 @@ def project_genius_browse(
         mixes, mix_issues = _mixes(sqlite_library, tracks, ambiguous)
         collections.extend(mixes)
         issues.extend(mix_issues)
+    if classic_mixes is not None:
+        collections.extend(classic_mixes.collections)
+        issues.extend(classic_mixes.issues)
     counts = Counter(collection.collection_id for collection in collections)
     duplicates = frozenset(identity for identity, count in counts.items() if count > 1)
     issues.extend(

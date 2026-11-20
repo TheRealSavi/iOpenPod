@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections import deque
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager, nullcontext
@@ -21,8 +22,11 @@ from iOpenPod.app.genius_analysis_cache import GeniusProfileCache
 from iOpenPod.app.genius_audio import (
     GENIUS_AUDIO_PROFILE_VERSION,
     GeniusAudioProfile,
+    GeniusVocalAnalysisError,
     profile_genius_pcm,
 )
+from iOpenPod.app.genius_host_sources import GeniusHostSource, committed_genius_sources
+from iOpenPod.app.genius_mood import focus_candidate
 from iPodDB.library import MediaKind, is_video_track
 from storage import (
     AtomicHostFile,
@@ -47,6 +51,7 @@ from storage.media_processing import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Mapping
 
+    from iOpenPod.app.genius_vocals import GeniusVocalAnalyzer
     from iOpenPod.app.media.importing import LibraryMediaSource
     from iPodDB.library import LibrarySnapshot, PreparedLyrics, Track
     from storage import FileFingerprint, FilesystemSession
@@ -268,11 +273,20 @@ class GeniusPreparedProfile:
 
 
 @dataclass(frozen=True, slots=True)
+class GeniusHostDependency:
+    """A retained Track analyzed through its original Host counterpart."""
+
+    track_id: int
+    source: LocalHostFile
+
+
+@dataclass(frozen=True, slots=True)
 class GeniusAnalysisResult:
     profiles: Mapping[int, GeniusAudioProfile]
     issues: tuple[GeniusAnalysisIssue, ...] = ()
     dependencies: tuple[GeniusAnalysisDependency, ...] = ()
     prepared_profiles: tuple[GeniusPreparedProfile, ...] = ()
+    host_dependencies: tuple[GeniusHostDependency, ...] = ()
 
     def with_tagged_media(
         self, tagged: tuple[PreparedLyrics, ...]
@@ -283,9 +297,12 @@ class GeniusAnalysisResult:
         still waits for Storage to verify those exact bytes during publication.
         """
         prepared = {item.path: item for item in self.prepared_profiles}
+        correlated = {item.track_id for item in self.host_dependencies}
         for item in tagged:
             profile = self.profiles.get(item.track_id)
-            if profile is not None:
+            # Retagging preserves device audio, not the original Host encoding.
+            # A correlated original must not become byte-bound device evidence.
+            if profile is not None and item.track_id not in correlated:
                 path = DevicePath(item.file.relative_path)
                 prepared[path] = GeniusPreparedProfile(
                     path, item.file.size, item.file.sha256, profile
@@ -299,6 +316,9 @@ class GeniusAnalysisResult:
         for dependency in self.dependencies:
             checkpoint()
             _validate_device(session, dependency)
+        for host_dependency in self.host_dependencies:
+            checkpoint()
+            host_dependency.source.validate()
         checkpoint()
 
 
@@ -306,8 +326,10 @@ class GeniusAnalysisResult:
 class _Source:
     path: HostPath | DevicePath
     key: str
+    input_suffix: str
     host: LocalHostFile | None = None
     dependency: GeniusAnalysisDependency | None = None
+    fallback: _Source | None = None
 
     def validate(self, session: FilesystemSession) -> None:
         if self.host is not None:
@@ -370,6 +392,10 @@ class _AdmissionQueue:
         self._device.clear()
         self._host.clear()
 
+    def retry_device(self, track: Track, source: _Source) -> None:
+        # A failed optional Host decoder rejoins bounded device admission.
+        self._device.appendleft((-1, track, source))
+
 
 class GeniusAnalysisService:
     """Profile music sources concurrently and retain successful work.
@@ -387,6 +413,7 @@ class GeniusAnalysisService:
         *,
         profiler: GeniusProfiler | None = None,
         workers: int | None = None,
+        vocal_factory: Callable[[], GeniusVocalAnalyzer | None] | None = None,
     ) -> None:
         if workers is not None and not (
             _MAX_DEVICE_ANALYSIS_WORKERS <= workers <= _MAX_ANALYSIS_WORKERS
@@ -397,6 +424,7 @@ class GeniusAnalysisService:
         self._decoder = decoder or FFmpegGeniusPCMDecoder()
         self._profiler = profiler or profile_genius_pcm
         self._workers = workers or _default_analysis_workers()
+        self._vocal_factory = vocal_factory
 
     def analyze(
         self,
@@ -404,9 +432,11 @@ class GeniusAnalysisService:
         session: FilesystemSession,
         *,
         media: tuple[LibraryMediaSource, ...] = (),
+        host_sources: tuple[GeniusHostSource, ...] = (),
         checkpoint: Callable[[], None],
         progress: Callable[[GeniusAnalysisProgress], None] | None = None,
         skip_requested: Callable[[], bool] | None = None,
+        analyze_vocals: bool = False,
     ) -> GeniusAnalysisResult:
         checkpoint = _session_checkpoint(session, checkpoint)
         should_skip = skip_requested or (lambda: False)
@@ -419,6 +449,21 @@ class GeniusAnalysisService:
         supplied = {source.media.track_id: source for source in media}
         if len(supplied) != len(media):
             raise ValueError("Genius analysis media must have unique Track IDs")
+        correlated = {item.device.track_id: item for item in host_sources}
+        if len(correlated) != len(host_sources):
+            raise ValueError("Genius Host correlations must have unique Track IDs")
+        committed: dict[int, GeniusHostSource] | None = None
+
+        def host_source(track: Track) -> GeniusHostSource | None:
+            nonlocal committed
+            if track.track_id in correlated:
+                return correlated[track.track_id]
+            if committed is None:
+                committed = committed_genius_sources(
+                    session, snapshot.tracks, checkpoint=worker_checkpoint
+                )
+            return committed.get(track.track_id)
+
         issues: list[GeniusAnalysisIssue] = []
         try:
             with self._cache_lock:
@@ -469,6 +514,9 @@ class GeniusAnalysisService:
             if should_skip():
                 raise _AnalysisSkippedError
 
+        vocals = (
+            self._vocal_factory() if analyze_vocals and self._vocal_factory else None
+        )
         try:
             # Resolve cache hits before admitting work. Cached Tracks still get
             # source checks, but never appear as active acoustic analysis.
@@ -478,7 +526,12 @@ class GeniusAnalysisService:
                     break
                 try:
                     resolved = self._resolve_track(
-                        track, supplied.get(track.track_id), session, worker_checkpoint
+                        track,
+                        supplied.get(track.track_id),
+                        session,
+                        worker_checkpoint,
+                        vocals,
+                        host_source,
                     )
                 except _AnalysisSkippedError:
                     break
@@ -490,7 +543,8 @@ class GeniusAnalysisService:
             device_read = Lock()
             # Insertion order is admission order, which progress reports as active.
             running: dict[
-                Future[_AnalyzedTrack | GeniusAnalysisIssue], tuple[Track, bool]
+                Future[_AnalyzedTrack | _Source | GeniusAnalysisIssue],
+                tuple[Track, bool],
             ] = {}
             completed = 0
 
@@ -552,6 +606,7 @@ class GeniusAnalysisService:
                                 decoder,
                                 worker_checkpoint,
                                 device_read,
+                                vocals,
                             )
                             running[future] = (track, on_device)
                         if should_skip():
@@ -567,6 +622,9 @@ class GeniusAnalysisService:
                             except _AnalysisSkippedError:
                                 continue
                             checkpoint()
+                            if isinstance(outcome, _Source):
+                                waiting.retry_device(track, outcome)
+                                continue
                             outcomes[track.track_id] = outcome
                             if isinstance(outcome, _AnalyzedTrack):
                                 with self._cache_lock:
@@ -582,10 +640,15 @@ class GeniusAnalysisService:
         finally:
             # Successful earlier work survives a failed source. Cancellation is
             # still propagated; checkpointed cache writes never mask it.
-            save(force=True)
+            try:
+                if vocals is not None:
+                    vocals.close()
+            finally:
+                save(force=True)
         profiles: dict[int, GeniusAudioProfile] = {}
         dependencies: dict[DevicePath, GeniusAnalysisDependency] = {}
         prepared_profiles: list[GeniusPreparedProfile] = []
+        host_dependencies: list[GeniusHostDependency] = []
         for track in tracks:
             checkpoint()
             resolved_outcome = outcomes.get(track.track_id)
@@ -595,6 +658,10 @@ class GeniusAnalysisService:
                 issues.append(resolved_outcome)
                 continue
             profiles[track.track_id] = resolved_outcome.profile
+            if resolved_outcome.source.fallback is not None:
+                host = resolved_outcome.source.host
+                assert host is not None
+                host_dependencies.append(GeniusHostDependency(track.track_id, host))
             if resolved_outcome.source.dependency is not None:
                 dependencies[resolved_outcome.source.dependency.path] = (
                     resolved_outcome.source.dependency
@@ -614,6 +681,7 @@ class GeniusAnalysisService:
             tuple(issues),
             tuple(dependencies.values()),
             tuple(prepared_profiles),
+            tuple(host_dependencies),
         )
         result.validate_sources(session, checkpoint=checkpoint)
         return result
@@ -665,16 +733,57 @@ class GeniusAnalysisService:
         supplied: LibraryMediaSource | None,
         session: FilesystemSession,
         checkpoint: Callable[[], None],
+        vocals: GeniusVocalAnalyzer | None = None,
+        host_source: Callable[[Track], GeniusHostSource | None] | None = None,
     ) -> _Source | _AnalyzedTrack | GeniusAnalysisIssue:
         try:
             source = _source(track, supplied, session, checkpoint)
             with self._cache_lock:
                 profile = self._cache.get(source.key)
-            if profile is None:
-                return source
-            source.validate(session)
-            checkpoint()
-            return _AnalyzedTrack(source, profile)
+            if _usable_profile(profile, vocals):
+                assert profile is not None
+                source.validate(session)
+                checkpoint()
+                return _AnalyzedTrack(source, profile)
+            if supplied is None and host_source is not None:
+                hint = host_source(track)
+                assert source.dependency is not None
+                host = (
+                    None
+                    if hint is None
+                    else hint.observe(
+                        track, source.dependency.identity, session=session
+                    )
+                )
+                if (
+                    host is not None
+                    and host.path.path.suffix.casefold() in _INPUT_FORMATS
+                ):
+                    source = _Source(
+                        host.path,
+                        _key(
+                            (
+                                "correlated-host",
+                                str(host.path),
+                                host.size_bytes,
+                                host.modified_ns,
+                                host.device,
+                                host.inode,
+                            )
+                        ),
+                        host.path.path.suffix,
+                        host=host,
+                        dependency=source.dependency,
+                        fallback=source,
+                    )
+                    with self._cache_lock:
+                        profile = self._cache.get(source.key)
+                    if _usable_profile(profile, vocals):
+                        assert profile is not None
+                        source.validate(session)
+                        checkpoint()
+                        return _AnalyzedTrack(source, profile)
+            return source
         except (
             FilesystemSessionError,
             ConcurrentModificationError,
@@ -694,7 +803,8 @@ class GeniusAnalysisService:
         decoder: GeniusPCMDecoder,
         checkpoint: Callable[[], None],
         device_read: Lock,
-    ) -> _AnalyzedTrack | GeniusAnalysisIssue:
+        vocals: GeniusVocalAnalyzer | None = None,
+    ) -> _AnalyzedTrack | _Source | GeniusAnalysisIssue:
         try:
             try:
                 checkpoint()
@@ -710,7 +820,7 @@ class GeniusAnalysisService:
                 ):
                     pcm = decoder.decode(
                         source.path,
-                        input_suffix=PurePosixPath(track.metadata.location).suffix,
+                        input_suffix=source.input_suffix,
                         session=session,
                         checkpoint=checkpoint,
                     )
@@ -719,6 +829,17 @@ class GeniusAnalysisService:
                 profile = self._profiler(
                     pcm, sample_rate_hz=GENIUS_SAMPLE_RATE_HZ, checkpoint=checkpoint
                 )
+                if vocals is not None and focus_candidate(profile):
+                    try:
+                        profile = replace(
+                            profile, vocals=vocals.analyze(pcm, checkpoint=checkpoint)
+                        )
+                    except GeniusVocalAnalysisError:
+                        logging.getLogger(__name__).warning(
+                            "Genius vocal evidence unavailable for Track %s",
+                            track.track_id,
+                            exc_info=True,
+                        )
                 del pcm
             finally:
                 source.validate(session)
@@ -733,6 +854,8 @@ class GeniusAnalysisService:
         ):
             raise
         except (GeniusAudioDecodeError, OSError, StorageError, ValueError) as error:
+            if source.fallback is not None:
+                return source.fallback
             return GeniusAnalysisIssue(
                 track.track_id, "genius.audio_unavailable", str(error)
             )
@@ -796,13 +919,29 @@ def _source(
         # reuse one profile. It may describe the original input rather than the
         # capture's inode or timestamps; pin the capture's own observed identity.
         key = _key(("host", fingerprint.size, fingerprint.sha256))
-        return _Source(supplied.source, key, host=observed)
+        return _Source(
+            supplied.source,
+            key,
+            PurePosixPath(track.metadata.location).suffix,
+            host=observed,
+        )
     path = DevicePath(track.metadata.location)
     identity = session.file_identity(path)
     return _Source(
         path,
         _device_key(track, path, session, identity),
+        PurePosixPath(track.metadata.location).suffix,
         dependency=GeniusAnalysisDependency(path, identity),
+    )
+
+
+def _usable_profile(
+    profile: GeniusAudioProfile | None, vocals: GeniusVocalAnalyzer | None
+) -> bool:
+    return profile is not None and not (
+        vocals is not None
+        and focus_candidate(profile)
+        and (profile.vocals is None or profile.vocals.provider != vocals.identity)
     )
 
 

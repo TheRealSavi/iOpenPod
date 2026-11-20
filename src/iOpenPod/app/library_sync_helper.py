@@ -402,22 +402,36 @@ def read_track_sync_paths(
     checkpoint: Callable[[], None],
 ) -> dict[int, str]:
     """Read committed Host path hints for the requested, still-matching Tracks."""
+    return {
+        identity: record.sync.host_path_hint
+        for identity, record in read_track_sync_records(
+            session, tracks, checkpoint=checkpoint
+        ).items()
+        if record.sync is not None and record.sync.host_path_hint
+    }
+
+
+def read_track_sync_records(
+    session: FilesystemSession,
+    tracks: tuple[Track, ...],
+    *,
+    checkpoint: Callable[[], None],
+) -> dict[int, IPodTrackFingerprint]:
+    """Return still-matching committed associations without reading Track audio."""
     checkpoint()
     try:
         loaded, issue = _load_helper(session)
     except FilesystemSessionError:
         raise
     except (OSError, StorageError) as error:
-        logger.warning("Could not read the Library Sync Helper for export: %s", error)
+        logger.warning("Could not read the Library Sync Helper: %s", error)
         return {}
     if issue is not None:
-        logger.warning(
-            "Could not use the Library Sync Helper for export: %s", issue.detail
-        )
+        logger.warning("Could not use the Library Sync Helper: %s", issue.detail)
         return {}
 
     retained = {_track_key(record): record for record in loaded.tracks}
-    paths: dict[int, str] = {}
+    records: dict[int, IPodTrackFingerprint] = {}
     for track in tracks:
         checkpoint()
         record = retained.get(_track_key_for_track(track))
@@ -428,12 +442,12 @@ def read_track_sync_paths(
             if record.path == path and _matches(
                 session, record, path, _regular_file(session, path)
             ):
-                paths[track.track_id] = record.sync.host_path_hint
+                records[track.track_id] = replace(record, track_id=track.track_id)
         except FilesystemSessionError:
             raise
         except (OSError, StorageError, ValueError):
             continue
-    return paths
+    return records
 
 
 def publish_sync_helper(

@@ -2,8 +2,9 @@
 
 Device Registry describes the native firmware features separately from whether
 iOpenPod can prepare, publish, or preserve their data. This contract covers stock
-firmware on the catalog's filesystem-accessible iPods. iPod touch, iPod shuffle,
-Rockbox, and firmware cross-flashing are outside this policy.
+firmware and the qualified shared Classic 2.0.5 OS on the catalog's
+filesystem-accessible iPods. iPod touch, iPod shuffle, Rockbox and unqualified
+firmware combinations are outside this policy.
 
 ## Device matrix
 
@@ -16,6 +17,16 @@ Rockbox, and firmware cross-flashing are outside this policy.
 | nano 1G–3G | Unsupported | Unsupported |
 | nano 4G | Supported | Unsupported |
 | nano 5G–7G | Supported | Supported |
+| Classic 6G/6.5G/7G running qualified updater family 38 / RetailOS 2.0.5 | Supported | Supported |
+
+The first Classic rows describe their stock releases. Exact identification can
+resolve the shared 2.0.5 OS on older Classic hardware without changing its model,
+generation, storage limits or database format. This exception requires both the
+release and OS Updater Family at the strongest authority across those fields.
+Missing, conflicting or mismatched evidence cannot enable the exception; a current
+partial report cannot borrow the other field from cached metadata. A complete
+cached pair can describe last-known support; live discovery takes precedence.
+See [ADR-0288](adr/0288-resolve-classic-genius-from-qualified-running-firmware.md).
 
 Native Genius Playlists are generated on the iPod from a selected Track. Native
 Genius Mixes expose a firmware Mix container and use Genius relationships to build
@@ -25,8 +36,8 @@ Apple account access or the availability of Apple's Genius service.
 
 ## Registry API
 
-`DeviceProfile.capabilities.genius` contains `playlists`, `mixes`, and an optional
-numeric `mixes_minimum_firmware`. Both feature fields use `FeatureSupport`:
+`DeviceProfile.capabilities.genius` contains `playlists`, `mixes`, `mix_artwork`,
+and an optional numeric `mixes_minimum_firmware`. Feature fields use `FeatureSupport`:
 
 - `SUPPORTED`: the model and any required firmware evidence permit the feature.
 - `UNSUPPORTED`: stock firmware on the model lacks it, or the observed release is
@@ -39,6 +50,8 @@ It normalizes two-component releases with a zero patch component. Disagreement
 at the highest authority stays unknown, even if every disputed value is above
 the threshold. A malformed current observation cannot fall back to a cached one.
 The catalog object remains unchanged, and later identification uses fresh evidence.
+The qualified shared-OS exception above also enables Playlists and Mixes on
+Classic 6G/6.5G; a new version string alone does not.
 
 For example, after exact identification:
 
@@ -63,22 +76,32 @@ without fresh evidence; current hardware versions outrank those cached values.
 
 Reconciliation caches the observed release as `visibleBuildID` in SysInfo and
 `VisibleBuildID` in SysInfoExtended, with its value and provenance in SysInfo
-Authority. For a profile with a firmware requirement, discovery reuses this cache
-only when both file hashes match, the release has recorded hardware provenance
-marked `value_kind: retailos_release`, and both files contain the same release.
-That marker is set by a current release observation, not by copying a legacy cache;
-rewriting an old transport revision cannot certify it as firmware. Missing or
-inconsistent firmware entries trigger a read-only hardware probe; selection saves
-the result through the existing
-verified metadata-reconciliation workflow. A complete cache is reused across
-connections without another probe. It remains Device Metadata and cannot detect a
-firmware replacement that leaves all three cache files unchanged. Other profiles
-continue caching the release when available without requiring it for identity.
+Authority. ADR-0284 supersedes the earlier cross-connection probe suppression:
+discovery, reconnect and explicit refresh read current device metadata; unchanged
+automatic polling can reuse the current connection's observation. A live response
+supersedes the complete cached firmware identity, including omitted fields.
+Selection saves reconciled metadata through Storage. Cached evidence remains
+labelled historical and does not certify the currently installed firmware.
 
 `SupportsGenius` or `SupportsGeniusMixes` keys are not required activation flags in
 this contract. The tested nano 7G's hardware payload omitted both. Database
 presence, SQLite support, and sparse capability metadata do not replace the model
 and release policy.
+
+Firmware support is separate from Mix creation. Mix management supports both
+SQLite Library targets and Classics with confirmed native Mix support. Classic
+uses special MHYP records in iTunesDB and its root `Extras.itdb` relationship
+companion; it remains a binary Library target. Add, Settings, rotation and removal
+share the existing workflow. Classic's twelve-Mix limit includes external Mixes.
+See [ADR-0289](adr/0289-author-classic-genius-mixes-in-binary-playlist-datasets.md).
+
+Mix artwork is independently qualified from the strongest paired RetailOS and
+OS Updater Family evidence. Publication currently supports Classic 2.0.4/family 35
+and 2.0.5/family 38 (F1069, 142 × 142), plus nano 7 1.0.4/family 37 and the 2015
+refresh's 1.1.2/family 39 (F1010, 240 × 240). Other combinations remain unknown
+for this writer, including nano 5 and 6; this does not mean their firmware lacks
+artwork. iOpenPod supplies its Add Mixes genre/mood icon for owned Mixes on the
+next save/Sync. See [ADR-0291](adr/0291-publish-qualified-native-genius-mix-covers.md).
 
 ## Evidence and limits
 
@@ -100,13 +123,18 @@ and release policy.
 - Upstream [cross-generation research][crossgen] reports native Mix playback on
   nanos 5G/6G. Classic 7G and nano 4G authoring remain untested locally. Native
   support is broader than the current iOpenPod authoring validation.
+- Local [Classic Mix research](research/classic-genius-mixes-2026-11-18.md)
+  executed actual writer records through stock 2.0.4 and 2.0.5 importers. Virtual
+  device tests cover creation, rotation, removal, and recovery on a 120 GB Classic
+  reporting the shared 2.0.5 OS. Physical Mix playback and the 2.0.3 importer remain
+  unverified locally.
 
 See [ADR-0175](adr/0175-model-native-genius-capabilities-by-firmware.md) for the
 registry contract. The application now uses these capabilities to generate basic
 Genius data during Sync, as described in
 [ADR-0178](adr/0178-generate-basic-genius-during-sync.md). The registry itself
-neither generates relationships nor writes device files. Native collection
-editing and saved Playlist import remain separate work.
+neither generates relationships nor writes device files. Mix management follows
+ADR-0289; saved Playlist creation and import remain separate work.
 
 [original]: https://github.com/TheRealSavi/iOpenPod/blob/de300074a25f6f327b54a7141720e5fbff9d5c5b/src/iopenpod/device/capabilities.py
 [nano4]: https://www.apple.com/newsroom/2008/09/09Apple-Introduces-New-iPod-nano/

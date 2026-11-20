@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from iOpenPod.app.core.eta import EtaEstimate
+    from iOpenPod.app.genius_host_sources import GeniusHostSource
     from iOpenPod.app.media.importing import LibraryMediaSource
     from iOpenPod.app.media.progress import MediaPreparationProgress
     from iOpenPod.app.models.device import ActiveIPod
@@ -61,6 +62,7 @@ class LibraryPreparationRequest:
         default=(), kw_only=True
     )
     media: tuple[LibraryMediaSource, ...] = field(default=(), kw_only=True)
+    genius_host_sources: tuple[GeniusHostSource, ...] = field(default=(), kw_only=True)
     replace_media: tuple[int, ...] = field(default=(), kw_only=True)
     lyrics_updates: tuple[int, ...] = field(default=(), kw_only=True)
     rockbox_media: tuple[RockboxMediaUpdate, ...] = field(default=(), kw_only=True)
