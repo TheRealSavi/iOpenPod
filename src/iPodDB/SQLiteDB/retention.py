@@ -83,9 +83,11 @@ _EXTRA_KEYS: dict[str, tuple[str, ...]] = {
     "container_seed": ("container_pid", "item_pid"),
     "video_characteristics": ("item_pid", "sub_id", "track_id"),
 }
-# These newer projection-only calculated columns are absent in Apple's Nano 5
-# schema. Its schema and version are retained; no migration is required.
+# Known firmware schemas omit these projection columns: calculated fields on
+# Nano 5 and the default-only home-video/tone flags on Nano 6 (issue #343).
+# Retain the source schema and version instead of migrating them.
 _OPTIONAL_COLUMNS = {
+    "item": frozenset({"is_home_video", "is_tone"}),
     "item_stats": frozenset({"genius_id"}),
     "album": frozenset({"item_count", "has_movies"}),
     "genre_map": frozenset({"compilation_count_calc"}),
