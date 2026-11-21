@@ -89,8 +89,11 @@ def test_version_and_smoke_test_do_not_initialize_settings_or_devices(
 def test_smoke_test_reports_missing_firmware_assets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resource_lookup: str, filename: str
 ) -> None:
+    def missing_assets(_package: object) -> Path:
+        return tmp_path
+
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    monkeypatch.setattr(resource_lookup, lambda _package: tmp_path)
+    monkeypatch.setattr(resource_lookup, missing_assets)
     report = tmp_path / "smoke.txt"
     assert entrypoint.main(["--smoke-test", "--smoke-test-report", str(report)]) == 1
     diagnostic = report.read_text(encoding="utf-8")

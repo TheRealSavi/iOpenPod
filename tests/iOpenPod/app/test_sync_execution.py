@@ -83,6 +83,7 @@ from iOpenPod.app.sync_execution import (
     SyncExecutor,
     SyncOptions,
     _draft,  # pyright: ignore[reportPrivateUsage]
+    _media_batches,  # pyright: ignore[reportPrivateUsage]
     _PreparedTrack,  # pyright: ignore[reportPrivateUsage]
     _song,  # pyright: ignore[reportPrivateUsage]
     preview_playlist_sync,
@@ -1032,6 +1033,156 @@ def test_preparation_reports_all_concurrent_tracks(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize(
+    ("free_gib", "expected_counts"),
+    [(200, [2, 2, 1]), (399, [3, 2]), (400, [4, 1]), (800, [4, 1])],
+)
+def test_track_batch_target_uses_quarter_of_free_space_up_to_100_gib(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    free_gib: int,
+    expected_counts: list[int],
+) -> None:
+    gib = 1024**3
+    monkeypatch.setattr(sync_execution, "staging_free_bytes", lambda: free_gib * gib)
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "A", "B", "C", "D", "E")
+        # The planner consumes scan sizes without opening media files.
+        host = replace(
+            host, sources=tuple(replace(s, size_bytes=25 * gib) for s in host.sources)
+        )
+        batches = _media_batches(_request(device, host))
+        assert [len(batch) for batch in batches] == expected_counts
+    finally:
+        device.coordinator.close()
+
+
+def test_low_space_sync_releases_prepared_tracks_between_verified_batches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = b"x" * (256 * 1024)
+    monkeypatch.setattr(sync_execution, "staging_free_bytes", lambda: 8 * len(payload))
+    device = build_device(tmp_path)
+    captures: list[Path] = []
+    live_before_preparing: list[int] = []
+
+    class LimitedExecutor(_Executor):
+        def _prepare_one(
+            self,
+            request: SyncExecutionRequest,
+            item: SyncPlanItem,
+            source: HostMediaSource,
+            track: Track,
+            tools: MediaTools,
+            checkpoint: Callable[[], None],
+            activity: Callable[[MediaPreparationProgress], None],
+        ) -> _PreparedTrack:
+            live_before_preparing.append(sum(path.exists() for path in captures))
+            if live_before_preparing[-1] >= 2:
+                raise OSError("The Host staging volume is full")
+            result = super()._prepare_one(
+                request, item, source, track, tools, checkpoint, activity
+            )
+            captures.append(Path(result.song.source.source.path))
+            return result
+
+    try:
+        names = tuple(f"Track {i}" for i in range(5))
+        host = _host(tmp_path, *names, payload=payload, playlists=True)
+        result = LimitedExecutor(
+            device.coordinator, transcoder=_AvailableTools(), workers=1
+        ).execute(_request(device, host), lambda _: None, Event())
+        assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+        assert len(result.completed) == len(names)
+        assert not any(path.exists() for path in captures)
+        assert result.active is not None and result.helper is not None
+        added = {t.title: t for t in result.active.library.tracks if t.title in names}
+        playlist = next(
+            p for p in result.active.library.playlists if p.name == "Host Playlist"
+        )
+        assert [e.track_id for e in playlist.entries] == [
+            added[n].track_id for n in names
+        ]
+        for track in added.values():
+            assert (device.root / track.metadata.location).read_bytes() == payload
+    finally:
+        device.coordinator.close()
+
+
+@pytest.mark.parametrize("interrupt", ["cancel", "restore", "recovery"])
+def test_interruption_in_second_batch_retains_only_first_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupt: str
+) -> None:
+    monkeypatch.setattr(sync_execution, "staging_free_bytes", lambda: 4096)
+    device = build_device(tmp_path)
+    cancelled = Event()
+    batches: list[int | None] = []
+    try:
+        if interrupt == "recovery":
+
+            def disconnected(*_args: object) -> None:
+                raise OSError("Device unavailable during restoration")
+
+            monkeypatch.setattr(device.coordinator, "recover_failed_sync", disconnected)
+
+        def progress(event: WriteProgress) -> None:
+            if event.phase == "sync.batch":
+                batches.append(event.completed)
+                if len(batches) == 2 and interrupt == "cancel":
+                    cancelled.set()
+            if len(batches) == 2 and event.phase == "save.storage.publishing":
+                raise OSError("Interrupted second batch")
+
+        host = _host(tmp_path, "A", "B", "C", payload=b"x" * 1024, playlists=True)
+        request = _request(device, host)
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            request, progress, cancelled
+        )
+        assert batches == [0, 1]
+        assert [item.name for item in result.completed] == ["A"]
+        assert any(issue.code == "sync.batches_committed" for issue in result.issues)
+        if interrupt == "recovery":
+            assert result.status is SyncExecutionStatus.RECOVERY_REQUIRED, result.issues
+            assert result.active is None and result.recovery_path
+        else:
+            assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+            active = result.active
+            assert active is not None and active is device.active
+            assert result.helper is not None
+            assert result.recovery_path == ""
+            assert (device.root / "iPod_Control/iTunes/iTunesDB").is_file()
+            saved = IPodLibrary(
+                (device.root / "iPod_Control/iTunes/iTunesDB").read_bytes()
+            )
+            assert {t.title for t in saved.snapshot.tracks} & {"A", "B", "C"} == {"A"}
+            assert all(p.name != "Host Playlist" for p in saved.snapshot.playlists)
+            retry = prepare_sync_plan(host, result.helper, active.library)
+            assert {
+                item.name for item in retry.items if item.action is SyncPlanAction.ADD
+            } == {"B", "C"}
+    finally:
+        device.coordinator.close()
+
+
+def test_failed_preparation_batch_allows_later_independent_tracks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sync_execution, "staging_free_bytes", lambda: 4096)
+    device = build_device(tmp_path)
+    try:
+        host = _host(tmp_path, "Failure", "Good", payload=b"x" * 1024, playlists=True)
+        result = _Executor(device.coordinator, transcoder=_AvailableTools()).execute(
+            _request(device, host), lambda _: None, Event()
+        )
+        assert result.status is SyncExecutionStatus.PARTIAL, result.issues
+        assert [item.name for item in result.completed] == ["Good"]
+        assert result.active is not None
+        assert all(p.name != "Host Playlist" for p in result.active.library.playlists)
+    finally:
+        device.coordinator.close()
+
+
 def test_add_and_playlist_publish_before_successful_sync_history(
     tmp_path: Path,
 ) -> None:
@@ -1157,14 +1308,24 @@ def test_update_keeps_track_identity_and_only_removes_unreferenced_old_media(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize("split", [False, True])
 def test_sync_reuses_removed_media_space_on_a_nearly_full_ipod(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, split: bool
 ) -> None:
     size = 1024 * 1024
     device = build_device(tmp_path, media_payload=b"a" * size, host_recovery=True)
     try:
-        host = _host(tmp_path, "Replacement", payload=b"b" * size)
+        names = ("Replacement", "Addition") if split else ("Replacement",)
+        host = _host(tmp_path, *names, payload=b"b" * size)
         request = _request(device, host, update=True)
+        if split:
+            # Two originals occupy the available media allocation. The reviewed
+            # Remove must free space for the Add across batch boundaries.
+            request = replace(
+                request,
+                plan=prepare_sync_plan(host, request.ipod, device.active.library),
+            )
+            monkeypatch.setattr(sync_execution, "staging_free_bytes", lambda: 4 * size)
 
         def allocated() -> int:
             return sum(
@@ -1196,6 +1357,13 @@ def test_sync_reuses_removed_media_space_on_a_nearly_full_ipod(
             device.root / request.source.library.tracks[0].metadata.location
         ).exists()
         assert not tuple((tmp_path / "recovery").rglob("transaction.json"))
+        if split:
+            assert {item.action for item in result.completed} == {
+                SyncPlanAction.ADD,
+                SyncPlanAction.UPDATE,
+                SyncPlanAction.REMOVE,
+            }
+            assert {track.title for track in result.active.library.tracks} == set(names)
     finally:
         device.coordinator.close()
 

@@ -88,6 +88,7 @@ class SyncExecutionPage(QWidget):
         self._phase_skip_requested = False
         self._cancel_notice = False
         self._last_write_progress: WriteProgress | None = None
+        self._batch_progress: WriteProgress | None = None
         self._completed_stages: list[int] = []
         self._recovery_mode: Literal["restore", "cleanup", "keep"] | None = None
         self._title = QLabel(self)
@@ -266,6 +267,7 @@ class SyncExecutionPage(QWidget):
         self._phase_skip_requested = False
         self._cancel_notice = False
         self._last_write_progress = None
+        self._batch_progress = None
         self._completed_stages.clear()
         self._recovery_mode = None
         self._views.setCurrentWidget(self._running_view)
@@ -296,6 +298,10 @@ class SyncExecutionPage(QWidget):
     def update_progress(self, progress: WriteProgress) -> None:
         if self._result is not None and self._recovery_mode is None:
             return
+        if progress.phase == "sync.batch":
+            self._batch_progress = progress
+            self._completed_stages.clear()
+            self._active_stage = None
         self._last_write_progress = progress
         self._cancel_notice = False
         now = monotonic()
@@ -325,11 +331,14 @@ class SyncExecutionPage(QWidget):
         if progress.phase.startswith("save.recovery."):
             title = self.tr("Recover previous Library")
         self._stage.setText(title)
-        self._stage_summary.setText(
+        step = (
             self.tr("Step %1 of %2")
             .replace("%1", str(stage_index + 1))
             .replace("%2", str(len(self._STAGES)))
         )
+        if self._batch_progress is not None:
+            step = workflow_text(self._batch_progress.message) + " " + step
+        self._stage_summary.setText(step)
         message = workflow_text(progress.message)
         if analyzing_genius and self._genius_skip_requested:
             message += " " + self.tr(
@@ -480,6 +489,7 @@ class SyncExecutionPage(QWidget):
         self._views.setCurrentWidget(self._running_view)
         self._recovery_mode = "cleanup" if cleanup else "restore"
         self._last_write_progress = None
+        self._batch_progress = None
         self._render_recovery()
         self._progress.show()
         self._progress.setRange(0, 0)
@@ -800,6 +810,7 @@ class SyncExecutionPage(QWidget):
         if any(
             phase == prefix or phase.startswith(prefix + ".")
             for prefix in (
+                "sync.batch",
                 "sync.prepare",
                 "sync.photos",
                 "sync.podcasts",

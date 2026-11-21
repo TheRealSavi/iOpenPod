@@ -1,4 +1,4 @@
-"""Execute reviewed Sync intent through one verified Library/Storage transaction."""
+"""Execute reviewed Sync intent through verified Library/Storage transactions."""
 
 from __future__ import annotations
 
@@ -153,12 +153,14 @@ from storage import AccessMode, DeviceEntry, DeviceEntryKind, DevicePath, Storag
 from storage.content_workspace import content_workspace
 from storage.device_capture import capture_device_file_with_fingerprint
 from storage.host_input import LocalHostFile
+from storage.host_staging import staging_free_bytes
 from storage.media_processing import MediaToolFinder, available_compute_threads
 
 logger = logging.getLogger(__name__)
 _FAILURE_LOG_LIMIT = 5
 
 _PHOTO_MEMORY_BUDGET = 2 * 1024 * 1024 * 1024
+_SYNC_BATCH_BYTES = 100 * 1024**3
 _PODCAST_PREPARATION_WORKERS = 4
 
 if TYPE_CHECKING:
@@ -323,8 +325,6 @@ class SyncExecutor:
         cancelled: Event,
     ) -> SyncExecutionResult:
         issues: list[WriteIssue] = []
-        artwork_deferred = False
-        committed_result: SyncExecutionResult | None = None
 
         def checkpoint() -> None:
             if cancelled.is_set():
@@ -401,6 +401,142 @@ class SyncExecutor:
                         )
                     )
                 checkpoint()
+            batches = _media_batches(request)
+        except Exception as error:
+            return _interrupted_execution(error, issues)
+        if len(batches) == 1:
+            return self._execute_batch(
+                request, comparison, progress, cancelled, issues=issues
+            )
+        return self._execute_batches(
+            request, comparison, batches, progress, cancelled, issues
+        )
+
+    def _execute_batches(
+        self,
+        reviewed: SyncExecutionRequest,
+        comparison: SyncPlan,
+        batches: list[tuple[SyncPlanItem, ...]],
+        progress: Callable[[WriteProgress], None],
+        cancelled: Event,
+        issues: list[WriteIssue],
+    ) -> SyncExecutionResult:
+        active = reviewed.source
+        helper = reviewed.ipod
+        completed: list[SyncPlanItem] = []
+        partial = False
+        for index, items in enumerate(batches, 1):
+            final = index == len(batches)
+            request = replace(
+                reviewed,
+                plan=replace(reviewed.plan, items=items),
+                source=active,
+                ipod=helper,
+                reconcile_playlists=final and reviewed.reconcile_playlists,
+                podcasts=reviewed.podcasts if final else None,
+            )
+            try:
+                progress(
+                    WriteProgress(
+                        "sync.batch",
+                        source_text(
+                            "Syncing batch {index} of {total}.",
+                            index=str(index),
+                            total=str(len(batches)),
+                        ),
+                        index - 1,
+                        len(batches),
+                        unit="batches",
+                    )
+                )
+                result = self._execute_batch(
+                    request,
+                    comparison,
+                    progress,
+                    cancelled,
+                    issues=[],
+                    reviewed=reviewed,
+                    published=_committed_track_mapping(completed, helper)
+                    if request.reconcile_playlists
+                    else None,
+                    final=final,
+                )
+            except Exception as error:
+                result = _interrupted_execution(error, [], batched=True)
+            if result.status not in (
+                SyncExecutionStatus.SUCCESS,
+                SyncExecutionStatus.PARTIAL,
+            ):
+                if completed:
+                    issues.append(
+                        WriteIssue(
+                            "sync.batches_committed",
+                            "Earlier Sync batches were saved and verified. Rescan to review the remaining changes.",
+                            severity=IssueSeverity.WARNING,
+                        )
+                    )
+                    if result.status is not SyncExecutionStatus.RECOVERY_REQUIRED:
+                        result = replace(
+                            result,
+                            status=SyncExecutionStatus.PARTIAL,
+                            active=result.active or active,
+                            helper=helper,
+                        )
+                break
+            partial |= result.status is SyncExecutionStatus.PARTIAL
+            if final:
+                if partial:
+                    result = replace(result, status=SyncExecutionStatus.PARTIAL)
+                if completed and result.helper is None and result.active is active:
+                    result = replace(result, helper=helper)
+                break
+            if result.recovery_path or result.helper is None or result.active is None:
+                issues.append(
+                    WriteIssue(
+                        "sync.batches_stopped",
+                        "The saved batch needs attention. Rescan before continuing the remaining Sync changes.",
+                        severity=IssueSeverity.WARNING,
+                    )
+                )
+                result = replace(result, status=SyncExecutionStatus.PARTIAL)
+                break
+            active = result.active
+            helper = result.helper
+            completed.extend(result.completed)
+            issues.extend(result.issues)
+        else:
+            raise ValueError("Sync requires at least one batch.")
+        return replace(
+            result,
+            completed=(*completed, *result.completed),
+            issues=unique_issues((*issues, *result.issues)),
+        )
+
+    def _execute_batch(
+        self,
+        request: SyncExecutionRequest,
+        comparison: SyncPlan,
+        progress: Callable[[WriteProgress], None],
+        cancelled: Event,
+        *,
+        issues: list[WriteIssue],
+        reviewed: SyncExecutionRequest | None = None,
+        published: dict[str, int] | None = None,
+        final: bool = True,
+    ) -> SyncExecutionResult:
+        def checkpoint() -> None:
+            if cancelled.is_set():
+                raise PreparationCancelledError
+
+        committed_result: SyncExecutionResult | None = None
+        artwork_deferred = False
+        selection = reviewed or request
+        selected_media = replace(request, plan=selection.plan)
+        # Later helper revisions carry our commits. The original scan remains
+        # the precondition for every device file still awaiting its reviewed action.
+        source_check = replace(request, ipod=selection.ipod)
+        try:
+            checkpoint()
             podcast_plan = None
             podcast_sync = None
             if request.podcasts is not None:
@@ -423,7 +559,7 @@ class SyncExecutor:
                 # Reviewed Host changes take precedence over automatic Podcast policy.
                 affected = {
                     item.ipod_id
-                    for item in request.plan.items
+                    for item in selection.plan.items
                     if item.media_kind is SyncPlanMediaKind.TRACK
                     and item.action
                     in (
@@ -459,7 +595,7 @@ class SyncExecutor:
             requested_rows: list[PlaylistSyncReviewItem] = []
             requested_playlists = (
                 _preview_playlist_sync(
-                    request, comparison=comparison, rows=requested_rows
+                    selection, comparison=comparison, rows=requested_rows
                 )
                 if request.reconcile_playlists
                 else ()
@@ -558,7 +694,7 @@ class SyncExecutor:
                 if podcast_sync is not None and podcast_plan is not None:
                     podcast_tracks, podcast_artwork_repairs, cover_issues = (
                         _capture_podcast_artwork(
-                            request,
+                            selected_media,
                             podcast_sync,
                             podcast_plan,
                             podcast_tracks,
@@ -570,17 +706,20 @@ class SyncExecutor:
                     )
                     issues.extend(cover_issues)
                     podcast_changes += len(podcast_artwork_repairs)
-                embedded_repairs, embedded_issues = _capture_retained_podcast_artwork(
-                    request,
-                    self._coordinator,
-                    podcast_tracks,
-                    podcast_artwork_repairs,
-                    () if podcast_plan is None else podcast_plan.removals,
-                    progress,
-                    checkpoint,
-                )
-                podcast_artwork_repairs += embedded_repairs
-                issues.extend(embedded_issues)
+                if final:
+                    embedded_repairs, embedded_issues = (
+                        _capture_retained_podcast_artwork(
+                            selected_media,
+                            self._coordinator,
+                            podcast_tracks,
+                            podcast_artwork_repairs,
+                            () if podcast_plan is None else podcast_plan.removals,
+                            progress,
+                            checkpoint,
+                        )
+                    )
+                    podcast_artwork_repairs += embedded_repairs
+                    issues.extend(embedded_issues)
                 photos, photo_issues, photo_workspace = self._prepare_photos(
                     request, progress, checkpoint, resources
                 )
@@ -649,7 +788,7 @@ class SyncExecutor:
                     )
                 metadata_updates = stable_metadata
                 invalid_playlists = _validate_playlist_sources(
-                    request, issues, checkpoint, progress=progress
+                    request, issues, checkpoint, progress=progress, published=published
                 )
                 draft_request = replace(
                     request,
@@ -673,6 +812,9 @@ class SyncExecutor:
                     podcast_artwork_repairs,
                     comparison=comparison,
                     playlist_associations=playlist_associations,
+                    selection=selection.plan,
+                    published=published,
+                    final=final,
                 )
                 playlist_changes = (
                     _playlist_changes(
@@ -714,6 +856,14 @@ class SyncExecutor:
                     for item in playlist_associations
                 )
                 if unchanged_draft and not association_changes:
+                    if not final:
+                        # Independent preparation failures left this batch empty.
+                        return SyncExecutionResult(
+                            SyncExecutionStatus.PARTIAL,
+                            active=request.source,
+                            helper=request.ipod,
+                            issues=tuple(issues),
+                        )
                     requested_changes = bool(
                         request.plan.change_count
                         or any(row.actionable for row in requested_rows)
@@ -742,7 +892,7 @@ class SyncExecutor:
                         )
                 # A source edited during Host computation must never be published
                 # against the older Review, even if its temporary result is valid.
-                self._validate_sources(request, checkpoint)
+                self._validate_sources(source_check, checkpoint)
                 podcast_state = (
                     state_after_podcast_sync(
                         podcast_sync,
@@ -880,7 +1030,7 @@ class SyncExecutor:
 
                 def validate_sources(session: FilesystemSession) -> None:
                     _validate_device_sources(
-                        request,
+                        source_check,
                         session,
                         checkpoint,
                         progress=progress,
@@ -958,7 +1108,7 @@ class SyncExecutor:
                         # Cancellation may still stop before its atomic publication.
                         checkpoint()
                         self._validate_sources(
-                            request,
+                            source_check,
                             checkpoint,
                             progress=progress,
                             phase="sync.helper.validate",
@@ -1133,32 +1283,6 @@ class SyncExecutor:
                 )
                 # Preserve this result if ExitStack cleanup raises after the return.
                 return committed_result  # noqa: RET504
-        except SyncRecoveryRequiredError as error:
-            return SyncExecutionResult(
-                SyncExecutionStatus.RECOVERY_REQUIRED,
-                issues=(
-                    *issues,
-                    WriteIssue(
-                        "sync.recovery_required",
-                        exception_text(error),
-                        artifact=error.recovery_path,
-                    ),
-                ),
-                recovery_path=error.recovery_path,
-            )
-        except PreparationCancelledError:
-            return SyncExecutionResult(
-                SyncExecutionStatus.CANCELLED,
-                issues=(
-                    *issues,
-                    WriteIssue(
-                        "sync.cancelled",
-                        "Sync was cancelled before publication. "
-                        "Temporary Host files were removed; the iPod Library is unchanged.",
-                        severity=IssueSeverity.WARNING,
-                    ),
-                ),
-            )
         except Exception as error:
             if committed_result is not None:
                 return replace(
@@ -1174,18 +1298,7 @@ class SyncExecutor:
                         ),
                     ),
                 )
-            return SyncExecutionResult(
-                SyncExecutionStatus.FAILED,
-                issues=(
-                    *issues,
-                    WriteIssue(
-                        "sync.failed",
-                        "Sync could not continue. Correct the reported problem "
-                        "and rescan before trying again.",
-                        detail=exception_text(error),
-                    ),
-                ),
-            )
+            return _interrupted_execution(error, issues, batched=reviewed is not None)
 
     def _failed_save(
         self,
@@ -2362,6 +2475,155 @@ class SyncExecutor:
         return tuple(prepared), tuple(issues), staging
 
 
+def _interrupted_execution(
+    error: Exception, issues: list[WriteIssue], *, batched: bool = False
+) -> SyncExecutionResult:
+    if isinstance(error, SyncRecoveryRequiredError):
+        return SyncExecutionResult(
+            SyncExecutionStatus.RECOVERY_REQUIRED,
+            issues=(
+                *issues,
+                WriteIssue(
+                    "sync.recovery_required",
+                    exception_text(error),
+                    artifact=error.recovery_path,
+                ),
+            ),
+            recovery_path=error.recovery_path,
+        )
+    if isinstance(error, PreparationCancelledError):
+        return SyncExecutionResult(
+            SyncExecutionStatus.CANCELLED,
+            issues=(
+                *issues,
+                WriteIssue(
+                    "sync.cancelled",
+                    "Sync stopped before publishing this batch."
+                    if batched
+                    else "Sync was cancelled before publication. "
+                    "Temporary Host files were removed; the iPod Library is unchanged.",
+                    severity=IssueSeverity.WARNING,
+                ),
+            ),
+        )
+    return SyncExecutionResult(
+        SyncExecutionStatus.FAILED,
+        issues=(
+            *issues,
+            WriteIssue(
+                "sync.failed",
+                "Sync could not continue. Correct the reported problem and rescan before trying again.",
+                detail=exception_text(error),
+            ),
+        ),
+    )
+
+
+def _committed_track_mapping(
+    completed: list[SyncPlanItem], helper: IPodMediaLibrary
+) -> dict[str, int]:
+    """Map earlier successful Host paths to Track IDs in the committed Library."""
+    selected = {
+        host_path_identity(item.host_path)
+        for item in completed
+        if item.media_kind is SyncPlanMediaKind.TRACK
+        and item.host_path
+        and item.action in (SyncPlanAction.ADD, SyncPlanAction.UPDATE)
+    }
+    mapping: dict[str, int] = {}
+    for track in helper.tracks:
+        if track.sync is not None and track.sync.host_path_hint:
+            path = host_path_identity(track.sync.host_path_hint)
+            if path in selected:
+                mapping[path] = track.track_id
+    return mapping
+
+
+def _media_batches(request: SyncExecutionRequest) -> list[tuple[SyncPlanItem, ...]]:
+    """Budget captured inputs and affected originals before admitting codec workers."""
+    if request.plan.change_count <= 1:
+        return [request.plan.items]
+    sources = {host_path_identity(str(s.path)): s for s in request.host.sources}
+    durations = {
+        host_path_identity(t.metadata.location): t.length_ms
+        for t in request.host.snapshot.tracks
+    }
+    caps = request.source.profile.capabilities
+    pcm_bps = (
+        caps.audio.max_sample_rate_hz
+        * caps.audio.max_channels
+        * caps.audio.max_lossless_bits
+    )
+    ipod_sizes = {t.track_id: t.size_bytes for t in request.ipod.tracks}
+    photo_sizes = {p.image_id: p.size_bytes for p in request.ipod.images}
+    removals: list[tuple[SyncPlanItem, int]] = []
+    photo_removals: list[tuple[SyncPlanItem, int]] = []
+    writes: list[tuple[SyncPlanItem, int]] = []
+    remaining: list[SyncPlanItem] = []
+    for item in request.plan.items:
+        if item.media_kind is not SyncPlanMediaKind.TRACK:
+            if item.action is SyncPlanAction.REMOVE:
+                photo_removals.append((item, photo_sizes.get(item.ipod_id or 0, 0)))
+            else:
+                remaining.append(item)
+            continue
+        original_bytes = ipod_sizes.get(item.ipod_id or 0, 0)
+        if item.action is SyncPlanAction.REMOVE:
+            removals.append((item, original_bytes))
+            continue
+        size = 0
+        if _requires_media_preparation(item) and item.host_path:
+            path = host_path_identity(item.host_path)
+            source = sources.get(path)
+            if source is not None:
+                # Very small compressed inputs can expand considerably. Budget
+                # the device's video ceiling or full decoded PCM for the duration.
+                rate = pcm_bps
+                if source.kind is HostMediaFileKind.VIDEO:
+                    streams = (
+                        len(item.stream_selection.audio_streams)
+                        if item.stream_selection
+                        else 1
+                    )
+                    rate = 1000 * (
+                        caps.video.max_bitrate_kbps
+                        + streams * caps.video.max_audio_bitrate_kbps
+                    )
+                size = max(source.size_bytes, durations.get(path, 0) * rate // 8000)
+        if item.action is SyncPlanAction.UPDATE and (
+            item.audio_payload_changed
+            or request.options.rockbox_metadata
+            or (request.include_lyrics and item.metadata_changed)
+        ):
+            size += original_bytes
+        if size:
+            writes.append((item, size))
+        else:
+            remaining.append(item)
+    if not (removals or writes):
+        return [request.plan.items]
+    removals.extend(photo_removals)
+    if len(removals) + len(writes) <= 1:
+        return [request.plan.items]
+    # Leave room for simultaneous source captures, expanding encodes, tag rewrites
+    # and verified recovery copies. An individual large Track can run on its own.
+    budget = min(_SYNC_BATCH_BYTES, staging_free_bytes() // 4)
+    batches: list[tuple[SyncPlanItem, ...]] = []
+    batch: list[SyncPlanItem] = []
+    size = 0
+    for item, required in (*removals, *writes):
+        if batch and size + required > budget:
+            batches.append(tuple(batch))
+            batch = []
+            size = 0
+        batch.append(item)
+        size += required
+    if not batches:
+        return [request.plan.items]
+    batches.append((*batch, *remaining))
+    return batches
+
+
 def _track_failure_issues(
     item: SyncPlanItem, track: Track, error: Exception
 ) -> tuple[WriteIssue, ...]:
@@ -2668,11 +2930,17 @@ def _draft(
     *,
     comparison: SyncPlan | None = None,
     playlist_associations: list[PlaylistAssociation] | None = None,
+    selection: SyncPlan | None = None,
+    published: dict[str, int] | None = None,
+    final: bool = True,
 ) -> tuple[LibraryPreparationRequest, tuple[SyncPlanItem, ...], bool]:
     """Build desired state, completed actions, and whether implicit changes exist."""
     original = request.source.library
     tracks = {track.track_id: track for track in original.tracks}
-    mapping = _retained_playlist_mapping(request, comparison=comparison)
+    playlist_request = (
+        replace(request, plan=selection) if selection is not None else request
+    )
+    mapping = _retained_playlist_mapping(playlist_request, comparison=comparison)
     host_tracks = {
         host_path_identity(track.metadata.location): track.track_id
         for track in request.host.snapshot.tracks
@@ -2681,6 +2949,10 @@ def _draft(
         host_path_identity(track.metadata.location): track
         for track in request.host.snapshot.tracks
     }
+    if published:
+        mapping.update(
+            (host_tracks[path], identity) for path, identity in published.items()
+        )
     video_paths = {
         host_path_identity(str(source.path))
         for source in request.host.sources
@@ -2922,7 +3194,11 @@ def _draft(
             )
         )
     playlists, reconciled = _playlists(
-        request, mapping, frozenset(tracks), issues, associations=playlist_associations
+        playlist_request,
+        mapping,
+        frozenset(tracks),
+        issues,
+        associations=playlist_associations,
     )
     photos = original.photos
     removed_tracks = {track.track_id for track in original.tracks} - tracks.keys()
@@ -2955,12 +3231,12 @@ def _draft(
     desired = replace(
         original,
         tracks=_normalized_tracks(request, tuple(tracks.values()))
-        if request.options.normalize_tags
+        if final and request.options.normalize_tags
         else tuple(tracks.values()),
         playlists=playlists,
         photos=photos,
     )
-    normalized = enforce_library_playback_policy(desired)
+    normalized = enforce_library_playback_policy(desired) if final else desired
     draft = LibraryPreparationRequest(
         normalized,
         request.source,
@@ -2969,7 +3245,7 @@ def _draft(
         delete_omissions=bool(podcast_removed)
         or any(item.action is SyncPlanAction.REMOVE for item in completed),
         media=tuple(media),
-        genius_host_sources=_genius_host_sources(request),
+        genius_host_sources=_genius_host_sources(request) if final else (),
         artwork=tuple(artwork),
         artwork_dependencies=tuple(
             repair.dependency
@@ -2980,7 +3256,7 @@ def _draft(
         lyrics_updates=tuple(lyrics_updates),
         rockbox_media=tuple(rockbox_media),
         rockbox_metadata=request.options.rockbox_metadata,
-        compute_missing_bpm=request.options.compute_missing_bpm,
+        compute_missing_bpm=final and request.options.compute_missing_bpm,
         photos=tuple(item.asset for item in prepared_photos),
         replace_photos=tuple(
             item.asset.photo.photo_id
@@ -2989,18 +3265,21 @@ def _draft(
         ),
         regenerate_sqlite=request.source.profile.capabilities.database.uses_sqlite_database,
         regenerate_genius=(
-            request.options.analyze_for_genius
+            final
+            and request.options.analyze_for_genius
             and request.source.profile.capabilities.genius.playlists
             is FeatureSupport.SUPPORTED
         ),
         genius_analysis_skip=request.genius_analysis_skip,
         phase_analysis_skip=request.phase_analysis_skip,
         rotate_genius_mixes=(
-            request.options.analyze_for_genius
+            final
+            and request.options.analyze_for_genius
             and supports_mix_creation(request.source.profile)
         ),
-        repair_podcast_links=True,
-        normalize_podcasts=any(
+        repair_podcast_links=final,
+        normalize_podcasts=final
+        and any(
             t.media_kind is MediaKind.PODCAST or t.metadata.podcast
             for t in normalized.tracks
         ),
@@ -3378,6 +3657,7 @@ def _validate_playlist_sources(
     checkpoint: Callable[[], None],
     *,
     progress: Callable[[WriteProgress], None] = lambda _: None,
+    published: dict[str, int] | None = None,
 ) -> frozenset[int]:
     """A changed source blocks only the selected Playlists that depend on it."""
     if not request.reconcile_playlists:
@@ -3398,6 +3678,8 @@ def _validate_playlist_sources(
         for item in request.plan.items
         if item.host_path is not None and item.action is SyncPlanAction.UNCHANGED
     }
+    if published:
+        retained_paths.update(published)
     invalid: set[int] = set()
     validation = CountedProgress(
         progress, "sync.playlists", "Checking Host Playlist sources…", unit="files"

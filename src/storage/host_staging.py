@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import logging
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -91,6 +92,14 @@ def _staging_root() -> Path:
             return base / f"iopenpod-staging{suffix}"
     platform_name = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
     return application_cache_file("iOpenPod", "staging", platform_name=platform_name)
+
+
+def staging_free_bytes() -> int:
+    """Measure the volume that will hold private media, including a temp override."""
+    path = _staging_root()
+    while not path.exists() and path != path.parent:
+        path = path.parent
+    return shutil.disk_usage(path).free
 
 
 def _require_owned_directory(path: Path) -> None:

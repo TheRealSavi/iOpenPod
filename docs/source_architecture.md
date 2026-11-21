@@ -1989,6 +1989,11 @@ their acoustic profiles under the published file identity. The normal Sync helpe
 publication records final iPod metadata while preserving raw Host baselines and
 any unrelated unsynced device edits. Refresh Library reads established history
 without running another acoustic scan.
+Large reviewed Track selections use successive verified batches sized against
+available Host staging space. Each commit releases its preparations. Earlier
+commits survive cancellation or recovery of a later batch. The final batch
+reconciles Host Playlists using the complete selection and the committed Track
+identities. See [ADR-0293](adr/0293-bound-host-track-staging-during-sync.md).
 An isolated Library Draft carries successful media, Photo, artwork, and Playlist
 changes into the existing issued Library Review and ordered Storage Transaction.
 The Library Sync Helper is updated only after verified publication. Device writes

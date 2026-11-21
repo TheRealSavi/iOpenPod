@@ -13147,6 +13147,30 @@ Playlists: %3</translation>
 <context>
     <name>Workflow</name>
     <message>
+        <source>Syncing batch {index} of {total}.</source>
+        <translation>Sincronizando el lote {index} de {total}.</translation>
+    </message>
+    <message>
+        <source>batches</source>
+        <translation>lotes</translation>
+    </message>
+    <message>
+        <source>Earlier Sync batches were saved and verified. Rescan to review the remaining changes.</source>
+        <translation>Los lotes anteriores se han guardado y verificado. Vuelve a escanear para revisar los cambios pendientes.</translation>
+    </message>
+    <message>
+        <source>The saved batch needs attention. Rescan before continuing the remaining Sync changes.</source>
+        <translation>El lote guardado requiere atención. Vuelve a escanear antes de sincronizar los cambios pendientes.</translation>
+    </message>
+    <message>
+        <source>Sync stopped before publishing this batch.</source>
+        <translation>La sincronización se ha detenido antes de guardar este lote.</translation>
+    </message>
+    <message>
+        <source>Preparing media file tags.</source>
+        <translation>Preparando las etiquetas de los archivos multimedia.</translation>
+    </message>
+    <message>
         <source>Capturing iPod star ratings…</source>
         <translation>Recopilando valoraciones del iPod…</translation>
     </message>

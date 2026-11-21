@@ -445,7 +445,12 @@ checks cover preservation and verification; the reported database remains
 unavailable. See
 [ADR-0213](docs/adr/0213-refresh-compatible-smart-playlist-counterparts.md).
 
-Large Syncs now bound Host staging ownership handles independently of Track count
+Large Track Syncs alternate preparation and verified Library saves in batches
+sized against available Host staging space. Cancelling a later batch retains
+earlier commits and their Sync Details. See
+[ADR-0293](docs/adr/0293-bound-host-track-staging-during-sync.md).
+
+Large Syncs bound Host staging ownership handles independently of Track count
 while retaining crash cleanup and protecting other processes' live preparations.
 Track preparation failures reach the logs, and Library DEBUG diagnostics use
 bounded samples. Windows checks retain 10,000 workspaces; complete NAS-backed

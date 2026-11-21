@@ -16,6 +16,7 @@ from iOpenPod.app.library_write import LibraryFileChange
 from iOpenPod.app.media.lyrics import read_lyrics_stream, rewrite_lyrics_stream
 from iOpenPod.app.services import volume_presentation
 from iOpenPod.app.services.video_metadata import capture_video_metadata
+from iOpenPod.app.sync_progress import CountedProgress
 from iPodDB.library import (
     MAX_SIDECAR_BYTES,
     ArtworkAsset,
@@ -65,7 +66,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import BinaryIO
 
-    from iOpenPod.app.library_write import LibraryPreparationRequest
+    from iOpenPod.app.library_write import LibraryPreparationRequest, WriteProgress
     from iPodDB.library import (
         LibraryWritePlan,
         PhotoRepresentation,
@@ -370,6 +371,7 @@ def capture(
     temporary_files: ExitStack,
     source_artwork_display_times: Callable[[int], tuple[int, ...]],
     source_artwork_paths: Callable[[ArtworkGroupReference], tuple[str, ...]],
+    progress: Callable[[WriteProgress], None] = lambda _: None,
     source_artwork_file_paths: Callable[[], tuple[str, ...]] | None = None,
     source_mix_artwork_paths: tuple[str, ...] = (),
     additional_preconditions: tuple[FilePrecondition, ...] = (),
@@ -774,6 +776,7 @@ def capture(
         temporary_files,
         staging=staging,
         file_preconditions=files,
+        progress=progress,
     )
     tagged = {item.track_id: item for item in lyrics}
     media = tuple(
@@ -1004,6 +1007,7 @@ def _capture_file_tags(
     *,
     staging: ContentWorkspace,
     file_preconditions: list[FilePrecondition],
+    progress: Callable[[WriteProgress], None],
 ) -> tuple[
     tuple[PreparedLyrics, ...], tuple[TransactionWrite, ...], tuple[WriteIssue, ...]
 ]:
@@ -1028,8 +1032,14 @@ def _capture_file_tags(
     writes: list[TransactionWrite] = []
     issues: list[WriteIssue] = []
     covers: dict[int, ArtworkPixels] = {}
-    artwork_files = {file.path: file.fingerprint for file in file_preconditions}
-    for identity in plan.required_lyrics:
+    dependencies = {file.path: file.fingerprint for file in file_preconditions}
+    tagging = CountedProgress(
+        progress, "resources.capture.tags", "Preparing media file tags.", unit="Tracks"
+    )
+    for identity in tagging.items(
+        plan.required_lyrics,
+        lambda key: desired[key].title or desired[key].metadata.location,
+    ):
         checkpoint()
         track = desired[identity]
         path = DevicePath(track.metadata.location)
@@ -1055,6 +1065,7 @@ def _capture_file_tags(
                         selected.source, expected=selected.fingerprint
                     )
                     private_source = captured.snapshot
+                    before = selected.fingerprint
                 else:
                     prior = original.get(identity)
                     if (
@@ -1069,6 +1080,7 @@ def _capture_file_tags(
                         path, private_source, progress=lambda _copied: checkpoint()
                     )
                     expected = copied.source_fingerprint
+                    before = expected
                 update = rockbox.get(identity)
                 artwork = update.artwork if update is not None else None
                 if update is not None and update.artwork_read is not None:
@@ -1082,9 +1094,9 @@ def _capture_file_tags(
                             raise ValueError(
                                 "The selected artwork declares an unsafe file range."
                             )
-                        if cover_path not in artwork_files:
+                        if cover_path not in dependencies:
                             fingerprint = session.fingerprint(cover_path)
-                            artwork_files[cover_path] = fingerprint
+                            dependencies[cover_path] = fingerprint
                             file_preconditions.append(
                                 FilePrecondition(cover_path, fingerprint)
                             )
@@ -1114,7 +1126,18 @@ def _capture_file_tags(
                 output = workspace.transform_stream(private_source, transform)
                 track = transform.track
                 content = FileContent.from_fingerprint(output.fingerprint)
-                if content.size <= remaining:
+                if content == FileContent.from_fingerprint(before):
+                    # The original incoming write or retained device dependency
+                    # already supplies these exact bytes. Release the private copy.
+                    if expected is not None:
+                        if path not in dependencies:
+                            dependencies[path] = expected
+                            file_preconditions.append(FilePrecondition(path, expected))
+                        elif dependencies[path] != expected:
+                            raise FilePreconditionError(
+                                f"Track media changed during capture: {path}"
+                            )
+                elif content.size <= remaining:
                     payload = LocalHostFile.observe(output.snapshot).read_bytes(
                         max_bytes=remaining, checkpoint=checkpoint
                     )

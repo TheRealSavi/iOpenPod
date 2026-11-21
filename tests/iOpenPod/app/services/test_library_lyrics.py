@@ -21,6 +21,7 @@ from iOpenPod.app.library_workspace import LibraryWorkspace, TrackUpdate
 from iOpenPod.app.library_write import (
     LibraryPreparationRequest,
     PreparationCancelledError,
+    WriteProgress,
 )
 from iOpenPod.app.media.importing import MusicImporter
 from iOpenPod.app.media.lyrics import embedded_lyrics, rewrite_lyrics
@@ -54,6 +55,46 @@ def desired_lyrics(device: Device, text: str) -> LibrarySnapshot:
             *others,
         ),
     )
+
+
+@pytest.mark.parametrize("changed_after_review", [False, True])
+def test_matching_file_tags_release_capture_and_remain_a_save_precondition(
+    tmp_path: Path, changed_after_review: bool
+) -> None:
+    tagged = rewrite_lyrics(fixture("tone.m4a"), "tone.m4a", WORDS)
+    device = build_device(tmp_path, media_payload=tagged)
+    try:
+        desired = desired_lyrics(device, WORDS)
+        track = desired.tracks[0]
+        progress: list[WriteProgress] = []
+        review = device.coordinator.prepare_library(
+            LibraryPreparationRequest(
+                desired, device.active, 1, 1, lyrics_updates=(track.track_id,)
+            ),
+            progress.append,
+            Event(),
+        )
+        assert review.result.prepared is not None, review.result.issues
+        assert track.metadata.location not in {
+            change.path for change in review.file_changes
+        }
+        capture = [
+            event for event in progress if event.phase == "resources.capture.tags"
+        ]
+        assert [(e.completed, e.total, e.current_item) for e in capture] == [
+            (0, 1, track.title),
+            (1, 1, track.title),
+        ]
+        path = device.root / track.metadata.location
+        if changed_after_review:
+            path.write_bytes(b"changed after Review")
+        saved = device.save(review)
+        assert (saved.active is None) == changed_after_review, saved.issues
+        assert path.read_bytes() == (
+            b"changed after Review" if changed_after_review else tagged
+        )
+    finally:
+        device.coordinator.close()
 
 
 def read_lyrics(data: bytes) -> str:

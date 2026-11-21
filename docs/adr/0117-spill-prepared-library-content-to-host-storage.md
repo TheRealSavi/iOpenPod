@@ -57,6 +57,10 @@ require Host disk space proportional to the batch. Sync continues to prepare the
 complete desired Library before device publication, preserving complete-plan
 validation and the recoverable Storage Transaction.
 
+[ADR-0293](0293-bound-host-track-staging-during-sync.md) amends this policy
+for large Track Syncs. They verify and commit successive batches and release
+each batch's Host files before starting the next.
+
 Each workspace holds an OS lock on an ownership marker for its entire lifetime.
 Normal completion, cancellation, and failure remove it. Startup can reclaim
 marked workspaces after a process crash only when their locks are available.

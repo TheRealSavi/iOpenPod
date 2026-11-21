@@ -60,6 +60,25 @@ def test_preparation_phases_leave_validation_and_scrobbling_steps(phase: str) ->
         APPLICATION.processEvents()
 
 
+def test_batch_number_remains_visible_through_publication_and_resets() -> None:
+    page = SyncExecutionPage()
+    try:
+        page.begin()
+        page.update_progress(WriteProgress("sync.batch", "Syncing batch 2 of 3.", 1, 3))
+        page.update_progress(
+            WriteProgress("save.storage.publishing", "Publishing.", 1, 2)
+        )
+        summary = page.findChild(QLabel, "syncExecutionStageSummary")
+        assert summary is not None
+        assert summary.text() == "Syncing batch 2 of 3. Step 5 of 7"
+        page.begin()
+        page.update_progress(WriteProgress("sync.validate", "Validating."))
+        assert summary.text() == "Step 1 of 7"
+    finally:
+        page.deleteLater()
+        APPLICATION.processEvents()
+
+
 def test_library_preparation_and_retries_stay_in_the_build_step() -> None:
     page = SyncExecutionPage()
     try:

@@ -13147,6 +13147,30 @@ Playlists: %3</translation>
 <context>
     <name>Workflow</name>
     <message>
+        <source>Syncing batch {index} of {total}.</source>
+        <translation>Synchronisiere Teil {index} von {total}.</translation>
+    </message>
+    <message>
+        <source>batches</source>
+        <translation>Teile</translation>
+    </message>
+    <message>
+        <source>Earlier Sync batches were saved and verified. Rescan to review the remaining changes.</source>
+        <translation>Frühere Teile der Synchronisierung wurden gespeichert und überprüft. Scannen Sie erneut, um die verbleibenden Änderungen zu prüfen.</translation>
+    </message>
+    <message>
+        <source>The saved batch needs attention. Rescan before continuing the remaining Sync changes.</source>
+        <translation>Der gespeicherte Teil der Synchronisierung erfordert Ihre Aufmerksamkeit. Scannen Sie erneut, bevor Sie die verbleibenden Änderungen synchronisieren.</translation>
+    </message>
+    <message>
+        <source>Sync stopped before publishing this batch.</source>
+        <translation>Die Synchronisierung wurde vor dem Schreiben dieses Teils angehalten.</translation>
+    </message>
+    <message>
+        <source>Preparing media file tags.</source>
+        <translation>Medien-Tags werden vorbereitet.</translation>
+    </message>
+    <message>
         <source>Capturing iPod star ratings…</source>
         <translation>Sternebewertungen vom iPod werden erfasst…</translation>
     </message>
