@@ -277,6 +277,35 @@ def test_cache_reuse_never_crosses_device_identity(tmp_path: Path) -> None:
     assert len(decoder.sources) == 2
 
 
+def test_device_cache_survives_reconnection_with_new_inodes(tmp_path: Path) -> None:
+    root, platform, session, snapshot = _device(tmp_path)
+    cache = AtomicHostFile(tmp_path / "profiles.json")
+    decoder = _Decoder()
+    service = GeniusAnalysisService(cache, decoder, profiler=_profile)
+    first = service.analyze(snapshot, session, checkpoint=_checkpoint)
+    session.close()
+    # FAT assigns inode numbers per mount; model a reconnection that keeps the
+    # file's bytes, size, and modification time but observes a new inode.
+    song = root / "song.mp3"
+    original = song.stat()
+    replacement = root / "song.tmp"
+    shutil.copy2(song, replacement)
+    replacement.replace(song)
+    assert song.stat().st_ino != original.st_ino
+    assert song.stat().st_mtime_ns == original.st_mtime_ns
+    platform.add_volume(root, writable=False)
+    storage = Storage(platform)
+    reconnected = storage.open_session(
+        storage.discover().volumes[0], access=AccessMode.READ_ONLY
+    )
+    second = GeniusAnalysisService(cache, decoder, profiler=_profile).analyze(
+        snapshot, reconnected, checkpoint=_checkpoint
+    )
+    assert decoder.sources == [DevicePath("song.mp3")]
+    assert second.profiles == first.profiles
+    second.validate_sources(reconnected, checkpoint=_checkpoint)
+
+
 def test_only_uncached_tracks_are_queued_and_reported(tmp_path: Path) -> None:
     root, _, session, snapshot = _device(tmp_path)
     tracks = [snapshot.tracks[0]]

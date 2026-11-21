@@ -951,6 +951,11 @@ def _device_key(
     session: FilesystemSession,
     identity: FileIdentity,
 ) -> str:
+    # Host-assigned st_dev and st_ino are deliberately excluded. FAT assigns
+    # inode numbers per mount, so they would discard every retained profile on
+    # reconnection. Device and Volume IDs, persistent Track ID, path, size, and
+    # modification time persist; _validate_device still pins the full identity
+    # within one Filesystem Session.
     mounted = session.mounted_volume
     return _key(
         (
@@ -961,8 +966,6 @@ def _device_key(
             str(path),
             identity.size,
             identity.modified_ns,
-            identity.device,
-            identity.inode,
         )
     )
 
