@@ -46,7 +46,10 @@ from iOpenPod.app.core.settings.device import (
 )
 from iOpenPod.app.display_text import exception_text, source_text
 from iOpenPod.app.firmware.bootloader_report import read_bootloader_report
-from iOpenPod.app.genius_analysis import GeniusAnalysisService
+from iOpenPod.app.genius_analysis import (
+    GENIUS_AUDIO_DURATION_LIMIT_ISSUE,
+    GeniusAnalysisService,
+)
 from iOpenPod.app.genius_generation import generate_genius_update
 from iOpenPod.app.genius_mix_artwork import (
     MixCoverRenderer,
@@ -2604,7 +2607,24 @@ class DeviceCoordinator:
                     active.session,
                     checkpoint=cancellation_checkpoint,
                 )
-                if genius_analysis.issues:
+                genius_issues = tuple(
+                    WriteIssue(
+                        issue.code,
+                        issue.detail,
+                        severity=IssueSeverity.WARNING,
+                        phase="resources",
+                        subject="track",
+                        record_id=issue.track_id,
+                    )
+                    for issue in genius_analysis.issues
+                    if issue.code == GENIUS_AUDIO_DURATION_LIMIT_ISSUE
+                )
+                other_issues = tuple(
+                    issue
+                    for issue in genius_analysis.issues
+                    if issue.code != GENIUS_AUDIO_DURATION_LIMIT_ISSUE
+                )
+                if other_issues:
                     track_by_id = {track.track_id: track for track in snapshot.tracks}
 
                     def issue_detail(issue: GeniusAnalysisIssue) -> str:
@@ -2620,7 +2640,7 @@ class DeviceCoordinator:
                             f"{track.metadata.location}): {issue.detail}"
                         )
 
-                    genius_issues = (
+                    genius_issues += (
                         WriteIssue(
                             "genius.analysis_warning",
                             (
@@ -2633,8 +2653,7 @@ class DeviceCoordinator:
                             severity=IssueSeverity.WARNING,
                             phase="resources",
                             detail="\n".join(
-                                issue_detail(issue)
-                                for issue in genius_analysis.issues[:10]
+                                issue_detail(issue) for issue in other_issues[:10]
                             ),
                         ),
                     )

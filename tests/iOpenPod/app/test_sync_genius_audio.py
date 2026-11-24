@@ -33,6 +33,7 @@ from iPodDB.library.genius import (
     GeniusSpacingRule,
     parse_genius_database,
 )
+from iPodDB.library.writing import IssueSeverity
 from storage import AtomicHostFile, DevicePath, FilesystemSession, HostPath
 
 
@@ -342,17 +343,23 @@ def test_interrupted_sync_does_not_associate_profiles_with_uncommitted_files(
         device.coordinator.close()
 
 
+@pytest.mark.parametrize("duration_limited", [False, True])
 def test_sync_warning_identifies_unreadable_track_and_device_path(
-    tmp_path: Path,
+    tmp_path: Path, duration_limited: bool
 ) -> None:
     def unreadable() -> None:
         raise GeniusAudioDecodeError("Invalid audio container")
 
     device = _with_analysis(
-        build_device(tmp_path), tmp_path / "profiles.json", _Decoder(unreadable)
+        build_device(
+            tmp_path, track_lengths_ms={1: 901_000} if duration_limited else None
+        ),
+        tmp_path / "profiles.json",
+        _Decoder(unreadable),
     )
     try:
-        track = device.active.library.tracks[0]
+        first, second = device.active.library.tracks
+        track = second if duration_limited else first
         result = SyncExecutor(device.coordinator).execute(
             _refresh_request(device.active), lambda _: None, Event()
         )
@@ -363,6 +370,19 @@ def test_sync_warning_identifies_unreadable_track_and_device_path(
         assert track.title in warning.detail
         assert track.metadata.location in warning.detail
         assert "Invalid audio container" in warning.detail
+        assert "15-minute" not in warning.detail
+        duration_warnings = [
+            issue
+            for issue in result.issues
+            if issue.code == "genius.audio_duration_limit"
+        ]
+        assert len(duration_warnings) == int(duration_limited)
+        if duration_limited:
+            skipped = duration_warnings[0]
+            assert skipped.severity is IssueSeverity.WARNING
+            assert skipped.record_id == first.track_id
+            assert skipped.artifact == first.metadata.location
+            assert "15-minute" in skipped.message
     finally:
         device.coordinator.close()
 

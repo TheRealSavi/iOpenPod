@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.app.display_text import exception_text
+from iOpenPod.app.genius_analysis import GENIUS_AUDIO_DURATION_LIMIT_ISSUE
 from iOpenPod.app.sync_diagnostics import save_sync_report
 from iOpenPod.app.sync_execution import SyncExecutionResult, SyncExecutionStatus
 from iOpenPod.GUI.presentation.i18n.text import english_count_fallback, item_count_text
@@ -42,8 +43,10 @@ if TYPE_CHECKING:
     from iPodDB.library import WriteIssue
 
 
-_TECHNICAL_TIME_WARNINGS = frozenset(
+_TECHNICAL_ONLY_WARNINGS = frozenset(
     {
+        GENIUS_AUDIO_DURATION_LIMIT_ISSUE,
+        "lyrics.description_precedence",
         "source.timezone_unresolved",
         "source.timezone_fallback",
         "source.timezone_policy",
@@ -52,10 +55,10 @@ _TECHNICAL_TIME_WARNINGS = frozenset(
 )
 
 
-def _technical_time_warning(issue: WriteIssue) -> bool:
+def _technical_only_warning(issue: WriteIssue) -> bool:
     return (
         issue.severity is IssueSeverity.WARNING
-        and issue.code in _TECHNICAL_TIME_WARNINGS
+        and issue.code in _TECHNICAL_ONLY_WARNINGS
     )
 
 
@@ -630,7 +633,7 @@ class SyncExecutionPage(QWidget):
         tone = tones[result.status]
         if result.status is SyncExecutionStatus.SUCCESS and any(
             issue.severity is IssueSeverity.WARNING
-            and not _technical_time_warning(issue)
+            and not _technical_only_warning(issue)
             for issue in result.issues
         ):
             description = self.tr(
@@ -732,7 +735,7 @@ class SyncExecutionPage(QWidget):
                         "More affected items are listed in Technical details."
                     )
             lines.append(line)
-            if _technical_time_warning(issues[0]):
+            if _technical_only_warning(issues[0]):
                 continue
             messages.append(
                 SyncResultMessage(

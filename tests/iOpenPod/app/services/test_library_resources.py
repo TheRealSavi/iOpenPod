@@ -122,6 +122,7 @@ def build_device(
     model: str = "MB565",
     compressed_database: bool = False,
     host_recovery: bool = False,
+    track_lengths_ms: dict[int, int] | None = None,
 ) -> Device:
     root = tmp_path / "ipod"
     source, thumbnail = with_shared_artwork(
@@ -145,6 +146,7 @@ def build_device(
     tracks = tuple(
         replace(
             track,
+            length_ms=(track_lengths_ms or {}).get(track.track_id, track.length_ms),
             size_bytes=len(payload),
             metadata=replace(
                 track.metadata,

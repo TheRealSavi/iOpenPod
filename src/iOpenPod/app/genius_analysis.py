@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 
 GENIUS_SAMPLE_RATE_HZ = 22_050
 MAX_GENIUS_AUDIO_SECONDS = 15 * 60
+GENIUS_AUDIO_DURATION_LIMIT_ISSUE = "genius.audio_duration_limit"
 _MAX_PCM_BYTES = GENIUS_SAMPLE_RATE_HZ * MAX_GENIUS_AUDIO_SECONDS * 4
 # Two device Tracks may be in flight, but only one reads at a time: concurrent
 # reads slowed both hard-drive and flash iPods (ADR-0274). Staged Host captures
@@ -810,8 +811,10 @@ class GeniusAnalysisService:
                 checkpoint()
                 source.validate(session)
                 if track.length_ms > MAX_GENIUS_AUDIO_SECONDS * 1000:
-                    raise GeniusAudioDecodeError(
-                        "Track exceeds the 15-minute acoustic analysis limit"
+                    return source.fallback or GeniusAnalysisIssue(
+                        track.track_id,
+                        GENIUS_AUDIO_DURATION_LIMIT_ISSUE,
+                        "Track exceeds the 15-minute acoustic analysis limit",
                     )
                 with (
                     _holding(device_read, checkpoint)

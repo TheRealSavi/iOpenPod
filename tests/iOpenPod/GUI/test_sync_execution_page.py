@@ -367,32 +367,42 @@ def test_terminal_outcomes_replace_progress_and_allow_return_to_library(
 
 
 @pytest.mark.parametrize(
-    "code",
+    ("code", "message"),
     [
-        "source.timezone_unresolved",
-        "source.timezone_fallback",
-        "source.timezone_policy",
-        "source.approximate_dates",
+        ("source.timezone_unresolved", "Date interpretation warning."),
+        ("source.timezone_fallback", "Date interpretation warning."),
+        ("source.timezone_policy", "Date interpretation warning."),
+        ("source.approximate_dates", "Date interpretation warning."),
+        (
+            "genius.audio_duration_limit",
+            "Track exceeds the 15-minute acoustic analysis limit",
+        ),
+        (
+            "lyrics.description_precedence",
+            "iPod Classic displays the description before embedded lyrics for podcasts and audiobooks. The full lyrics are retained in the media file.",
+        ),
     ],
 )
 @pytest.mark.parametrize("other_warning", [False, True])
-def test_date_warnings_are_only_in_technical_details(
-    code: str, other_warning: bool
+def test_selected_warnings_are_only_in_technical_details(
+    code: str, message: str, other_warning: bool
 ) -> None:
     page = SyncExecutionPage()
     try:
         issues = [
             WriteIssue(
                 code,
-                "Date interpretation warning.",
+                message,
                 IssueSeverity.WARNING,
-                detail="Clock evidence.",
+                detail="Diagnostic evidence.",
                 artifact="iTunesDB",
             )
         ]
         if other_warning:
             issues.append(
-                WriteIssue("sync.warning", "Other warning.", IssueSeverity.WARNING)
+                WriteIssue(
+                    "genius.analysis_warning", "Other warning.", IssueSeverity.WARNING
+                )
             )
         page.show_result(
             SyncExecutionResult(SyncExecutionStatus.SUCCESS, issues=tuple(issues))
@@ -404,7 +414,7 @@ def test_date_warnings_are_only_in_technical_details(
         messages = " ".join(
             label.text() for label in page.findChildren(QLabel, "syncResultMessage")
         )
-        assert "Date interpretation warning." not in messages
+        assert message not in messages
         assert ("Other warning." in messages) is other_warning
         description = page.findChild(QLabel, "syncResultDescription")
         assert description is not None
@@ -412,9 +422,8 @@ def test_date_warnings_are_only_in_technical_details(
         details = page.findChild(QPlainTextEdit, "syncExecutionIssues")
         toggle = page.findChild(QPushButton, "syncResultTechnicalToggle")
         assert details is not None and toggle is not None and not toggle.isHidden()
-        assert (
-            code in details.toPlainText() and "Clock evidence." in details.toPlainText()
-        )
+        text = details.toPlainText()
+        assert code in text and message in text and "Diagnostic evidence." in text
         toggle.click()
         assert not details.isHidden()
     finally:
