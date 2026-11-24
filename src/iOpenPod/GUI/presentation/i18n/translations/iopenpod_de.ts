@@ -1493,8 +1493,24 @@ Close this window and select the iPod again. In Device Summary, choose Install u
 Schließen Sie dieses Fenster und wählen Sie den iPod erneut aus. Wählen Sie in der Geräteübersicht „Universelle 2.0.5 installieren“.</translation>
     </message>
     <message>
+        <source>The bootloader is verified and your iPod has reconnected.</source>
+        <translation>Der Bootloader wurde verifiziert und Ihr iPod ist wieder verbunden.</translation>
+    </message>
+    <message>
+        <source>Charge your iPod first and keep USB connected. Your system may ask for USB access permission. An interrupted bootloader write may require DFU recovery.</source>
+        <translation>Laden Sie Ihren iPod zuerst auf und lassen Sie USB angeschlossen. Ihr System bittet Sie möglicherweise um die Erlaubnis zum USB-Zugriff. Ein unterbrochener Bootloader-Schreibvorgang kann eine Wiederherstellung im DFU-Modus erforderlich machen.</translation>
+    </message>
+    <message>
+        <source>First-time USB access may ask for administrator approval once. iOpenPod continues as your normal user.</source>
+        <translation>Beim ersten USB-Zugriff kann einmalig eine Administratorgenehmigung erforderlich sein. iOpenPod wird danach mit Ihren normalen Benutzerrechten fortgesetzt.</translation>
+    </message>
+    <message>
+        <source>If Windows cannot open the iPod in DFU mode, install Apple&apos;s iPod device support included with iTunes, then reopen setup.</source>
+        <translation>Wenn Windows nicht auf den iPod im DFU-Modus zugreifen kann, installieren Sie die in iTunes enthaltene iPod-Geräteunterstützung von Apple und öffnen Sie die Einrichtung erneut.</translation>
+    </message>
+    <message>
         <source>The bootloader is verified and your iPod has reconnected. You can now install iOpenPod firmware from Device Summary.</source>
-        <translation>Der Bootloader wurde geprüft und Ihr iPod ist wieder verbunden. Sie können die iOpenPod-Firmware jetzt über die Geräteübersicht installieren.</translation>
+        <translation type="vanished">Der Bootloader wurde geprüft und Ihr iPod ist wieder verbunden. Sie können die iOpenPod-Firmware jetzt über die Geräteübersicht installieren.</translation>
     </message>
     <message>
         <source>No installation was started. If the screen is black, hold Menu + Select until the Apple logo appears, then release.</source>
@@ -1502,7 +1518,7 @@ Schließen Sie dieses Fenster und wählen Sie den iPod erneut aus. Wählen Sie i
     </message>
     <message>
         <source>Charge your iPod first and keep USB connected. An interrupted bootloader write may require DFU recovery.</source>
-        <translation>Laden Sie Ihren iPod vorher auf und lassen Sie USB verbunden. Wird das Schreiben des Bootloaders unterbrochen, kann eine DFU-Wiederherstellung nötig sein.</translation>
+        <translation type="vanished">Laden Sie Ihren iPod vorher auf und lassen Sie USB verbunden. Wird das Schreiben des Bootloaders unterbrochen, kann eine DFU-Wiederherstellung nötig sein.</translation>
     </message>
     <message>
         <source>If iTunes offers to restore the iPod, dismiss that prompt.</source>
@@ -3033,11 +3049,19 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     </message>
     <message>
         <source>Connected iPods appear automatically</source>
-        <translation>Verbundene iPods werden automatisch angezeigt</translation>
+        <translation type="vanished">Verbundene iPods werden automatisch angezeigt</translation>
     </message>
     <message>
         <source>Choose an iPod</source>
         <translation>iPod auswählen</translation>
+    </message>
+    <message>
+        <source>Connected devices</source>
+        <translation>Verbundene Geräte</translation>
+    </message>
+    <message>
+        <source>Connect an iPod to see it here.</source>
+        <translation>Schließen Sie einen iPod an, um ihn hier anzuzeigen.</translation>
     </message>
     <message>
         <source>Set Up Linux</source>
@@ -3049,15 +3073,15 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     </message>
     <message>
         <source>No removable devices were found.</source>
-        <translation>Es wurden keine Wechseldatenträger gefunden.</translation>
+        <translation type="vanished">Es wurden keine Wechseldatenträger gefunden.</translation>
     </message>
     <message>
         <source>Select a device to see its status.</source>
-        <translation>Wählen Sie ein Gerät aus, um seinen Status anzuzeigen.</translation>
+        <translation type="vanished">Wählen Sie ein Gerät aus, um seinen Status anzuzeigen.</translation>
     </message>
     <message>
         <source>Unrecognized device</source>
-        <translation>Unbekanntes Gerät</translation>
+        <translation type="vanished">Unbekanntes Gerät</translation>
     </message>
     <message>
         <source>%1 · %2</source>
@@ -3134,6 +3158,10 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     <message>
         <source>Album artwork could not be loaded.</source>
         <translation>Albumcover konnten nicht geladen werden.</translation>
+    </message>
+    <message>
+        <source>Photos could not be loaded.</source>
+        <translation>Die Fotos konnten nicht geladen werden.</translation>
     </message>
     <message>
         <source>The iPod&apos;s desktop name or icon could not be fully updated.</source>
@@ -3419,6 +3447,10 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Die vorherige Firmware-Übertragung wurde unterbrochen</translation>
     </message>
     <message>
+        <source>This installation has no direct USB disk access</source>
+        <translation>Diese Installation hat keinen direkten Zugriff auf den USB-Datenträger</translation>
+    </message>
+    <message>
         <source>Install over USB</source>
         <translation>Installation über USB</translation>
     </message>
@@ -3441,6 +3473,10 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     <message>
         <source>Guided DFU setup</source>
         <translation>Geführte DFU-Einrichtung</translation>
+    </message>
+    <message>
+        <source>Available for iPod Classic families 24, 33, 35 and 38</source>
+        <translation>Verfügbar für die iPod-Classic-Familien 24, 33, 35 und 38</translation>
     </message>
     <message>
         <source>Firmware</source>
@@ -3496,7 +3532,7 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     </message>
     <message>
         <source>Available on Windows for iPod Classic families 24, 33, 35 and 38</source>
-        <translation>Unter Windows für die iPod-Classic-Familien 24, 33, 35 und 38 verfügbar</translation>
+        <translation type="vanished">Unter Windows für die iPod-Classic-Familien 24, 33, 35 und 38 verfügbar</translation>
     </message>
     <message>
         <source>Downloading firmware: {received} MiB</source>
@@ -8970,6 +9006,17 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
 </context>
 <context>
+    <name>ScopedSwitchBinding</name>
+    <message>
+        <source>Use Host</source>
+        <translation type="vanished">Computerwert verwenden</translation>
+    </message>
+    <message>
+        <source>Override</source>
+        <translation type="vanished">Anpassen</translation>
+    </message>
+</context>
+<context>
     <name>ScrobbleController</name>
     <message>
         <source>Scrobbling cancelled. Pending listens are saved.</source>
@@ -9460,11 +9507,11 @@ Prüfen Sie ihre Regeln mit „Bearbeiten“.</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation>Aus</translation>
+        <translation type="vanished">Aus</translation>
     </message>
     <message>
         <source>On</source>
-        <translation>Ein</translation>
+        <translation type="vanished">Ein</translation>
     </message>
     <message>
         <source>Flat</source>
@@ -9770,19 +9817,19 @@ Warten Sie, bis „Verbunden / Nicht trennen“ angezeigt wird, und wählen Sie 
     </message>
     <message>
         <source>Firmware installed</source>
-        <translation type="unfinished"></translation>
+        <translation>Firmware installiert</translation>
     </message>
     <message>
         <source>Apple 2.0.5 and Mod Version {mod_version} have been uploaded. Your iPod is restarting.</source>
-        <translation type="unfinished"></translation>
+        <translation>Apple 2.0.5 und Mod-Version {mod_version} wurden übertragen. Ihr iPod wird neu gestartet.</translation>
     </message>
     <message>
         <source>Installation complete</source>
-        <translation type="unfinished"></translation>
+        <translation>Installation abgeschlossen</translation>
     </message>
     <message>
         <source>Keep USB connected until your iPod finishes restarting.</source>
-        <translation type="unfinished"></translation>
+        <translation>Lassen Sie USB angeschlossen, bis Ihr iPod den Neustart abgeschlossen hat.</translation>
     </message>
     <message>
         <source>Let your iPod restart</source>
@@ -11377,11 +11424,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation>Aus</translation>
+        <translation type="vanished">Aus</translation>
     </message>
     <message>
         <source>On</source>
-        <translation>Ein</translation>
+        <translation type="vanished">Ein</translation>
     </message>
     <message>
         <source>Analyze for Genius</source>
@@ -12823,11 +12870,11 @@ Playlists: %3</translation>
     </message>
     <message>
         <source>Off</source>
-        <translation>Aus</translation>
+        <translation type="vanished">Aus</translation>
     </message>
     <message>
         <source>On</source>
-        <translation>Ein</translation>
+        <translation type="vanished">Ein</translation>
     </message>
     <message>
         <source>Lossy encoder</source>
@@ -17525,10 +17572,6 @@ Verifizierte Firmware für Updater-Familie {family}: {firmware}.</translation>
     <message>
         <source>The paired Host file was unavailable; its rating baseline was kept. Rescan before the next Sync.</source>
         <translation>Die zugeordnete Datei auf dem Computer war nicht verfügbar. Die bisherige Vergleichsbewertung wurde beibehalten. Scannen Sie vor der nächsten Synchronisierung erneut.</translation>
-    </message>
-    <message>
-        <source>Updated Host rating from {old} to {new} stars.</source>
-        <translation>Bewertung auf dem Computer von {old} auf {new} Sterne aktualisiert.</translation>
     </message>
     <message>
         <source>Checking selected iPod media…</source>
