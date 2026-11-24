@@ -60,7 +60,7 @@ def test_picker_search_status_is_delayed_without_description() -> None:
         assert status is not None and description is None and candidates is not None
         picker.set_searching(True)
         picker.set_busy(True)
-        assert status.text() == "Connected iPods appear automatically"
+        assert not status.text()
         QTest.qWait(250)
         assert status.text() == "Searching for iPods…"
         assert candidates.isEnabled()
@@ -68,14 +68,49 @@ def test_picker_search_status_is_delayed_without_description() -> None:
         assert status.text() == "Searching for iPods…"
         picker.set_busy(False)
         picker.set_searching(False)
-        assert status.text() == "Connected iPods appear automatically"
+        assert not status.text()
         picker.set_search_error("Temporary failure")
         assert "retrying automatically" in status.text()
         assert status.toolTip() == "Temporary failure"
         picker.set_search_error("")
-        assert status.text() == "Connected iPods appear automatically"
+        assert not status.text()
     finally:
         picker.close()
+
+
+def test_picker_accepts_a_selection_during_automatic_discovery(tmp_path: Path) -> None:
+    platform = _ObservedPlatform()
+    platform.add_volume(_device_root(tmp_path / "chosen"), label="Chosen iPod")
+    coordinator = DeviceCoordinator(Storage(platform))
+    coordinator.discover_devices()
+    context = build_context(device_coordinator=coordinator)
+    window = MainWindow(context)
+    release = Event()
+    platform.release = release
+    try:
+        window.show()
+        sidebar = window.findChild(Sidebar)
+        picker = window.findChild(DevicePickerDialog)
+        assert sidebar is not None and picker is not None
+        sidebar.chooseDeviceRequested.emit()
+        _wait_until(lambda: context.device_controller.searching)
+        use = next(
+            button
+            for button in picker.findChildren(QPushButton)
+            if button.text() == "Use This iPod"
+        )
+        assert use.isEnabled()
+        use.click()
+        assert not picker.isVisible()
+        assert context.device_controller.active_ipod is None
+        release.set()
+        _wait_until(lambda: not context.device_controller.busy)
+        active = context.device_controller.active_ipod
+        assert active is not None and active.display_name == "Chosen iPod"
+    finally:
+        release.set()
+        window.close()
+        context.shutdown()
 
 
 def test_window_refreshes_open_picker_without_sidebar_search_indicator(

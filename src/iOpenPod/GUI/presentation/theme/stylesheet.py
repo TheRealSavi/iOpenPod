@@ -2025,17 +2025,22 @@ QDialog#devicePicker {{
 
 QListWidget#deviceCandidateList {{
     color: {tokens.text};
+    background-color: transparent;
+    border: none;
+    outline: none;
+    padding: 0;
+}}
+
+QListWidget#deviceCandidateList::item,
+QLabel#devicePickerEmpty {{
     background-color: {tokens.surface};
     border: 1px solid {tokens.border};
     border-radius: {LAYOUT.radius_panel}px;
-    outline: none;
-    padding: {LAYOUT.space_xs}px;
 }}
 
-QListWidget#deviceCandidateList::item {{
-    min-height: {LAYOUT.device_picker_row_height}px;
+QLabel#devicePickerEmpty {{
+    color: {tokens.text_secondary};
     padding: 0 {LAYOUT.space_sm}px;
-    border-radius: {LAYOUT.radius_control}px;
 }}
 
 QListWidget#deviceCandidateList::item:hover {{
@@ -2043,8 +2048,17 @@ QListWidget#deviceCandidateList::item:hover {{
 }}
 
 QListWidget#deviceCandidateList::item:selected {{
-    color: {tokens.accent_ink};
-    background-color: {tokens.accent};
+    background-color: {tokens.surface_selected};
+    border-color: {tokens.border_strong};
+}}
+
+QListWidget#deviceCandidateList::item:focus {{
+    border: 2px solid {tokens.focus};
+}}
+
+QFrame#devicePickerActions {{
+    background-color: {tokens.surface};
+    border-top: 1px solid {tokens.border};
 }}
 
 QLabel#deviceCandidateDetail {{

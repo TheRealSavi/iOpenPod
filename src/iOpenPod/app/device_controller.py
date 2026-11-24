@@ -133,6 +133,7 @@ class DeviceController(QObject):
         self._next_token = 0
         self._active_token: int | None = None
         self._pending_automatic_selection: DeviceCandidateId | None = None
+        self._requested_selection: DeviceCandidateId | None = None
         self._work_items: dict[int, _DeviceWork] = {}
         self._searching = False
         self._discovery_error = ""
@@ -367,7 +368,13 @@ class DeviceController(QObject):
 
     @Slot(str)
     def select_device(self, candidate_id: str) -> None:
-        if self._busy or self._closed or self._read_only_operation_count:
+        if self._closed or self._read_only_operation_count:
+            return
+        if self._busy:
+            if self._searching:
+                # An explicit choice survives closing the picker and takes
+                # precedence over restoring a remembered Volume.
+                self._requested_selection = DeviceCandidateId(candidate_id)
             return
         self._pending_automatic_selection = None
         self._replace_active_ipod(None, force_model_reset=True)
@@ -407,6 +414,7 @@ class DeviceController(QObject):
         self._selection_cancelled.set()
         self._refresh_timer.stop()
         self._pending_automatic_selection = None
+        self._requested_selection = None
         if writes_were_allowed:
             self.deviceWritesAllowedChanged.emit(False)
         self._thread_pool.clear()
@@ -590,12 +598,16 @@ class DeviceController(QObject):
         self._active_token = None
         self._set_busy(False)
         self._set_searching(False)
-        pending = self._pending_automatic_selection
+        requested = self._requested_selection
+        self._requested_selection = None
+        remembered = self._pending_automatic_selection
         self._pending_automatic_selection = None
         self._restore_without_picker = False
-        if pending is not None and not self._closed:
-            self._automatic_selection_attempts.add(pending)
-            self.select_device(pending.value)
+        if requested is not None:
+            self.select_device(requested.value)
+        elif remembered is not None and not self._closed:
+            self._automatic_selection_attempts.add(remembered)
+            self.select_device(remembered.value)
         if not self._busy:
             self._schedule_refresh()
 

@@ -405,6 +405,54 @@ def test_closing_picker_does_not_cancel_startup_restoration(tmp_path: Path) -> N
         controller.shutdown()
 
 
+@pytest.mark.parametrize("disconnect", [False, True])
+def test_explicit_selection_during_discovery_takes_precedence_over_restore(
+    tmp_path: Path, disconnect: bool
+) -> None:
+    platform = _ObservedPlatform()
+    chosen_root = _device_root(tmp_path / "chosen")
+    platform.add_volume(chosen_root, label="Chosen iPod")
+    platform.add_volume(
+        _device_root(tmp_path / "remembered"),
+        volume_id="remembered",
+        label="Remembered iPod",
+    )
+    coordinator = DeviceCoordinator(Storage(platform))
+    discovery = coordinator.discover_devices()
+    chosen = next(
+        candidate
+        for candidate in discovery.candidates
+        if candidate.display_name == "Chosen iPod"
+    )
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    settings.set_global(LAST_SELECTED_IPOD_VOLUME_ID, "remembered")
+    controller = DeviceController(coordinator, TrackTableModel(), settings)
+    failures: list[DeviceOperationFailure] = []
+    controller.operationFailed.connect(failures.append)
+    release = Event()
+    platform.release = release
+    try:
+        controller.restore_previous_device()
+        _wait_until(lambda: platform.scans == 2)
+        controller.select_device(chosen.id.value)
+        if disconnect:
+            platform.disconnect(chosen_root)
+        release.set()
+        _wait_until(lambda: not controller.busy)
+        if disconnect:
+            assert controller.active_ipod is None
+            assert [failure.operation for failure in failures] == [
+                DeviceOperation.SELECT
+            ]
+        else:
+            assert controller.active_ipod is not None
+            assert controller.active_ipod.candidate.id == chosen.id
+            assert not failures
+    finally:
+        release.set()
+        controller.shutdown()
+
+
 @pytest.mark.usefixtures("fast_refresh")
 def test_auto_scan_recovers_from_errors_without_modal_failures() -> None:
     platform = _ObservedPlatform()

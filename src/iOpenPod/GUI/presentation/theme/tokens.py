@@ -36,8 +36,10 @@ class LayoutTokens:
     icon_size: int = 18
     icon_button_size: int = 36
     sidebar_device_image_size: int = 44
-    device_picker_image_size: int = 52
-    device_picker_row_height: int = 64
+    device_picker_image_size: int = 64
+    device_picker_row_height: int = 96
+    device_picker_visible_rows: int = 4
+    device_picker_width: int = 496
     device_summary_image_size: int = 224
     device_summary_identity_width: int = 640
     device_summary_border_width: int = 1
