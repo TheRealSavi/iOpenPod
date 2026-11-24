@@ -4912,5 +4912,21 @@
     "size": 16786605,
     "sha256": "cf43af1f26a921a8dc0be80834b9c3038bea5fd645708d26375126cbc57c316b",
     "kind": "upstream-source"
+  },
+  {
+    "name": "libusb",
+    "version": "1.0.30",
+    "url": "https://codeload.github.com/libusb/libusb/tar.gz/87a55632db62c9bdc58cd31d3ccfa673f1bb017f",
+    "sha256": "26733c3eee2475c062e14f80a62ece4b33ee3b33fc0c88b2758964412a42b7e0",
+    "filename": "libusb-1.0.30.tar.gz",
+    "size": 436888
+  },
+  {
+    "name": "libusb-package",
+    "version": "1.0.30.1",
+    "url": "https://codeload.github.com/pyocd/libusb-package/tar.gz/v1.0.30.1",
+    "sha256": "b75bfbe17dafd1cb0729d0479804dae969d748050243f62951a163c6931545e1",
+    "filename": "libusb-package-1.0.30.1.tar.gz",
+    "size": 15945
   }
 ]

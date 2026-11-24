@@ -222,6 +222,12 @@ See [Qt licensing](https://doc.qt.io/qtforpython-6/) and
 
 ## Windows / Microsoft Store
 
+The Microsoft Store edition omits Classic bootloader setup and firmware updates.
+Device Summary still shows the versions the iPod reports. The standalone executable
+and MSIX share a build, so the app checks Windows package identity before creating
+either installer. A sideloaded MSIX exercises the same behavior as the Store
+edition. If Windows cannot establish package identity, installation stays disabled.
+
 The prepared listing, six authentic screenshots with synthetic data, privacy,
 support, license pages, and certification notes are in
 [`packaging/windows/store`](../packaging/windows/store). The Store-kit assembler
@@ -518,6 +524,41 @@ and [UDisks2](https://snapcraft.io/docs/reference/interfaces/udisks2-interface/)
 
 ## Verification and publication
 
+All three desktop distributions include libusb-package 1.0.30.1 and its native
+libusb library for Classic bootloader setup. Native freezing collects the DLL,
+dylib or shared object at its package resource path. PyPI installs obtain the
+matching binary wheel as a dependency. Source and license records pin the wrapper
+and its exact libusb source revision. The runtime smoke check loads libusb without
+discovering devices. Windows uses the installed Apple DFU driver as a fallback;
+the package does not install a driver. A clean PC may need Apple's iPod device
+support included with iTunes.
+
+For normal-mode firmware upgrades, an initial Windows access denial opens one
+UAC prompt for the bundled native Storage helper. The helper opens only the
+selected USB Volume and returns its handle to the ordinary-user app, which keeps
+the identity checks, Volume lock and firmware transfers. `freeze` compiles this
+helper using Visual Studio C++ Build Tools and the Windows SDK on the builder;
+users need neither. The single EXE embeds the helper and its digest. Windows
+bundle checks validate its imports and system-only DLL search, and the frozen
+smoke check exercises real IPC without elevation or touching a device. See
+[ADR-0297](adr/0297-authorize-windows-volume-opens-with-a-native-helper.md).
+
+Linux staging places `70-iopenpod-usb-05ac-1223.rules` under `lib/udev/rules.d`
+for a system package installed beneath `/usr`. Portable installs use the same
+scoped rule through a one-time pkexec/polkit prompt. The helper reloads rules and
+triggers only matching USB devices; the app continues under the ordinary user.
+This is an active-local-session permission grant, not a raw-disk grant. Flatpak
+and Snap confinement still require Host permission setup separately.
+See [ADR-0296](adr/0296-use-bundled-libusb-with-platform-access-setup.md).
+
+Standalone Linux binaries use the Host desktop's `pkexec`, polkit agent and
+`udevadm` for permission setup, and UDisks2 for normal-mode unmount/exclusive
+access. These are operating-system services, not a separate libusb download.
+The frozen Linux smoke check launches all three permission entry points with
+invalid, non-privileged requests, checking that their modules and dispatch paths
+are included without installing rules or opening a device. macOS uses the system
+USB/IOKit stacks and the bundled libusb; no additional driver is distributed.
+
 Both source and installed launchers support `--version` and `--smoke-test`. The latter
 imports the GUI startup graph (including scrobbling and its credential-vault
 adapter), and checks Qt icon/image/SVG/multimedia loading, compiled shaders, the
@@ -526,6 +567,9 @@ platform's dynamically loaded system-media bindings. It also validates the bundl
 Universal Unlocked Bootloader assets and decompresses and hashes the bundled
 Universal Classic Firmware directly, even when a firmware cache exists. The check
 runs without creating settings, discovering devices, or writing to an iPod.
+Before archiving a standalone release, the packager compares the frozen firmware
+image with the release source. This catches old executables whose own smoke tests
+predate firmware support.
 `--smoke-test-report /absolute/file.txt` writes diagnostics even for a Windows
 executable without a console.
 

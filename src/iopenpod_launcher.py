@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import subprocess
 import sys
 import traceback
 from importlib import import_module
@@ -25,6 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--version", action="version", version=get_version())
     parser.add_argument("--update-health", nargs=2, help=argparse.SUPPRESS)
+    parser.add_argument("--storage-scsi-access", nargs=3, help=argparse.SUPPRESS)
+    parser.add_argument("--storage-usb-access", nargs=3, help=argparse.SUPPRESS)
+    parser.add_argument("--storage-usb-permissions", nargs=2, help=argparse.SUPPRESS)
     parser.add_argument(
         "--smoke-test",
         action="store_true",
@@ -63,6 +67,18 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.storage_scsi_access:
+        from storage.platform.linux_usb_access import main as open_scsi_access
+
+        return open_scsi_access(args.storage_scsi_access, scsi=True)
+    if args.storage_usb_permissions:
+        from storage.platform.linux_usb_rules import main as install_usb_permissions
+
+        return install_usb_permissions(args.storage_usb_permissions)
+    if args.storage_usb_access:
+        from storage.platform.linux_usb_access import main as open_usb_access
+
+        return open_usb_access(args.storage_usb_access)
     if args.smoke_test_report and not args.smoke_test:
         parser.error("--smoke-test-report requires --smoke-test")
     if args.smoke_test_phase_runtime and not args.smoke_test:
@@ -240,6 +256,16 @@ def check_runtime() -> None:
     # devices. Resource-only checks miss missing application modules in a bundle.
     assert callable(start_ui), "GUI entry point missing"
     assert callable(DeterministicMusicAnalyzer), "Deferred analysis backend missing"
+    from storage.platform.libusb_runtime import check_runtime as check_usb_runtime
+
+    check_usb_runtime()
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        from storage.platform.windows_scsi_authorization import (
+            check_runtime as check_access_runtime,
+        )
+
+        check_access_runtime()
+    check_linux_firmware_helpers()
     native_bindings = {
         "win32": (
             "winrt.windows.media",
@@ -315,6 +341,32 @@ def check_runtime() -> None:
     assert build_phase_analysis(chart).startswith(b"pha\x02"), "Phase encoding missing"
     check_playback_runtime()
     app.processEvents()
+
+
+def check_linux_firmware_helpers() -> None:
+    """Load frozen privileged entry points with requests that cannot access devices."""
+    if sys.platform != "linux" or not getattr(sys, "frozen", False):
+        return
+    environment = dict(os.environ)
+    environment.pop("PKEXEC_UID", None)
+    for arguments in (
+        ["--storage-usb-permissions", "invalid", "invalid"],
+        ["--storage-usb-access", "invalid", "invalid", "invalid"],
+        ["--storage-scsi-access", "invalid", "invalid", "invalid"],
+    ):
+        result = subprocess.run(
+            [sys.executable, *arguments],
+            env=environment,
+            check=False,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 2:
+            raise RuntimeError(
+                f"Frozen Linux firmware helper failed: {arguments[0]}: {result.stderr!r}"
+            )
 
 
 def check_phase_worker(root: Path) -> None:

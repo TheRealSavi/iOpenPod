@@ -32,17 +32,14 @@ from storage.platform.base import ObservationDiscoveryResult
 from storage.platform.common import paths_share_single_device
 from storage.platform.windows_eject import WindowsDeviceEjector
 from storage.platform.windows_scsi import WindowsScsiChannel
-from storage.platform.windows_usb_control import (
-    WindowsUsbControl,
-    WindowsUsbControlChannel,
-)
+from storage.platform.windows_usb_backend import WindowsUsbBackend
 from storage.scsi_vpd import collect_scsi_vpd
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from storage.scsi import ScsiIdentity
-    from storage.usb_control import UsbControlEndpoint
+    from storage.usb_control import UsbControlChannel, UsbControlEndpoint
 
 _DRIVE_REMOVABLE = 2
 _FILE_DEVICE_DISK = 0x00000007
@@ -412,13 +409,13 @@ class WindowsPlatformAdapter:
         vendor_id: int,
         product_id: int,
     ) -> tuple[UsbControlEndpoint, ...]:
-        return WindowsUsbControl().discover(interface_class, vendor_id, product_id)
+        return WindowsUsbBackend().discover(interface_class, vendor_id, product_id)
 
     def open_usb_control_channel(
         self,
         endpoint: UsbControlEndpoint,
-    ) -> WindowsUsbControlChannel:
-        return WindowsUsbControl().open(endpoint)
+    ) -> UsbControlChannel:
+        return WindowsUsbBackend().open(endpoint)
 
     def flush(self, observation: VolumeObservation) -> FlushResult:
         if not observation.volume.capabilities.writable:

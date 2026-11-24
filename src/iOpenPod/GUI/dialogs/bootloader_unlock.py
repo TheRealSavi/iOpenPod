@@ -126,9 +126,7 @@ class BootloaderUnlockDialog(QDialog):
             ),
             UnlockStage.COMPLETE: (
                 self.tr("Your iPod is unlocked"),
-                self.tr(
-                    "The bootloader is verified and your iPod has reconnected. You can now install iOpenPod firmware from Device Summary."
-                ),
+                self.tr("The bootloader is verified and your iPod has reconnected."),
             ),
             UnlockStage.CANCELED: (
                 self.tr("Setup canceled"),
@@ -144,8 +142,16 @@ class BootloaderUnlockDialog(QDialog):
         tone = "default"
         if state.stage is UnlockStage.READY:
             notice = self.tr(
-                "Charge your iPod first and keep USB connected. An interrupted bootloader write may require DFU recovery."
+                "Charge your iPod first and keep USB connected. Your system may ask for USB access permission. An interrupted bootloader write may require DFU recovery."
             )
+            if self._controller.platform == "linux":
+                notice += "\n\n" + self.tr(
+                    "First-time USB access may ask for administrator approval once. iOpenPod continues as your normal user."
+                )
+            elif self._controller.platform == "windows":
+                notice += "\n\n" + self.tr(
+                    "If Windows cannot open the iPod in DFU mode, install Apple's iPod device support included with iTunes, then reopen setup."
+                )
         elif state.stage is UnlockStage.WAITING_DFU:
             notice = self.tr(
                 "If iTunes offers to restore the iPod, dismiss that prompt."

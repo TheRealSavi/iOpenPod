@@ -6,6 +6,9 @@ claim Microsoft certification or unperformed device testing.
 
 ## Notes for certification
 
+The Store build displays the firmware version reported by a connected iPod.
+Classic bootloader installation and firmware updates are unavailable in this edition.
+
 The new optional Phase setup needs installed-MSIX and Store review acceptance.
 In Settings > Media Tools > Set Up Phase Analysis, opening the dialog downloads
 nothing. Download and Install explicitly installs private Python, numerical/model

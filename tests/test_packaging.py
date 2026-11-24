@@ -79,6 +79,72 @@ def test_version_and_smoke_test_do_not_initialize_settings_or_devices(
     assert calls == [True]
 
 
+def test_usb_permission_helper_dispatch_skips_application_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_initialization() -> None:
+        pytest.fail("The USB permission helper must not initialize the application")
+
+    received: list[list[str]] = []
+
+    def helper(arguments: list[str]) -> int:
+        received.append(arguments)
+        return 2
+
+    monkeypatch.setattr(entrypoint, "initialize_application", unexpected_initialization)
+    monkeypatch.setattr("storage.platform.linux_usb_access.main", helper)
+    assert (
+        entrypoint.main(["--storage-usb-access", "device", "generation", "socket"]) == 2
+    )
+    assert received == [["device", "generation", "socket"]]
+
+
+def test_usb_rule_helper_dispatch_skips_application_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_initialization() -> None:
+        pytest.fail("The USB rule helper must not initialize the application")
+
+    received: list[list[str]] = []
+
+    def helper(arguments: list[str]) -> int:
+        received.append(arguments)
+        return 2
+
+    monkeypatch.setattr(entrypoint, "initialize_application", unexpected_initialization)
+    monkeypatch.setattr("storage.platform.linux_usb_rules.main", helper)
+    assert entrypoint.main(["--storage-usb-permissions", "05ac", "1223"]) == 2
+    assert received == [["05ac", "1223"]]
+
+
+def test_linux_native_staging_includes_host_dfu_permission_rule(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rule = "70-iopenpod-usb-05ac-1223.rules"
+    resources = {
+        "dist/iOpenPod/iOpenPod": b"executable",
+        f"packaging/linux/{package_app.APP_ID}.desktop": b"desktop",
+        f"packaging/linux/{package_app.APP_ID}.metainfo.xml": b"metadata",
+        "src/iOpenPod/assets/icons/icon-256.png": b"icon",
+        f"src/iOpenPod/assets/linux/{rule}": (
+            package_app.ROOT / "src/iOpenPod/assets/linux" / rule
+        ).read_bytes(),
+    }
+    for relative, content in resources.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    monkeypatch.setattr(package_app, "ROOT", tmp_path)
+    monkeypatch.setattr(package_app, "project_version", lambda: "2.1.4")
+    with monkeypatch.context() as context:
+        context.setattr(sys, "platform", "linux")
+        staged = package_app.stage_linux()
+    assert (staged / "lib/udev/rules.d" / rule).read_bytes() == resources[
+        f"src/iOpenPod/assets/linux/{rule}"
+    ]
+
+
 @pytest.mark.parametrize(
     ("resource_lookup", "filename"),
     [
@@ -203,7 +269,7 @@ def test_freeze_cli_needs_no_media_tools_or_special_flag(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from scripts import package_updates
+    from scripts import build_windows_access, package_updates
 
     commands: list[list[str]] = []
 
@@ -221,6 +287,7 @@ def test_freeze_cli_needs_no_media_tools_or_special_flag(
         embedded.append(root)
 
     monkeypatch.setattr(package_updates, "embed_sparkle", embed_sparkle)
+    monkeypatch.setattr(build_windows_access, "build", lambda: tmp_path / "helper.exe")
     monkeypatch.setattr(sys, "argv", ["package_app.py", "freeze"])
     monkeypatch.setenv("PATH", "")
     package_app.main()
@@ -252,6 +319,12 @@ def test_windows_embedded_payload_rejects_unwanted_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, message: str
 ) -> None:
     writers = pytest.importorskip("PyInstaller.archive.writers")
+    from scripts import build_windows_access
+
+    def check_helper(_data: bytes) -> None:
+        pass
+
+    monkeypatch.setattr(build_windows_access, "check_helper", check_helper)
 
     def read_manifest(_path: str) -> bytes:
         return (
@@ -271,6 +344,7 @@ def test_windows_embedded_payload_rejects_unwanted_files(
     entries = [
         ("python312.dll", str(source), True, "b"),
         ("PySide6/avcodec-61.dll", str(source), True, "b"),
+        ("storage-access/iOpenPod-storage-access.exe", str(source), True, "x"),
     ]
     # Qt's FFmpeg playback libraries are allowed; user-installed executables are not.
     writers.CArchiveWriter(str(executable), entries, "python312.dll")
@@ -283,6 +357,44 @@ def test_windows_embedded_payload_rejects_unwanted_files(
     writers.CArchiveWriter(str(executable), [], "python312.dll")
     with pytest.raises(ValueError, match="does not embed the Python runtime"):
         check_windows_bundle.check_windows_bundle(executable)
+    writers.CArchiveWriter(str(executable), entries[:-1], "python312.dll")
+    with pytest.raises(ValueError, match="native Storage access helper"):
+        check_windows_bundle.check_windows_bundle(executable)
+
+
+@pytest.mark.parametrize("exit_code", [0, 1, 2])
+def test_linux_frozen_permission_entry_points_are_checked_without_authority(
+    monkeypatch: pytest.MonkeyPatch,
+    exit_code: int,
+) -> None:
+    calls: list[list[str]] = []
+
+    def run(
+        command: list[str], **options: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        calls.append(command)
+        environment = options["env"]
+        assert isinstance(environment, dict) and "PKEXEC_UID" not in environment
+        assert command[0] == sys.executable
+        assert all(value == "invalid" for value in command[2:])
+        assert options["timeout"] == 30
+        return subprocess.CompletedProcess(command, exit_code, stderr=b"diagnostic")
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("PKEXEC_UID", "1000")
+    monkeypatch.setattr(subprocess, "run", run)
+    if exit_code == 2:
+        entrypoint.check_linux_firmware_helpers()
+        assert [command[1] for command in calls] == [
+            "--storage-usb-permissions",
+            "--storage-usb-access",
+            "--storage-scsi-access",
+        ]
+    else:
+        with pytest.raises(RuntimeError, match="Frozen Linux firmware helper failed"):
+            entrypoint.check_linux_firmware_helpers()
+        assert len(calls) == 1
 
 
 def test_native_notices_keep_license_grant_and_credits(
@@ -394,7 +506,14 @@ def test_windows_archive_contains_only_the_standalone_executable(
     shutil.copy2(package_app.ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
     executable = tmp_path / "dist/iOpenPod.exe"
     executable.parent.mkdir()
-    executable.write_bytes(b"standalone executable with embedded dependencies")
+    member = "iOpenPod/assets/firmware/classic-shared/firmware.zlib"
+    source = tmp_path / "src" / member
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"current firmware")
+    writers = pytest.importorskip("PyInstaller.archive.writers")
+    writers.CArchiveWriter(
+        str(executable), [(member, str(source), True, "x")], "python312.dll"
+    )
     stale = tmp_path / "dist/iOpenPod/_internal/obsolete.dll"
     stale.parent.mkdir(parents=True)
     stale.touch()
@@ -413,6 +532,31 @@ def test_windows_archive_contains_only_the_standalone_executable(
     assert archive.with_name(archive.name + ".sha256").read_text() == (
         f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n"
     )
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "bundled_root"),
+    [
+        ("linux", "dist/iOpenPod/_internal"),
+        ("darwin", "dist/iOpenPod.app/Contents/Resources"),
+    ],
+)
+def test_stale_native_firmware_is_rejected_before_archiving(
+    tmp_path: Path, platform_name: str, bundled_root: str
+) -> None:
+    member = "iOpenPod/assets/firmware/classic-shared/firmware.zlib"
+    current = tmp_path / "src" / member
+    current.parent.mkdir(parents=True)
+    current.write_bytes(b"current release")
+    packaged = tmp_path / bundled_root / member
+    packaged.parent.mkdir(parents=True)
+    with pytest.raises(FileNotFoundError):
+        package_app.check_frozen_firmware(tmp_path, platform_name)
+    packaged.write_bytes(b"earlier release")
+    with pytest.raises(ValueError, match="differs from the release source"):
+        package_app.check_frozen_firmware(tmp_path, platform_name)
+    packaged.write_bytes(current.read_bytes())
+    package_app.check_frozen_firmware(tmp_path, platform_name)
 
 
 def test_macos_dmg_background_preserves_logical_layout_size() -> None:
@@ -479,6 +623,11 @@ def test_macos_archive_adds_a_drag_to_applications_disk_image(
     executable = app / "Contents/MacOS/iOpenPod"
     executable.parent.mkdir(parents=True)
     executable.write_bytes(b"signed app executable")
+    member = "iOpenPod/assets/firmware/classic-shared/firmware.zlib"
+    for directory in (app / "Contents/Resources", tmp_path / "src"):
+        asset = directory / member
+        asset.parent.mkdir(parents=True)
+        asset.write_bytes(b"current firmware")
     monkeypatch.setattr(package_app, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(platform, "machine", lambda: architecture)

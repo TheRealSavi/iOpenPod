@@ -192,16 +192,22 @@ class StoreBackend:
             self._release_owner()
 
 
-def detect_channel() -> InstallChannel:
+def has_package_identity() -> bool:
     # Resolve Windows-only ctypes exports lazily so this module remains importable
     # and type-checkable on the other supported Hosts.
     kernel = vars(ctypes)["WinDLL"]("kernel32", use_last_error=True)
     size = ctypes.c_uint32()
     result = kernel.GetCurrentPackageFullName(ctypes.byref(size), None)
     if result == 15700:  # APPMODEL_ERROR_NO_PACKAGE
-        return InstallChannel.UNPACKAGED
+        return False
     if result != 122:  # ERROR_INSUFFICIENT_BUFFER proves package identity
         raise OSError(result, "Could not determine Windows package identity")
+    return True
+
+
+def detect_channel() -> InstallChannel:
+    if not has_package_identity():
+        return InstallChannel.UNPACKAGED
     model = import_module("winrt.windows.applicationmodel")
     return (
         InstallChannel.MICROSOFT_STORE

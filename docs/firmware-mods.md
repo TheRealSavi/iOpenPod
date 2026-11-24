@@ -11,7 +11,8 @@ Device Summary shows Reported Firmware, Mod Platform Version, hardware family ID
 bootloader version and OS Updater Family. Cached OS values are marked explicitly;
 tooltips distinguish current firmware reports from historical DFU results. A new
 connection or explicit refresh reads current metadata again. Its **Firmware**
-section offers the needed action on Windows for Classic families 24, 33, 35 and 38:
+section offers bootloader setup and normal-USB firmware installation on standalone
+Windows, macOS and Linux builds for Classic families 24, 33, 35 and 38:
 
 1. **Install unlocked bootloader** installs the Universal Unlocked Bootloader
    **2.1.0** through guided DFU setup. It is hidden when the qualified current
@@ -150,16 +151,41 @@ remains enabled; developers can opt into artwork tracing when needed. See
 
 ## Install the universal Classic release
 
-Installation currently requires Windows. First-time bootloader setup and bootloader
-upgrades require the Apple Mobile Device USB driver for DFU. Routine firmware
-updates use the Windows mass-storage driver. The installer opens the selected
-Volume for direct read/write access and locks it. Microsoft documents administrator
-privileges for that operation. [Windows volume access requirements](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew#physical-disks-and-volumes).
+These installation actions are available outside the Windows MSIX distribution.
+The Microsoft Store edition shows the firmware information reported by the iPod.
+
+Bootloader setup and upgrades include libusb on Windows, macOS and Linux.
+Windows tries libusb first, then Apple's installed DFU driver. If neither is
+available, install Apple's iPod device support included with iTunes, reconnect
+the iPod and reopen setup. iOpenPod does not install a Windows driver.
+macOS uses bundled libusb with the system USB stack, without a Homebrew package.
+Linux native package staging includes a narrowly scoped DFU udev rule. When
+permission setup is needed, the desktop's polkit prompt installs that rule once;
+the app continues as the normal user. It grants access only to the active local
+desktop user and does not grant raw-disk access. Reconnect if permissions have
+not taken effect. Sandboxed distributions need Host permission setup separately.
+Physical installation through the new libusb path and Linux permission setup,
+including current Intel/Apple Silicon Macs, remain pending.
+See [ADR-0296](adr/0296-use-bundled-libusb-with-platform-access-setup.md).
+
+Routine updates on a Classic with a verified bootloader use the Host's SCSI
+interface. Close apps using the iPod before starting. Windows locks the Volume
+through the system mass-storage driver. If opening requires administrator access,
+one UAC prompt authorizes the bundled native helper to open that USB Volume.
+The app then verifies identity, locks and transfers as the normal user; cancellation
+stops the attempt. No separate helper download or elevated GUI is required.
+macOS unmounts the selected partition and requests exclusive access through IOKit.
+Linux asks UDisks2 to unmount the selected partition, holds the whole disk
+exclusively and transfers through the kernel's SCSI generic interface. Linux may
+prompt for desktop authorization. If the volume was unmounted and setup stops
+before the upload, reconnect the iPod to mount it again. Physical firmware
+uploads on macOS and Linux are still unverified.
+[Windows volume access](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew#physical-disks-and-volumes).
 
 The packaged app includes the firmware and bootloader assets.
 Users do not need a C compiler, a separate DLL download or a firmware download.
-macOS and Linux can read the bundled assets. Their Storage adapters currently
-lack the USB Control Session and exclusive SCSI Session needed for installation.
+Linux desktop authorization requires a running polkit agent and pkexec when the
+user lacks direct USB access. A denied request stops setup before any write.
 
 1. Connect the Classic normally, select it, and open **Device Summary**. Choose
    **Install unlocked bootloader**. The dialog identifies the selected device,

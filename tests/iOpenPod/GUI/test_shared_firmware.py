@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 
 class Installer:
     platform = "windows"
+    upload_supported = True
 
     def __init__(self) -> None:
         self.unlocked = True
@@ -115,6 +116,38 @@ def controller_for(
         cast("DeviceCoordinator", Coordinator(tmp_path)),
     )
     return controller, devices, installer
+
+
+@pytest.mark.parametrize("platform", ["macos", "linux"])
+def test_bootloader_eligibility_does_not_authorize_unavailable_scsi_upload(
+    tmp_path: Path, platform: str
+) -> None:
+    controller, _devices, installer = controller_for(tmp_path)
+    installer.platform = platform
+    installer.upload_supported = False
+    installer.hardware_family = 33
+    active = summary_active_ipod()
+    theme = ThemeManager(
+        APPLICATION, SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    )
+    page = DeviceSummaryPage(theme=theme, shared_firmware_controller=controller)
+    try:
+        assert not controller.supported(active)
+        assert not controller.can_install(active)
+        assert controller.recorded_hardware_family(active) == 33
+        page.set_active_ipod(active)
+        page.show()
+        unlock = page.findChild(QPushButton, "unlockBootloader")
+        hint = page.findChild(QLabel, "deviceSharedFirmwareHint")
+        assert unlock is not None and not unlock.isVisible()
+        assert (
+            hint is not None
+            and hint.text() == "This installation has no direct USB disk access"
+        )
+    finally:
+        controller.shutdown()
+        page.close()
+        theme.close()
 
 
 @pytest.mark.parametrize("family", (24, 33, 35, 38))

@@ -1,5 +1,6 @@
 """Application dependency composition."""
 
+import logging
 from dataclasses import dataclass, field
 
 from PySide6.QtWidgets import QApplication
@@ -54,6 +55,7 @@ from iOpenPod.app.services.device_coordinator import DeviceCoordinator
 from iOpenPod.app.synesthesia import SynesthesiaController, WholeTrackMusicAnalyzer
 from iOpenPod.app.synesthesia.audio import FFmpegDecoder
 from iOpenPod.app.tone_conversion_controller import ToneConversionController
+from iOpenPod.app.updates.windows import has_package_identity
 from iOpenPod.GUI.presentation.genius_mix_artwork import render_mix_cover
 from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
@@ -62,6 +64,31 @@ from storage import Storage
 from storage.host_files import application_config_file
 from storage.media_processing import MediaToolFinder
 from storage.platform.native import native_platform_adapter
+
+
+def create_firmware_controllers(
+    storage: Storage,
+    devices: DeviceController,
+    coordinator: DeviceCoordinator,
+    application: QApplication,
+) -> tuple[BootloaderController | None, SharedFirmwareController | None]:
+    if storage.platform_name == "windows":
+        try:
+            # Locally signed MSIX candidates use the same policy as the Store build.
+            if has_package_identity():
+                return None, None
+        except OSError:
+            logging.getLogger(__name__).warning(
+                "Firmware installation disabled: Windows package identity unavailable",
+                exc_info=True,
+            )
+            return None, None
+    return (
+        BootloaderController(BootloaderInstaller(storage), devices, application),
+        SharedFirmwareController(
+            SharedFirmwareInstaller(storage), devices, coordinator, application
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True, weakref_slot=True)
@@ -302,6 +329,9 @@ class AppContext:
             playback_controller.history_model.retranslate
         )
 
+        bootloader, firmware = create_firmware_controllers(
+            storage, device_controller, device_coordinator, application
+        )
         return cls(
             stream_preferences=MediaStreamPreferences(
                 storage.host_config_file("iOpenPod", "media-stream-selections.json")
@@ -332,15 +362,8 @@ class AppContext:
             find_media_tool=media_tools.find,
             theme_manager=theme_manager,
             i18n_manager=i18n_manager,
-            bootloader_controller=BootloaderController(
-                BootloaderInstaller(storage), device_controller, application
-            ),
-            shared_firmware_controller=SharedFirmwareController(
-                SharedFirmwareInstaller(storage),
-                device_controller,
-                device_coordinator,
-                application,
-            ),
+            bootloader_controller=bootloader,
+            shared_firmware_controller=firmware,
         )
 
     def shutdown(self) -> None:

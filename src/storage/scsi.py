@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
-from storage.errors import StorageError
+from storage.errors import StorageError, VolumeIdentityChangedError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -134,6 +134,32 @@ def checked_response(command: ScsiCommand, response: ScsiResponse) -> ScsiRespon
             "SCSI transfer length was incomplete or invalid", response
         )
     return response
+
+
+def require_scsi_identity(channel: ScsiChannel, expected: ScsiIdentity) -> None:
+    inquiry = ScsiCommand(bytes((0x12, 0, 0, 0, 36, 0)), data_in_length=36)
+    header = checked_response(inquiry, channel.execute(inquiry)).data
+    serial_command = ScsiCommand(
+        bytes((0x12, 1, 0x80, 0, 255, 0)),
+        data_in_length=255,
+        allow_short_read=True,
+    )
+    page = checked_response(serial_command, channel.execute(serial_command)).data
+    if header[0] != 0 or len(page) < 5 or page[:2] != b"\x00\x80":
+        raise ScsiSessionError("The device did not return direct-access SCSI identity")
+    # Some devices advertise 32 serial bytes but return only their actual
+    # serial. Bound by both the declared length and the completed transfer.
+    declared = int.from_bytes(page[2:4], "big")
+    try:
+        identity = ScsiIdentity(
+            header[8:16].decode("ascii").rstrip(" \0"),
+            header[16:32].decode("ascii").rstrip(" \0"),
+            page[4 : 4 + declared].decode("ascii").rstrip(" \0"),
+        )
+    except ValueError as error:
+        raise ScsiSessionError("The device returned malformed SCSI identity") from error
+    if identity != expected:
+        raise VolumeIdentityChangedError("The connected SCSI device identity changed")
 
 
 class ScsiSession:

@@ -26,6 +26,8 @@ on:
       - "src/storage/host_installation.py"
       - "src/storage/host_usage.py"
       - "src/storage/platform/host_install_windows.py"
+      - "src/storage/platform/**"
+      - "scripts/build_windows_access.py"
       - ".github/workflows/update-feed.yml"
       - "scripts/check_wheel.py"
       - "scripts/check_phase_distribution.py"
@@ -125,7 +127,7 @@ jobs:
       - name: Build source-audited Windows audio library
         if: runner.os == 'Windows'
         run: uv run --no-sync python -m scripts.build_windows_sndfile
-      - name: Build unsigned native candidate
+      - name: Build native candidate and device-access helpers
         run: uv run --no-sync python scripts/package_app.py freeze
       - name: Check the independent update helper
         if: runner.os != 'macOS'

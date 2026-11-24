@@ -208,6 +208,10 @@ class SharedFirmwareInstaller:
     def platform(self) -> str:
         return self.storage.platform_name
 
+    @property
+    def upload_supported(self) -> bool:
+        return self.storage.supports_scsi_sessions
+
     def _journal(self, identity: UnlockIdentity) -> AtomicHostFile:
         return AtomicHostFile(
             self.directory / "installations" / identity.serial / "operation.json"
@@ -294,8 +298,10 @@ class SharedFirmwareInstaller:
         cancel: Event,
         publish: Callable[[InstallProgress], None],
     ) -> None:
-        if self.platform != "windows":
-            raise ValueError("Classic firmware installation currently requires Windows")
+        if not self.upload_supported:
+            raise ValueError(
+                "This installation lacks exclusive SCSI access for firmware updates"
+            )
         if not mounted.physical_device.removable:
             raise ValueError("Expected a removable iPod")
         self.storage.require_host_path_off_physical_device(

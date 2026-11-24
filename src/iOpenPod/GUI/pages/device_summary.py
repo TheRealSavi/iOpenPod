@@ -392,6 +392,8 @@ class DeviceSummaryPage(QWidget):
         self._install_hint.setText(
             self.tr("The previous firmware upload was interrupted")
             if pending
+            else self.tr("This installation has no direct USB disk access")
+            if shared is not None and not shared.upload_supported
             else self.tr("Install over USB")
             if can_install and report is not None and report.mod_version
             else self.tr("Mod version {mod_version} · Install over USB").format(
@@ -404,13 +406,14 @@ class DeviceSummaryPage(QWidget):
             if recorded_family is not None
             else self.tr("Install the unlocked bootloader first")
         )
-        self._firmware_actions.setVisible(self._active is not None or resume or pending)
+        self._firmware_actions.setVisible(
+            (controller is not None or shared is not None)
+            and (self._active is not None or resume or pending)
+        )
         self._unlock_hint.setText(
             self.tr("Guided DFU setup")
             if supported
-            else self.tr(
-                "Available on Windows for iPod Classic families 24, 33, 35 and 38"
-            )
+            else self.tr("Available for iPod Classic families 24, 33, 35 and 38")
         )
 
     def set_busy(self, busy: bool) -> None:

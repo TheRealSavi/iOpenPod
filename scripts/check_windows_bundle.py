@@ -28,10 +28,18 @@ def check_windows_bundle(executable: Path) -> None:
     # launching or extracting the app; checking a former _internal directory
     # would silently miss every bundled dependency.
     archives = import_module("PyInstaller.archive.readers")
-    names: list[str] = list(archives.CArchiveReader(str(executable)).toc)
+    archive = archives.CArchiveReader(str(executable))
+    names: list[str] = list(archive.toc)
     payload = tuple(PurePosixPath(name.replace("\\", "/")) for name in names)
     if not any(path.name.lower() == "python312.dll" for path in payload):
         issues.append("Executable does not embed the Python runtime")
+    helper = PurePosixPath("storage-access/iOpenPod-storage-access.exe")
+    if helper not in payload:
+        issues.append("Executable does not embed the native Storage access helper")
+    else:
+        from scripts.build_windows_access import check_helper
+
+        check_helper(archive.extract(names[payload.index(helper)]))
     if any(path.parts[:2] == ("sklearn", "datasets") for path in payload):
         issues.append("Unused scikit-learn sample datasets are bundled")
     if any(path.parts[0] == "sklearn" and "tests" in path.parts for path in payload):
@@ -63,5 +71,7 @@ def check_windows_bundle(executable: Path) -> None:
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
+    if not __package__:
+        sys.path.insert(0, str(root))
     check_windows_bundle(root / "dist/iOpenPod.exe")
     print("Windows executable manifest and payload checks passed.")

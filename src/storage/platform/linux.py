@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import os
 import re
 import shutil
@@ -10,9 +9,9 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING
 
-from storage.errors import MountInspectionError
+from storage.errors import MountInspectionError, VolumeIdentityChangedError
 from storage.models import (
     DeviceBus,
     DiscoveryIssue,
@@ -37,13 +36,24 @@ from storage.platform.common import capabilities, disk_usage
 from storage.platform.linux_backing import capture_backing
 from storage.platform.linux_eject import LinuxDeviceEjector
 from storage.platform.linux_eject import set_volume_label as set_udisks_volume_label
+from storage.platform.linux_scsi import (
+    LinuxScsiChannel,
+    execute_linux_scsi,
+    open_linux_scsi,
+)
+from storage.platform.linux_usb_control import LinuxUsbControl, LinuxUsbControlChannel
+from storage.scsi import ScsiCommand, ScsiSessionError, checked_response
 from storage.scsi_vpd import collect_scsi_vpd
+
+if TYPE_CHECKING:
+    import uuid
+
+    from storage.scsi import ScsiIdentity
+    from storage.usb_control import UsbControlEndpoint
 
 _MOUNTINFO = Path("/proc/self/mountinfo")
 _UDEV_DATA = Path("/run/udev/data")
 _SYS_CLASS_BLOCK = Path("/sys/class/block")
-_SG_IO = 0x2285
-_SG_DXFER_FROM_DEVICE = -3
 _CONNECTION_UDEV_PROPERTIES = (
     "ID_BUS",
     "ID_DRIVE_FLASH",
@@ -52,43 +62,6 @@ _CONNECTION_UDEV_PROPERTIES = (
     "ID_FS_UUID",
     "ID_PART_ENTRY_UUID",
 )
-
-
-class _SgIoHeader(ctypes.Structure):
-    _fields_ = [
-        ("interface_id", ctypes.c_int),
-        ("dxfer_direction", ctypes.c_int),
-        ("cmd_len", ctypes.c_ubyte),
-        ("mx_sb_len", ctypes.c_ubyte),
-        ("iovec_count", ctypes.c_ushort),
-        ("dxfer_len", ctypes.c_uint),
-        ("dxferp", ctypes.c_void_p),
-        ("cmdp", ctypes.c_void_p),
-        ("sbp", ctypes.c_void_p),
-        ("timeout", ctypes.c_uint),
-        ("flags", ctypes.c_uint),
-        ("pack_id", ctypes.c_int),
-        ("usr_ptr", ctypes.c_void_p),
-        ("status", ctypes.c_ubyte),
-        ("masked_status", ctypes.c_ubyte),
-        ("msg_status", ctypes.c_ubyte),
-        ("sb_len_wr", ctypes.c_ubyte),
-        ("host_status", ctypes.c_ushort),
-        ("driver_status", ctypes.c_ushort),
-        ("resid", ctypes.c_int),
-        ("duration", ctypes.c_uint),
-        ("info", ctypes.c_uint),
-    ]
-
-
-class _Ioctl(Protocol):
-    def __call__(
-        self,
-        descriptor: int,
-        operation: int,
-        argument: _SgIoHeader,
-        /,
-    ) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +121,16 @@ class LinuxPlatformAdapter:
     @property
     def name(self) -> str:
         return "linux"
+
+    def discover_usb_control(
+        self, interface_class: uuid.UUID, vendor_id: int, product_id: int
+    ) -> tuple[UsbControlEndpoint, ...]:
+        return LinuxUsbControl().discover(interface_class, vendor_id, product_id)
+
+    def open_usb_control_channel(
+        self, endpoint: UsbControlEndpoint
+    ) -> LinuxUsbControlChannel:
+        return LinuxUsbControl().open(endpoint)
 
     def discover(self) -> ObservationDiscoveryResult:
         issues: list[DiscoveryIssue] = []
@@ -317,6 +300,33 @@ class LinuxPlatformAdapter:
                 detail or f"sync exited with code {completed.returncode}",
             )
         return FlushResult(True, detail or "pending writes flushed")
+
+    def open_scsi_channel(
+        self, observation: VolumeObservation, expected_identity: ScsiIdentity
+    ) -> LinuxScsiChannel:
+        def current_mount() -> LinuxMountRecord:
+            for record in self._records():
+                if (
+                    "linux-mount:" + record.mount_id == observation.mount_instance
+                    and record.mount_point == observation.mount_point.path
+                ):
+                    return record
+            raise VolumeIdentityChangedError("The selected Linux mount has changed")
+
+        if (
+            not observation.physical_device.removable
+            or observation.physical_device.bus != DeviceBus.USB
+        ):
+            raise MountInspectionError("Expected a removable USB disk")
+        mounted = current_mount()
+
+        def check_mount() -> None:
+            if current_mount() != mounted:
+                raise VolumeIdentityChangedError("The selected Linux partition changed")
+
+        return open_linux_scsi(
+            mounted.source, mounted.device_number, check_mount, expected_identity
+        )
 
     def eject(self, observation: VolumeObservation) -> EjectResult:
         mount_id = observation.mount_instance.removeprefix("linux-mount:")
@@ -677,31 +687,12 @@ def _linux_scsi_inquiry(
     page: int,
     alloc_len: int,
 ) -> bytes:
-    data = ctypes.create_string_buffer(alloc_len)
-    sense = ctypes.create_string_buffer(64)
-    command = (ctypes.c_ubyte * 6)(
-        0x12,
-        0x01 if evpd else 0x00,
-        page & 0xFF,
-        0,
-        alloc_len & 0xFF,
-        0,
+    command = ScsiCommand(
+        bytes((0x12, int(evpd), page, 0, alloc_len, 0)),
+        data_in_length=alloc_len,
+        allow_short_read=True,
     )
-    header = _SgIoHeader()
-    header.interface_id = ord("S")
-    header.dxfer_direction = _SG_DXFER_FROM_DEVICE
-    header.cmd_len = 6
-    header.mx_sb_len = len(sense)
-    header.dxfer_len = alloc_len
-    header.dxferp = ctypes.cast(data, ctypes.c_void_p)
-    header.cmdp = ctypes.cast(command, ctypes.c_void_p)
-    header.sbp = ctypes.cast(sense, ctypes.c_void_p)
-    header.timeout = 10_000
-
-    ioctl = cast("_Ioctl", vars(__import__("fcntl"))["ioctl"])
-    ioctl(descriptor, _SG_IO, header)
-    status = header.status or header.host_status or header.driver_status
-    if status:
-        raise OSError(status, f"SCSI INQUIRY failed for page 0x{page:02X}")
-    transferred = alloc_len - max(int(header.resid), 0)
-    return bytes(data.raw[: max(0, min(transferred, alloc_len))])
+    try:
+        return checked_response(command, execute_linux_scsi(descriptor, command)).data
+    except ScsiSessionError as error:
+        raise OSError(str(error)) from error

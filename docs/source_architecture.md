@@ -2157,7 +2157,14 @@ Storage owns a separate SCSI Session for bounded, serialized
 native commands. Its Windows adapter holds the retained Volume GUID handle under
 an exclusive volume lock, verifies disk and SCSI identity, respects adapter
 alignment and transfer limits, and invalidates access on ambiguous completion.
-It never retries or ejects on cleanup. Existing Filesystem Sessions must close
+An initial Windows access denial can authorize a bundled native helper to open
+that USB Volume and duplicate its handle into the normal-user process. The helper
+contains no firmware protocol; identity checks, locking and commands remain in
+the existing channel. See [ADR-0297](adr/0297-authorize-windows-volume-opens-with-a-native-helper.md).
+macOS retains the selected IOKit SCSI interface across a non-forced partition
+unmount and obtains exclusive access. Linux retains an exclusive whole-disk
+handle alongside its SCSI generic handle. Cleanup releases these handles.
+Existing Filesystem Sessions must close
 before exclusive access; the Application Layer owns any installation protocol
 and persistent progress journal. Standard reads through this transport have been
 qualified on the family-33 Classic. Its first vendor upload also completed, booted
@@ -2178,7 +2185,15 @@ boot-image selection and persistent handoff records now belong to
 qualified Classic through DFU, installation, readback and normal-mode return.
 `bootloader_controller` owns the background worker and device reservation;
 the GUI cannot close a live writer. The filesystem session is retired before
-DFU and normal-mode return requires fresh discovery. The application bundles a
+DFU and normal-mode return requires fresh discovery. All three Hosts use bundled
+libusb. Windows falls back to the installed Apple driver only before protocol
+transfers, with ambiguity and connection checks. macOS retains the libusb context
+for process lifetime. Linux keeps sysfs identity and a wrapped descriptor; a
+one-time polkit helper can install a narrowly scoped udev rule when needed.
+The app opens devices and transfers as its ordinary user. Each native open
+rechecks the observed USB connection before transfers. Physical qualification
+of the new libusb paths and Linux permissions remains pending. See ADR-0296.
+The application bundles a
 pinned loader delta, a parameterized RAM writer and a non-secret identity record;
 no runtime dependency on lab tools or a user's retained image exists.
 Unfinished handoffs retain the selected updater family and expose read-only

@@ -25,6 +25,7 @@ from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.GUI.dialogs.bootloader_unlock import BootloaderUnlockDialog
 from iOpenPod.GUI.pages.device_summary import DeviceSummaryPage
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
+from storage import UsbControlDriverError
 
 if TYPE_CHECKING:
     from iOpenPod.app.device_controller import DeviceController
@@ -89,6 +90,51 @@ class Installer:
         publish(UnlockProgress(UnlockStage.INSTALLING))
         assert self.finish.wait(5)
         return False
+
+
+@pytest.mark.parametrize(
+    "platform,expected",
+    [("windows", "iTunes"), ("linux", "administrator approval once")],
+)
+def test_first_setup_explains_host_usb_access(platform: str, expected: str) -> None:
+    devices, installer = Devices(), Installer()
+    installer.platform = platform
+    controller = BootloaderController(installer, cast("DeviceController", devices))
+    dialog = BootloaderUnlockDialog(controller, devices.active_ipod)
+    try:
+        assert any(expected in label.text() for label in dialog.findChildren(QLabel))
+    finally:
+        controller.shutdown()
+        dialog.close()
+
+
+def test_missing_windows_driver_guidance_is_owned_by_application(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices, installer = Devices(), Installer()
+
+    def unavailable(
+        _identity: UnlockIdentity,
+        _cancel: Event,
+        _publish: Callable[[UnlockProgress], None],
+        *,
+        verify_only: bool = False,
+    ) -> bool:
+        raise UsbControlDriverError("No compatible USB control driver is available")
+
+    monkeypatch.setattr(installer, "run", unavailable)
+    controller = BootloaderController(installer, cast("DeviceController", devices))
+    active = devices.active_ipod
+    assert active is not None
+    try:
+        assert controller.start(active)
+        until(lambda: not controller.busy)
+        assert controller.progress.stage is UnlockStage.ERROR
+        assert "iTunes" in controller.progress.detail
+        assert "does not install a Windows USB driver" in controller.progress.detail
+        assert devices.released
+    finally:
+        controller.shutdown()
 
 
 @pytest.mark.parametrize("family", (24, 33, 35, 38))

@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from xml.parsers.expat import ExpatError
 
-from storage.errors import MountInspectionError
+from storage.errors import (
+    DeviceBusyError,
+    MountInspectionError,
+    VolumeIdentityChangedError,
+)
 from storage.models import (
     DeviceBus,
     DiscoveryIssue,
@@ -32,11 +36,15 @@ from storage.models import (
 )
 from storage.platform.base import ObservationDiscoveryResult
 from storage.platform.common import capabilities, disk_usage, paths_share_single_device
+from storage.platform.libusb_control import LibusbControlChannel, control
 from storage.platform.macos_eject import MacOSDeviceEjector
-from storage.platform.macos_vpd import probe_macos_scsi
+from storage.platform.macos_vpd import open_macos_scsi, probe_macos_scsi
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from storage.scsi import ScsiChannel, ScsiIdentity
+    from storage.usb_control import UsbControlEndpoint
 
 _VOLUMES_DIRECTORY = Path("/Volumes")
 
@@ -149,6 +157,16 @@ class MacOSPlatformAdapter:
     @property
     def name(self) -> str:
         return "macos"
+
+    def discover_usb_control(
+        self, interface_class: uuid.UUID, vendor_id: int, product_id: int
+    ) -> tuple[UsbControlEndpoint, ...]:
+        return control().discover(interface_class, vendor_id, product_id)
+
+    def open_usb_control_channel(
+        self, endpoint: UsbControlEndpoint
+    ) -> LibusbControlChannel:
+        return control().open(endpoint)
 
     def discover(self) -> ObservationDiscoveryResult:
         observations: list[VolumeObservation] = []
@@ -273,6 +291,55 @@ class MacOSPlatformAdapter:
         except OSError as error:
             return FlushResult(False, f"filesystem flush failed: {error}")
         return FlushResult(True, "pending writes flushed")
+
+    def open_scsi_channel(
+        self, observation: VolumeObservation, expected_identity: ScsiIdentity
+    ) -> ScsiChannel:
+        mount = observation.mount_point.path
+        first = _read_statfs(mount)
+        _validate_statfs(first)
+        partition = _statfs_device_node(first)
+        whole = observation.physical_device.id.value.removeprefix(
+            "macos:"
+        ).removeprefix("/dev/")
+        if (
+            not observation.physical_device.removable
+            or observation.physical_device.bus != DeviceBus.USB
+            or observation.mount_instance != _statfs_mount_instance(first)
+            or _statfs_mount_point(first) != mount
+            or not re.fullmatch(r"disk[0-9]+", whole)
+            or not re.fullmatch(re.escape(whole) + r"s[0-9]+", partition.name)
+        ):
+            raise VolumeIdentityChangedError(
+                "The selected mount is not a partition of the selected USB disk"
+            )
+
+        def unmount() -> None:
+            _require_same_snapshot(first, _read_statfs(mount))
+            try:
+                result = subprocess.run(
+                    ["/usr/sbin/diskutil", "unmount", os.fspath(partition)],
+                    capture_output=True,
+                    timeout=75,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise MountInspectionError(
+                    f"macOS did not confirm unmount of the selected volume: {error}"
+                ) from error
+            if result.returncode:
+                raise DeviceBusyError(
+                    "macOS could not unmount the selected volume. Close apps using the iPod and try again."
+                )
+
+        identifiers = observation.physical_device.identifiers
+        return open_macos_scsi(
+            product=identifiers.usb_product_id,
+            serial=identifiers.transport_serial,
+            bsd_partition=partition.name,
+            expected=expected_identity,
+            unmount=unmount,
+        )
 
     def eject(self, observation: VolumeObservation) -> EjectResult:
         whole_disk = observation.physical_device.id.value.removeprefix("macos:")
@@ -400,10 +467,9 @@ def _observation_from_kernel(
 ) -> VolumeObservation:
     _validate_statfs(snapshot)
     mount_point = _statfs_mount_point(snapshot)
-    device_identifier, whole_disk = _statfs_bsd_identifiers(snapshot)
+    _, whole_disk = _statfs_bsd_identifiers(snapshot)
     filesystem_type = _statfs_filesystem_type(snapshot)
     total, available = _statfs_byte_counts(snapshot)
-    fsid_first, fsid_second = _statfs_fsid(snapshot)
     physical_id = PhysicalDeviceId(f"macos:{whole_disk}")
     volume_id = VolumeId(f"macos:{volume_uuid}")
 
@@ -476,10 +542,7 @@ def _observation_from_kernel(
             ),
         ),
         mount_point=MountPoint(mount_point),
-        mount_instance=(
-            f"macos-vfs:{device_identifier}:"
-            f"{fsid_first & 0xFFFFFFFF:08x}:{fsid_second & 0xFFFFFFFF:08x}"
-        ),
+        mount_instance=_statfs_mount_instance(snapshot),
     )
 
 
@@ -715,6 +778,12 @@ def _snapshot_identity(snapshot: _DarwinStatFS) -> tuple[str, str, int, int, str
         fsid_second,
         _statfs_filesystem_type(snapshot),
     )
+
+
+def _statfs_mount_instance(snapshot: _DarwinStatFS) -> str:
+    partition, _ = _statfs_bsd_identifiers(snapshot)
+    first, second = _statfs_fsid(snapshot)
+    return f"macos-vfs:{partition}:{first & 0xFFFFFFFF:08x}:{second & 0xFFFFFFFF:08x}"
 
 
 def _require_same_snapshot(

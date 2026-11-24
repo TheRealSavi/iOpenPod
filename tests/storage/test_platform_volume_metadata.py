@@ -43,6 +43,7 @@ class _LabelClient(_QtUDisksClient):
         method: str,
         *arguments: object,
         timeout_ms: int = 30_000,
+        interactive: bool = False,
     ) -> object:
         self.calls.append((path, method, arguments))
         if method == "ResolveDevice":

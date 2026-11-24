@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from storage import StorageError
+from storage import StorageError, UsbControlDriverError
 
 from .bootloader_install import (
     UnlockIdentity,
@@ -68,6 +68,10 @@ class BootloaderController(QObject):
         self._timer.setInterval(50)
         self._timer.timeout.connect(self._poll)
         devices.activeIPodChanged.connect(self._active_changed)
+
+    @property
+    def platform(self) -> str:
+        return self._installer.platform
 
     @property
     def progress(self) -> UnlockProgress:
@@ -151,6 +155,16 @@ class BootloaderController(QObject):
                 result = UnlockProgress(UnlockStage.RESTART, already_unlocked=already)
             except InterruptedError:
                 result = UnlockProgress(UnlockStage.CANCELED)
+            except UsbControlDriverError:
+                result = UnlockProgress(
+                    UnlockStage.ERROR,
+                    detail=(
+                        "Windows could not open the iPod in DFU mode. Install Apple's "
+                        "iPod device support included with iTunes, reconnect the iPod, "
+                        "and reopen setup. iOpenPod includes libusb but does not install "
+                        "a Windows USB driver."
+                    ),
+                )
             except Exception as error:
                 result = UnlockProgress(UnlockStage.ERROR, detail=str(error))
             self._events.put(_Finished(result))

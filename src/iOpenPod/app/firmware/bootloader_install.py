@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 
 from storage import (
     AtomicHostFile,
+    UsbControlAuthorizationError,
     UsbControlEndpoint,
     UsbControlError,
     UsbControlSession,
@@ -138,7 +139,7 @@ def identity_from_record(record: Mapping[str, object]) -> UnlockIdentity:
 def supported_identity(
     active: ActiveIPod | None, platform: str
 ) -> UnlockIdentity | None:
-    if active is None or platform != "windows":
+    if active is None or platform not in ("windows", "macos", "linux"):
         return None
     try:
         targets = [
@@ -281,8 +282,8 @@ class BootloaderInstaller:
         *,
         verify_only: bool,
     ) -> bool:
-        if self.platform != "windows":
-            raise ValueError("Bootloader installation currently requires Windows")
+        if self.platform not in ("windows", "macos", "linux"):
+            raise ValueError("Bootloader installation is unavailable on this Host")
         bundle = SharedBootloaderBundle()  # Check assets before touching USB.
         directory = self.directory / identity.serial
         directory.mkdir(parents=True, exist_ok=True)
@@ -315,9 +316,13 @@ class BootloaderInstaller:
             if cancel.wait(0.5):
                 raise InterruptedError("Unlock canceled before installation")
             if time.monotonic() >= deadline:
-                raise TimeoutError(
-                    "No Classic found in DFU. Check the cable and Apple Mobile Device USB driver, then reopen the setup."
+                detail = (
+                    "Check the cable. If Windows needs a DFU driver, install Apple's "
+                    "iPod device support included with iTunes, reconnect, and reopen setup."
+                    if self.platform == "windows"
+                    else "Check the cable, dismiss any restore prompt, and reopen the setup."
                 )
+                raise TimeoutError("No Classic found in DFU. " + detail)
             endpoint = self._endpoint()
         if cancel.is_set():
             raise InterruptedError("Unlock canceled before installation")
@@ -468,6 +473,8 @@ class BootloaderInstaller:
                     pending["report_hex"] = record.hex()
                     journal.replace_bytes(self._encode(pending))
                     return
+            except UsbControlAuthorizationError:
+                raise
             except (UsbControlError, OSError) as error:
                 last_error = str(error)
             time.sleep(2)

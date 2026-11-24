@@ -98,6 +98,8 @@ from storage.transactions import (
     TransactionWrite,
 )
 from storage.usb_control import (
+    UsbControlAuthorizationError,
+    UsbControlDriverError,
     UsbControlEndpoint,
     UsbControlError,
     UsbControlRequest,
@@ -187,6 +189,8 @@ __all__ = [
     "TrashEntry",
     "UnsafeFilesystemPathError",
     "UnsupportedStorageOperationError",
+    "UsbControlAuthorizationError",
+    "UsbControlDriverError",
     "UsbControlEndpoint",
     "UsbControlError",
     "UsbControlRequest",

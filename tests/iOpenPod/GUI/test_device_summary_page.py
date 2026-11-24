@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from dataclasses import replace
 from itertools import pairwise
+from unittest.mock import Mock
 
 import pytest
 from PySide6.QtCore import QLocale, QPoint, QRect, Qt
@@ -15,6 +16,7 @@ from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
 from iOpenPod.app.firmware.bootloader_report import read_bootloader_report
 from iOpenPod.app.firmware.shared_bootloader import VERSION as BOOTLOADER_VERSION
+from iOpenPod.app.firmware.shared_controller import SharedFirmwareController
 from iOpenPod.app.firmware.shared_release import MOD_VERSION
 from iOpenPod.app.models.device import (
     ActiveIPod,
@@ -94,7 +96,11 @@ def page() -> Iterator[DeviceSummaryPage]:
     settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
     theme = ThemeManager(APPLICATION, settings)
     theme.set_mode(AppearanceMode.LIGHT)
-    widget = DeviceSummaryPage(theme=theme)
+    installer = Mock(spec=SharedFirmwareController)
+    installer.needs_attention = False
+    installer.can_install.return_value = False
+    installer.recorded_hardware_family.return_value = None
+    widget = DeviceSummaryPage(theme=theme, shared_firmware_controller=installer)
     widget.resize(900, 800)
     widget.set_active_ipod(summary_active_ipod())
     widget.show()

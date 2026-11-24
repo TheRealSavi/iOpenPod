@@ -127,13 +127,15 @@ class Channel:
 
 
 class Platform(VirtualStoragePlatform):
+    host_name = "windows"
+
     def __init__(self, channel: Channel) -> None:
         super().__init__()
         self.channel = channel
 
     @property
     def name(self) -> str:
-        return "windows"
+        return self.host_name
 
     def open_scsi_channel(
         self, observation: VolumeObservation, expected_identity: ScsiIdentity
@@ -192,10 +194,12 @@ def fixture(
 
 
 @pytest.mark.parametrize("family", (24, 33, 35, 38))
+@pytest.mark.parametrize("host_name", ("windows", "macos", "linux"))
 def test_current_report_allows_install_on_computer_without_dfu_receipt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, family: int
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, family: int, host_name: str
 ) -> None:
     installer, identity, mounted, platform = fixture(tmp_path, monkeypatch, family)
+    platform.host_name = host_name
     (installer.directory / "bootloader" / identity.serial / "operation.json").unlink()
     platform.channel.boot_report = report_xml(
         DeviceModel=identity.model, HardwareRevision=bootloader_target(family).hardware

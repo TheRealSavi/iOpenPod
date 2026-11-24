@@ -10542,5 +10542,33 @@
         "sha256": "f68d76b9c1c2271422e55134ea94cf71f2ac3fc3ed6a7ec6b83a1a0538753214"
       }
     ]
+  },
+  {
+    "component": "libusb",
+    "version": "1.0.30",
+    "file": "libusb-1.0.30-NOTICES.txt",
+    "sha256": "f855fc8e17eacad970799d13aa77dbd5012841f74faf715a08444c1e0c57a1e7",
+    "members": [
+      {
+        "member": "libusb-87a55632db62c9bdc58cd31d3ccfa673f1bb017f/AUTHORS",
+        "sha256": "27fd82b016838197d5276ba98d2187ed5a1ad0e171767322f356f0a9f6395941"
+      },
+      {
+        "member": "libusb-87a55632db62c9bdc58cd31d3ccfa673f1bb017f/COPYING",
+        "sha256": "5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a"
+      }
+    ]
+  },
+  {
+    "component": "libusb-package",
+    "version": "1.0.30.1",
+    "file": "libusb-package-1.0.30.1-NOTICES.txt",
+    "sha256": "ba55bbd5e806e7f1ab063cce6fcb47be758ac02f6eb89ace6b7d259fa77a09ca",
+    "members": [
+      {
+        "member": "libusb-package-1.0.30.1/LICENSE",
+        "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9"
+      }
+    ]
   }
 ]

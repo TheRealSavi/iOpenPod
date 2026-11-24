@@ -9,13 +9,15 @@ import struct
 from typing import TYPE_CHECKING, Any
 
 from storage.errors import DeviceBusyError, VolumeIdentityChangedError
+from storage.platform.windows_access_native import last_error
+from storage.platform.windows_scsi_authorization import authorized_open
 from storage.scsi import (
     ScsiCommand,
     ScsiCommandError,
     ScsiIdentity,
     ScsiResponse,
     ScsiSessionError,
-    checked_response,
+    require_scsi_identity,
 )
 
 if TYPE_CHECKING:
@@ -87,12 +89,16 @@ class WindowsScsiChannel:
             None,
         )
         if handle in (None, 0, ctypes.c_void_p(-1).value):
-            raise _native_error("Opening the selected Volume for SCSI access failed")
+            if last_error() != 5:  # Only an initial access denial may prompt UAC.
+                raise _native_error(
+                    "Opening the selected Volume for SCSI access failed"
+                )
+            handle = authorized_open(volume.group(1).rstrip("\\"), int(disk.group(1)))
         channel = cls(kernel32, int(handle))
         try:
             channel._verify_disk(int(disk.group(1)))
             channel._query_adapter()
-            channel._verify_identity(expected_identity)
+            require_scsi_identity(channel, expected_identity)
             try:
                 channel._ioctl(_LOCK_VOLUME, None, 0, None, 0)
             except ScsiCommandError as error:
@@ -101,7 +107,7 @@ class WindowsScsiChannel:
                 ) from error
             # No forced dismount and no fallback to a drive letter or disk number.
             channel._verify_disk(int(disk.group(1)))
-            channel._verify_identity(expected_identity)
+            require_scsi_identity(channel, expected_identity)
             return channel
         except BaseException as error:
             try:
@@ -159,37 +165,6 @@ class WindowsScsiChannel:
             raise ScsiSessionError("Windows returned an unsupported alignment mask")
         self._alignment = max(mask + 1, mmap.PAGESIZE)
         self._max_transfer = min(maximum, pages * mmap.PAGESIZE)
-
-    def _verify_identity(self, expected: ScsiIdentity) -> None:
-        inquiry = ScsiCommand(bytes((0x12, 0, 0, 0, 36, 0)), data_in_length=36)
-        header = checked_response(inquiry, self.execute(inquiry)).data
-        serial_command = ScsiCommand(
-            bytes((0x12, 1, 0x80, 0, 255, 0)),
-            data_in_length=255,
-            allow_short_read=True,
-        )
-        page = checked_response(serial_command, self.execute(serial_command)).data
-        if header[0] != 0 or len(page) < 5 or page[:2] != b"\x00\x80":
-            raise ScsiSessionError(
-                "The device did not return direct-access SCSI identity"
-            )
-        # Some devices advertise 32 serial bytes but return only their actual
-        # serial. Bound by both the declared length and the completed transfer.
-        declared = int.from_bytes(page[2:4], "big")
-        try:
-            identity = ScsiIdentity(
-                header[8:16].decode("ascii").rstrip(" \0"),
-                header[16:32].decode("ascii").rstrip(" \0"),
-                page[4 : 4 + declared].decode("ascii").rstrip(" \0"),
-            )
-        except ValueError as error:
-            raise ScsiSessionError(
-                "The device returned malformed SCSI identity"
-            ) from error
-        if identity != expected:
-            raise VolumeIdentityChangedError(
-                "The connected SCSI device identity changed"
-            )
 
     def execute(self, command: ScsiCommand) -> ScsiResponse:
         size = command.transfer_length

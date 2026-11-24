@@ -1,7 +1,11 @@
 # Shared Classic bootloader
 
-The current Windows unlock installer ships one **2.1.0** executable for Classic
-families 24, 33, 35 and 38. `classic-shared` contains one RAM writer, one pinned
+The unlock installer ships one **2.1.0** executable for Classic
+families 24, 33, 35 and 38. All three Hosts use bundled libusb. Windows can fall
+back to the installed Apple driver before protocol transfers. Linux can install
+a scoped DFU udev rule through the desktop's polkit service once. The new paths require physical acceptance
+testing. See [ADR-0294](../../docs/adr/0294-use-upstream-usb-backends-for-classic-dfu-setup.md).
+`classic-shared` contains one RAM writer, one pinned
 manifest and ten source deltas for thirteen qualified migrations. Each delta reconstructs the identical body
 SHA-256 `7d4e94a6a509713d92e3d54f839491e4152a2fb639fb178ad50d2aaf38abbe61`.
 They encode migrations from four stock loaders, four earlier marked loaders and

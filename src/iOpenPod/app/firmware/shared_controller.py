@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 class FirmwareInstaller(Protocol):
     @property
     def platform(self) -> str: ...
+    @property
+    def upload_supported(self) -> bool: ...
     def pending_identity(self) -> UnlockIdentity | None: ...
     def record(self, identity: UnlockIdentity) -> InstallRecord | None: ...
     def require_bootloader(self, identity: UnlockIdentity) -> int: ...
@@ -103,8 +105,15 @@ class SharedFirmwareController(QObject):
     def needs_attention(self) -> bool:
         return not self.busy and self._pending is not None
 
+    @property
+    def upload_supported(self) -> bool:
+        return self._installer.upload_supported
+
     def supported(self, active: ActiveIPod | None) -> bool:
-        return supported_identity(active, self._installer.platform) is not None
+        return (
+            self.upload_supported
+            and supported_identity(active, self._installer.platform) is not None
+        )
 
     def recorded_hardware_family(self, active: ActiveIPod | None) -> int | None:
         identity = supported_identity(active, self._installer.platform)
@@ -119,7 +128,7 @@ class SharedFirmwareController(QObject):
         return self.recorded_hardware_family(active) is not None
 
     def can_install(self, active: ActiveIPod | None) -> bool:
-        if active is None:
+        if active is None or not self.supported(active):
             return False
         if active.bootloader_report is not None:
             identity = supported_identity(active, self._installer.platform)

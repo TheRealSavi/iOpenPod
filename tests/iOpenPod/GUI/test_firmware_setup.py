@@ -51,6 +51,7 @@ def setup_theme() -> "Iterator[None]":
 
 class BootSnapshot(QObject):
     changed = Signal()
+    platform = "windows"
 
     def __init__(self, stage: UnlockStage) -> None:
         super().__init__()

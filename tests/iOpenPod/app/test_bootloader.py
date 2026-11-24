@@ -94,7 +94,7 @@ def test_exact_supported_model_and_selected_identity() -> None:
     with pytest.raises(ValueError, match="does not match"):
         verify_syscfg(syscfg(identity), UnlockIdentity("OTHER123456", "MB565"))
     for platform in ("linux", "macos"):
-        assert supported_identity(active, platform) is None
+        assert supported_identity(active, platform) == identity
     assert (
         supported_identity(replace(active, serial_number="../../host"), "windows")
         is None

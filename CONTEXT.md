@@ -127,7 +127,19 @@ Device Summary distinguishes current OS-reported firmware/updater family from
 cached metadata and the hardware family last verified in DFU. Reconnect and
 explicit refresh probe again; a saved bootloader result is labelled historical.
 Its Firmware section conditionally offers bootloader setup or firmware installation
-for Classic families 24, 33, 35 and 38 on Windows. Current versions hide their
+for Classic families 24, 33, 35 and 38. Bootloader setup is implemented on Windows,
+macOS and Linux. The macOS/Linux transports await physical installation and result
+verification. Routine USB updates use the Host's native SCSI interface on all
+three platforms. macOS and Linux uploads still await physical verification. See
+ADR-0276 and ADR-0296. Bootloader setup bundles libusb on all three Hosts,
+with Apple's installed driver as the Windows fallback and one-time Linux desktop
+permission setup. The new access paths still need physical qualification.
+Windows normal-mode firmware access requests UAC only for the initial Volume
+open when needed; a bundled native helper hands the handle to the normal app,
+which retains identity checks, locking and transfers (ADR-0297).
+Both installation actions are omitted in the Microsoft Store edition and its
+sideloaded MSIX test packages. Device Summary still displays reported versions.
+Current versions hide their
 buttons; updates name the target bootloader or Mod Platform Version. When both
 versions are current, it says “Bootloader and firmware are up to date.” The summary
 includes Mod Platform Version, hardware family ID and bootloader version, with

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from xml.etree import ElementTree
 
 from storage.errors import (
@@ -13,6 +14,9 @@ from storage.errors import (
     UnsupportedStorageOperationError,
 )
 from storage.models import EjectResult
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _DEVICE_BUSY = "org.freedesktop.UDisks2.Error.DeviceBusy"
 _NOT_AUTHORIZED = {
@@ -115,7 +119,7 @@ class _QtUDisksClient:
                 "Safely Remove or Power Off action."
             )
 
-    def target_for_device(self, device_path: str) -> UDisksTarget:
+    def resolve_block(self, device_path: str) -> str:
         resolved = self._call(
             self._ROOT + "/Manager",
             self._MANAGER,
@@ -129,7 +133,10 @@ class _QtUDisksClient:
                 "org.freedesktop.UDisks2.Error.NotFound",
                 "UDisks did not resolve the mounted Volume to one exact block device.",
             )
-        selected_block = blocks[0]
+        return blocks[0]
+
+    def target_for_device(self, device_path: str) -> UDisksTarget:
+        selected_block = self.resolve_block(device_path)
         drive = _object_path(self._property(selected_block, self._BLOCK, "Drive"))
         if not drive or drive == "/":
             raise UDisksError(
@@ -253,6 +260,44 @@ class _QtUDisksClient:
                     "same device. Use the desktop's Safely Remove action.",
                 )
 
+    def lock_disk(
+        self, partition: str, disk: str, check_mount: Callable[[], None]
+    ) -> int:
+        """Unmount one selected filesystem and hold its whole disk against remount."""
+        from PySide6.QtDBus import QDBusUnixFileDescriptor
+
+        try:
+            volume = self.resolve_block("/dev/" + partition)
+            whole = self.resolve_block("/dev/" + disk)
+            check_mount()
+            self._call(
+                volume,
+                self._FILESYSTEM,
+                "Unmount",
+                _variant_map({}),
+                timeout_ms=120_000,
+                interactive=True,
+            )
+            reply = self._call(
+                whole,
+                self._BLOCK,
+                "OpenDevice",
+                "r",
+                _variant_map({"flags": os.O_EXCL | vars(os)["O_CLOEXEC"]}),
+                timeout_ms=120_000,
+                interactive=True,
+            )
+            handle = _first_argument(reply)
+            if not isinstance(handle, QDBusUnixFileDescriptor) or not handle.isValid():
+                raise StorageOperationError(
+                    "UDisks did not return the exclusive disk handle"
+                )
+            return handle.takeFileDescriptor()
+        except UDisksError as error:
+            raise StorageOperationError(
+                f"Linux could not obtain exclusive disk access: {error.detail}"
+            ) from error
+
     def _property(self, path: str, interface: str, name: str) -> object:
         reply = self._call(path, self._PROPERTIES, "Get", interface, name)
         return _unwrap(_first_argument(reply))
@@ -264,6 +309,7 @@ class _QtUDisksClient:
         method: str,
         *arguments: object,
         timeout_ms: int = 30_000,
+        interactive: bool = False,
     ) -> object:
         from PySide6.QtDBus import QDBus, QDBusMessage
 
@@ -273,6 +319,8 @@ class _QtUDisksClient:
             interface,
             method,
         )
+        if interactive:
+            message.setInteractiveAuthorizationAllowed(True)
         message.setArguments(list(arguments))
         reply = self._connection.call(
             message,
@@ -282,6 +330,11 @@ class _QtUDisksClient:
         if reply.type() == QDBusMessage.MessageType.ErrorMessage:
             raise UDisksError(reply.errorName(), reply.errorMessage())
         return reply
+
+
+def lock_linux_disk(partition: str, disk: str, check_mount: Callable[[], None]) -> int:
+    """Unmount one selected filesystem and hold its whole disk against remount."""
+    return _QtUDisksClient().lock_disk(partition, disk, check_mount)
 
 
 def _variant_map(values: dict[str, object]) -> dict[str, object]:

@@ -55,3 +55,21 @@ The Windows behavior follows
 [volume locking](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_lock_volume),
 [SCSI pass-through](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddscsi/ni-ntddscsi-ioctl_scsi_pass_through_direct),
 and [adapter transfer limits](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntddstor/ns-ntddstor-_storage_adapter_descriptor).
+
+## Native macOS and Linux updates, 2026-11-24
+
+For normal-mode firmware updates, verify the selected disk and the SCSI vendor,
+product and unit serial before publishing any firmware bytes. macOS matches
+the USB transport serial and mounted partition to one IOKit service, retains its
+interface, unmounts the selected partition normally and obtains exclusive access
+before checking SCSI identity. Linux binds the partition and SCSI generic node
+to one kernel disk sequence, checks SCSI identity, unmounts only that partition
+through UDisks2 and retains an exclusive whole-disk descriptor alongside the SCSI
+descriptor. It checks identity again after locking. Desktop authorization can
+grant a descriptor for that USB connection. Commands run in the user process.
+
+Busy volumes and failed identity checks stop the operation. The installer uses
+its existing pinned image and command journal on every Host. Native updates
+on macOS and Linux still require physical acceptance testing.
+[Apple SCSI exclusive access](https://developer.apple.com/documentation/iokit/scsitaskdeviceinterface/1575374-obtainexclusiveaccess)
+and [UDisks2 block access](https://storaged.org/doc/udisks2-api/latest/gdbus-org.freedesktop.UDisks2.Block.html).

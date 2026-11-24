@@ -20,7 +20,12 @@ from iOpenPod.app.firmware.bootloader_install import (
     UnlockProgress,
     UnlockStage,
 )
-from storage import StorageError, UsbControlEndpoint, UsbControlSession
+from storage import (
+    StorageError,
+    UsbControlAuthorizationError,
+    UsbControlEndpoint,
+    UsbControlSession,
+)
 from storage.host_files import lock_host_file
 
 IDENTITY = UnlockIdentity("8K123ABC9ZS", "MB565")
@@ -112,9 +117,12 @@ class FakeBundle:
 type Harness = tuple[BootloaderInstaller, FakeStorage, FakeDfu]
 
 
-@pytest.fixture
-def harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Harness:
+@pytest.fixture(params=["windows", "macos", "linux"])
+def harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Harness:
     storage = FakeStorage()
+    storage.platform_name = request.param
     dfu = FakeDfu(None, Event())
     monkeypatch.setattr(install, "SharedBootloaderBundle", FakeBundle)
     installer = BootloaderInstaller(
@@ -139,6 +147,28 @@ def test_install_once_verifies_and_reuses_initial_copy(
     receipt = json.loads((directory / "operation.json").read_bytes())
     assert receipt["state"] == "verified"
     assert receipt["report_hex"] == report(PLAN).hex()
+
+
+def test_result_permission_denial_stops_without_repeating_the_os_prompt(
+    harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installer, storage, dfu = harness
+    original_open = storage.open_usb_control_session
+    attempts = 0
+
+    def open_session(endpoint: UsbControlEndpoint) -> UsbControlSession:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            raise UsbControlAuthorizationError("USB access was not authorized")
+        return original_open(endpoint)
+
+    monkeypatch.setattr(storage, "open_usb_control_session", open_session)
+    with pytest.raises(UsbControlAuthorizationError):
+        installer.run(IDENTITY, Event(), lambda _progress: None)
+    assert attempts == 2 and dfu.downloads == 1
+    receipt = json.loads((tmp_path / IDENTITY.serial / "operation.json").read_bytes())
+    assert receipt["state"] == "handoff"
 
 
 def test_previous_custom_loader_is_upgraded_instead_of_reported_current(

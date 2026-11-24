@@ -20,6 +20,8 @@ config = tomllib.loads((root / "pyproject.toml").read_text())
 version = config["project"]["version"]
 datas = [(str(generated / "licenses"), "licenses")]
 datas += [(str(generated / "updates/installation.json"), "updates")]
+if sys.platform == "win32":
+    datas += [(str(generated / "storage-access/iOpenPod-storage-access.exe"), "storage-access")]
 if sys.platform != "darwin":
     helper = "iOpenPod-update.exe" if sys.platform == "win32" else "iOpenPod-update"
     datas += [(str(root / "dist" / helper), "updates")]
@@ -45,6 +47,9 @@ datas += collect_data_files(
 binaries = collect_dynamic_libs(
     "wasmtime", search_patterns=["*.dll", "*.dylib", "*.so"],
 )
+binaries += collect_dynamic_libs(
+    "libusb_package", search_patterns=["*.dll", "*.dylib", "*.so", "*.so.*"],
+)
 # Whenever loads tzdata's geographical resource packages dynamically on Windows.
 hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + collect_submodules("keyring.backends") + [
     "iOpenPod.app.synesthesia.dsp",
@@ -52,10 +57,12 @@ hiddenimports = collect_submodules("librosa") + collect_submodules("tzdata") + c
     "scipy.signal",
     "Crypto.PublicKey._ed25519",
     "Crypto.PublicKey._ed448",
+    "libusb_package",
 ]
 if sys.platform == "win32":
     # Media-key adapters intentionally load OS bindings only when needed.
     hiddenimports += collect_submodules("winrt") + [
+        "_iopenpod_storage_helper",
         "msvcrt",
         "winrt.windows.media",
         "winrt.windows.media.interop",
@@ -72,7 +79,7 @@ else:
     hiddenimports += ["fcntl"]
 a = Analysis(
     [str(root / "src/iOpenPod/__main__.py")],
-    pathex=[str(root / "src")],
+    pathex=[str(root / "src"), str(generated / "storage-access")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

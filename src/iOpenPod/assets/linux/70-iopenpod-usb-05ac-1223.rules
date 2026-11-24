@@ -1,0 +1,2 @@
+# Allow the active local desktop user to access this USB device.
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="05ac", ATTR{idProduct}=="1223", TAG+="uaccess"

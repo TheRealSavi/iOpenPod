@@ -174,6 +174,41 @@ def test_pinned_guid_identity_lock_alignment_and_cleanup(tmp_path: Path) -> None
         channel.execute(command)
 
 
+@pytest.mark.parametrize("error", [5, 32, 1167])
+def test_only_initial_access_denial_requests_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: int,
+) -> None:
+    from storage.platform import windows_scsi
+
+    kernel = _Kernel()
+    requests: list[tuple[str, int]] = []
+
+    def authorize(volume: str, disk: int) -> int:
+        requests.append((volume, disk))
+        assert kernel.controls == [] and kernel.commands == []
+        return 123
+
+    def denied_open(*_args: object) -> int | None:
+        return ctypes.c_void_p(-1).value
+
+    monkeypatch.setattr(kernel, "CreateFileW", denied_open)
+    monkeypatch.setattr(windows_scsi, "last_error", lambda: error)
+    monkeypatch.setattr(windows_scsi, "authorized_open", authorize)
+    if error == 5:
+        channel = WindowsScsiChannel.open(kernel, _observation(tmp_path), IDENTITY)
+        assert requests == [(GUID.rstrip("\\"), 2)]
+        assert kernel.controls.count(0x90018) == 1
+        assert len(kernel.commands) == 4
+        channel.close()
+        assert kernel.closed == [123]
+    else:
+        with pytest.raises(ScsiCommandError):
+            WindowsScsiChannel.open(kernel, _observation(tmp_path), IDENTITY)
+        assert requests == [] and kernel.controls == []
+
+
 @pytest.mark.parametrize("after_lock", [False, True])
 def test_serial_mismatch_never_sends_an_output_command(
     tmp_path: Path, after_lock: bool

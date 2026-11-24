@@ -21,6 +21,14 @@ class UsbControlError(StorageError):
     """A control transfer failed; its completion may be uncertain."""
 
 
+class UsbControlAuthorizationError(UsbControlError):
+    """Device access was denied. Another OS prompt requires a new user action."""
+
+
+class UsbControlDriverError(UsbControlError):
+    """No installed driver could open the selected USB control interface."""
+
+
 def _validate_endpoint_identity(
     interface_class: object, interface_path: object, instance_id: object
 ) -> None:

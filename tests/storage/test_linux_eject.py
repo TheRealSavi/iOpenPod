@@ -1,6 +1,7 @@
 # pyright: strict, reportPrivateUsage=false
 """Exercise the Linux eject adapter against the published UDisks D-Bus API."""
 
+import os
 from xml.etree import ElementTree
 
 import pytest
@@ -25,6 +26,57 @@ class _Reply:
         return [self.value]
 
 
+def test_update_lock_uses_only_the_selected_partition_and_whole_disk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from PySide6 import QtDBus
+
+    calls: list[str] = []
+
+    class Handle:
+        def isValid(self) -> bool:
+            return True
+
+        def takeFileDescriptor(self) -> int:
+            return 41
+
+    class Client(_QtUDisksClient):
+        def __init__(self) -> None:
+            pass
+
+        def resolve_block(self, device_path: str) -> str:
+            return _ROOT + "/block_devices/" + device_path.removeprefix("/dev/")
+
+        def _call(
+            self,
+            path: str,
+            interface: str,
+            method: str,
+            *args: object,
+            timeout_ms: int = 30_000,
+            interactive: bool = False,
+        ) -> object:
+            calls.append(method)
+            assert interactive
+            if method == "Unmount":
+                assert (
+                    path == _BLOCK and interface == self._FILESYSTEM and args == ({},)
+                )
+                return _Reply(None)
+            assert (
+                method == "OpenDevice"
+                and path == _BLOCK[:-1]
+                and interface == self._BLOCK
+            )
+            assert args == ("r", {"flags": os.O_EXCL | 0x80000})
+            return _Reply(Handle())
+
+    monkeypatch.setattr(QtDBus, "QDBusUnixFileDescriptor", Handle)
+    monkeypatch.setattr(os, "O_CLOEXEC", 0x80000, raising=False)
+    assert Client().lock_disk("sdb1", "sdb", lambda: calls.append("check")) == 41
+    assert calls == ["check", "Unmount", "OpenDevice"]
+
+
 class _ServiceClient(_QtUDisksClient):
     """Keep the real client policy and substitute only the D-Bus transport."""
 
@@ -47,6 +99,7 @@ class _ServiceClient(_QtUDisksClient):
         method: str,
         *arguments: object,
         timeout_ms: int = 30_000,
+        interactive: bool = False,
     ) -> object:
         if error := self.errors.get((path, method)):
             raise error

@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from importlib import metadata
+from importlib import import_module, metadata
 from pathlib import Path
 from typing import cast
 from xml.sax.saxutils import escape
@@ -194,6 +194,10 @@ def freeze() -> None:
     generate_assets()
     collect_notices()
     write_build_identity(ROOT, GENERATED, project_version())
+    if sys.platform == "win32":
+        from scripts.build_windows_access import build
+
+        build()
     if sys.platform != "darwin":
         subprocess.run(
             [
@@ -312,6 +316,11 @@ def stage_linux() -> Path:
         directory.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "packaging/linux" / filename, directory)
     icons = destination / "share/icons/hicolor/256x256/apps"
+    rules = destination / "lib/udev/rules.d"
+    rules.mkdir(parents=True)
+    shutil.copy2(
+        ROOT / "src/iOpenPod/assets/linux/70-iopenpod-usb-05ac-1223.rules", rules
+    )
     icons.mkdir(parents=True)
     shutil.copy2(
         ROOT / "src/iOpenPod/assets/icons/icon-256.png", icons / f"{APP_ID}.png"
@@ -483,9 +492,36 @@ def macos_dmg(app: Path, output: Path, version: str) -> Path:
     return output
 
 
+def check_frozen_firmware(root: Path, host: str) -> None:
+    """Catch a stale freeze even if its own older smoke test passes."""
+    member = "iOpenPod/assets/firmware/classic-shared/firmware.zlib"
+    expected = (root / "src" / member).read_bytes()
+    if host == "win32":
+        reader = import_module("PyInstaller.archive.readers").CArchiveReader(
+            str(root / "dist/iOpenPod.exe")
+        )
+        names = [key for key in reader.toc if key.replace("\\", "/") == member]
+        if len(names) != 1:
+            raise ValueError(
+                "The Windows executable lacks a unique bundled firmware image"
+            )
+        packaged = reader.extract(names[0])
+    else:
+        directory = {
+            "linux": "dist/iOpenPod/_internal",
+            "darwin": "dist/iOpenPod.app/Contents/Resources",
+        }[host]
+        packaged = (root / directory / member).read_bytes()
+    if packaged != expected:
+        raise ValueError(
+            "The frozen firmware differs from the release source. Rebuild iOpenPod."
+        )
+
+
 def archive() -> Path:
     from scripts.package_updates import managed_linux_archive
 
+    check_frozen_firmware(ROOT, sys.platform)
     version = project_version()
     system = {"win32": "Windows", "darwin": "macOS", "linux": "Linux"}[sys.platform]
     machine = platform.machine().lower()

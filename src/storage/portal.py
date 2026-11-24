@@ -82,6 +82,11 @@ class Storage:
     def platform_name(self) -> str:
         return self._platform.name
 
+    @property
+    def supports_scsi_sessions(self) -> bool:
+        """Whether this adapter implements exclusive command access to a Volume."""
+        return isinstance(self._platform, ScsiChannelProvider)
+
     def discover_usb_control(
         self,
         interface_class: uuid.UUID,
