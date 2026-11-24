@@ -1,6 +1,7 @@
 """Application Settings page composed from reusable setting rows."""
 
 import sys
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -81,6 +82,7 @@ from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
 from iOpenPod.GUI.widgets.settings_tab import SettingsTab
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton, ActionButtonKind
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 if TYPE_CHECKING:
     from iOpenPod.app.preferences_controller import PreferencesController
@@ -149,17 +151,17 @@ class SettingsPage(QWidget):
         self._dark_theme_combo = AppComboBox(self)
         self._dark_theme_combo.setObjectName("darkThemeCombo")
         self._dark_theme_row = SettingRow("", "", self._dark_theme_combo, self)
-        self._colorful_mode_combo = AppComboBox(self)
-        self._colorful_mode_combo.setObjectName("colorfulModeCombo")
+        self._colorful_mode_switch = ToggleSwitch(self)
+        self._colorful_mode_switch.setObjectName("colorfulModeSwitch")
         self._colorful_mode_row = SettingRow(
             "",
             "",
-            self._colorful_mode_combo,
+            self._colorful_mode_switch,
             self,
         )
-        self._itunes_artwork_combo = AppComboBox(self)
-        self._itunes_artwork_combo.setObjectName("itunes107ArtworkCombo")
-        self._itunes_artwork_row = SettingRow("", "", self._itunes_artwork_combo, self)
+        self._itunes_artwork_switch = ToggleSwitch(self)
+        self._itunes_artwork_switch.setObjectName("itunes107ArtworkSwitch")
+        self._itunes_artwork_row = SettingRow("", "", self._itunes_artwork_switch, self)
         self._track_title_bar_combo = AppComboBox(self)
         self._track_title_bar_combo.setObjectName("trackTitleBarStyleCombo")
         self._track_title_bar_row = SettingRow(
@@ -173,10 +175,10 @@ class SettingsPage(QWidget):
             self._player_position_combo,
             self,
         )
-        self._player_auto_minimize_combo = AppComboBox(self)
-        self._player_auto_minimize_combo.setObjectName("playerAutoMinimizeCombo")
+        self._player_auto_minimize_switch = ToggleSwitch(self)
+        self._player_auto_minimize_switch.setObjectName("playerAutoMinimizeSwitch")
         self._player_auto_minimize_row = SettingRow(
-            "", "", self._player_auto_minimize_combo, self
+            "", "", self._player_auto_minimize_switch, self
         )
         self._language_combo = AppComboBox(self)
         self._language_combo.setObjectName("languageCombo")
@@ -184,10 +186,10 @@ class SettingsPage(QWidget):
 
         self._library_title = QLabel(self)
         self._library_title.setObjectName("sectionTitle")
-        self._draft_all_changes_combo = AppComboBox(self)
-        self._draft_all_changes_combo.setObjectName("draftAllChangesCombo")
+        self._draft_all_changes_switch = ToggleSwitch(self)
+        self._draft_all_changes_switch.setObjectName("draftAllChangesSwitch")
         self._draft_all_changes_row = SettingRow(
-            "", "", self._draft_all_changes_combo, self
+            "", "", self._draft_all_changes_switch, self
         )
         library = SettingGroup(self)
         library.setMaximumWidth(960)
@@ -206,10 +208,10 @@ class SettingsPage(QWidget):
         self._double_click_row = SettingRow("", "", self._double_click_combo, self)
         library.add_row(self._double_click_row)
         library.add_row(self._draft_all_changes_row)
-        self._volume_presentation_combo = AppComboBox(self)
-        self._volume_presentation_combo.setObjectName("manageVolumePresentationCombo")
+        self._volume_presentation_switch = ToggleSwitch(self)
+        self._volume_presentation_switch.setObjectName("manageVolumePresentationSwitch")
         self._volume_presentation_row = SettingRow(
-            "", "", self._volume_presentation_combo, self
+            "", "", self._volume_presentation_switch, self
         )
         library.add_row(self._volume_presentation_row)
 
@@ -463,17 +465,18 @@ class SettingsPage(QWidget):
         self._mode_combo.currentIndexChanged.connect(self._mode_selected)
         self._light_theme_combo.currentIndexChanged.connect(self._light_theme_selected)
         self._dark_theme_combo.currentIndexChanged.connect(self._dark_theme_selected)
-        self._colorful_mode_combo.currentIndexChanged.connect(
-            self._colorful_mode_selected
-        )
-        self._itunes_artwork_combo.currentIndexChanged.connect(
-            self._itunes_artwork_selected
-        )
+        self._colorful_mode_switch.set_value(theme_manager.colorful_mode)
+        self._colorful_mode_switch.toggled.connect(theme_manager.set_colorful_mode)
+        for definition, switch in (
+            (ITUNES_107_ARTWORK, self._itunes_artwork_switch),
+            (PLAYER_AUTO_MINIMIZE, self._player_auto_minimize_switch),
+            (DRAFT_ALL_CHANGES, self._draft_all_changes_switch),
+            (MANAGE_VOLUME_PRESENTATION, self._volume_presentation_switch),
+        ):
+            switch.set_value(settings.get(definition))
+            switch.toggled.connect(partial(settings.set_global, definition))
         self._player_position_combo.currentIndexChanged.connect(
             self._player_position_selected
-        )
-        self._player_auto_minimize_combo.currentIndexChanged.connect(
-            self._player_auto_minimize_selected
         )
         self._track_title_bar_combo.currentIndexChanged.connect(
             self._track_title_bar_selected
@@ -481,12 +484,6 @@ class SettingsPage(QWidget):
         self._language_combo.currentIndexChanged.connect(self._language_selected)
         self._navigation_style_combo.currentIndexChanged.connect(
             self._navigation_style_selected
-        )
-        self._draft_all_changes_combo.currentIndexChanged.connect(
-            self._draft_all_changes_selected
-        )
-        self._volume_presentation_combo.currentIndexChanged.connect(
-            self._volume_presentation_selected
         )
         self._choose_backup_location.clicked.connect(self._choose_backup_folder)
         self._check_udev_rule.clicked.connect(self._inspect_udev_rule)
@@ -505,7 +502,7 @@ class SettingsPage(QWidget):
         theme_manager.darkThemeChanged.connect(self._sync_dark_theme_selection)
         theme_manager.effectiveThemeChanged.connect(self._update_credits)
         theme_manager.effectiveThemeChanged.connect(self._update_donation_icon)
-        theme_manager.colorfulModeChanged.connect(self._sync_colorful_mode_selection)
+        theme_manager.colorfulModeChanged.connect(self._colorful_mode_switch.set_value)
         theme_manager.trackTitleBarStyleChanged.connect(
             self._sync_track_title_bar_selection
         )
@@ -726,8 +723,6 @@ class SettingsPage(QWidget):
         self._rebuild_player_position_options()
         self._rebuild_language_options()
         self._rebuild_backup_options()
-        self._rebuild_draft_all_changes_options()
-        self._rebuild_volume_presentation_options()
         self._rebuild_navigation_style_options()
         self._rebuild_ipod_view_mode_options()
         self._rebuild_double_click_options()
@@ -860,9 +855,6 @@ class SettingsPage(QWidget):
                 self._mode_combo,
                 self._light_theme_combo,
                 self._dark_theme_combo,
-                self._colorful_mode_combo,
-                self._itunes_artwork_combo,
-                self._player_auto_minimize_combo,
                 self._track_title_bar_combo,
             )
         )
@@ -905,17 +897,6 @@ class SettingsPage(QWidget):
         )
         self._dark_theme_combo.addItem(self.tr("Orchid"), DarkTheme.ORCHID.value)
         self._dark_theme_combo.addItem(self.tr("Tech"), DarkTheme.TECH.value)
-        self._colorful_mode_combo.clear()
-        self._colorful_mode_combo.addItem(self.tr("Off"), False)
-        self._colorful_mode_combo.addItem(self.tr("On"), True)
-        self._itunes_artwork_combo.clear()
-        self._itunes_artwork_combo.addItem(self.tr("Off"), False)
-        self._itunes_artwork_combo.addItem(self.tr("On"), True)
-        self._sync_itunes_artwork(self._settings.get(ITUNES_107_ARTWORK))
-        self._player_auto_minimize_combo.clear()
-        self._player_auto_minimize_combo.addItem(self.tr("Off"), False)
-        self._player_auto_minimize_combo.addItem(self.tr("On"), True)
-        self._sync_player_auto_minimize(self._settings.get(PLAYER_AUTO_MINIMIZE))
         self._track_title_bar_combo.clear()
         self._track_title_bar_combo.addItem(
             self.tr("Flat"), TrackTitleBarStyle.FLAT.value
@@ -926,7 +907,6 @@ class SettingsPage(QWidget):
         self._sync_mode_selection(self._theme_manager.mode.value)
         self._sync_light_theme_selection(self._theme_manager.light_theme.value)
         self._sync_dark_theme_selection(self._theme_manager.dark_theme.value)
-        self._sync_colorful_mode_selection(self._theme_manager.colorful_mode)
         self._sync_track_title_bar_selection(
             self._theme_manager.track_title_bar_style.value
         )
@@ -962,14 +942,6 @@ class SettingsPage(QWidget):
                 *((str(count), count) for count in (1, 3, 5, 10, 20)),
             )
         )
-
-    def _rebuild_draft_all_changes_options(self) -> None:
-        blocker = QSignalBlocker(self._draft_all_changes_combo)
-        self._draft_all_changes_combo.clear()
-        self._draft_all_changes_combo.addItem(self.tr("Off"), False)
-        self._draft_all_changes_combo.addItem(self.tr("On"), True)
-        self._sync_draft_all_changes(self._settings.get(DRAFT_ALL_CHANGES))
-        del blocker
 
     def _rebuild_navigation_style_options(self) -> None:
         blocker = QSignalBlocker(self._navigation_style_combo)
@@ -1008,62 +980,6 @@ class SettingsPage(QWidget):
             )
         )
 
-    def _rebuild_volume_presentation_options(self) -> None:
-        blocker = QSignalBlocker(self._volume_presentation_combo)
-        self._volume_presentation_combo.clear()
-        self._volume_presentation_combo.addItem(self.tr("Off"), False)
-        self._volume_presentation_combo.addItem(self.tr("On"), True)
-        self._sync_volume_presentation(self._settings.get(MANAGE_VOLUME_PRESENTATION))
-        del blocker
-
-    def _sync_player_auto_minimize(self, enabled: bool) -> None:
-        blocker = QSignalBlocker(self._player_auto_minimize_combo)
-        self._player_auto_minimize_combo.setCurrentIndex(
-            self._player_auto_minimize_combo.findData(enabled)
-        )
-        del blocker
-
-    def _player_auto_minimize_selected(self, index: int) -> None:
-        value = self._player_auto_minimize_combo.itemData(index)
-        if isinstance(value, bool):
-            self._settings.set_global(PLAYER_AUTO_MINIMIZE, value)
-
-    def _sync_itunes_artwork(self, enabled: bool) -> None:
-        blocker = QSignalBlocker(self._itunes_artwork_combo)
-        self._itunes_artwork_combo.setCurrentIndex(
-            self._itunes_artwork_combo.findData(enabled)
-        )
-        del blocker
-
-    def _itunes_artwork_selected(self, index: int) -> None:
-        value = self._itunes_artwork_combo.itemData(index)
-        if isinstance(value, bool):
-            self._settings.set_global(ITUNES_107_ARTWORK, value)
-
-    def _sync_volume_presentation(self, enabled: bool) -> None:
-        blocker = QSignalBlocker(self._volume_presentation_combo)
-        self._volume_presentation_combo.setCurrentIndex(
-            self._volume_presentation_combo.findData(enabled)
-        )
-        del blocker
-
-    def _volume_presentation_selected(self, index: int) -> None:
-        value = self._volume_presentation_combo.itemData(index)
-        if isinstance(value, bool):
-            self._settings.set_global(MANAGE_VOLUME_PRESENTATION, value)
-
-    def _sync_draft_all_changes(self, enabled: bool) -> None:
-        blocker = QSignalBlocker(self._draft_all_changes_combo)
-        self._draft_all_changes_combo.setCurrentIndex(
-            self._draft_all_changes_combo.findData(enabled)
-        )
-        del blocker
-
-    def _draft_all_changes_selected(self, index: int) -> None:
-        value = self._draft_all_changes_combo.itemData(index)
-        if isinstance(value, bool):
-            self._settings.set_global(DRAFT_ALL_CHANGES, value)
-
     def _sync_mode_selection(self, mode_value: str) -> None:
         blocker = QSignalBlocker(self._mode_combo)
         index = self._mode_combo.findData(mode_value)
@@ -1082,12 +998,6 @@ class SettingsPage(QWidget):
         self._dark_theme_combo.setCurrentIndex(max(0, index))
         del blocker
 
-    def _sync_colorful_mode_selection(self, enabled: bool) -> None:
-        blocker = QSignalBlocker(self._colorful_mode_combo)
-        index = self._colorful_mode_combo.findData(enabled)
-        self._colorful_mode_combo.setCurrentIndex(max(0, index))
-        del blocker
-
     def _mode_selected(self, index: int) -> None:
         value = self._mode_combo.itemData(index)
         if isinstance(value, str):
@@ -1102,11 +1012,6 @@ class SettingsPage(QWidget):
         value = self._dark_theme_combo.itemData(index)
         if isinstance(value, str):
             self._theme_manager.set_dark_theme(DarkTheme(value))
-
-    def _colorful_mode_selected(self, index: int) -> None:
-        value = self._colorful_mode_combo.itemData(index)
-        if isinstance(value, bool):
-            self._theme_manager.set_colorful_mode(value)
 
     def _player_position_selected(self, index: int) -> None:
         value = self._player_position_combo.itemData(index)
@@ -1202,15 +1107,15 @@ class SettingsPage(QWidget):
 
     def _setting_changed(self, key: str, value: object) -> None:
         if key == DRAFT_ALL_CHANGES.key and isinstance(value, bool):
-            self._sync_draft_all_changes(value)
+            self._draft_all_changes_switch.set_value(value)
         elif key == MANAGE_VOLUME_PRESENTATION.key and isinstance(value, bool):
-            self._sync_volume_presentation(value)
+            self._volume_presentation_switch.set_value(value)
         elif key == ITUNES_107_ARTWORK.key and isinstance(value, bool):
-            self._sync_itunes_artwork(value)
+            self._itunes_artwork_switch.set_value(value)
         elif key == PLAYER_POSITION.key and isinstance(value, str):
             self._sync_player_position_selection(value)
         elif key == PLAYER_AUTO_MINIMIZE.key and isinstance(value, bool):
-            self._sync_player_auto_minimize(value)
+            self._player_auto_minimize_switch.set_value(value)
         elif key == NAVIGATION_STYLE.key and isinstance(value, str):
             self._sync_navigation_style_selection(value)
         elif key == BACKUP_LOCATION.key and isinstance(value, str):

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 
 class SettingGroup(QFrame):
@@ -43,7 +44,9 @@ class SettingRow(QWidget):
         self.control = control
         self._title = QLabel(title, self)
         self._title.setObjectName("settingLabel")
+        buddy = control.focusProxy() or control
         self._title.setBuddy(control)
+        self._switch = buddy if isinstance(buddy, ToggleSwitch) else None
         self._description = QLabel(description, self)
         self._description.setObjectName("settingDescription")
         self._description.setWordWrap(True)
@@ -60,9 +63,16 @@ class SettingRow(QWidget):
         self._scope_hint.hide()
         copy_layout.addWidget(self._scope_hint)
 
-        control.setMinimumWidth(220)
-        control.setMaximumWidth(320)
-        control.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        if self._switch is not None:
+            control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            self._switch.setAccessibleName(title)
+            self._switch.setAccessibleDescription(description)
+        else:
+            control.setMinimumWidth(220)
+            control.setMaximumWidth(320)
+            control.setSizePolicy(
+                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+            )
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(
@@ -102,6 +112,9 @@ class SettingRow(QWidget):
         self._title.setText(title)
         self._description.setText(description)
         self._description.setVisible(bool(description))
+        if self._switch is not None:
+            self._switch.setAccessibleName(title)
+            self._switch.setAccessibleDescription(description)
         self._update_minimum_height()
 
     def set_scope_hint(self, text: str, *, warning: bool = False) -> None:

@@ -1,13 +1,20 @@
 """Scope-aware settings editing, separate from the application's effective values."""
 
-from collections.abc import Sequence
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QSignalBlocker, Signal
 
-from iOpenPod.app.core.settings.definitions import SettingDefinition
 from iOpenPod.app.core.settings.service import SettingSource, SettingsService
-from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
-from iOpenPod.GUI.widgets.setting_group import SettingRow
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from iOpenPod.app.core.settings.definitions import SettingDefinition
+    from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
+    from iOpenPod.GUI.widgets.setting_group import SettingRow
+    from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 
 class SettingsEditor(QObject):
@@ -45,15 +52,20 @@ class ScopedSettingBinding[Value](QObject):
         definition: SettingDefinition[Value],
         row: SettingRow,
         combo: AppComboBox,
+        *,
+        host_switch: ToggleSwitch | None = None,
     ) -> None:
         super().__init__(row)
         self._editor = editor
         self._definition = definition
         self._row = row
         self._combo = combo
+        self._host_switch = host_switch
         self._choices: tuple[tuple[str, Value], ...] = ()
         editor.changed.connect(self.refresh)
         combo.currentIndexChanged.connect(self._selected)
+        if host_switch is not None:
+            host_switch.toggled.connect(self._host_toggled)
 
     def configure(
         self,
@@ -70,46 +82,63 @@ class ScopedSettingBinding[Value](QObject):
             return
         settings = self._editor.settings
         definition = self._definition
+        device = self._editor.device
         # Observe effective values so device selection notifies runtime consumers too.
         effective = settings.get(definition)
         host = settings.get_global(definition)
         value = self._editor.get(definition)
         overridden = (
             settings.device_edit_value(definition)[1]
-            if self._editor.device
+            if device
             else settings.source(definition) is SettingSource.DEVICE
         )
-        host_label = next(
-            (label for label, item in self._choices if item == host), str(host)
-        )
-        blocker = QSignalBlocker(self._combo)
-        self._combo.clear()
-        if self._editor.device:
-            self._combo.addItem(
-                self.tr("Use Host · %1").replace("%1", host_label), None
+        switch = self._host_switch
+        if switch is not None and isinstance(host, bool):
+            switch.set_value(host)
+            active, inactive = (
+                (self._combo, switch) if device else (switch, self._combo)
             )
-        for label, item in self._choices:
-            self._combo.addItem(label, item)
-        if self._combo.findData(value) < 0:
-            self._combo.addItem(str(value), value)
-        self._combo.setCurrentIndex(
-            0 if self._editor.device and not overridden else self._combo.findData(value)
-        )
-        self._set_enabled(not self._editor.device or settings.device_writable)
+            if inactive.hasFocus():
+                self._row.setFocus()
+            inactive.hide()
+            active.show()
+            self._row.control.setFocusProxy(active)
+        if switch is None or device:
+            self._refresh_combo(host, value, device=device, overridden=overridden)
+        self._set_enabled(not device or settings.device_writable)
+
         hint = ""
-        if self._editor.device:
+        if device:
             if not overridden:
                 hint = self.tr("Following Host changes automatically")
         elif overridden:
-            device_label = next(
-                (label for label, item in self._choices if item == effective),
-                str(effective),
-            )
             hint = self.tr("The Active iPod has its own override. Set to: %1.").replace(
-                "%1", device_label
+                "%1", self._label(effective)
             )
-        self._row.set_scope_hint(hint, warning=not self._editor.device and overridden)
-        del blocker
+        self._row.set_scope_hint(hint, warning=not device and overridden)
+
+    def _label(self, value: Value) -> str:
+        return next(
+            (label for label, item in self._choices if item == value), str(value)
+        )
+
+    def _refresh_combo(
+        self, host: Value, value: Value, *, device: bool, overridden: bool
+    ) -> None:
+        combo = self._combo
+        with QSignalBlocker(combo):
+            combo.clear()
+            if device:
+                combo.addItem(
+                    self.tr("Use Host · %1").replace("%1", self._label(host)), None
+                )
+            for label, item in self._choices:
+                combo.addItem(label, item)
+            if combo.findData(value) < 0:
+                combo.addItem(str(value), value)
+            combo.setCurrentIndex(
+                0 if device and not overridden else combo.findData(value)
+            )
 
     def _set_enabled(self, enabled: bool) -> None:
         if not enabled and self._combo.hasFocus():
@@ -119,7 +148,7 @@ class ScopedSettingBinding[Value](QObject):
             self._row.setFocus()
         self._combo.setEnabled(enabled)
         if enabled and self._row.hasFocus():
-            self._combo.setFocus()
+            self._row.control.setFocus()
 
     def _selected(self, index: int) -> None:
         if index < 0:
@@ -133,5 +162,9 @@ class ScopedSettingBinding[Value](QObject):
                 settings.reset_device(self._definition)
             elif self._definition.validate(value):
                 settings.set_device(self._definition, value)
-        elif self._definition.validate(value):
+        elif self._host_switch is None and self._definition.validate(value):
             settings.set_global(self._definition, value)
+
+    def _host_toggled(self, value: bool) -> None:
+        if not self._editor.device and self._definition.validate(value):
+            self._editor.settings.set_global(self._definition, value)

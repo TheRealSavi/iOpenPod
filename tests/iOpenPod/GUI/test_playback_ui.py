@@ -52,9 +52,9 @@ from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets import player_bar as player_bar_module
-from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 from iOpenPod.GUI.widgets.track_table import TrackTable
 from iPodDB.library import LibrarySnapshot, Playlist, Track, playlist_entries
 
@@ -867,13 +867,13 @@ def test_player_auto_minimize_setting_applies_live_and_on_startup(
         assert player is not None and surface is not None and settings is not None
         appearance = settings.findChild(QScrollArea, "appearanceSettingsScroll")
         assert appearance is not None
-        combo = appearance.findChild(AppComboBox, "playerAutoMinimizeCombo")
-        assert combo is not None and combo.currentData() is (not saved_off)
+        combo = appearance.findChild(ToggleSwitch, "playerAutoMinimizeSwitch")
+        assert combo is not None and combo.isChecked() is (not saved_off)
         assert player.height() == (
             LAYOUT.player_height if saved_off else LAYOUT.player_idle_height
         )
 
-        combo.setCurrentIndex(combo.findData(False))
+        combo.setChecked(False)
         QTest.qWait(LAYOUT.player_transition_ms + 40)
         assert context.settings.get(PLAYER_AUTO_MINIMIZE) is False
         assert surface.isVisible() and surface.property("playbackState") == "idle"
@@ -886,11 +886,11 @@ def test_player_auto_minimize_setting_applies_live_and_on_startup(
         assert play is not None and not play.isEnabled()
         changes = QSignalSpy(context.settings.settingChanged)
         APPLICATION.sendEvent(settings, QEvent(QEvent.Type.LanguageChange))
-        assert combo.currentData() is False and changes.count() == 0
+        assert not combo.isChecked() and changes.count() == 0
 
         track = build_tracks(1)[0]
         context.playback_controller.enqueue(track)
-        combo.setCurrentIndex(combo.findData(True))
+        combo.setChecked(True)
         context.playback_controller.toggle_play_pause()
         QTest.qWait(LAYOUT.player_transition_ms + 40)
         assert player.track == track and surface.isVisible()
@@ -899,7 +899,7 @@ def test_player_auto_minimize_setting_applies_live_and_on_startup(
         QTest.qWait(LAYOUT.player_transition_ms + 40)
         assert player.height() == LAYOUT.player_idle_height and surface.isHidden()
 
-        combo.setCurrentIndex(combo.findData(False))
+        combo.setChecked(False)
         QTest.qWait(LAYOUT.player_transition_ms + 40)
         assert player.height() == LAYOUT.player_height
         queue_toggle = player.findChild(IconButton, "playerQueueToggle")
@@ -912,9 +912,7 @@ def test_player_auto_minimize_setting_applies_live_and_on_startup(
         QTest.qWait(
             max(LAYOUT.player_transition_ms, LAYOUT.playback_pane_animation_ms) + 40
         )
-        assert (
-            combo.currentData() is True and player.height() == LAYOUT.player_idle_height
-        )
+        assert combo.isChecked() and player.height() == LAYOUT.player_idle_height
         assert not queue_toggle.isChecked() and queue_pane.isHidden()
     finally:
         window.close()

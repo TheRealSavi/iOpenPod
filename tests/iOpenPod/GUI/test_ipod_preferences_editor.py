@@ -209,6 +209,38 @@ def test_unknown_preferences_are_kept_until_an_explicit_edit() -> None:
         view.close()
 
 
+@pytest.mark.parametrize("raw", (0, 255))
+def test_native_binary_preference_uses_labelled_firmware_values(raw: int) -> None:
+    controller = _Controller()
+    section = controller.view.sections[0]
+    preference = IPodPreference(
+        "fit_to_screen_disabled",
+        "Fit to screen",
+        "On" if raw == 0 else "Unknown (255)",
+        IPodPreferenceEditSpec(
+            raw, choices=(IPodPreferenceChoice(0, "On"), IPodPreferenceChoice(1, "Off"))
+        ),
+    )
+    controller.view = replace(
+        controller.view, sections=(replace(section, rows=(preference,)),)
+    )
+    view = IPodPreferencesView(controller=controller)
+    name = "ipodPreference_device_fit_to_screen_disabled"
+    try:
+        apply = _find(view, QPushButton, "ipodPreferencesApply")
+        assert not apply.isEnabled()
+        combo = _find(view, AppComboBox, name)
+        assert combo.currentText() == ("On" if raw == 0 else "Keep current setting")
+        combo.setCurrentIndex(combo.findData(1))
+        assert not controller.edits
+        apply.click()
+        assert controller.edits == [
+            (IPodPreferenceEdit("device", "fit_to_screen_disabled", 1),)
+        ]
+    finally:
+        view.close()
+
+
 def test_numeric_unknown_can_be_explicitly_changed_or_reverted_without_clamping() -> (
     None
 ):

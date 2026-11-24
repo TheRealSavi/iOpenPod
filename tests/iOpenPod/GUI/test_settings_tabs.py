@@ -41,6 +41,7 @@ from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
 from iOpenPod.GUI.widgets.setting_group import SettingRow
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 
 @pytest.fixture
@@ -70,10 +71,11 @@ def test_multiline_setting_descriptions_fit_their_rows(
     tabs.setCurrentWidget(scroll)
     APPLICATION.processEvents()
 
-    control = scroll.findChild(AppComboBox, control_name)
+    control = scroll.findChild(QWidget, control_name)
     assert control is not None
-    row = control.parentWidget()
-    assert isinstance(row, SettingRow)
+    row = next(
+        row for row in scroll.findChildren(SettingRow) if row.isAncestorOf(control)
+    )
     description = row.findChild(QLabel, "settingDescription")
     assert description is not None and description.isVisible()
     required_height = description.heightForWidth(description.width())
@@ -291,17 +293,17 @@ def test_drive_appearance_setting_defaults_on_and_updates_live(
     try:
         library = page.findChild(QScrollArea, "librarySettingsScroll")
         assert library is not None
-        control = library.findChild(AppComboBox, "manageVolumePresentationCombo")
-        assert control is not None and control.currentData() is True
+        control = library.findChild(ToggleSwitch, "manageVolumePresentationSwitch")
+        assert control is not None and control.isChecked()
         assert context.device_coordinator.volume_presentation_enabled
-        control.setCurrentIndex(control.findData(False))
+        control.setChecked(False)
         assert context.settings.get(MANAGE_VOLUME_PRESENTATION) is False
         assert not context.device_coordinator.volume_presentation_enabled
         changes = QSignalSpy(context.settings.settingChanged)
         APPLICATION.sendEvent(page, QEvent(QEvent.Type.LanguageChange))
-        assert control.currentData() is False and changes.count() == 0
+        assert not control.isChecked() and changes.count() == 0
         context.settings.reset_global(MANAGE_VOLUME_PRESENTATION)
-        assert control.currentData() is True
+        assert control.isChecked()
         assert context.device_coordinator.volume_presentation_enabled
     finally:
         page.close()

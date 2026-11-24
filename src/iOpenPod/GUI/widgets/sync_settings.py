@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from iOpenPod.app.core.settings.definitions import (
     ANALYZE_FOR_GENIUS,
@@ -51,11 +52,13 @@ from iOpenPod.app.scrobbling.settings import (
     SCROBBLE_RATINGS,
 )
 from iOpenPod.GUI.dialogs.podcast_sync_settings import PodcastSyncSettingsDialog
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.setting_group import SettingGroup, SettingRow
 from iOpenPod.GUI.widgets.settings_editor import ScopedSettingBinding, SettingsEditor
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -86,6 +89,45 @@ class _Choice[Value](SettingRow):
         self._binding.configure(choices, definition)
 
 
+class _Toggle(SettingRow):
+    def __init__(
+        self,
+        settings: SettingsEditor,
+        definition: SettingDefinition[bool],
+        name: str,
+        parent: QWidget,
+    ) -> None:
+        controls = QWidget(parent)
+        switch = ToggleSwitch(controls)
+        switch.setObjectName(name)
+        self._combo = AppComboBox(controls)
+        self._combo.setObjectName(f"{name}Combo")
+        self._combo.setMinimumWidth(220)
+        self._combo.setMaximumWidth(320)
+        layout = QHBoxLayout(controls)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(switch, alignment=Qt.AlignmentFlag.AlignTrailing)
+        layout.addWidget(self._combo)
+        controls.setFocusProxy(switch)
+        super().__init__("", "", controls, parent)
+        self._binding = ScopedSettingBinding(
+            settings, definition, self, self._combo, host_switch=switch
+        )
+        self.configure()
+
+    def set_copy(self, title: str, description: str) -> None:
+        super().set_copy(title, description)
+        self._combo.setAccessibleName(title)
+        self._combo.setAccessibleDescription(description)
+        self.configure()
+
+    def configure(self, definition: SettingDefinition[bool] | None = None) -> None:
+        self._binding.configure(
+            ((workflow_text("On"), True), (workflow_text("Off"), False)),
+            definition,
+        )
+
+
 class SyncSettings(QWidget):
     """Optional Sync behavior, persisted through the shared Settings service."""
 
@@ -108,27 +150,27 @@ class SyncSettings(QWidget):
         self._refresh_podcast_scope()
         self._title = QLabel(self)
         self._title.setObjectName("sectionTitle")
-        self._sound_check = _Choice(
+        self._sound_check = _Toggle(
             scope, COMPUTE_SOUND_CHECK, "computeSoundCheck", self
         )
-        self._genius = _Choice(scope, ANALYZE_FOR_GENIUS, "analyzeForGenius", self)
-        self._ratings = _Choice(scope, BACK_SYNC_RATINGS, "backSyncRatings", self)
+        self._genius = _Toggle(scope, ANALYZE_FOR_GENIUS, "analyzeForGenius", self)
+        self._ratings = _Toggle(scope, BACK_SYNC_RATINGS, "backSyncRatings", self)
         self._rating_policy = _Choice(
             scope, RATING_CONFLICT_POLICY, "ratingConflictPolicy", self
         )
-        self._bpm = _Choice(scope, COMPUTE_MISSING_BPM, "computeMissingBpm", self)
-        self._normalize = _Choice(
+        self._bpm = _Toggle(scope, COMPUTE_MISSING_BPM, "computeMissingBpm", self)
+        self._normalize = _Toggle(
             scope, NORMALIZE_TAGS_AFTER_SYNC, "normalizeTagsAfterSync", self
         )
-        self._rotate = _Choice(scope, ROTATE_TALL_PHOTOS, "rotateTallPhotos", self)
-        self._fit = _Choice(scope, FIT_THUMBNAILS, "fitThumbnails", self)
-        self._rockbox = _Choice(
+        self._rotate = _Toggle(scope, ROTATE_TALL_PHOTOS, "rotateTallPhotos", self)
+        self._fit = _Toggle(scope, FIT_THUMBNAILS, "fitThumbnails", self)
+        self._rockbox = _Toggle(
             scope, ROCKBOX_METADATA_SUPPORT, "rockboxMetadataSupport", self
         )
-        self._scrobble = _Choice(
+        self._scrobble = _Toggle(
             scope, SCROBBLE_DURING_SYNC, "scrobbleDuringSync", self
         )
-        self._scrobble_ratings = _Choice(
+        self._scrobble_ratings = _Toggle(
             scope, SCROBBLE_RATINGS, "scrobbleRatings", self
         )
         self._rows = (
@@ -169,8 +211,6 @@ class SyncSettings(QWidget):
                 "Existing podcasts keep their own settings."
             ),
         )
-        for row in self._rows:
-            row.configure(((self.tr("Off"), False), (self.tr("On"), True)))
         self._scrobble.set_copy(
             self.tr("Scrobble during Sync"),
             self.tr(
@@ -327,28 +367,28 @@ class TranscodingSettings(QWidget):
             "vbrQuality",
             self,
         )
-        self._lossless = _Choice(
+        self._lossless = _Toggle(
             self._settings,
             TRANSCODE_LOSSLESS_TO_LOSSY,
             "transcodeLosslessToLossy",
             self,
         )
-        self._lossy = _Choice(
+        self._lossy = _Toggle(
             self._settings, RETRANSCODE_LOSSY, "retranscodeLossy", self
         )
-        self._alac = _Choice(
+        self._alac = _Toggle(
             self._settings, TRANSCODE_PCM_TO_ALAC, "transcodePcmToAlac", self
         )
-        self._sample_rate = _Choice(
+        self._sample_rate = _Toggle(
             self._settings, NORMALIZE_SAMPLE_RATE, "normalizeSampleRate", self
         )
-        self._smart = _Choice(
+        self._smart = _Toggle(
             self._settings,
             SMART_QUALITY_BY_CONTENT_TYPE,
             "smartQualityByContentType",
             self,
         )
-        self._mono = _Choice(self._settings, SPOKEN_WORD_MONO, "spokenWordMono", self)
+        self._mono = _Toggle(self._settings, SPOKEN_WORD_MONO, "spokenWordMono", self)
         self._spoken_bitrate = _Choice(
             self._settings, SPOKEN_WORD_BITRATE, "spokenWordBitrate", self
         )
@@ -358,42 +398,29 @@ class TranscodingSettings(QWidget):
             "bandwidthCutoff",
             self,
         )
-        self._afterburner = _Choice(
+        self._afterburner = _Toggle(
             self._settings,
             encoder_option(LossyEncoder.FDK_AAC, "afterburner"),
             "encoderAfterburner",
             self,
         )
-        self._tns = _Choice(
+        self._tns = _Toggle(
             self._settings, encoder_option(LossyEncoder.AAC, "tns"), "encoderTns", self
         )
-        self._pns = _Choice(
+        self._pns = _Toggle(
             self._settings, encoder_option(LossyEncoder.AAC, "pns"), "encoderPns", self
         )
-        self._mid_side = _Choice(
+        self._mid_side = _Toggle(
             self._settings,
             encoder_option(LossyEncoder.AAC, "mid-side-stereo"),
             "encoderMidSideStereo",
             self,
         )
-        self._intensity = _Choice(
+        self._intensity = _Toggle(
             self._settings,
             encoder_option(LossyEncoder.AAC, "intensity-stereo"),
             "encoderIntensityStereo",
             self,
-        )
-        self._boolean_rows = (
-            self._lossless,
-            self._lossy,
-            self._alac,
-            self._sample_rate,
-            self._smart,
-            self._mono,
-            self._afterburner,
-            self._tns,
-            self._pns,
-            self._mid_side,
-            self._intensity,
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -455,8 +482,6 @@ class TranscodingSettings(QWidget):
                 (self.tr("High Quality"), "high"),
             )
         )
-        for row in self._boolean_rows:
-            row.configure(((self.tr("Off"), False), (self.tr("On"), True)))
         self._spoken_bitrate.configure(
             tuple((f"{value} kbps", value) for value in (32, 48, 64, 80, 96))
         )
@@ -629,7 +654,6 @@ class TranscodingSettings(QWidget):
             row.setVisible(encoder is LossyEncoder.AAC)
         self._mid_side.setVisible(encoder in (LossyEncoder.AAC, LossyEncoder.MP3))
         self._mid_side.configure(
-            ((self.tr("Off"), False), (self.tr("On"), True)),
             encoder_option(
                 LossyEncoder.MP3 if encoder is LossyEncoder.MP3 else LossyEncoder.AAC,
                 "mid-side-stereo",

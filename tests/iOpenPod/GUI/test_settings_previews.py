@@ -34,6 +34,7 @@ from iOpenPod.GUI.widgets.settings_tab import (
     SettingsPreview,
     SettingsTab,
 )
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 
 @pytest.fixture
@@ -220,7 +221,7 @@ def test_dropdown_opened_in_narrow_layout_gains_preview_when_widened(
     combo.hidePopup()
 
 
-def test_unillustrated_row_and_its_dropdown_leave_the_space_blank(
+def test_unillustrated_switch_leaves_the_space_blank(
     page: SettingsPage,
 ) -> None:
     tabs = page.findChild(QTabWidget, "settingsTabs")
@@ -229,7 +230,7 @@ def test_unillustrated_row_and_its_dropdown_leave_the_space_blank(
     tabs.setCurrentWidget(tab)
     _settle()
     navigation = tab.findChild(AppComboBox, "navigationStyleCombo")
-    draft = tab.findChild(AppComboBox, "draftAllChangesCombo")
+    draft = tab.findChild(ToggleSwitch, "draftAllChangesSwitch")
     assert navigation is not None and draft is not None
     illustrated_row, plain_row = navigation.parentWidget(), draft.parentWidget()
     assert isinstance(illustrated_row, SettingRow) and isinstance(plain_row, SettingRow)
@@ -238,10 +239,36 @@ def test_unillustrated_row_and_its_dropdown_leave_the_space_blank(
     APPLICATION.sendEvent(illustrated_row, QEvent(QEvent.Type.Leave))
     _enter(plain_row)
     assert _example(tab) is None
-    draft.showPopup()
+    draft.click()
     _settle()
     assert _example(tab) is None
-    draft.hidePopup()
+
+
+def test_illustrated_switch_updates_the_visible_preview(page: SettingsPage) -> None:
+    tab = _appearance(page)
+    switch = tab.findChild(ToggleSwitch, "colorfulModeSwitch")
+    assert switch is not None
+    row = switch.parentWidget()
+    assert isinstance(row, SettingRow)
+    _enter(row)
+    off = _example(tab)
+    assert off is not None and off.value == "False"
+    switch.click()
+    _settle()
+    QTest.qWait(220)
+    on = _example(tab)
+    assert on is not None and on.value == "True"
+
+
+def _setting_examples(page: SettingsPage) -> Iterator[SettingExample]:
+    for combo in page.findChildren(AppComboBox):
+        for index in range(combo.count()):
+            yield SettingExample(
+                combo.objectName(), "", "", "", value=str(combo.itemData(index))
+            )
+    for switch in page.findChildren(ToggleSwitch):
+        for checked in (False, True):
+            yield SettingExample(switch.objectName(), "", "", "", value=str(checked))
 
 
 @pytest.mark.parametrize("background", ["#f2f3f6", "#12171d"])
@@ -250,16 +277,12 @@ def test_each_illustrated_choice_has_a_packaged_image(
 ) -> None:
     palette = QPalette(page.palette())
     palette.setColor(QPalette.ColorRole.Window, QColor(background))
-    for combo in page.findChildren(AppComboBox):
-        for index in range(combo.count()):
-            example = SettingExample(
-                combo.objectName(), "", "", "", value=str(combo.itemData(index))
-            )
-            if has_setting_image(example):
-                capture = setting_image(example, palette)
-                assert not capture.isNull(), (combo.objectName(), example.value)
-                if example.key != "languageCombo":
-                    assert capture.width() >= 1500
+    for example in _setting_examples(page):
+        if has_setting_image(example):
+            capture = setting_image(example, palette)
+            assert not capture.isNull(), (example.key, example.value)
+            if example.key != "languageCombo":
+                assert capture.width() >= 1500
 
 
 def test_general_previews_follow_palette_but_theme_previews_keep_their_theme(
@@ -270,26 +293,18 @@ def test_general_previews_follow_palette_but_theme_previews_keep_their_theme(
     light.setColor(QPalette.ColorRole.Window, QColor("#f2f3f6"))
     dark.setColor(QPalette.ColorRole.Window, QColor("#12171d"))
     general_count = 0
-    for combo in page.findChildren(AppComboBox):
-        for index in range(combo.count()):
-            example = SettingExample(
-                combo.objectName(), "", "", "", value=str(combo.itemData(index))
-            )
-            if not has_setting_image(example) or example.key == "languageCombo":
-                continue
-            light_image = setting_image(example, light).toImage()
-            dark_image = setting_image(example, dark).toImage()
-            assert not light_image.isNull() and not dark_image.isNull()
-            if example.key in (
-                "appearanceModeCombo",
-                "lightThemeCombo",
-                "darkThemeCombo",
-            ):
-                assert light_image == dark_image
-            else:
-                assert light_image != dark_image, (example.key, example.value)
-                assert light_image.size() == dark_image.size()
-                general_count += 1
+    for example in _setting_examples(page):
+        if not has_setting_image(example) or example.key == "languageCombo":
+            continue
+        light_image = setting_image(example, light).toImage()
+        dark_image = setting_image(example, dark).toImage()
+        assert not light_image.isNull() and not dark_image.isNull()
+        if example.key in ("appearanceModeCombo", "lightThemeCombo", "darkThemeCombo"):
+            assert light_image == dark_image
+        else:
+            assert light_image != dark_image, (example.key, example.value)
+            assert light_image.size() == dark_image.size()
+            general_count += 1
     assert general_count == 15
 
 
@@ -678,10 +693,10 @@ def test_crossfade_blends_transparent_margins_of_differently_shaped_images() -> 
     [
         ("navigationStyleCombo", "sidebar", "compact-top-bar"),
         ("ipodLibraryViewModeCombo", "split-table", "itunes-11"),
-        ("itunes107ArtworkCombo", "True", "False"),
-        ("colorfulModeCombo", "True", "False"),
+        ("itunes107ArtworkSwitch", "True", "False"),
+        ("colorfulModeSwitch", "True", "False"),
         ("playerPositionCombo", "top", "bottom"),
-        ("playerAutoMinimizeCombo", "True", "False"),
+        ("playerAutoMinimizeSwitch", "True", "False"),
         ("trackTitleBarStyleCombo", "round", "flat"),
         ("lightThemeCombo", "porcelain", "sea-glass"),
     ],

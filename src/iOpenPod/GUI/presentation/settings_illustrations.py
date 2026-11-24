@@ -56,11 +56,11 @@ def _example_filename(example: SettingExample) -> str | None:
                 "whole-page-table": "library-whole.png",
                 "itunes-11": "library-inline.png",
             }.get(value)
-        case "itunes107ArtworkCombo":
+        case "itunes107ArtworkSwitch":
             return {"True": "device-classic.png", "False": "device-standard.png"}.get(
                 value
             )
-        case "colorfulModeCombo":
+        case "colorfulModeSwitch":
             return {"True": "colorful-on.png", "False": "colorful-off.png"}.get(value)
         case "trackTitleBarStyleCombo":
             return {"round": "titlebar-round.png", "flat": "titlebar-flat.png"}.get(
@@ -68,7 +68,7 @@ def _example_filename(example: SettingExample) -> str | None:
             )
         case "playerPositionCombo":
             return {"top": "player-top.png", "bottom": "player-bottom.png"}.get(value)
-        case "playerAutoMinimizeCombo":
+        case "playerAutoMinimizeSwitch":
             return {"True": "idle-hidden.png", "False": "idle-visible.png"}.get(value)
         case "languageCombo":
             return _LANGUAGE_IMAGE

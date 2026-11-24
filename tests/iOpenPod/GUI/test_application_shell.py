@@ -105,6 +105,7 @@ from iOpenPod.GUI.widgets.themed_buttons import (
     IconButton,
     IconButtonKind,
 )
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iOpenPod.GUI.widgets.track_list_header import LibrarySplitter
 from iOpenPod.GUI.widgets.track_table import TrackTable
@@ -182,19 +183,19 @@ def test_draft_all_changes_setting_controls_review_visibility_immediately(
     context = _context()
     window = MainWindow(context, auto_discover=False)
     try:
-        combo = window.findChild(AppComboBox, "draftAllChangesCombo")
+        combo = window.findChild(ToggleSwitch, "draftAllChangesSwitch")
         review = window.findChild(QPushButton, review_name)
         assert combo is not None and review is not None
-        assert combo.currentData() is False
+        assert not combo.isChecked()
         assert review.isHidden()
 
-        combo.setCurrentIndex(combo.findData(True))
+        combo.setChecked(True)
         assert context.settings.get(DRAFT_ALL_CHANGES) is True
         assert not review.isHidden()
         assert context.library_write_controller.draft_all_changes
 
         context.settings.reset_global(DRAFT_ALL_CHANGES)
-        assert combo.currentData() is False
+        assert not combo.isChecked()
         assert review.isHidden()
         page = window.findChild(SettingsPage)
         assert page is not None
@@ -704,7 +705,7 @@ def test_settings_choose_mode_exact_themes_and_colorful_mode() -> None:
         mode = window.findChild(AppComboBox, "appearanceModeCombo")
         light_theme = window.findChild(AppComboBox, "lightThemeCombo")
         dark_theme = window.findChild(AppComboBox, "darkThemeCombo")
-        colorful = window.findChild(AppComboBox, "colorfulModeCombo")
+        colorful = window.findChild(ToggleSwitch, "colorfulModeSwitch")
         max_backups = window.findChild(AppComboBox, "maxBackups")
         assert mode is not None
         assert light_theme is not None
@@ -726,12 +727,12 @@ def test_settings_choose_mode_exact_themes_and_colorful_mode() -> None:
             DarkTheme.ORCHID.value,
             DarkTheme.TECH.value,
         )
-        assert colorful.currentData() is False
+        assert not colorful.isChecked()
         assert max_backups.currentData() == 0
 
         mode.setCurrentIndex(mode.findData(AppearanceMode.DARK.value))
         dark_theme.setCurrentIndex(dark_theme.findData(DarkTheme.ORIGINAL.value))
-        colorful.setCurrentIndex(colorful.findData(True))
+        colorful.setChecked(True)
         max_backups.setCurrentIndex(max_backups.findData(10))
         APPLICATION.processEvents()
 

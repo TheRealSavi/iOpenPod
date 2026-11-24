@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.settings_illustrations import (
     SettingExample,
     has_setting_image,
@@ -43,6 +44,7 @@ from iOpenPod.GUI.presentation.settings_illustrations import (
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.setting_group import SettingRow
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 SETTINGS_PREVIEW_BREAKPOINT = 1720
 SETTINGS_COLUMN_WIDTH = 960
@@ -321,6 +323,8 @@ class SettingsTab(QScrollArea):
             combo.view().entered.connect(partial(self._option_entered, combo))
             combo.highlighted.connect(partial(self._highlighted, combo))
             combo.currentIndexChanged.connect(self._schedule_refresh)
+        for switch in self._column.findChildren(ToggleSwitch):
+            switch.toggled.connect(self._schedule_refresh)
         self.verticalScrollBar().valueChanged.connect(self._scrolled)
 
     @property
@@ -472,10 +476,9 @@ class SettingsTab(QScrollArea):
         if row is None or not row.isVisible():
             self.preview.queue_example(None)
             return
+        control = row.control.focusProxy() or row.control
         combo = (
-            row.control
-            if isinstance(row.control, QComboBox)
-            else row.control.findChild(QComboBox)
+            control if isinstance(control, QComboBox) else control.findChild(QComboBox)
         )
         choice = value = ""
         if combo is not None:
@@ -485,7 +488,10 @@ class SettingsTab(QScrollArea):
                 else combo.currentIndex()
             )
             choice, value = combo.itemText(index), str(combo.itemData(index))
-        key = row.control.objectName()
+        elif isinstance(control, ToggleSwitch):
+            checked = control.isChecked()
+            choice, value = workflow_text("On" if checked else "Off"), str(checked)
+        key = control.objectName()
         if not key:
             named = next(
                 (

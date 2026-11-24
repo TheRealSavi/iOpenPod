@@ -19,9 +19,9 @@ from iOpenPod.GUI.dialogs.device_picker import DevicePickerDialog
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.device_images import device_icon, device_pixmap
-from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.sync_storage_bar import SyncStorageBar
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 
 @pytest.mark.parametrize(
@@ -75,8 +75,8 @@ def test_switch_refreshes_all_visible_device_artwork(
         sidebar = window.findChild(Sidebar)
         picker = window.findChild(DevicePickerDialog)
         assert page is not None and sidebar is not None and picker is not None
-        combo = page.findChild(AppComboBox, "itunes107ArtworkCombo")
-        assert combo is not None and combo.currentData() is False
+        combo = page.findChild(ToggleSwitch, "itunes107ArtworkSwitch")
+        assert combo is not None and not combo.isChecked()
         assert context.settings.get(ITUNES_107_ARTWORK) is False
         sidebar.set_active_ipod(device.active)
         picker.set_discovery(context.device_coordinator.discovery)
@@ -97,7 +97,7 @@ def test_switch_refreshes_all_visible_device_artwork(
         selected = candidates.currentRow()
         image_name = device.active.profile.product_image
 
-        combo.setCurrentIndex(combo.findData(True))
+        combo.setChecked(True)
         APPLICATION.processEvents()
         assert context.settings.get(ITUNES_107_ARTWORK) is True
         for label, original in zip(labels, originals, strict=True):
@@ -125,7 +125,7 @@ def test_switch_refreshes_all_visible_device_artwork(
 
         # An external settings update also updates the control and existing widgets.
         context.settings.set_global(ITUNES_107_ARTWORK, False)
-        assert combo.currentData() is False
+        assert not combo.isChecked()
         for label, original in zip(labels, originals, strict=True):
             assert label.pixmap().toImage() == original
     finally:

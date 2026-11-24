@@ -38,6 +38,7 @@ from iOpenPod.GUI.widgets.scrobbling_settings import ScrobblingSettings
 from iOpenPod.GUI.widgets.settings_editor import SettingsEditor
 from iOpenPod.GUI.widgets.sidebar import Sidebar
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 from storage import AtomicHostFile
 
 
@@ -129,13 +130,13 @@ def test_maintenance_button_is_an_action_and_sync_option_persists() -> None:
         button.click()
         assert requests.count() == 1
         sync = SyncSettings(context.settings, parent)
-        combo = sync.findChild(AppComboBox, "scrobbleDuringSync")
-        assert combo is not None and combo.currentData() is True
-        combo.setCurrentIndex(combo.findData(False))
+        combo = sync.findChild(ToggleSwitch, "scrobbleDuringSync")
+        assert combo is not None and combo.isChecked()
+        combo.setChecked(False)
         assert context.settings.get(SCROBBLE_DURING_SYNC) is False
         rebuilt = SyncSettings(context.settings, parent)
-        saved = rebuilt.findChild(AppComboBox, "scrobbleDuringSync")
-        assert saved is not None and saved.currentData() is False
+        saved = rebuilt.findChild(ToggleSwitch, "scrobbleDuringSync")
+        assert saved is not None and not saved.isChecked()
     finally:
         parent.close()
         context.shutdown()
@@ -148,8 +149,9 @@ def test_scrobble_rating_setting_is_opt_in_independent_and_device_overridable() 
     try:
         settings = context.settings
         widget = SyncSettings(settings, parent, editor=editor)
-        combo = widget.findChild(AppComboBox, "scrobbleRatings")
-        assert combo is not None and combo.currentData() is False
+        switch = widget.findChild(ToggleSwitch, "scrobbleRatings")
+        combo = widget.findChild(AppComboBox, "scrobbleRatingsCombo")
+        assert switch is not None and not switch.isChecked() and combo is not None
         assert (
             sum(
                 label.text() == "Scrobble Ratings"
@@ -160,7 +162,7 @@ def test_scrobble_rating_setting_is_opt_in_independent_and_device_overridable() 
         assert widget.findChild(AppComboBox, "listenbrainzRatings") is None
         assert widget.findChild(AppComboBox, "lastfmRatings") is None
         settings.set_global(SCROBBLE_DURING_SYNC, False)
-        combo.setCurrentIndex(combo.findData(True))
+        switch.setChecked(True)
         assert settings.get(SCROBBLE_RATINGS)
         assert not settings.get(BACK_SYNC_RATINGS)
         assert not settings.get(SCROBBLE_DURING_SYNC)
@@ -170,12 +172,12 @@ def test_scrobble_rating_setting_is_opt_in_independent_and_device_overridable() 
         settings.load_device("one", {SCROBBLE_RATINGS.key: False})
         assert not settings.get(SCROBBLE_RATINGS)
         editor.set_device(True)
-        assert combo.currentData() is False
+        assert switch.isHidden() and combo.currentData() is False
         editor.set_device(False)
-        assert combo.currentData() is True
+        assert combo.isHidden() and switch.isChecked()
         rebuilt = SyncSettings(settings, parent)
-        saved = rebuilt.findChild(AppComboBox, "scrobbleRatings")
-        assert saved is not None and saved.currentData() is True
+        saved = rebuilt.findChild(ToggleSwitch, "scrobbleRatings")
+        assert saved is not None and saved.isChecked()
     finally:
         parent.close()
         context.shutdown()

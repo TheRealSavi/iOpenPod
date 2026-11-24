@@ -25,7 +25,9 @@ from iOpenPod.app.media.transcoding import LossyEncoder
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.browser_chrome import PageHeader
+from iOpenPod.GUI.widgets.setting_group import SettingRow
 from iOpenPod.GUI.widgets.settings_scope import SettingsScopeSwitcher
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 
 @pytest.fixture
@@ -111,7 +113,7 @@ def test_scope_changes_and_retranslation_never_write_settings(
             for index in range(tabs.count())
             if tabs.isTabVisible(index)
         ] == ["Library", "Transcoding", "Sync", "Backups", "iPod Preferences"]
-        for name in ("draftAllChangesCombo", "navigationStyleCombo", "backupLocation"):
+        for name in ("draftAllChangesSwitch", "navigationStyleCombo", "backupLocation"):
             control = page.findChild(QWidget, name)
             assert control is not None and not control.isVisible()
     finally:
@@ -158,13 +160,17 @@ def test_host_values_are_separate_and_unset_tracks_future_host_changes(
     context.settings.load_device("one", {COMPUTE_SOUND_CHECK.key: False})
     page = SettingsPage(context.settings, context.theme_manager, context.i18n_manager)
     page.show()
-    control = page.findChild(AppComboBox, "computeSoundCheck")
-    assert control is not None
+    switch = page.findChild(ToggleSwitch, "computeSoundCheck")
+    combo = page.findChild(AppComboBox, "computeSoundCheckCombo")
+    assert switch is not None and combo is not None
     try:
         _category(page, "syncSettingsScroll")
-        assert control.currentData() is True
-        row = control.parentWidget()
-        assert row is not None
+        assert switch.isVisible() and switch.isChecked() and combo.isHidden()
+        controls = switch.parentWidget()
+        assert controls is not None
+        row = controls.parentWidget()
+        assert isinstance(row, SettingRow)
+        assert switch.accessibleName() == combo.accessibleName() == row.title
         hint = next(
             label
             for label in row.findChildren(QLabel)
@@ -183,23 +189,28 @@ def test_host_values_are_separate_and_unset_tracks_future_host_changes(
         assert hint.palette().color(QPalette.ColorRole.WindowText) == QColor(
             context.theme_manager.tokens.text_secondary
         )
-        assert control.currentData() is False
-        assert control.itemText(0) == "Use Host · On"
-        control.setCurrentIndex(0)
+        assert switch.isHidden() and combo.isVisible()
+        assert [combo.itemText(index) for index in range(combo.count())] == [
+            "Use Host · On",
+            "On",
+            "Off",
+        ]
+        assert combo.currentData() is False
+        combo.setCurrentIndex(0)
         assert hint.isVisible()
         assert hint.text() == "Following Host changes automatically"
         assert context.settings.source(COMPUTE_SOUND_CHECK) is SettingSource.GLOBAL
         assert context.settings.get(COMPUTE_SOUND_CHECK) is True
+        assert combo.currentData() is None
         _switch(page, False)
-        control.setCurrentIndex(control.findData(False))
+        assert switch.isVisible() and switch.isChecked() and combo.isHidden()
+        switch.setChecked(False)
         _switch(page, True)
-        assert (
-            control.currentData() is None and control.currentText() == "Use Host · Off"
-        )
-        control.setCurrentIndex(control.findData(False))
+        assert combo.currentData() is None and combo.currentText() == "Use Host · Off"
+        combo.setCurrentIndex(combo.findData(False))
         assert context.settings.source(COMPUTE_SOUND_CHECK) is SettingSource.DEVICE
         _switch(page, False)
-        control.setCurrentIndex(control.findData(True))
+        switch.setChecked(True)
         assert context.settings.get(COMPUTE_SOUND_CHECK) is False
         assert context.settings.get_global(COMPUTE_SOUND_CHECK) is True
         assert hint.text() == "The Active iPod has its own override. Set to: Off."
@@ -318,7 +329,7 @@ def test_device_save_preserves_scroll_and_keyboard_focus(
         _category(page, category)
         APPLICATION.processEvents()
         scroll = page.findChild(QScrollArea, category)
-        control = page.findChild(AppComboBox, name)
+        control = page.findChild(AppComboBox, f"{name}Combo")
         assert scroll is not None and control is not None
         control.setFocus()
         scroll.ensureWidgetVisible(control)
@@ -329,11 +340,9 @@ def test_device_save_preserves_scroll_and_keyboard_focus(
         assert control.hasFocus()
 
         if interaction == "keyboard":
-            QTest.keyClick(control, Qt.Key.Key_End)
+            QTest.keyClick(control, Qt.Key.Key_Down)
         else:
-            # mouseClick sends an event without moving the system cursor. Move
-            # onto the control first so a preceding case cannot leave the cursor
-            # at this popup's choice and suppress the next mouseMove event.
+            # Move the system cursor off any popup position left by another case.
             QTest.mouseMove(control, control.rect().center())
             QTest.mouseClick(control, Qt.MouseButton.LeftButton)
             APPLICATION.processEvents()
@@ -341,11 +350,7 @@ def test_device_save_preserves_scroll_and_keyboard_focus(
             choice = view.model().index(control.findData(True), 0)
             point = view.visualRect(choice).center()
             QTest.mouseMove(view.viewport(), point)
-            QTest.mouseClick(
-                view.viewport(),
-                Qt.MouseButton.LeftButton,
-                pos=point,
-            )
+            QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
         # The controller keeps writes reserved until its worker has finished,
         # after publication has cleared the service's pending value.
         settings.set_device_available(False)

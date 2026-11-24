@@ -27,10 +27,17 @@ from iOpenPod.GUI.widgets.app_combo_box import AppComboBox
 from iOpenPod.GUI.widgets.settings_editor import SettingsEditor
 from iOpenPod.GUI.widgets.sync_settings import SyncSettings, TranscodingSettings
 from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
 
 
 def _combo(widget: QWidget, name: str) -> AppComboBox:
     control = widget.findChild(AppComboBox, name)
+    assert control is not None
+    return control
+
+
+def _switch(widget: QWidget, name: str) -> ToggleSwitch:
+    control = widget.findChild(ToggleSwitch, name)
     assert control is not None
     return control
 
@@ -115,8 +122,8 @@ def test_encoder_controls_follow_capabilities_and_retain_independent_values() ->
     mode = _combo(widget, "bitrateMode")
     assert [mode.itemData(index) for index in range(mode.count())] == ["cbr", "vbr"]
     assert _combo(widget, "vbrQuality").count() == 5
-    assert _combo(widget, "encoderAfterburner").isVisible()
-    assert not _combo(widget, "encoderPns").isVisible()
+    assert _switch(widget, "encoderAfterburner").isVisible()
+    assert not _switch(widget, "encoderPns").isVisible()
     mode.setCurrentIndex(mode.findData("cbr"))
     bitrate = _combo(widget, "encoderBitrate")
     bitrate.setCurrentIndex(bitrate.findData(256))
@@ -135,8 +142,8 @@ def test_encoder_controls_follow_capabilities_and_retain_independent_values() ->
     assert read_transcoder_settings(settings).bitrate_mode is BitrateMode.CBR
     assert read_transcoder_settings(settings).bitrate_kbps == 256
     settings.set_global(LOSSY_ENCODER, "aac")
-    assert _combo(widget, "encoderPns").isVisible()
-    assert not _combo(widget, "encoderAfterburner").isVisible()
+    assert _switch(widget, "encoderPns").isVisible()
+    assert not _switch(widget, "encoderAfterburner").isVisible()
     assert _combo(widget, "vbrQuality").count() == 2
     before = changes.count()
     widget.retranslate_ui()
@@ -151,23 +158,23 @@ def test_policy_precedence_is_visible_and_optional_sync_settings_save() -> None:
     widget = TranscodingSettings(settings, parent)
     sync = SyncSettings(settings, parent)
     settings.set_global(TRANSCODE_LOSSLESS_TO_LOSSY, True)
-    assert not _combo(widget, "transcodePcmToAlac").isEnabled()
+    assert not _switch(widget, "transcodePcmToAlac").isEnabled()
     settings.set_global(SMART_QUALITY_BY_CONTENT_TYPE, False)
-    assert not _combo(widget, "spokenWordMono").isEnabled()
+    assert not _switch(widget, "spokenWordMono").isEnabled()
     assert not _combo(widget, "spokenWordBitrate").isEnabled()
     settings.set_global(SMART_QUALITY_BY_CONTENT_TYPE, True)
     assert _combo(widget, "spokenWordBitrate").isEnabled()
-    sound = _combo(sync, "computeSoundCheck")
-    bpm = _combo(sync, "computeMissingBpm")
-    assert bpm.currentData() is False
-    bpm.setCurrentIndex(bpm.findData(True))
+    sound = _switch(sync, "computeSoundCheck")
+    bpm = _switch(sync, "computeMissingBpm")
+    assert not bpm.isChecked()
+    bpm.setChecked(True)
     assert settings.get(COMPUTE_MISSING_BPM) is True
-    sound.setCurrentIndex(sound.findData(True))
-    genius = _combo(sync, "analyzeForGenius")
-    assert genius.currentData() is True
-    genius.setCurrentIndex(genius.findData(False))
-    rockbox = _combo(sync, "rockboxMetadataSupport")
-    rockbox.setCurrentIndex(rockbox.findData(True))
+    sound.setChecked(True)
+    genius = _switch(sync, "analyzeForGenius")
+    assert genius.isChecked()
+    genius.setChecked(False)
+    rockbox = _switch(sync, "rockboxMetadataSupport")
+    rockbox.setChecked(True)
     assert settings.get(COMPUTE_SOUND_CHECK) is True
     assert settings.get(ANALYZE_FOR_GENIUS) is False
     assert settings.get(ROCKBOX_METADATA_SUPPORT) is True
@@ -187,12 +194,12 @@ def test_rating_back_sync_defaults_off_and_conflict_choice_persists() -> None:
     settings.set_global(BACK_SYNC_RATINGS, False)
     settings.set_global(RATING_CONFLICT_POLICY, "host")
     widget = SyncSettings(settings, parent)
-    toggle = widget.findChild(AppComboBox, "backSyncRatings")
+    toggle = _switch(widget, "backSyncRatings")
     policy = widget.findChild(AppComboBox, "ratingConflictPolicy")
-    assert toggle is not None and policy is not None
-    assert toggle.currentData() is False
+    assert policy is not None
+    assert not toggle.isChecked()
     assert policy.currentData() == "host"
-    toggle.setCurrentIndex(toggle.findData(True))
+    toggle.setChecked(True)
     policy.setCurrentIndex(policy.findData("average"))
     assert settings.get(BACK_SYNC_RATINGS) is True
     assert settings.get(RATING_CONFLICT_POLICY) == "average"
