@@ -75,6 +75,37 @@ runtime, libraries, resources, and notices (ADR-0108). The checker reads the
 embedded archive as well as the executable manifest. Launch extracts the runtime
 to a temporary directory, adding startup time, and cleans it up on normal exit.
 
+Standalone Windows signing is optional for local candidates. On a release builder
+with a code-signing certificate in the current user's Windows certificate store,
+set `IOPENPOD_WINDOWS_CERTIFICATE` to its 40-digit thumbprint and
+`IOPENPOD_WINDOWS_TIMESTAMP_URL` to the certificate provider's HTTPS RFC 3161
+timestamp endpoint before `freeze`. `IOPENPOD_SIGNTOOL` can override SDK tool
+discovery. The build signs and verifies the native Storage helper **before**
+hashing/embedding it, then the update helper before embedding, and finally the
+outer EXE. Configured signing errors stop the build. No private key or certificate
+password is placed in source or command arguments. See
+[Microsoft SignTool](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool).
+
+For direct macOS distribution, build with `IOPENPOD_CODESIGN_IDENTITY` set to the
+builder's Developer ID Application identity. Existing `IOPENPOD_ENTITLEMENTS`
+configuration controls runtime exceptions; validate the signed acoustic/JIT
+runtime with `--smoke-test` on both architectures. After the signed build passes
+its native checks, use an existing notarytool keychain profile:
+
+```shell
+uv run --locked --group packaging python scripts/package_app.py notarize-macos --profile iopenpod-release
+uv run --locked --group packaging python scripts/package_app.py archive
+```
+
+The notarization command rejects ad hoc/non-hardened signatures before upload,
+saves the submission ID before waiting, downloads the notary log, requires
+`Accepted`, staples the app and validates both the ticket and Gatekeeper assessment.
+Archive **after** stapling so both ZIP and DMG contain the ticket. If waiting times
+out, use the saved ID under `build/packaging/notarization` to investigate the
+existing submission. Signing certificates and notary credentials must be
+provisioned on the release builder; unsigned CI candidates do not acquire them.
+See [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+
 `pyproject.toml` owns the version. Native versions currently require three numeric
 components; MSIX appends `.0` as required for Store uploads. Tags must exactly match
 `v<version>`. The macOS bundle retains Original iOpenPod's `com.iopenpod.app`;

@@ -28,6 +28,8 @@ on:
       - "src/storage/platform/host_install_windows.py"
       - "src/storage/platform/**"
       - "scripts/build_windows_access.py"
+      - "scripts/sign_windows.py"
+      - "scripts/notarize_macos.py"
       - ".github/workflows/update-feed.yml"
       - "scripts/check_wheel.py"
       - "scripts/check_phase_distribution.py"

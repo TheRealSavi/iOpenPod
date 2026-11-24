@@ -97,6 +97,9 @@ def build() -> Path:
     )
     subprocess.run([str(executable), "--self-test"], check=True, timeout=10)
     check_helper(executable.read_bytes())
+    from scripts.sign_windows import sign
+
+    sign(executable, environment)
     digest = hashlib.sha256(executable.read_bytes()).hexdigest()
     (OUTPUT / "_iopenpod_storage_helper.py").write_text(
         f'SHA256 = "{digest}"\n', encoding="utf-8"

@@ -212,6 +212,10 @@ def freeze() -> None:
             env=environment,
             check=True,
         )
+    if sys.platform == "win32":
+        from scripts.sign_windows import sign
+
+        sign(ROOT / "dist/iOpenPod-update.exe")
     subprocess.run(
         [
             sys.executable,
@@ -227,6 +231,8 @@ def freeze() -> None:
     )
     if sys.platform == "darwin":
         embed_sparkle(ROOT, GENERATED, config["macos-minimum-version"])
+    elif sys.platform == "win32":
+        sign(ROOT / "dist/iOpenPod.exe")
 
 
 def windows_store_identity() -> tuple[str, str, str]:
@@ -569,6 +575,10 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("assets")
     commands.add_parser("freeze")
+    notary_parser = commands.add_parser("notarize-macos")
+    notary_parser.add_argument(
+        "--profile", required=True, help="Existing notarytool keychain profile"
+    )
     msix = commands.add_parser("msix-stage")
     msix.add_argument(
         "--identity", help="Override the saved Partner Center package name"
@@ -585,6 +595,10 @@ def main() -> None:
         generate_assets()
     elif args.command == "freeze":
         freeze()
+    elif args.command == "notarize-macos":
+        from scripts.notarize_macos import notarize
+
+        print(notarize(ROOT, args.profile))
     elif args.command == "msix-stage":
         identity, publisher, display_name = windows_store_identity()
         print(
