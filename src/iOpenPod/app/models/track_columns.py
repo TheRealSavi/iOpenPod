@@ -894,9 +894,12 @@ def _format_bitrate(value: int) -> str:
     return f"{value} kbps" if value > 0 else _MISSING
 
 
-def rating_stars(value: int) -> str:
+def rating_stars(value: int, *, show_empty: bool = False) -> str:
     stars = min(5, max(0, round(value / 20)))
-    return ("★" * stars) + ("☆" * (5 - stars))
+    filled = "★" * stars
+    if show_empty:
+        return filled + "☆" * (5 - stars)
+    return filled
 
 
 def _format_sample_rate(value: int) -> str:

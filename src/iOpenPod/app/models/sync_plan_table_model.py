@@ -328,7 +328,7 @@ def _basis_label(item: SyncPlanItem, *, numeric: bool = False) -> str:
             return QCoreApplication.translate("StarRating", "%1 of 5 stars").replace(
                 "%1", f"{value / 20:g}"
             )
-        return rating_stars(value)
+        return rating_stars(value, show_empty=True)
 
     if host is None and ipod is None:
         reasons.append(

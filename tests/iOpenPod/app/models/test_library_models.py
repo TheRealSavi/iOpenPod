@@ -207,6 +207,18 @@ def test_track_table_exposes_the_full_optional_metadata_projection() -> None:
     assert all(isinstance(model.index(0, column).data(), str) for column in TrackColumn)
 
 
+@pytest.mark.parametrize(("rating", "display"), [(0, ""), (60, "★★★"), (100, "★★★★★")])
+def test_track_table_displays_only_filled_rating_stars(
+    rating: int, display: str
+) -> None:
+    model = TrackTableModel()
+    model.replace_tracks((Track(1, "Track", "Artist", "Album", 1000, rating=rating),))
+
+    cell = model.index(0, TrackColumn.RATING)
+    assert cell.data() == display
+    assert cell.data(TrackRole.SORT_VALUE) == rating
+
+
 def test_source_neutral_file_format_has_text_display_and_sort_values() -> None:
     model = TrackTableModel()
     model.replace_tracks(
