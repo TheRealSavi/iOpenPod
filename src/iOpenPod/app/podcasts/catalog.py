@@ -10,7 +10,9 @@ from whenever import Instant
 
 from iOpenPod.app.podcasts.identity import (
     episode_identity,
+    guid_episode_identity,
     normalize_feed_url,
+    normalize_media_url,
     subscription_identity,
     track_podcast_identity,
 )
@@ -43,22 +45,34 @@ def reconcile_device_podcasts(
         (item.subscription_id, item.episode_id): item for item in snapshot.history
     }
     history_guids = _history_guid_index(history.values())
-    device_tracks = tuple(tracks)
-    guid_counts = Counter(
-        track_podcast_identity(track).guid
-        for track in device_tracks
-        if track_podcast_identity(track).guid
-        and (track.media_kind is MediaKind.PODCAST or track.metadata.podcast)
-    )
     device_episodes = tuple(
-        (normalize_feed_url(t.metadata.podcast_rss_url), _episode_from_track(t))
-        for t in device_tracks
-        if t.media_kind is MediaKind.PODCAST or t.metadata.podcast
+        (
+            track,
+            normalize_feed_url(track.metadata.podcast_rss_url),
+            _episode_from_track(track),
+        )
+        for track in tracks
+        if track.media_kind is MediaKind.PODCAST or track.metadata.podcast
+    )
+    guid_counts = Counter(
+        episode.guid for _, _, episode in device_episodes if episode.guid
+    )
+    device_enclosures = Counter(
+        (feed_url, episode.enclosure_url)
+        for _, feed_url, episode in device_episodes
+        if episode.enclosure_url
+    )
+    shared_enclosures = {
+        subscription.subscription_id: _shared_enclosures(subscription.episodes)
+        for subscription in subscriptions.values()
+    }
+    history_enclosures = Counter(
+        (record.subscription_id, normalize_media_url(record.enclosure_url))
+        for record in snapshot.history
+        if record.enclosure_url
     )
 
-    for track in device_tracks:
-        if track.media_kind is not MediaKind.PODCAST and not track.metadata.podcast:
-            continue
+    for track, feed_url, episode in device_episodes:
         title = (
             track.album.strip()
             or track.show.strip()
@@ -66,9 +80,19 @@ def reconcile_device_podcasts(
             or "Unknown Podcast"
         )
         author = track.album_artist.strip() or track.artist.strip()
-        feed_url = normalize_feed_url(track.metadata.podcast_rss_url)
         derived_subscription_id = subscription_identity(feed_url, title, author)
-        episode = _episode_from_track(track)
+        if (
+            guid_counts[episode.guid] == 1
+            and episode.enclosure_url
+            and (
+                device_enclosures[feed_url, episode.enclosure_url] > 1
+                or history_enclosures[derived_subscription_id, episode.enclosure_url]
+                > 1
+                or episode.enclosure_url
+                in shared_enclosures.get(derived_subscription_id, ())
+            )
+        ):
+            episode = replace(episode, episode_id=guid_episode_identity(episode.guid))
         subscription = subscriptions.get(derived_subscription_id)
         if subscription is None:
             subscription = _subscription_matching_evidence(
@@ -98,7 +122,7 @@ def reconcile_device_podcasts(
             existing = _episode_matching_publication(
                 subscription.episodes,
                 episode,
-                tuple(e for url, e in device_episodes if url == feed_url),
+                tuple(e for _, url, e in device_episodes if url == feed_url),
             )
         observed = _matching_history(
             history,
@@ -226,9 +250,19 @@ def merge_fetched_subscription(
     }
     history_guids = _history_guid_index(history.values())
     guid_counts = Counter(episode.guid for episode in fetched.episodes if episode.guid)
+    shared_enclosures = _shared_enclosures(retained.values()) | _shared_enclosures(
+        record
+        for record in snapshot.history
+        if record.subscription_id == subscription_id
+    )
     for episode in fetched.episodes:
-        old = retained.pop(episode.episode_id, None)
         unique_guid = guid_counts[episode.guid] == 1
+        if (
+            unique_guid
+            and normalize_media_url(episode.enclosure_url) in shared_enclosures
+        ):
+            episode = replace(episode, episode_id=guid_episode_identity(episode.guid))
+        old = retained.pop(episode.episode_id, None)
         if old is None and unique_guid and current is not None:
             match = _episode_matching_guid(current.episodes, episode.guid)
             if match is not None:
@@ -588,6 +622,17 @@ def _episode_matching_guid(
         return None
     matches = tuple(episode for episode in episodes if episode.guid == guid)
     return matches[0] if len(matches) == 1 else None
+
+
+def _shared_enclosures(
+    episodes: Iterable[PodcastEpisode | ListeningRecord],
+) -> set[str]:
+    counts = Counter(
+        normalize_media_url(episode.enclosure_url)
+        for episode in episodes
+        if episode.enclosure_url
+    )
+    return {url for url, count in counts.items() if count > 1}
 
 
 def _episode_matching_publication(

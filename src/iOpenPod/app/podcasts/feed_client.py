@@ -8,7 +8,8 @@ import io
 import json
 import re
 import time
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from http.client import HTTPException
 from typing import TYPE_CHECKING, Protocol, cast
 from urllib.parse import urlencode
@@ -30,6 +31,7 @@ from iOpenPod.app.podcasts.feed_extensions import (
 from iOpenPod.app.podcasts.http_client import open_podcast_request
 from iOpenPod.app.podcasts.identity import (
     episode_identity,
+    guid_episode_identity,
     normalize_feed_url,
 )
 from iOpenPod.app.podcasts.models import (
@@ -158,13 +160,6 @@ class FeedparserPodcastClient:
             raise PodcastFeedError(
                 "The feed does not contain playable podcast episodes"
             )
-        if len({episode.episode_id for episode in episodes}) != len(episodes):
-            # Reject the whole refresh so ambiguous publisher entries cannot
-            # authorize retention changes or abort unrelated Host media Sync.
-            raise PodcastFeedError(
-                "The podcast feed repeats Episode IDs: multiple entries share "
-                "the same media URL."
-            )
         from iOpenPod.app.podcasts.identity import subscription_identity
 
         return PodcastSubscription(
@@ -186,11 +181,33 @@ class FeedparserPodcastClient:
             last_refreshed=Instant.now().timestamp(),
             episodes=tuple(
                 sorted(
-                    episodes,
+                    _disambiguate_enclosures(episodes),
                     key=lambda item: (-item.published_at, item.episode_id),
                 )
             ),
         )
+
+
+def _disambiguate_enclosures(
+    episodes: tuple[PodcastEpisode, ...],
+) -> tuple[PodcastEpisode, ...]:
+    enclosure_counts = Counter(episode.episode_id for episode in episodes)
+    if len(enclosure_counts) == len(episodes):
+        return episodes
+
+    guid_counts = Counter(episode.guid for episode in episodes if episode.guid)
+    resolved: list[PodcastEpisode] = []
+    for episode in episodes:
+        if enclosure_counts[episode.episode_id] > 1:
+            if guid_counts[episode.guid] != 1:
+                # A genuinely ambiguous refresh cannot authorize retention changes.
+                raise PodcastFeedError(
+                    "The podcast feed repeats Episode IDs: multiple entries share "
+                    "the same media URL."
+                )
+            episode = replace(episode, episode_id=guid_episode_identity(episode.guid))
+        resolved.append(episode)
+    return tuple(resolved)
 
 
 @dataclass(frozen=True, slots=True)

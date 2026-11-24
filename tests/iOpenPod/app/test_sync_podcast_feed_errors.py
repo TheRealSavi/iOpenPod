@@ -44,7 +44,7 @@ def test_music_sync_preserves_podcasts_when_a_feed_repeats_episode_ids(
     <item><guid>first</guid><title>First</title>
     <enclosure url="https://publisher.example/shared.mp3" type="audio/mpeg" />
     </item>
-    <item><guid>second</guid><title>Second</title>
+    <item><guid>first</guid><title>Second</title>
     <enclosure url="https://publisher.example/shared.mp3" type="audio/mpeg" />
     </item></channel></rss>"""
 

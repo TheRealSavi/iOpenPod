@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING
 
 from whenever import Instant
 
-from iOpenPod.app.podcasts.identity import normalize_feed_url, track_podcast_identity
+from iOpenPod.app.podcasts.identity import (
+    normalize_feed_url,
+    normalize_media_url,
+    track_podcast_identity,
+)
 from iOpenPod.app.podcasts.models import (
     ALL_EPISODE_SLOTS,
     PodcastClearMethod,
@@ -228,8 +232,8 @@ def _ambiguous_identity(
     )
     if any(count > 1 for count in episode_guids.values()):
         return True
-    current_ids = {
-        episode.track_id
+    current = {
+        episode.track_id: episode
         for episode in subscription.episodes
         if episode.track_id is not None
     }
@@ -239,7 +243,7 @@ def _ambiguous_identity(
         for track in tracks.values()
         if _is_podcast(track)
         and (
-            track.track_id in current_ids
+            track.track_id in current
             or (
                 feed_url
                 and normalize_feed_url(track.metadata.podcast_rss_url) == feed_url
@@ -251,21 +255,53 @@ def _ambiguous_identity(
             )
         )
     )
-    identities = tuple(track_podcast_identity(track) for track in matched)
-    guids = Counter(item.guid for item in identities if item.guid)
-    enclosures = Counter(
-        item.enclosure_url for item in identities if item.enclosure_url
-    )
-    if any(
-        not episode.on_device
-        and (
-            (episode.guid and episode.guid in guids)
-            or normalize_feed_url(episode.enclosure_url) in enclosures
-        )
-        for episode in subscription.episodes
+    guids: Counter[str] = Counter()
+    enclosures: Counter[str] = Counter()
+    unresolved_enclosures: set[str] = set()
+    for track in matched:
+        identity = track_podcast_identity(track)
+        if identity.guid:
+            guids[identity.guid] += 1
+        url = identity.enclosure_url
+        if not url:
+            continue
+        enclosures[url] += 1
+        episode = current.get(track.track_id)
+        if (
+            episode is None
+            or not identity.guid
+            or normalize_media_url(identity.guid) == url
+            or episode.guid != identity.guid
+            or normalize_media_url(episode.enclosure_url) != url
+        ):
+            unresolved_enclosures.add(url)
+
+    if any(count > 1 for count in guids.values()) or any(
+        enclosures[url] > 1 for url in unresolved_enclosures
     ):
         return True
-    return any(count > 1 for count in (*guids.values(), *enclosures.values()))
+    return any(
+        not episode.on_device
+        and (
+            episode.guid in guids
+            or _has_unresolved_enclosure(episode, enclosures, unresolved_enclosures)
+        )
+        for episode in subscription.episodes
+    )
+
+
+def _has_unresolved_enclosure(
+    episode: PodcastEpisode, enclosures: Counter[str], unresolved: set[str]
+) -> bool:
+    url = normalize_feed_url(episode.enclosure_url)
+    if url not in enclosures:
+        return False
+    # A shared URL can identify distinct publications only with independent GUIDs.
+    return (
+        url in unresolved
+        or not episode.guid
+        or normalize_media_url(episode.guid) == url
+    )
 
 
 def _managed_plan(

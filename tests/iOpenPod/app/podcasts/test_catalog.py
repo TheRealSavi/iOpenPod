@@ -13,7 +13,11 @@ from iOpenPod.app.podcasts.catalog import (
     reconcile_device_podcasts,
     remove_subscription,
 )
-from iOpenPod.app.podcasts.identity import episode_identity, subscription_identity
+from iOpenPod.app.podcasts.identity import (
+    episode_identity,
+    guid_episode_identity,
+    subscription_identity,
+)
 from iOpenPod.app.podcasts.models import (
     ListeningRecord,
     PodcastEpisode,
@@ -154,6 +158,45 @@ def test_changed_enclosure_with_unique_guid_retains_device_and_history_identity(
     assert retained.enclosure_url == changed.enclosure_url
     assert retained.track_id == 41
     assert retained.listened is True
+
+
+def test_shared_enclosure_history_survives_reload_with_one_sibling_remaining() -> None:
+    track = _device_episode(play_count=1)
+    initial = reconcile_device_podcasts(PodcastSnapshot(writable=True), (track,))
+    subscription = initial.subscriptions[0]
+    first = subscription.episodes[0]
+    second = ListeningRecord(
+        subscription.subscription_id,
+        guid_episode_identity("guid-2"),
+        guid="guid-2",
+        enclosure_url=first.enclosure_url,
+        listened_override=False,
+    )
+    restarted = replace(
+        initial,
+        subscriptions=(replace(subscription, episodes=()),),
+        history=(*initial.history, second),
+    )
+    second_track = replace(_device_episode(), episode="guid-2")
+
+    reconciled = reconcile_device_podcasts(restarted, (second_track,))
+    fetched = replace(
+        subscription,
+        episodes=(
+            PodcastEpisode(
+                first.episode_id, guid="guid-2", enclosure_url=first.enclosure_url
+            ),
+        ),
+    )
+    refreshed = merge_fetched_subscription(reconciled, fetched)
+
+    (episode,) = refreshed.subscriptions[0].episodes
+    assert (
+        episode.episode_id == second.episode_id
+        and episode.track_id == second_track.track_id
+    )
+    assert not episode.listened
+    assert initial.history[0] in refreshed.history
 
 
 def test_history_guid_retains_listened_state_after_removal_restart_and_url_change() -> (

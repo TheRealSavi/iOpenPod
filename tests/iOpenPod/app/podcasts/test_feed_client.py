@@ -97,16 +97,60 @@ def test_explicit_advisory_and_subtitle_survive_feed_normalization(
         "HTTPS://CDN.example.test:443/shared.mp3#fragment",
     ),
 )
-def test_repeated_episode_identity_is_reported_as_a_feed_error(
+def test_distinct_guids_disambiguate_a_shared_enclosure(
     monkeypatch: pytest.MonkeyPatch,
     second_url: str,
 ) -> None:
+    first = """<item><guid isPermaLink="false">first</guid><title>First</title>
+    <enclosure url="https://cdn.example.test/shared.mp3" type="audio/mpeg" />
+    </item>"""
+    second = f"""<item><guid isPermaLink="false">second</guid><title>Second</title>
+    <enclosure url="{second_url}" type="audio/mpeg" />
+    </item>"""
+    other = """<item><guid isPermaLink="false">other</guid><title>Other</title>
+    <enclosure url="https://cdn.example.test/other.mp3" type="audio/mpeg" />
+    </item>"""
+    items = other
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        return (
+            f"""<rss version="2.0"><channel><title>Show</title>
+            <image><url>https://cdn.example.test/cover.jpg</url></image>
+            {items}</channel></rss>""".encode(),
+            url,
+        )
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+    client = FeedparserPodcastClient()
+    url = "https://example.test/feed"
+    original = client.fetch(url).episodes[0]
+
+    items = first + second + other
+    fetched = client.fetch(url)
+    episodes = {episode.guid: episode for episode in fetched.episodes}
+    assert fetched.artwork_url == "https://cdn.example.test/cover.jpg"
+    assert episodes.keys() == {"first", "second", "other"}
+    assert episodes["first"].episode_id != episodes["second"].episode_id
+    assert episodes["first"].enclosure_url == episodes["second"].enclosure_url
+    assert episodes["other"] == original
+
+    items = second + first + other
+    assert client.fetch(url).episodes == fetched.episodes
+
+
+@pytest.mark.parametrize("second_guid", ("", "first", "other"))
+def test_shared_enclosure_without_unique_guids_is_reported_as_a_feed_error(
+    monkeypatch: pytest.MonkeyPatch, second_guid: str
+) -> None:
     payload = f"""<rss version="2.0"><channel><title>Show</title>
-    <item><guid>first</guid><title>First</title>
+    <item><guid isPermaLink="false">first</guid><title>First</title>
     <enclosure url="https://cdn.example.test/shared.mp3" type="audio/mpeg" />
     </item>
-    <item><guid>second</guid><title>Second</title>
-    <enclosure url="{second_url}" type="audio/mpeg" />
+    <item><guid isPermaLink="false">{second_guid}</guid><title>Second</title>
+    <enclosure url="https://cdn.example.test/shared.mp3" type="audio/mpeg" />
+    </item>
+    <item><guid isPermaLink="false">other</guid><title>Other</title>
+    <enclosure url="https://cdn.example.test/other.mp3" type="audio/mpeg" />
     </item></channel></rss>""".encode()
 
     def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:

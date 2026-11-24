@@ -216,6 +216,68 @@ def test_repeated_feed_ids_preserve_episodes_while_other_shows_refresh(
     assert retained.title in issue.message and retained.feed_url in issue.detail
 
 
+@pytest.mark.parametrize("existing_tracks", ("legacy", "current", "both-legacy"))
+def test_shared_enclosure_sync_uses_guid_for_membership_and_history(
+    monkeypatch: pytest.MonkeyPatch, existing_tracks: str
+) -> None:
+    retained = device_episode(play_count=1)
+    enclosure = retained.metadata.podcast_guid
+    if existing_tracks == "current":
+        retained = replace(
+            retained,
+            metadata=replace(retained.metadata, podcast_guid=retained.episode),
+        )
+    second = replace(retained, track_id=42, episode="guid-2", play_count=0)
+    second = replace(second, metadata=replace(second.metadata, last_played=0))
+    tracks = (retained, second) if existing_tracks == "both-legacy" else (retained,)
+    source = replace(active_ipod(), library=LibrarySnapshot(tracks))
+    snapshot = reconcile_device_podcasts(PodcastSnapshot(writable=True), tracks)
+    saved = replace(
+        snapshot.subscriptions[0],
+        sync_settings=PodcastSyncSettings(clear_when_listened=False),
+    )
+    snapshot = replace(snapshot, subscriptions=(saved,))
+    coordinator = _Coordinator(snapshot)
+
+    def request_bytes(url: str, **kwargs: object) -> tuple[bytes, str]:
+        return (
+            f"""<rss><channel><title>A Good Podcast</title>
+            <item><guid isPermaLink="false">guid-1</guid><title>First</title>
+            <enclosure url="{enclosure}" type="audio/mpeg" /></item>
+            <item><guid isPermaLink="false">guid-2</guid><title>Second</title>
+            <enclosure url="{enclosure}" type="audio/mpeg" /></item>
+            </channel></rss>""".encode(),
+            url,
+        )
+
+    monkeypatch.setattr(feed_client, "request_podcast_bytes", request_bytes)
+
+    prepared = prepare_podcast_sync(
+        PodcastSyncRequest(snapshot),
+        source,
+        cast("DeviceCoordinator", coordinator),
+        lambda: None,
+    )
+
+    episodes = {
+        episode.guid: episode
+        for episode in prepared.state.snapshot.subscriptions[0].episodes
+    }
+    assert episodes.keys() == {"guid-1", "guid-2"}
+    assert episodes["guid-1"].episode_id == snapshot.history[0].episode_id
+    assert episodes["guid-1"].listened and episodes["guid-1"].track_id == 41
+    assert not episodes["guid-2"].listened
+    assert not prepared.plan.issues and not prepared.plan.removals
+    if existing_tracks == "both-legacy":
+        assert episodes["guid-2"].track_id == 42
+        assert not prepared.plan.additions
+    else:
+        assert not episodes["guid-2"].on_device
+        assert [addition.episode.guid for addition in prepared.plan.additions] == [
+            "guid-2"
+        ]
+
+
 @pytest.mark.parametrize("episode_slots", (0, 3))
 def test_manual_add_uses_captured_episode_metadata_without_feed_refresh(
     episode_slots: int,

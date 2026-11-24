@@ -92,7 +92,7 @@ def episode_identity(
     if enclosure:
         key = "enclosure\x1f" + enclosure
     elif guid.strip():
-        key = "guid\x1f" + guid.strip()
+        return guid_episode_identity(guid)
     else:
         key = "fallback\x1f" + "\x1f".join(
             (
@@ -103,6 +103,10 @@ def episode_identity(
             )
         )
     return "episode-" + _digest(key)
+
+
+def guid_episode_identity(guid: str) -> str:
+    return "episode-" + _digest("guid\x1f" + guid.strip())
 
 
 def normalize_media_url(value: str) -> str:
@@ -136,6 +140,7 @@ def _digest(value: str) -> str:
 
 __all__ = [
     "episode_identity",
+    "guid_episode_identity",
     "normalize_feed_url",
     "normalize_media_url",
     "subscription_identity",

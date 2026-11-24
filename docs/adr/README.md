@@ -357,3 +357,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0291: Publish qualified native Genius Mix covers](0291-publish-qualified-native-genius-mix-covers.md)
 - [ADR-0292: Prefer correlated Host audio for Genius analysis](0292-prefer-correlated-host-audio-for-genius-analysis.md)
 - [ADR-0293: Bound Host Track staging during Sync](0293-bound-host-track-staging-during-sync.md)
+- [ADR-0295: Distinguish Podcast Episodes sharing an enclosure](0295-distinguish-podcast-episodes-sharing-an-enclosure.md)
