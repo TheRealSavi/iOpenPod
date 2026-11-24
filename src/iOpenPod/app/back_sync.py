@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import mutagen
 
-from iOpenPod.app.display_text import source_text
 from iOpenPod.app.library_sync_helper import SyncedTrack
 from iOpenPod.app.media.ratings import (
     rating_supported,
@@ -96,9 +95,10 @@ def back_sync_ratings(
     *,
     validate_device: Callable[[], None] = lambda: None,
     progress: Callable[[WriteProgress], None] = lambda _: None,
-) -> tuple[tuple[SyncedTrack, ...], tuple[WriteIssue, ...]]:
+) -> tuple[tuple[SyncedTrack, ...], tuple[WriteIssue, ...], bool]:
     """Write ratings only for successfully completed, explicitly selected items.
 
+    Return updated provenance, issues, and whether any Host rating was written.
     The caller has already verified device publication. Failures retain previous
     rating baselines, so another reviewed Sync can retry without undoing the iPod.
     """
@@ -122,6 +122,7 @@ def back_sync_ratings(
         if t.sync is not None
     }
     issues: list[WriteIssue] = []
+    host_rating_written = False
     candidates = tuple(
         item
         for item in completed
@@ -200,18 +201,7 @@ def back_sync_ratings(
                     ),
                     checkpoint=validate_device,
                 )
-                issues.append(
-                    WriteIssue(
-                        "sync.rating_written",
-                        source_text(
-                            "Updated Host rating from {old} to {new} stars.",
-                            old=str(rating // 20),
-                            new=str(host_target // 20),
-                        ),
-                        severity=IssueSeverity.INFO,
-                        artifact=item.host_path,
-                    )
-                )
+                host_rating_written = True
                 rating = host_target
             updated[record_key] = replace(
                 record,
@@ -238,4 +228,4 @@ def back_sync_ratings(
                     else IssueSeverity.WARNING,
                 )
             )
-    return tuple(updated.values()), tuple(issues)
+    return tuple(updated.values()), tuple(issues), host_rating_written

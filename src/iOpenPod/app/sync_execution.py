@@ -1085,6 +1085,7 @@ class SyncExecutor:
                 # Cancellation after publication cannot turn a verified commit into
                 # failure. Finish its lightweight provenance update before returning.
                 helper = None
+                host_rating_written = False
                 retained_updates = _retained_metadata_updates(
                     request,
                     saved.active.library,
@@ -1164,7 +1165,11 @@ class SyncExecutor:
                                     )
                                 session.stat(DevicePath("iPod_Control"))
 
-                            synced_tracks, rating_issues = back_sync_ratings(
+                            (
+                                synced_tracks,
+                                rating_issues,
+                                host_rating_written,
+                            ) = back_sync_ratings(
                                 request,
                                 saved.active,
                                 completed,
@@ -1202,9 +1207,6 @@ class SyncExecutor:
                 except PreparationCancelledError:
                     raise
                 except Exception as error:
-                    host_rating_written = any(
-                        issue.code == "sync.rating_written" for issue in issues
-                    )
                     if not review.file_changes and not host_rating_written:
                         return SyncExecutionResult(
                             SyncExecutionStatus.FAILED,

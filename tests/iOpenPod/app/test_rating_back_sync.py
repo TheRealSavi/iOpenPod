@@ -15,6 +15,7 @@ from mutagen.mp4 import MP4, MP4FreeForm
 
 from iOpenPod.app.media.ratings import rewrite_rating_stream
 from iOpenPod.app.media.tags import read_tag_values
+from iPodDB.library import IssueSeverity
 from storage.media_processing import find_media_tool
 
 if TYPE_CHECKING:
@@ -473,6 +474,7 @@ def test_sync_writes_changed_rating_to_paired_host_file(
             progress,
             cancelled,
         )
+        assert all(issue.code != "sync.rating_written" for issue in result.issues)
         if case in {"success", "write_failure"}:
             ratings = [
                 event for event in events if event.phase == "sync.helper.ratings"
@@ -494,6 +496,11 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 == 60
             )
             if host_already_written:
+                assert any(
+                    issue.code == "sync.helper_failed"
+                    and issue.severity is IssueSeverity.ERROR
+                    for issue in result.issues
+                )
 
                 def unexpected_replacement(*args: object, **kwargs: object) -> None:
                     pytest.fail(
@@ -581,6 +588,11 @@ def test_sync_writes_changed_rating_to_paired_host_file(
                 }[case]
             ), result.issues
             if case in {"write_failure", "cancel_after_commit"}:
+                assert any(
+                    issue.code == "sync.rating_back_sync_failed"
+                    and issue.severity is IssueSeverity.ERROR
+                    for issue in result.issues
+                )
                 assert result.active is not None and result.helper is not None
                 retry_comparison = prepare_sync_plan(
                     scan(),
