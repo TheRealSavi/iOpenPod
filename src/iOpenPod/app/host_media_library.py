@@ -2908,13 +2908,16 @@ def embedded_artwork_from_stream(stream: BinaryIO) -> bytes | None:
 
 
 def embedded_artwork_from_file(
-    source: LocalHostFile, *, checkpoint: CancellationCheck
+    source: LocalHostFile,
+    *,
+    checkpoint: CancellationCheck,
+    open_image: Callable[[BytesIO], Image.Image] = Image.open,
 ) -> bytes | None:
     """Read native tags first, then cover streams unsupported by Mutagen."""
     with source.open_read(checkpoint=checkpoint) as stream:
         try:
             parsed = cast("_MutagenReader", mutagen).File(stream, easy=False)
-            artwork = _embedded_artwork_observation(parsed)
+            artwork = _embedded_artwork_observation(parsed, open_image=open_image)
         except mutagen.MutagenError:
             artwork = _EmbeddedArtworkObservation(None, False)
     if artwork.available:
@@ -2932,7 +2935,9 @@ class _EmbeddedArtworkObservation:
     available: bool
 
 
-def _embedded_artwork_observation(parsed: Any) -> _EmbeddedArtworkObservation:
+def _embedded_artwork_observation(
+    parsed: Any, *, open_image: Callable[[BytesIO], Image.Image] = Image.open
+) -> _EmbeddedArtworkObservation:
     """Distinguish a complete absent-cover observation from an unreadable cover."""
     if parsed is None:
         return _EmbeddedArtworkObservation(None, False)
@@ -3009,7 +3014,7 @@ def _embedded_artwork_observation(parsed: Any) -> _EmbeddedArtworkObservation:
     )
     for payload in ordered:
         try:
-            with Image.open(BytesIO(payload)) as image:
+            with open_image(BytesIO(payload)) as image:
                 image.verify()
         except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
             continue

@@ -87,7 +87,7 @@ def test_chapter_image_capture_bounds_failures_and_duplicate_times(
     any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe")),
     reason="FFmpeg and FFprobe required for actual Podcast preparation",
 )
-@pytest.mark.parametrize("embedded_kind", ("valid", "corrupt", "oversized"))
+@pytest.mark.parametrize("embedded_kind", ("valid", "large", "corrupt", "oversized"))
 @pytest.mark.parametrize("reencode", (True, False))
 def test_episode_cover_precedes_show_cover_and_chapters_reach_native_library(
     tmp_path: Path,
@@ -100,14 +100,20 @@ def test_episode_cover_precedes_show_cover_and_chapters_reach_native_library(
     source = tmp_path / "episode.mp3"
     source.write_bytes(base64.decodebytes((FIXTURES / "tone.mp3.b64").read_bytes()))
     tags = _FRAMES.ID3(source)
-    embedded_valid = embedded_kind == "valid"
-    payload = (
-        _image("blue")
-        if embedded_valid
-        else _image("blue", (8193, 1))
-        if embedded_kind == "oversized"
-        else b"bad"
-    )
+    embedded_valid = embedded_kind in ("valid", "large")
+    if embedded_kind == "large":
+        # Keep the fixture small while exceeding the regular cover pixel limit.
+        image = Image.new("P", (8200, 4100))
+        image.putpalette([0, 0, 255])
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        payload = output.getvalue()
+    elif embedded_kind == "valid":
+        payload = _image("blue")
+    elif embedded_kind == "oversized":
+        payload = _image("blue", (8193, 1))
+    else:
+        payload = b"bad"
     tags.add(_FRAMES.APIC(mime="image/png", type=3, data=payload))
     tags.add(
         _FRAMES.CHAP(

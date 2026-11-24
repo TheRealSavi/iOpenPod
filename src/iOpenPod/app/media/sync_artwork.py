@@ -15,6 +15,11 @@ from iOpenPod.app.host_media_library import (
     embedded_artwork_from_file,
 )
 from iOpenPod.app.media.image_pixels import rgb_image
+from iOpenPod.app.podcasts.artwork_image import (
+    SYNC_COVER_PIXEL_LIMIT,
+    open_embedded_podcast_image,
+    open_podcast_image,
+)
 from iPodDB.library import ArtworkPixels, TimedArtworkFrame
 from storage.host_input import LocalHostFile
 
@@ -100,10 +105,17 @@ def capture_embedded_artwork(
     """Read a cover from the original Storage-owned Podcast download."""
     checkpoint()
     payload = embedded_artwork_from_file(
-        LocalHostFile.observe(source), checkpoint=checkpoint
+        LocalHostFile.observe(source),
+        checkpoint=checkpoint,
+        open_image=open_embedded_podcast_image,
     )
     checkpoint()
-    return None if payload is None else _decode_cover(payload, target_px, checkpoint)
+    if payload is None:
+        return None
+    with open_podcast_image(
+        payload, target_px, pixel_limit=SYNC_COVER_PIXEL_LIMIT, checkpoint=checkpoint
+    ) as opened:
+        return _cover_pixels(opened, target_px, checkpoint)
 
 
 def capture_sync_artwork(
@@ -137,14 +149,20 @@ def capture_sync_artwork(
 def _decode_cover(
     payload: bytes, target_px: int, checkpoint: Callable[[], None]
 ) -> ArtworkPixels:
+    with Image.open(BytesIO(payload)) as opened:
+        return _cover_pixels(opened, target_px, checkpoint)
+
+
+def _cover_pixels(
+    opened: Image.Image, target_px: int, checkpoint: Callable[[], None]
+) -> ArtworkPixels:
     if target_px <= 0:
         raise ValueError("Artwork target size must be positive.")
-    with Image.open(BytesIO(payload)) as opened:
-        if max(opened.size) > 8192 or opened.width * opened.height > 32 * 1024 * 1024:
-            raise ValueError(
-                "The artwork dimensions exceed safe limits. Resize the cover image and rescan."
-            )
-        image = rgb_image(ImageOps.exif_transpose(opened))
-        image.thumbnail((target_px, target_px), Image.Resampling.LANCZOS)
-        checkpoint()
-        return ArtworkPixels(image.width, image.height, image.tobytes())
+    if max(opened.size) > 8192 or opened.width * opened.height > SYNC_COVER_PIXEL_LIMIT:
+        raise ValueError(
+            "The artwork dimensions exceed safe limits. Resize the cover image and rescan."
+        )
+    image = rgb_image(ImageOps.exif_transpose(opened))
+    image.thumbnail((target_px, target_px), Image.Resampling.LANCZOS)
+    checkpoint()
+    return ArtworkPixels(image.width, image.height, image.tobytes())

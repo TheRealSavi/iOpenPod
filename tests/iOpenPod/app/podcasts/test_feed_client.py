@@ -10,9 +10,10 @@ from urllib.request import Request
 
 import pytest
 from PIL import Image
+from tests.iOpenPod.app.podcast_sync_test_support import PodcastOpener
 
 from iOpenPod.app.library_write import PreparationCancelledError
-from iOpenPod.app.podcasts import feed_client
+from iOpenPod.app.podcasts import artwork_image, feed_client
 from iOpenPod.app.podcasts.feed_client import (
     ApplePodcastDirectoryClient,
     FeedparserPodcastClient,
@@ -371,6 +372,62 @@ class _OpenResponse:
         assert request.full_url == self.response.url
         assert timeout > 0
         return self.response
+
+
+def test_publisher_cover_above_old_download_and_pixel_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = BytesIO()
+    Image.new("RGBA", (1600, 1500), (22, 88, 144, 180)).save(
+        payload, format="PNG", compress_level=0
+    )
+    assert payload.tell() > 8 * 1024 * 1024
+    monkeypatch.setattr(feed_client, "_ARTWORK_PIXEL_LIMIT", 2_000_000)
+    monkeypatch.setattr(
+        feed_client, "open_podcast_request", PodcastOpener(payload.getvalue()).open
+    )
+
+    image = HttpPodcastArtworkLoader().load_artwork(
+        PodcastArtworkRequest("https://publisher.example/cover.png", 96)
+    )
+
+    assert image is not None
+    assert (image.width, image.height) == (96, 96)
+    assert image.rgb888 == bytes((22, 88, 144)) * (96 * 96)
+
+
+@pytest.mark.parametrize(
+    "limit,value", (("_LARGE_PNG_EDGE_LIMIT", 200), ("_LARGE_PNG_PIXEL_LIMIT", 25_000))
+)
+def test_large_publisher_png_stays_within_decode_limits(
+    monkeypatch: pytest.MonkeyPatch, limit: str, value: int
+) -> None:
+    payload = BytesIO()
+    Image.new("RGBA", (240, 120), "blue").save(payload, format="PNG")
+    monkeypatch.setattr(feed_client, "_ARTWORK_PIXEL_LIMIT", 20_000)
+    monkeypatch.setattr(artwork_image, limit, value)
+    monkeypatch.setattr(
+        feed_client, "open_podcast_request", PodcastOpener(payload.getvalue()).open
+    )
+
+    with pytest.raises(PodcastFeedError, match="dimensions are unsafe"):
+        HttpPodcastArtworkLoader().load_artwork(
+            PodcastArtworkRequest("https://publisher.example/cover.png", 96)
+        )
+
+
+def test_publisher_cover_rejects_response_over_32_mib(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _TrickleResponse(b"should not be read")
+    response.headers["Content-Length"] = str(32 * 1024 * 1024 + 1)
+    monkeypatch.setattr(feed_client, "open_podcast_request", _OpenResponse(response))
+
+    with pytest.raises(PodcastFeedError, match="larger"):
+        HttpPodcastArtworkLoader().load_artwork(PodcastArtworkRequest(response.url, 96))
+
+    assert response.consumed == 0
+    assert response.content.closed
 
 
 def _cover_bytes() -> bytes:

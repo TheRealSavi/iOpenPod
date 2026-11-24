@@ -21,6 +21,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from whenever import Instant
 
 from iOpenPod.app.media.image_pixels import rgb_image
+from iOpenPod.app.podcasts.artwork_image import open_podcast_image
 from iOpenPod.app.podcasts.errors import PodcastFeedError
 from iOpenPod.app.podcasts.feed_extensions import (
     EpisodeExtensions,
@@ -54,7 +55,7 @@ if TYPE_CHECKING:
 _USER_AGENT = "iOpenPod/2 Podcast Browser"
 _FEED_LIMIT = 16 * 1024 * 1024
 _SEARCH_LIMIT = 2 * 1024 * 1024
-_ARTWORK_LIMIT = 8 * 1024 * 1024
+_ARTWORK_LIMIT = 32 * 1024 * 1024
 _ARTWORK_PIXEL_LIMIT = 40_000_000
 _ARTWORK_TARGET_LIMIT = 1200
 _TIMEOUT_SECONDS = 20
@@ -300,7 +301,12 @@ class HttpPodcastArtworkLoader:
         )
         target_px = min(request.target_px, _ARTWORK_TARGET_LIMIT)
         try:
-            with Image.open(io.BytesIO(payload)) as opened:
+            with open_podcast_image(
+                payload,
+                target_px,
+                pixel_limit=_ARTWORK_PIXEL_LIMIT,
+                checkpoint=self.checkpoint,
+            ) as opened:
                 width, height = opened.size
                 if width <= 0 or height <= 0 or width * height > _ARTWORK_PIXEL_LIMIT:
                     raise PodcastFeedError("The Podcast artwork dimensions are unsafe")
