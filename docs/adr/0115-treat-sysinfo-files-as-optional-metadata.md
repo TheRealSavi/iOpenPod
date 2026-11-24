@@ -33,6 +33,15 @@ The same identity is checked again before publication. An actual signing identit
 and valid device-bound HashInfo material remain required where the checksum needs
 them; optional metadata does not authorize invented identity or unsigned output.
 
+For iPod Classic Library signing, the USB serial `000000xxxxxx` represents
+FireWire GUID `000A270002xxxxxx`, with `xxxxxx` the same six hex digits.
+Stock firmware 1.1.2, 2.0.1, 2.0.4, and 2.0.5 use this short USB descriptor form
+for that GUID range. Emulation of stock 2.0.5 confirmed that the binary iTunesDB
+authentication path uses all eight GUID bytes. The Application Layer expands
+this form before comparing equally authoritative transport identifiers. A short
+form may also appear in cached metadata. An all-zero short serial remains
+unusable as identity evidence. See [issue #346](https://github.com/TheRealSavi/iOpenPod/issues/346).
+
 Selection-time reconciliation, complete artifact publication, sidecar archiving,
 verification, and recoverable Storage Transactions retain their existing contracts.
 Regression tests cover absent and empty files, unusable command declarations,

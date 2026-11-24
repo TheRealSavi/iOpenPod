@@ -9,6 +9,7 @@ import gc
 import hashlib
 import io
 import json
+import plistlib
 import re
 import shutil
 import wave
@@ -26,6 +27,9 @@ from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
 from PIL import Image
 from tests.iOpenPod.app.media.test_photo_sync import large_photo_png
+from tests.iOpenPod.app.services.test_device_coordinator import (
+    _ipod_volume,  # pyright: ignore[reportPrivateUsage]
+)
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
 from tests.iOpenPod.app.services.test_library_resources import Device, build_device
 from tests.iOpenPod.app.test_media_lyrics import WORDS
@@ -75,7 +79,10 @@ from iOpenPod.app.media.transcoding import (
 from iOpenPod.app.models.device import ActiveIPod
 from iOpenPod.app.playlist_sync import PlaylistAssociation, PlaylistSyncChoice
 from iOpenPod.app.services import library_resources
-from iOpenPod.app.services.device_coordinator import SyncCleanupCompletedError
+from iOpenPod.app.services.device_coordinator import (
+    DeviceCoordinator,
+    SyncCleanupCompletedError,
+)
 from iOpenPod.app.sync_execution import (
     PlaylistSyncChange,
     SyncExecutionRequest,
@@ -99,6 +106,7 @@ from iOpenPod.app.sync_plan import (
 )
 from iPodDB.ArtworkDB.parser.parse_ArtworkDB import parse_ArtworkDB
 from iPodDB.ArtworkDB.shared.chunk_defs.mhsd import MhsdHeader
+from iPodDB.iTunesDB.writer.signature import verify_hash58
 from iPodDB.library import (
     AudioEncoding,
     CoverFormat,
@@ -125,7 +133,11 @@ from storage import (
     DevicePath,
     FilesystemSession,
     FlushResult,
+    HardwareIdentifiers,
+    HardwareProbeObservation,
+    HardwareProbeResult,
     HostPath,
+    Storage,
     StorageError,
     StorageOperationError,
     TransactionRecovery,
@@ -135,6 +147,7 @@ from storage import (
 from storage.host_directory import HostDirectoryEntry, LocalHostDirectory
 from storage.host_input import LocalHostFile
 from storage.media_processing import MediaToolError, MediaTools
+from storage.testing import VirtualStoragePlatform
 
 
 class _SyncArtworkFrame(Protocol):
@@ -2977,6 +2990,96 @@ def test_playlist_only_creates_empty_playlist_and_commits_sync_history(
         assert result.recovery_path == ""
     finally:
         device.coordinator.close()
+
+
+@pytest.mark.parametrize(
+    ("model", "usb_serial", "cached_guid", "live_guid", "signs"),
+    [
+        pytest.param("MC293", "0000001E7581", "0000001E7581", "", True, id="reported"),
+        pytest.param(
+            "MC293", "0000001E7581", "", "000A2700021E7581", True, id="matching-live"
+        ),
+        pytest.param(
+            "MC293",
+            "0000001E7581",
+            "",
+            "000A2700021E7582",
+            False,
+            id="conflicting-live",
+        ),
+        pytest.param("MC293", "", "000A2700021E7581", "", True, id="matching-cache"),
+        pytest.param(
+            "MC293", "", "000A2700021E7582", "", False, id="conflicting-cache"
+        ),
+        pytest.param("MC293", "000000000000", "", "", False, id="zero-usb"),
+        pytest.param("MC293", "0000001E75G1", "", "", False, id="malformed-usb"),
+        pytest.param("MC293", "0000011E7581", "", "", False, id="other-short-usb"),
+        pytest.param("MA978", "0000001E7581", "", "", False, id="nano"),
+    ],
+)
+def test_sync_resolves_short_classic_signing_guid(
+    tmp_path: Path,
+    model: str,
+    usb_serial: str,
+    cached_guid: str,
+    live_guid: str,
+    signs: bool,
+) -> None:
+    root = _ipod_volume(tmp_path / "ipod", model_number=model)
+    metadata = root / "iPod_Control/Device"
+    sysinfo = f"ModelNumStr: {model}\nFirewireGuid: 0x0000001E7581\n"
+    (metadata / "SysInfo").write_text(sysinfo, encoding="utf-8")
+    extended = plistlib.dumps({"FireWireGUID": cached_guid}) if cached_guid else b""
+    if extended:
+        (metadata / "SysInfoExtended").write_bytes(extended)
+    probe = (
+        HardwareProbeResult(
+            observations=(
+                HardwareProbeObservation(
+                    source="VPD",
+                    vendor_payload=plistlib.dumps({"FireWireGUID": live_guid}),
+                ),
+            ),
+        )
+        if live_guid
+        else None
+    )
+    platform = VirtualStoragePlatform()
+    platform.add_volume(
+        root,
+        identifiers=HardwareIdentifiers(transport_serial=usb_serial),
+        probe_result=probe,
+    )
+    storage = Storage(platform, writer_lock_directory=tmp_path / "locks")
+    coordinator = DeviceCoordinator(storage, volume_presentation_enabled=False)
+    database = root / "iPod_Control/iTunes/iTunesDB"
+    original = database.read_bytes()
+    try:
+        coordinator.select_device(coordinator.discover_devices().candidates[0].id)
+        if not usb_serial and extended:
+            # Supply both cached observations to the signing fallback after selection.
+            (metadata / "SysInfo").write_text(sysinfo, encoding="utf-8")
+            (metadata / "SysInfoExtended").write_bytes(extended)
+        device = Device(root, storage, platform, coordinator, {})
+        request = replace(
+            _request(device, _host(tmp_path, playlists=True)),
+            options=SyncOptions(analyze_for_genius=False),
+        )
+        result = _Executor(coordinator, transcoder=_AvailableTools()).execute(
+            request, lambda _: None, Event()
+        )
+        if signs:
+            assert result.status is SyncExecutionStatus.SUCCESS, result.issues
+            assert result.playlist_change_count == 1
+            assert verify_hash58(
+                database.read_bytes(), bytes.fromhex("000A2700021E7581")
+            )
+        else:
+            assert result.status is SyncExecutionStatus.FAILED, result.issues
+            assert any(issue.code == "target.missing_guid" for issue in result.issues)
+            assert database.read_bytes() == original
+    finally:
+        coordinator.close()
 
 
 def test_playlist_only_reorders_existing_tracks_with_identical_preview(

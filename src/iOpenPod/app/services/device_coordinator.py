@@ -15,6 +15,7 @@ from device_registry import (
     SYSINFO_AUTHORITY_FILENAME,
     DeviceEvidence,
     DeviceIdentifier,
+    DeviceProfile,
     DeviceRegistry,
     EvidenceAuthority,
     ExtrasSupport,
@@ -2139,7 +2140,11 @@ class DeviceCoordinator:
             capabilities = expected.profile.capabilities
             checksum = WriteChecksum(capabilities.database.checksum.value)
             sqlite_checksum = WriteChecksum(capabilities.database.sqlite_checksum.value)
-            guid = _read_device_guid(active.session, active.record.hardware_evidence)
+            guid = _read_device_guid(
+                active.session,
+                active.record.hardware_evidence,
+                signing_profile=expected.profile,
+            )
             hash72_material: Hash72Material | None = None
             if WriteChecksum.HASH72 in (checksum, sqlite_checksum):
                 if active.session.exists(_HASHINFO_PATH):
@@ -2939,7 +2944,11 @@ class DeviceCoordinator:
                                 "Playback sidecars appeared after review; reload before retrying"
                             )
                         if plan.target.firewire_guid and (
-                            _read_device_guid(session, active.record.hardware_evidence)
+                            _read_device_guid(
+                                session,
+                                active.record.hardware_evidence,
+                                signing_profile=expected.profile,
+                            )
                             != plan.target.firewire_guid
                         ):
                             raise DeviceChangedError(
@@ -4889,7 +4898,9 @@ class DeviceCoordinator:
                 database = profile.capabilities.database
                 checksum = WriteChecksum(database.checksum.value)
                 sqlite_checksum = WriteChecksum(database.sqlite_checksum.value)
-                guid = _read_device_guid(session, current.hardware_evidence)
+                guid = _read_device_guid(
+                    session, current.hardware_evidence, signing_profile=profile
+                )
                 material = None
                 if WriteChecksum.HASH72 in (checksum, sqlite_checksum):
                     material = _read_hash72_material(
@@ -5708,19 +5719,26 @@ def _read_optional_metadata(
 def _read_device_guid(
     session: FilesystemSession,
     hardware_evidence: DeviceEvidence,
+    *,
+    signing_profile: DeviceProfile | None = None,
 ) -> bytes:
     """Use connection-bound hardware identity before optional metadata caches."""
     evidence = hardware_evidence
     if not evidence.transport_serials:
         evidence, _issues = _read_device_metadata(session)
-    if not evidence.transport_serials:
-        return b""
-    authority = max(item.authority for item in evidence.transport_serials)
     candidates = {
-        item.value.strip().lower().removeprefix("0x")
-        for item in evidence.transport_serials
-        if item.authority == authority
+        value.strip().lower().removeprefix("0x")
+        for value in strongest_values(evidence.transport_serials)
     }
+    if signing_profile is not None and signing_profile.family == "iPod Classic":
+        # Classic firmware prints the low 24 bits of 000A270002xxxxxx GUIDs as
+        # 12 hex digits in the USB serial. See ADR-0115.
+        candidates = {
+            f"000a270002{value[6:]}"
+            if value != "000000000000" and re.fullmatch(r"000000[0-9a-f]{6}", value)
+            else value
+            for value in candidates
+        }
     if len(candidates) != 1:
         return b""
     try:
