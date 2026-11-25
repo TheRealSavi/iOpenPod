@@ -243,13 +243,13 @@ def test_right_disclosure_expands_without_opening_a_folder_page() -> None:
             pos=QPoint(4, row.center().y()),
         )
         assert selected == [1, 2]
-        assert not tree.isExpanded(nested)
+        assert tree.isExpanded(nested)
         QTest.mouseClick(
             tree.viewport(),
             Qt.MouseButton.LeftButton,
             pos=QPoint(row.right() - 16, row.center().y()),
         )
-        assert tree.isExpanded(nested)
+        assert not tree.isExpanded(nested)
         assert selected == [1, 2]
     finally:
         sidebar.close()

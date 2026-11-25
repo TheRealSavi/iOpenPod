@@ -198,8 +198,7 @@ class _PlaylistPopup(HoverDropdown):
         view = self.tree.findChild(QTreeView, "playlistTree")
         assert view is not None
         self.set_item_view(view)
-        view.expanded.connect(self._schedule_resize)
-        view.collapsed.connect(self._schedule_resize)
+        self.tree.heightChanged.connect(self.fit)
         self.content_layout.addWidget(self._scroll, 1)
         workspace.changed.connect(self._workspace_changed)
         self.retranslate_ui()
@@ -504,7 +503,9 @@ class CompactTopBar(QFrame):
         action.setIconVisibleInMenu(True)
 
     def set_current_page(self, page_id: PageId) -> None:
-        self._dropdowns.close()
+        # The Playlists popup decides whether to close based on the activated row.
+        if page_id is not PageId.PLAYLISTS or not self._playlist_popup.isVisible():
+            self._dropdowns.close()
         self._settings.setChecked(page_id is PageId.SETTINGS)
         self._summary.setChecked(page_id is PageId.DEVICE_SUMMARY)
         for candidate, action in self._actions.items():

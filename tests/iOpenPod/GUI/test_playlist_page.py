@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import cast
 
 import pytest
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, Qt, QVariantAnimation
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QDialog,
@@ -1069,6 +1069,8 @@ def test_playlist_dropdown_keeps_library_navigation_and_only_items_open_pages() 
         sidebar.set_active_ipod(_active_ipod())
         tree = sidebar.playlist_tree
         assert tree is not None
+        animation = tree.findChild(QVariantAnimation, "playlistSectionAnimation")
+        assert animation is not None
         toggle = sidebar.findChild(QPushButton, "playlistSectionToggle")
         view = sidebar.findChild(QTreeView, "playlistTree")
         pages = window.findChild(QStackedWidget, "pageStack")
@@ -1098,6 +1100,10 @@ def test_playlist_dropdown_keeps_library_navigation_and_only_items_open_pages() 
         assert pages.currentWidget() is page
         assert albums.isVisible() and not albums.isChecked()
         toggle.click()
+        assert not toggle.isChecked()
+        assert pages.currentWidget() is page
+        assert _selected_playlist_id(page) == 10
+        animation.setCurrentTime(animation.duration())
         assert not view.isVisible()
         assert pages.currentWidget() is page
         assert _selected_playlist_id(page) == 10

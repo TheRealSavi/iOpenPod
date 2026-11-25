@@ -18,6 +18,7 @@ from iOpenPod.app.core.settings.definitions import (
     NavigationStyle,
     PlayerPosition,
 )
+from iOpenPod.app.models.playlist_tree_model import PlaylistTreeModel
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
@@ -26,7 +27,7 @@ from iOpenPod.GUI.widgets.compact_top_bar import CompactTopBar
 from iOpenPod.GUI.widgets.hover_dropdown import HoverDropdown
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.sidebar import Sidebar
-from iPodDB.library import LibrarySnapshot, Playlist
+from iPodDB.library import LibrarySnapshot, Playlist, PlaylistKind
 
 
 def test_compact_playlist_highlighting_never_navigates_until_activation() -> None:
@@ -63,6 +64,80 @@ def test_compact_playlist_highlighting_never_navigates_until_activation() -> Non
         assert isinstance(page, PlaylistPage)
         assert page.selected_playlist_id == 2
         assert not popup.isVisible()
+    finally:
+        window.close()
+        context.shutdown()
+        window.deleteLater()
+        APPLICATION.sendPostedEvents(window, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize("style", list(NavigationStyle))
+def test_clicking_playlist_folder_opens_its_page_and_reveals_children(
+    style: NavigationStyle,
+) -> None:
+    context = build_context()
+    context.settings.set_global(NAVIGATION_STYLE, style.value)
+    context.library_workspace.load(
+        LibrarySnapshot(
+            playlists=(
+                Playlist(1, "Travel", PlaylistKind.FOLDER),
+                Playlist(2, "Roads", parent_id=1),
+            )
+        )
+    )
+    window = MainWindow(context, auto_discover=False)
+    try:
+        window.show()
+        window.activateWindow()
+        APPLICATION.processEvents()
+        QTest.mouseMove(window, QPoint(1, 1))
+        navigation = (
+            window.findChild(CompactTopBar)
+            if style is NavigationStyle.COMPACT_TOP_BAR
+            else window.findChild(Sidebar)
+        )
+        pages = window.findChild(QStackedWidget, "pageStack")
+        assert navigation is not None and pages is not None
+        navigation.set_active_ipod(_active_ipod())
+        navigation.pageRequested.emit(PageId.ARTISTS.value)
+        assert not isinstance(pages.currentWidget(), PlaylistPage)
+        popup = None
+        if isinstance(navigation, CompactTopBar):
+            button = navigation.findChild(QPushButton, "compactPlaylists")
+            assert button is not None
+            popup = button.findChild(HoverDropdown)
+            assert popup is not None
+            QTest.mouseMove(button, button.rect().center())
+            assert popup.isVisible()
+        else:
+            toggle = navigation.findChild(QPushButton, "playlistSectionToggle")
+            assert toggle is not None
+            toggle.setChecked(True)
+        APPLICATION.processEvents()
+
+        tree = navigation.findChild(QTreeView, "playlistTree")
+        assert tree is not None
+        model = tree.model()
+        assert isinstance(model, PlaylistTreeModel)
+        folder = model.index_for_id(1)
+        assert not tree.isExpanded(folder)
+        point = tree.visualRect(folder).center()
+        QTest.mouseMove(tree.viewport(), point)
+        QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=point)
+        APPLICATION.processEvents()
+        page = pages.currentWidget()
+        assert isinstance(page, PlaylistPage)
+        assert page.selected_playlist_id == 1
+        if popup is not None:
+            QTest.qWait(220)
+            assert popup.isVisible()
+        assert tree.isExpanded(folder)
+
+        child = tree.visualRect(model.index_for_id(2)).center()
+        QTest.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=child)
+        assert page.selected_playlist_id == 2
+        if popup is not None:
+            assert not popup.isVisible()
     finally:
         window.close()
         context.shutdown()
