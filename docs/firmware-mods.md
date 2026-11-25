@@ -19,10 +19,10 @@ Windows, macOS and Linux builds for Classic families 24, 33, 35 and 38:
    bootloader is installed. A recognized older loader instead offers
    **Update bootloader to 2.1.0**.
 2. **Install universal 2.0.5** installs Universal Classic Firmware **2.0.5**, with
-   **Mod Version: 0.11.0-dev**, through normal USB. It appears only with a qualified
+   **Mod Version: 0.12.3-dev**, through normal USB. It appears only with a qualified
    current bootloader and is hidden when the current Mod Platform Version is
    already installed. An existing mod release instead offers
-   **Update firmware to 0.11.0-dev**.
+   **Update firmware to 0.12.3-dev**.
 
 When both versions are current, neither button nor its hint appears. The section
 says **Bootloader and firmware are up to date.**
@@ -47,7 +47,8 @@ game-reader mode. Executable Verify/DRM checks remain unchanged. Parachute passe
 the native gate and import probes; the user confirmed launch and controls on family 33. See
 [homebrew evidence](research/classic-homebrew-eapp-manifests-2026-11-17.md).
 
-**Extras → Mods** now lists the build's included Firmware Mods:
+Highlight **Mods** in **Extras** to see a silver gear in the preview pane.
+Press the center button to see the Firmware Mods included in this build.
 
 - Mod Version String
 - Mod Version in About
@@ -61,6 +62,7 @@ the native gate and import probes; the user confirmed launch and controls on fam
 - Fast Audio Seeking
 - Photo Zoom and Pan
 - Title Bar Clock
+- Mono Audio
 
 This is a read-only native list, with ordinary Menu-button back navigation.
 The labels and build provenance come from the same included-mod records.
@@ -68,9 +70,16 @@ It does not enable the parked desktop mod selector. Native ARM and resource
 checks pass; physical display/navigation verification remains outstanding. See
 [menu evidence](research/classic-mod-menu-2026-11-17.md).
 
+On the iPod, **Settings → Mono Audio** appears below Sound Check. Highlight it
+to see two channels joining at a single speaker. Choose **On**
+to hear both stereo channels through either headphone or dock channel. **Off**
+restores stereo. The iPod keeps this choice across output changes and restarts.
+See [playback routing and validation](research/classic-mono-audio.md).
+
 **Title Bar Clock** follows **Settings → Date & Time → Time in Title**. With
 the setting on, full-width bars show the title at the left, the status indicators
-beside the clock, and the time at the far right. This includes photo album grids,
+five pixels before the clock's measured text, and the time at the far right.
+This includes photo album grids,
 the running or stopped Stopwatch, Genius Mixes and the video playback overlay.
 The video clock disappears with the overlay. Narrow menu bars keep alternating
 between title and time. See the [layout inventory](research/classic-title-bar-clock-2026-11-19.md).
@@ -231,13 +240,13 @@ and [report evidence](research/classic-bootloader-report-2026-11-18.md).
 ## Included files and completion records
 
 The complete OS, resources and directory are compressed into the application's
-56,759,063-byte `firmware.zlib` asset. Its output is the complete
+56,765,941-byte `firmware.zlib` asset. Its output is the complete
 101,871,616-byte shared image. Preparation uses bounded decompression and the
 pinned full-image hash. A damaged cache is rebuilt locally; a damaged bundle
 requires repairing iOpenPod, never a download. See [the packager](../scripts/firmware/README.md).
 
 The persistent firmware directory is `%LOCALAPPDATA%/iOpenPod/firmware` on Windows.
-The prepared image is `shared/0.11.0-dev/firmware.bin`. Existing saved Apple IPSWs
+The prepared image is `shared/0.12.3-dev/firmware.bin`. Existing saved Apple IPSWs
 are no longer used. The initial NOR copy and loader receipts remain under
 `bootloader/<serial>`; firmware installation records are under
 `installations/<serial>/operation.json`. The OS installer creates no additional

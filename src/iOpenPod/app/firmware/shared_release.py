@@ -20,8 +20,8 @@ if TYPE_CHECKING:
     from pathlib import Path
     from threading import Event
 
-MOD_VERSION = "0.11.0-dev"
-IMAGE_SHA256 = "bdbbfce14bf1a01638b2988324599efbadf4fb92b4fde048e3110be5ec8ab0fb"
+MOD_VERSION = "0.12.3-dev"
+IMAGE_SHA256 = "9656d06f3552da7ad23eef3ed7b994435e9aa92b2e53997e9d254f88522d5b9f"
 RELEASE_HASHES = {
     "0.2.0-dev": "05b1d49671a42f190ed7f8bbd62c2f8b38e54749cb8261c39904dbef851ecff4",
     "0.2.1-dev": "2dc8b94f0fff21c1fb70f6d9748c95890fed35de8fdd72d187ffd605742ce5dd",
@@ -47,6 +47,10 @@ RELEASE_HASHES = {
     "0.8.2-dev": "315ba834b15f71fc55d12a79cd51b888598fb45c0e689b02a214e8d10d947fa6",
     "0.9.0-dev": "fdad0f8f47936accf0a6ee81351adea8ffb7e479df6981d43cb70df60fa883bf",
     "0.10.0-dev": "eeac9095f05ca7d1077075cf9d805899cc0cf0d317fe105275c8a856943892a9",
+    "0.11.0-dev": "bdbbfce14bf1a01638b2988324599efbadf4fb92b4fde048e3110be5ec8ab0fb",
+    "0.12.0-dev": "d2e34211ab0934c33775ae3dd1d6c12407013e85b0f63728b3d44f8cc60b8526",
+    "0.12.1-dev": "13b6e6d9a52811e0a45e8bdde699840bfcb3fef6dac4805aee5c82f35df815c1",
+    "0.12.2-dev": "199454cfa660dac4e0382dac44e7efbaa9613bc630e1c02e6b7cba6eba358311",
     MOD_VERSION: IMAGE_SHA256,
 }
 RELEASE_BYTES = {
@@ -74,6 +78,10 @@ RELEASE_BYTES = {
     "0.8.2-dev": FIRMWARE_BYTES,
     "0.9.0-dev": FIRMWARE_BYTES,
     "0.10.0-dev": FIRMWARE_BYTES,
+    "0.11.0-dev": FIRMWARE_BYTES,
+    "0.12.0-dev": FIRMWARE_BYTES,
+    "0.12.1-dev": FIRMWARE_BYTES,
+    "0.12.2-dev": FIRMWARE_BYTES,
     MOD_VERSION: FIRMWARE_BYTES,
 }
 STOCK = ClassicStockRelease(

@@ -7,6 +7,7 @@ from PIL import Image
 from scripts.firmware import classic_appearance, classic_mono
 from scripts.firmware.classic_bitmaps import Bitmap
 from scripts.firmware.classic_menu import included_mods, menu_resources, mod_records
+from scripts.firmware.classic_patches import runtime_offset
 from scripts.firmware.classic_resources import blocks, u32
 
 from iOpenPod.app.firmware.classic_shared import OSOS_LENGTH_OFFSET, OSOS_OFFSET
@@ -66,5 +67,16 @@ def test_mono_setting_extends_the_selected_menu(osos: bytes, appearance: bool) -
         assert image.mode == "L" and image.size == (bitmap.width, bitmap.height)
         assert bitmap.format == 8
         assert bitmap.rgba()[::4] == image.tobytes()
+    assert bitmap.data in osos
     assert {record["name"] for record in mod_records(**options)} >= {"Mono Audio"}
     assert "Mono Audio" not in {mod.name for mod in included_mods(homebrew_eapps=False)}
+
+
+def test_bundled_mixer_hook_comes_after_all_voices(osos: bytes) -> None:
+    finish = runtime_offset(0x22007ED0, 8)
+    assert u32(osos, finish) == 0xE51FF004
+    assert 0x08B3C000 <= u32(osos, finish + 4) < 0x08F3C000
+    # The initial and route-switch driver registrations use the same refill.
+    for address in (0x220076EC, 0x22008020):
+        assert u32(osos, runtime_offset(address, 4)) == 0x22007840
+    assert b"iPod_Control\\Device\\iOPMonoAudio\0" in osos

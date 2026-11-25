@@ -1,12 +1,14 @@
-Universal Classic Firmware 2.0.5, Mod Platform Version 0.11.0-dev.
+Universal Classic Firmware 2.0.5, Mod Platform Version 0.12.3-dev.
 
 firmware.zlib is the complete device-independent firmware image, compressed
 with zlib. It includes the unsigned common OS, resources and directory.
 It contains Apple code and resources plus the iOpenPod About/version extension
 and the unsigned eapp manifest mod (org.iopenpod.homebrew, 0.1.0-dev).
-Extras / Mods lists the twelve included firmware mods using Apple's native UI,
+Extras / Mods lists the thirteen included firmware mods using Apple's native UI,
 including Expanded Mod Memory (4 MiB RAM budget, 16 MiB OS slot) and
 Light / Dark Appearance (0.1.5-dev), with Light, Dark and timed Auto in Settings.
+Mod Menu (0.1.2-dev) registers the silver gear in the stock Games template
+and displays it when Mods is highlighted.
 The World Clock row backdrop follows dark appearance; day/night faces and
 clock hands keep their original semantics.
 Now Playing Preview Artwork (0.1.3-dev) connects the main-menu preview to native
@@ -45,15 +47,19 @@ Center enters the mode and pans up while held. Menu resets or exits the mode.
 A bottom-right magnifier indicates the active mode at every zoom level.
 Magnification uses the native 720 x 480 F1067 I420 cache when available,
 falling back to the LCD rendition without allocating a second full-image buffer.
-Title Bar Clock (0.1.0-dev) aligns full-width titles to the left and places
-local time at the right when Time in Title is enabled.
+Title Bar Clock (0.1.1-dev) aligns full-width titles to the left and places
+local time at the right when Time in Title is enabled. Native text measurement
+keeps a five-pixel gap from the preceding status indicator.
+Mono Audio (0.1.1-dev) adds a persistent native Settings toggle for
+left/right downmix on headphone, analog dock and USB digital dock playback.
+Its preview shows two channels joining at a single speaker.
 Apple material retains its original ownership; the application's GPL license
 does not grant a separate license to Apple's firmware.
 
 Apple package SHA-256:
 80f974edea54ae4c9b659578a0c4d74438ffd94b8270944ec0cfc8f10e90eb2d
 Decompressed complete firmware SHA-256 (101,871,616 bytes):
-bdbbfce14bf1a01638b2988324599efbadf4fb92b4fde048e3110be5ec8ab0fb
+9656d06f3552da7ad23eef3ed7b994435e9aa92b2e53997e9d254f88522d5b9f
 
 The resource bank is included. Installation does not contact Apple's servers.
 No device-specific identity, secret key or personalized bootloader header is included.

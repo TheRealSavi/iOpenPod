@@ -5,10 +5,10 @@ using Apple's exact 2.0.5 base. It retains Apple's version and adds the independ
 Mod Platform Version to the native About page. No device identity, signing key,
 DFU call or per-device OS authentication is part of this build.
 
-The current output is **0.11.0-dev**, including unsigned eapp manifests,
+The current output is **0.12.3-dev**, including unsigned eapp manifests,
 the read-only native **Extras → Mods** list and **Settings → Appearance** with
 persistent Light/Dark/Auto selection, main-menu Now Playing artwork, Bootloader Report,
-long MP4 audio repairs, Photo Zoom and Pan, and Title Bar Clock. It requires
+long MP4 audio repairs, Photo Zoom and Pan, Title Bar Clock, and Mono Audio. It requires
 the shared **2.1.0** bootloader.
 The current-track preview retains a native thumbnail reference and now selects
 its drawing mode from the actual dynamic bitmap format. The user confirms correct
@@ -107,8 +107,8 @@ uv run python -m scripts.firmware.build_classic `
   --osos PATH/TO/prepared/osos.bin `
   --firmware PATH/TO/Firmware-38.9.0.5 `
   --compiler PATH/TO/arm-none-eabi-gcc.exe `
-  --version 0.11.0-dev --homebrew-eapps --dark-mode --now-playing-artwork `
-  --bootloader-report --long-audio --photo-zoom --title-bar-clock `
+  --version 0.12.3-dev --homebrew-eapps --dark-mode --now-playing-artwork `
+  --bootloader-report --long-audio --photo-zoom --title-bar-clock --mono-audio `
   --out PATH/TO/new-output-directory
 ```
 
@@ -140,8 +140,8 @@ AUPD status; Apple's signed NOR updater must not replace the custom loader.
 
 The **Mod Memory Region** starts at `0x08b3c000` and supports **4 MiB total** for
 code, constants, initialized data, scratch and BSS. Its actual use is reserved
-from Apple's heap, rounded to pages. The current 129,504-byte initialized payload,
-scratch and BSS reserve 139,264 bytes (34 pages). Native BSS and exception stacks
+from Apple's heap, rounded to pages. The current 157,332-byte initialized payload,
+scratch and BSS reserve 167,936 bytes (41 pages). Native BSS and exception stacks
 retain their original locations. The startup copy handles overlapping buffers
 and initializes mod BSS. Oversized builds fail at link time.
 
@@ -174,7 +174,7 @@ uv run python -m scripts.firmware.package_classic PATH/TO/firmware-common.bin
 ```
 
 The packager validates the complete image's length and pinned SHA-256 before writing
-`src/iOpenPod/assets/firmware/classic-shared/firmware.zlib` (56,759,063 bytes). The
+`src/iOpenPod/assets/firmware/classic-shared/firmware.zlib` (56,765,941 bytes). The
 asset includes the OS, resources and directory. It contains Apple-derived code
 and resources and carries a separate notice; they are not covered by iOpenPod's
 GPL grant. A new release requires explicitly updating the pinned complete-image
@@ -183,8 +183,8 @@ identity in `app/firmware/shared_release.py`.
 At runtime, `SharedFirmwareRelease` unpacks this asset with bounded decompression
 and checks the complete image. No IPSW, catalog request or network fallback is
 involved. The 101,871,616-byte image must have SHA-256
-`bdbbfce14bf1a01638b2988324599efbadf4fb92b4fde048e3110be5ec8ab0fb`.
-It is retained under `firmware/shared/0.11.0-dev/firmware.bin`. A valid cache is
+`9656d06f3552da7ad23eef3ed7b994435e9aa92b2e53997e9d254f88522d5b9f`.
+It is retained under `firmware/shared/0.12.3-dev/firmware.bin`. A valid cache is
 reused; a corrupt cache is rebuilt locally. The first installation also works
 offline. The application needs no compiler, firmware-lab checkout,
 prepared Apple OS or per-device OS authentication. The Windows installer uses

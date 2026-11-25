@@ -28,13 +28,20 @@ awaits physical installation. See [expanded-space evidence](docs/research/classi
 and ADR-0285.
 
 The bundled Universal Classic Firmware currently has Mod Platform
-Version **0.11.0-dev**, with temporary artwork diagnostics omitted,
-and a native **Extras → Mods** list of its twelve included Firmware Mods. The list
-and build provenance derive from the same composition. Native relocation and
+Version **0.12.3-dev**, with temporary artwork diagnostics omitted,
+and a native **Extras → Mods** list of its thirteen included Firmware Mods.
+Highlighting Mods shows a silver gear in the Extras preview pane. The list and
+build provenance derive from the same composition. Native relocation and
 the compiled resource hook pass emulation; the menu awaits an on-device visual
 check. See [menu evidence](docs/research/classic-mod-menu-2026-11-17.md).
+**Settings → Mono Audio** sends the average of the left and right channels to
+both sides of headphone, analog dock and USB digital dock playback. It defaults
+to Off and persists across restarts. Both output drivers passed ARM emulation.
+Physical listening checks are pending. See [Mono Audio](docs/research/classic-mono-audio.md).
 With **Time in Title** enabled, Title Bar Clock shows the native local time at the
 right of full-width bars and aligns the screen title to the left edge.
+The clock fits its measured text width, removing the unused space beside the
+status indicators. Native spacing checks pass; physical confirmation is pending.
 Half-width and partial-width bars retain Apple's title rotation. See the
 [title-bar layout inventory](docs/research/classic-title-bar-clock-2026-11-19.md).
 Photo Zoom and Pan adds 100%–500% wheel zoom and time-based directional panning

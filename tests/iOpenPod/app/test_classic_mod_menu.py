@@ -110,7 +110,7 @@ def test_extras_keeps_original_entries_and_routes_to_mods(menu: MenuResources) -
 
 
 def test_highlighting_mods_resolves_its_own_gear_in_the_games_frame(
-    menu: MenuResources,
+    menu: MenuResources, osos: bytes
 ) -> None:
     preview = menu.names[MOD_PREVIEW_NAME]
     variants = blocks(menu.added["SLst", EXTRAS_SCREEN])
@@ -164,6 +164,7 @@ def test_highlighting_mods_resolves_its_own_gear_in_the_games_frame(
     with Image.open(MOD_PREVIEW_IMAGE) as image:
         assert (gear.width, gear.height) == image.size == (142, 87)
         assert gear.rgba() == image.convert("RGBA").tobytes()
+    assert gear.data in osos and MOD_PREVIEW_NAME.encode() + b"\0" in osos
 
 
 @pytest.mark.parametrize("homebrew", [True, False])
