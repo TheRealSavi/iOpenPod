@@ -37,6 +37,31 @@ def _session(tmp_path: Path) -> FilesystemSession:
     )
 
 
+@pytest.mark.parametrize("accepted", [True, False])
+def test_page_cache_eviction_advises_only_the_open_read_only_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, accepted: bool
+) -> None:
+    source = tmp_path / "track.mp3"
+    source.write_bytes(b"audio")
+    calls: list[tuple[int, int, int, int]] = []
+
+    def advise(fd: int, offset: int, length: int, advice: int) -> None:
+        calls.append((os.fstat(fd).st_size, offset, length, advice))
+        with pytest.raises(OSError):
+            os.write(fd, b"write must fail")
+        if not accepted:
+            raise OSError("cache advice rejected")
+
+    monkeypatch.setattr(os, "posix_fadvise", advise, raising=False)
+    monkeypatch.setattr(os, "POSIX_FADV_DONTNEED", 4, raising=False)
+
+    with _session(tmp_path) as session:
+        assert session.request_page_cache_eviction(DevicePath("track.mp3")) is accepted
+
+    assert calls == [(5, 0, 0, 4)]
+    assert source.read_bytes() == b"audio"
+
+
 @pytest.mark.parametrize("operation", ["read", "fingerprint", "capture"])
 @pytest.mark.parametrize("size", [0, 9001, 2 * 1024 * 1024 + 11])
 @pytest.mark.parametrize("short_reads", [False, True])

@@ -11,42 +11,38 @@ iPod. This investigation isolates the effect of that one change by storage type.
 
 ## Finding
 
-Reading one device Track at a time shortens cold Genius analysis on hard-drive
-iPods. On flash-modified iPods its effect depends on the Host's I/O scheduler:
-from 17% less time to about 1% more.
+Reading one device Track at a time shortened cold Genius analysis by 19–42%
+across the tested hard-drive iPods. On the tested flash iPod, it took 7.5% less
+time on average under BFQ and about 1% more under mq-deadline. A separate
+flash-modified iPod showed no measurable change.
 
 | iPod | Storage | Library on device | Change in cold analysis time |
 | --- | --- | --- | ---: |
 | iPod 7G(a) (Eli), BFQ scheduler | Hard drive | 61 GB, 2,867 Tracks | 41% less |
 | iPod 7G(a) (Eli), mq-deadline scheduler | Hard drive | 61 GB, 2,867 Tracks | 42% less |
 | iPod 7G(b) (Eli), BFQ scheduler | Hard drive | 1.1 GB, 128 Tracks | 19% less |
-| iPod 5.5G (Eli), BFQ scheduler | iFlash Quad, 128 GB | 59 GB, 2,903 Tracks | 0–17% less; two readers were erratic |
+| iPod 5.5G (Eli), BFQ scheduler | iFlash Quad, 128 GB | 59 GB, 2,903 Tracks | 7.5% less on average, with a wider spread for two readers |
 | iPod 5.5G (Eli), mq-deadline scheduler | iFlash Quad, 128 GB | 59 GB, 2,903 Tracks | 1% more |
 | iPod classic 6.5G (John) | imCort dual SD adapter | 128 Tracks analyzed | None (225.7 s vs 225.6 s) |
 
 iPod 7G(a) and iPod 7G(b) are two iPod classic 7G units with their original hard
-drives. The gain grows with how far the drive must seek between two files: the
-fuller drive gained about twice as much as the nearly empty one. It does not
-depend on the scheduler: the fuller drive gained 41% under BFQ and 42% under
-mq-deadline.
-
-Both schedulers are operating-system defaults on Linux. BFQ is the default on
-Fedora, which the measuring Host runs; Fedora's udev rules select it. mq-deadline
-is the Linux kernel's own default for a device like this and applies wherever a
-distribution does not override it.
+drives. The larger reduction on the fuller drive is consistent with longer
+seeks between concurrent reads. The two units had different libraries and file
+layouts, so the effect of drive fullness was not isolated. On the fuller drive,
+the reduction was similar under BFQ and mq-deadline.
 
 Flash storage has no seek cost. On the flash 5.5G (Eli), one reader held a
 steady 14.5–14.9 MB/s under either scheduler. Two readers depended on the
-scheduler. Under BFQ they ranged from the
-one-reader rate to 17% slower. Under mq-deadline they were steady and 1% faster
-than one reader. BFQ treats the iPod as a rotational disk and briefly idles the
-device after each read, which costs flash storage time without saving a seek.
-John's flash iPod showed no difference, which matches the mq-deadline result.
+scheduler. Under BFQ, the fastest two-reader run finished slightly ahead of the
+one-reader mean, and the slowest took about 20% longer. Under mq-deadline the
+two-reader runs were steady and took about 1% less time. BFQ's device idling for
+disks reported as rotational could contribute to the difference. John's flash
+iPod showed no measurable difference.
 
 ADR-0274's statement that flash storage slowed as much as the hard drive did not
-reproduce: the largest flash loss measured here was 17%, against 41% on the full
-hard drive. Its hard-drive figure, about 40% more read throughput, understates the
-effect on a full drive: the real analysis read 67% faster.
+reproduce in the analysis runs. The fuller hard drive's sample rate rose from
+about 12 to 20 MB/s with one reader, compared with roughly 12–15 to 14.5–14.7 MB/s
+on flash under BFQ.
 
 ## Method
 
@@ -56,13 +52,20 @@ Two builds of `e206b805` differed only in whether a device Track takes the read
 lock; both logged Genius analysis wall time. A harness opened the mounted iPod
 through a read-only Filesystem Session and called `GeniusAnalysisService.analyze`
 with the real FFmpeg decoder and profiler, six workers, and no profile cache.
-Every sampled file was evicted from the page cache before each run, so every read
-was cold. Nothing was written to the iPod.
+The harness requested that the Host discard cached pages for the sampled files
+before each run. File data was treated as cold. Neither benchmark mode modified
+device files. [Linux page-cache advice](https://man7.org/linux/man-pages/man2/posix_fadvise.2.html)
 
 `scripts/benchmark_genius_device_reads.py` repeats this measurement from one
 build. `--device-readers 1` is the application's behavior and `--device-readers 2`
-removes the single device read. It selects the same sample as the runs below for
-the same Music files, Track count, and seed.
+allows both in-flight device Tracks to read at once. Use the same Music files,
+Track count, and seed to select the same sample. The script reports whether the
+Host accepted cache eviction advice for the whole sample. Reconnect between runs
+on Hosts without cache eviction advice.
+
+In the analysis tables, sample MB/s is the total size of the selected files
+divided by analysis wall time. The calculation includes the full sizes of
+unavailable Tracks.
 
 Each iPod ran the same fixed sample at least four times in the order before,
 after, after, before. The kernel log was checked after each run; none recorded a
@@ -70,7 +73,7 @@ read error or USB reset. The Host used the BFQ scheduler unless stated.
 
 iPod 7G(a) (Eli), 128 Tracks sampled across the library (2,654 MB):
 
-| Run | Build | Wall time | Throughput |
+| Run | Build | Wall time | Sample MB/s |
 | ---: | --- | ---: | ---: |
 | 1 | Two readers | 220.4 s | 12.0 MB/s |
 | 2 | One reader | 132.4 s | 20.0 MB/s |
@@ -82,7 +85,7 @@ All four runs analyzed 126 Tracks and reported the same two as unavailable.
 The same sample on iPod 7G(a) with the scheduler changed to mq-deadline, run with
 `scripts/benchmark_genius_device_reads.py`:
 
-| Run | Mode | Wall time | Throughput |
+| Run | Mode | Wall time | Sample MB/s |
 | ---: | --- | ---: | ---: |
 | 1 | Two readers | 226.7 s | 11.7 MB/s |
 | 2 | One reader | 129.6 s | 20.5 MB/s |
@@ -93,7 +96,7 @@ These match the BFQ runs to within 3%, with the same 126 Tracks analyzed.
 
 iPod 7G(b) (Eli), all 128 Tracks (971 MB of MP3):
 
-| Run | Build | Wall time | Throughput |
+| Run | Build | Wall time | Sample MB/s |
 | ---: | --- | ---: | ---: |
 | 1 | Two readers | 73.4 s | 13.2 MB/s |
 | 2 | One reader | 61.4 s | 15.8 MB/s |
@@ -103,7 +106,7 @@ iPod 7G(b) (Eli), all 128 Tracks (971 MB of MP3):
 Flash 5.5G (Eli), 128 Tracks sampled across the library (2,679 MB), with a third
 pair added because the two-reader runs disagreed:
 
-| Run | Build | Wall time | Throughput |
+| Run | Build | Wall time | Sample MB/s |
 | ---: | --- | ---: | ---: |
 | 1 | Two readers | 219.9 s | 12.2 MB/s |
 | 2 | One reader | 184.7 s | 14.5 MB/s |
@@ -118,7 +121,7 @@ one-reader runs span 2.8 seconds; the two-reader runs span 39.5 seconds.
 The same sample on the same iPod with the scheduler changed to mq-deadline, run
 with `scripts/benchmark_genius_device_reads.py`:
 
-| Run | Mode | Wall time | Throughput |
+| Run | Mode | Wall time | Sample MB/s |
 | ---: | --- | ---: | ---: |
 | 1 | Two readers | 178.0 s | 15.1 MB/s |
 | 2 | One reader | 180.2 s | 14.9 MB/s |
@@ -128,7 +131,7 @@ with `scripts/benchmark_genius_device_reads.py`:
 | 6 | One reader | 180.1 s | 14.9 MB/s |
 
 Each mode spans 0.3 seconds or less. Two readers finished 2.4 seconds sooner than
-one, about 1%. The spread under BFQ is therefore attributed to that scheduler.
+one, about 1%. The spread was much larger with BFQ on the same Host and iPod.
 
 ### Read throughput, one and two readers
 

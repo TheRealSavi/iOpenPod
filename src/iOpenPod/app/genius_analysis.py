@@ -60,9 +60,9 @@ if TYPE_CHECKING:
 GENIUS_SAMPLE_RATE_HZ = 22_050
 MAX_GENIUS_AUDIO_SECONDS = 15 * 60
 _MAX_PCM_BYTES = GENIUS_SAMPLE_RATE_HZ * MAX_GENIUS_AUDIO_SECONDS * 4
-# Two device Tracks may be in flight, but only one reads at a time: concurrent
-# reads slowed both hard-drive and flash iPods (ADR-0274). Staged Host captures
-# are local files and may use every worker.
+# Two device Tracks may be in flight, with reads serialized by default.
+# This helps hard-drive iPods, with smaller effects on tested flash iPods
+# (ADR-0274). Staged Host captures are local files and may use every worker.
 _MAX_DEVICE_ANALYSIS_WORKERS = 2
 _DEVICE_READ_POLL_SECONDS = 0.1
 _MAX_ANALYSIS_WORKERS = 6
@@ -401,7 +401,7 @@ class GeniusAnalysisService:
     """Profile music sources concurrently and retain successful work.
 
     At most ``workers`` sources are analyzed at once. At most two are device
-    Tracks, and only one of those reads at a time while the other is profiled.
+    Tracks. By default, only one reads at a time while the other is profiled.
     Admission follows Library order; outcomes are recorded as they complete, so
     one slow Track never idles the remaining workers.
     """
@@ -414,6 +414,7 @@ class GeniusAnalysisService:
         profiler: GeniusProfiler | None = None,
         workers: int | None = None,
         vocal_factory: Callable[[], GeniusVocalAnalyzer | None] | None = None,
+        serialize_device_reads: bool = True,
     ) -> None:
         if workers is not None and not (
             _MAX_DEVICE_ANALYSIS_WORKERS <= workers <= _MAX_ANALYSIS_WORKERS
@@ -425,6 +426,7 @@ class GeniusAnalysisService:
         self._profiler = profiler or profile_genius_pcm
         self._workers = workers or _default_analysis_workers()
         self._vocal_factory = vocal_factory
+        self._serialize_device_reads = serialize_device_reads
 
     def analyze(
         self,
@@ -437,6 +439,7 @@ class GeniusAnalysisService:
         progress: Callable[[GeniusAnalysisProgress], None] | None = None,
         skip_requested: Callable[[], bool] | None = None,
         analyze_vocals: bool = False,
+        use_committed_host_sources: bool = True,
     ) -> GeniusAnalysisResult:
         checkpoint = _session_checkpoint(session, checkpoint)
         should_skip = skip_requested or (lambda: False)
@@ -458,6 +461,8 @@ class GeniusAnalysisService:
             nonlocal committed
             if track.track_id in correlated:
                 return correlated[track.track_id]
+            if not use_committed_host_sources:
+                return None
             if committed is None:
                 committed = committed_genius_sources(
                     session, snapshot.tracks, checkpoint=worker_checkpoint
@@ -815,7 +820,8 @@ class GeniusAnalysisService:
                     )
                 with (
                     _holding(device_read, checkpoint)
-                    if isinstance(source.path, DevicePath)
+                    if self._serialize_device_reads
+                    and isinstance(source.path, DevicePath)
                     else nullcontext()
                 ):
                     pcm = decoder.decode(
