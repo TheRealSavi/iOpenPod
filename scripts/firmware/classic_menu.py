@@ -85,7 +85,9 @@ def included_mods(
             IncludedMod("org.iopenpod.photo-zoom", "Photo Zoom and Pan", "0.3.0-dev")
         )
     if title_bar_clock:
-        result.append(IncludedMod("org.iopenpod.title-bar-clock", "Title Bar Clock"))
+        result.append(
+            IncludedMod("org.iopenpod.title-bar-clock", "Title Bar Clock", "0.1.1-dev")
+        )
     return tuple(result)
 
 

@@ -13,7 +13,7 @@ CLOCK_FIRST = 0x0CF00200
 LAYOUT_FIRST = 0x0CF00300
 HALF, PARTIAL = 0x0DAD01A8, 0x0DAD01A9
 LEFT, RIGHT, VISIBLE = 1001, 1003, 1005
-CLOCK_LEFT = 244
+CLOCK_RIGHT = 315
 
 
 @dataclass(frozen=True)
@@ -81,7 +81,9 @@ def title_clock_resources(menu: MenuResources) -> str:
         clock_id = CLOCK_FIRST + index
         clock = bytearray(title)
         # View stores left/top/bottom/right. Layout options use top/left/bottom/right.
-        clock[:12] = anchor(CLOCK_LEFT)
+        # Let TextView measure the localized time instead of reserving blank
+        # leading space in a fixed-width box beside the status indicators.
+        clock[:12] = anchor(0, 0, 7)
         clock[36:48] = anchor(-5)
         put(clock, 0x30, clock_id)
         put(clock, 0x5C, 1)  # Plain TextView, with no alternator or marquee.
@@ -107,9 +109,9 @@ def title_clock_resources(menu: MenuResources) -> str:
             original_options = {
                 child: dict(blocks(body)) for child, body in blocks(original)
             }
-            # Reference the clock's leading edge so the native title proxy can
-            # recognize this layout. The title itself starts at x6 on every bar.
-            geometry = {bar.title: {LEFT: anchor(6 - CLOCK_LEFT, clock_id, 2)}}
+            # Reference the clock's fixed trailing edge so the native title proxy
+            # recognizes this layout and the title stays at x6 as time width varies.
+            geometry = {bar.title: {LEFT: anchor(6 - CLOCK_RIGHT, clock_id, 4)}}
             if bar.indicator_chain:
                 previous = clock_id
                 for child in bar.indicator_chain:

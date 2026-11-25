@@ -79,7 +79,9 @@ the visible F1024 photo through the native clipped blit. See the
 [input, geometry and native tests](../../docs/research/classic-photo-zoom-2026-11-19.md).
 
 The optional `--title-bar-clock` mod places local time in the right corner of
-full-width title bars when Apple's **Time in Title** setting is on. See the
+full-width title bars when Apple's **Time in Title** setting is on. Its native
+TextView fits the measured time, keeping the preceding status indicator five
+pixels away without a fixed-width clock reservation. See the
 [layout inventory and native checks](../../docs/research/classic-title-bar-clock-2026-11-19.md).
 
 ### Reproduce a release

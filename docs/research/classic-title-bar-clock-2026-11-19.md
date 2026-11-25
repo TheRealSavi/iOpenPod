@@ -1,6 +1,6 @@
 # Classic 2.0.5 title-bar layouts
 
-**Title Bar Clock 0.1.0-dev** ships in Mod Platform Version **0.11.0-dev**.
+**Title Bar Clock 0.1.1-dev** ships in Mod Platform Version **0.12.3-dev**.
 Apple's **Settings → Date & Time → Time in Title** controls it. When enabled,
 the full-width bars align the title to the left and the native local time to the right.
 
@@ -45,22 +45,47 @@ layout (`0x0dad0978`) has no bar.
 ## Native implementation
 
 Each template gains a native trailing-aligned TextView with a five-pixel right
-margin. It uses the bar's text color, Apple's status-bar font and native clock
-source `SORC 0x292`. This reads string `0x80ae` from clock model `0x8080`
+margin and intrinsic width. It uses the bar's text color, Apple's status-bar font
+and native clock source `SORC 0x292`. This reads string `0x80ae` from clock model `0x8080`
 and uses the same localized time format (`0x11`) as Apple's alternating title.
 The clock model supplies minute-change notifications.
 
 The layout lookup at `0x08178374` selects a clock layout for each of the nine
 full-width variants when the native preference getter returns true. All nine
 place the title at x6 and align the clock text to x315 on the 320-pixel screen.
-The indicators sit immediately before the clock. The title ends before the
-indicator group. The radio variant reserves room for an indicator Apple
+The indicators sit five pixels before the measured clock text. The title ends
+before the indicator group. The radio variant reserves room for an indicator Apple
 constructs after the title. The left-constraint application at `0x08175d30`
 also sets Apple's TextView alignment byte for the two natively centered
 families. Turning the setting off restores their centered text and original
 bounds. The title keeps its original screen binding, including later changes.
 The alternating-title getter recognizes an active clock by the title's left
 constraint. Genius Mixes supplies its title directly.
+
+### Clock spacing correction, 2026-11-24
+
+The user reported excess space between the battery icon and time. Version
+0.1.0-dev anchored the clock's left edge at x244, reserving 71 pixels regardless
+of the time string. A native rectangle-solver replay with a 30-pixel text width
+reproduced 41 pixels of unused leading space in addition to the intended gap.
+
+Version 0.1.1-dev uses Apple's intrinsic-width constraint (resource edge 7),
+keeping the right edge at x315. Indicators remain anchored five pixels before
+the clock's left edge. The title's left constraint now references the fixed
+right edge of the clock, so varying text width leaves the title at x6 and still
+identifies the clock layout to the title proxy. This changes only resource
+constraints and version strings; native hook code, payload size (157,332 bytes)
+and reserved RAM (167,936 bytes) are unchanged.
+
+The updated native probe fails against 0.12.2-dev and passes 77 layout checks
+against 0.12.3-dev: eleven variants, each with off/on/off reuse and five supplied
+intrinsic text widths (30, 46, 59, 71 and 84 pixels). It verifies exact spacing,
+the fixed title origin, nonoverlapping visible indicators and stock restoration.
+It executes Apple's TextView sizing at `0x08287a64` and width-constraint update
+at `0x08264074` for 45 clock measurements, including width changes on reused
+views. Text and glyph measurement are supplied; the widths are probe inputs,
+not measurements of particular localized strings.
+Physical LCD spacing and minute-rollover validation remain outstanding.
 
 ## Qualification
 
@@ -69,15 +94,16 @@ check the screen inventory, title bindings, clock source, original overrides
 and packaged mod. The firmware lab's `scripts/probe_classic_title_clock.py`
 executes the compiled resource installer, the three new native hooks, Apple's
 preference getter, both title-proxy phases and the native rectangle solver.
-The 11 variants passed 33 off/on/off checks with reused child views. The probe
+The original release passed 33 off/on/off checks across 11 variants with reused
+child views; the spacing correction expands this to the 77 checks above. The probe
 supplies the model values and intrinsic icon sizes, verifies that the title,
 icons and clock fit their assigned regions, checks left alignment and restoration
 of the stock alignment on each reused title, and checks the localized format
 selector. LCD appearance, localized text widths, minute rollover and video
 overlay transitions still need a physical check.
 
-Two release builds with ARM GNU 13.3.rel1 produced identical complete images.
+Two 0.12.3-dev release builds with ARM GNU 13.3.rel1 produced identical complete images.
 The prepared OS SHA-256 is
 `660eb6ff5f498bb1a75e85f1f9921bf0c753525a8bca9b4fa47ed260e5ad0f1e`.
 The 101,871,616-byte release image SHA-256 is
-`bdbbfce14bf1a01638b2988324599efbadf4fb92b4fde048e3110be5ec8ab0fb`.
+`9656d06f3552da7ad23eef3ed7b994435e9aa92b2e53997e9d254f88522d5b9f`.

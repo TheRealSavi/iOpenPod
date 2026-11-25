@@ -104,7 +104,8 @@ def test_full_bars_keep_their_screen_bindings_and_use_the_native_clock(
         assert views == original_views
         assert kind == TEXT and u32(clock, 0x30) == CLOCK_FIRST + index
         assert u32(clock, 0x78) == 2 and u32(clock, 0x5C) == 1
-        assert u32(clock, 0) == 244 and struct.unpack_from("<i", clock, 36)[0] == -5
+        assert struct.unpack_from("<iII", clock) == (0, 0, 7)
+        assert struct.unpack_from("<iII", clock, 36) == (-5, 0, 0)
         title = next(body for _, body in views if u32(body, 0x30) == bar.title)
         assert u32(clock, 0x70) == u32(title, 0x70)
         for layout in bar.layouts:
@@ -124,7 +125,7 @@ def test_full_bars_keep_their_screen_bindings_and_use_the_native_clock(
                 VISIBLE: b"\x01",
             }
             opts = dict(blocks(on[bar.title]))
-            assert struct.unpack("<iII", opts[LEFT]) == (6 - 244, clock_id, 2)
+            assert struct.unpack("<iII", opts[LEFT]) == (6 - 315, clock_id, 4)
             if bar.indicator_chain:
                 assert u32(title, 0x78) == 3
                 assert u32(opts[RIGHT], 4) in (*bar.indicator_chain, clock_id)
