@@ -76,6 +76,7 @@ class DevicePickerDialog(QDialog):
         self.setObjectName("devicePicker")
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.resize(LAYOUT.device_picker_width, LAYOUT.device_picker_row_height)
+        self._preferred_height: int | None = None
         self._discovery = DeviceDiscovery(candidates=())
         self._busy = False
         self._searching = False
@@ -154,7 +155,7 @@ class DevicePickerDialog(QDialog):
         )
         content.setSpacing(LAYOUT.space_sm)
         content.addLayout(header)
-        content.addWidget(self._candidates)
+        content.addWidget(self._candidates, 1)
         content.addWidget(self._empty)
         content.addWidget(self._detail_scroll)
         content.addWidget(self._linux_setup, 0, Qt.AlignmentFlag.AlignLeft)
@@ -174,7 +175,7 @@ class DevicePickerDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addLayout(content)
+        layout.addLayout(content, 1)
         layout.addWidget(footer)
         QWidget.setTabOrder(self._candidates, self._refresh)
         self.retranslate_ui()
@@ -281,10 +282,23 @@ class DevicePickerDialog(QDialog):
             else layout.totalSizeHint().height()
         )
         available_height = self.screen().availableGeometry().height() - LAYOUT.space_2xl
-        self.resize(self.width(), min(preferred_height, available_height))
+        # Open with up to four rows. Extra height is useful only when it can
+        # reveal more devices, and belongs to the list above the action row.
+        extra_rows = max(
+            0, self._candidates.count() - LAYOUT.device_picker_visible_rows
+        )
+        full_height = preferred_height
+        if extra_rows:
+            full_height += extra_rows * self._candidates.sizeHintForRow(0)
+        self.setMaximumHeight(min(full_height, available_height))
+        target_height = min(preferred_height, available_height)
+        if not extra_rows or self._preferred_height != target_height:
+            self._preferred_height = target_height
+            self.resize(self.width(), target_height)
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
+        self._fit_height()
         self.visibilityChanged.emit(True)
 
     def hideEvent(self, event: QHideEvent) -> None:

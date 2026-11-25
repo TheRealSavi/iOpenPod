@@ -8,6 +8,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
     QLabel,
     QListWidget,
     QPushButton,
@@ -24,12 +25,36 @@ from iOpenPod.app.models.device import (
     DeviceReadiness,
 )
 from iOpenPod.GUI.dialogs.device_picker import DevicePickerDialog
+from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.storage_breakdown import format_capacity
 
 
-def test_picker_sizes_to_connected_devices_and_keeps_keyboard_selection() -> None:
+def test_empty_picker_stays_compact_after_a_resize_and_reopen() -> None:
     application = QApplication.instance() or QApplication([])
-    candidate = DeviceCandidate(
+    picker = DevicePickerDialog()
+    try:
+        picker.show()
+        application.processEvents()
+        footer = picker.findChild(QFrame, "devicePickerActions")
+        assert footer is not None
+        compact_height, footer_height = picker.height(), footer.height()
+        picker.resize(
+            picker.width(), compact_height + 3 * LAYOUT.device_picker_row_height
+        )
+        application.processEvents()
+        assert footer.height() == footer_height
+        assert picker.height() == compact_height
+        picker.close()
+        picker.show()
+        application.processEvents()
+        assert picker.height() == compact_height
+    finally:
+        picker.close()
+
+
+@pytest.fixture
+def ready_candidate() -> DeviceCandidate:
+    return DeviceCandidate(
         id=DeviceCandidateId("one"),
         display_name="My iPod",
         host_description="iPod classic",
@@ -40,6 +65,54 @@ def test_picker_sizes_to_connected_devices_and_keeps_keyboard_selection() -> Non
         total_bytes=120_000_000_000,
         available_bytes=0,
     )
+
+
+def test_picker_gives_extra_height_to_rows_and_shrinks_after_disconnect(
+    ready_candidate: DeviceCandidate,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    picker = DevicePickerDialog()
+    try:
+        picker.show()
+        application.processEvents()
+        empty_height = picker.height()
+        footer = picker.findChild(QFrame, "devicePickerActions")
+        devices = picker.findChild(QListWidget, "deviceCandidateList")
+        assert footer is not None and devices is not None
+        footer_height = footer.height()
+        candidates = tuple(
+            replace(ready_candidate, id=DeviceCandidateId(str(row)))
+            for row in range(LAYOUT.device_picker_visible_rows + 2)
+        )
+        picker.set_discovery(DeviceDiscovery(candidates))
+        application.processEvents()
+        initial_height = picker.height()
+        initial_viewport = devices.viewport().height()
+        row_height = devices.sizeHintForRow(0)
+        full_height = initial_height + 2 * row_height
+        picker.resize(picker.width(), full_height + row_height)
+        application.processEvents()
+        assert footer.height() == footer_height
+        expected = min(
+            full_height, picker.screen().availableGeometry().height() - LAYOUT.space_2xl
+        )
+        assert picker.height() == expected
+        assert (
+            devices.viewport().height() == initial_viewport + expected - initial_height
+        )
+
+        picker.set_discovery(DeviceDiscovery(()))
+        application.processEvents()
+        assert picker.height() == empty_height
+    finally:
+        picker.close()
+
+
+def test_picker_sizes_to_connected_devices_and_keeps_keyboard_selection(
+    ready_candidate: DeviceCandidate,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    candidate = ready_candidate
     second = replace(candidate, id=DeviceCandidateId("two"), display_name="Office")
     picker = DevicePickerDialog()
     selected: list[str] = []
