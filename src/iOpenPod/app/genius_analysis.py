@@ -954,6 +954,8 @@ def _device_key(
     session: FilesystemSession,
     identity: FileIdentity,
 ) -> str:
+    # A remount can change st_dev and st_ino. They belong to the current
+    # Filesystem Session's source checks in _validate_device.
     mounted = session.mounted_volume
     return _key(
         (
@@ -964,8 +966,6 @@ def _device_key(
             str(path),
             identity.size,
             identity.modified_ns,
-            identity.device,
-            identity.inode,
         )
     )
 
