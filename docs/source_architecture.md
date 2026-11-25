@@ -2776,10 +2776,10 @@ The popup lists the same reachable chapters, highlights the current chapter, and
 routes selection through the ordinary Player seek intent. It owns no transport or
 Library mutation. Selection, Escape, an outside click, or a current-Track change
 dismisses it; a chapterless Audiobook shows an empty state.
-The chapter index and statuses popup share one clipped panel animation: a 280 ms
-OutBack entrance with 0.8 overshoot and a 190 ms InCubic exit. The chapter index
+The chapter index and statuses popup share one clipped, critically damped spring:
+a 320 ms entrance settling budget and a 220 ms exit budget. The chapter index
 reveals downward from the Player, reversing direction when screen space requires
-opening above it. Interrupted transitions reverse from the current panel position;
+opening above it. Interrupted transitions retain the current position and velocity;
 Hosts that disable widget animation show or hide the panel immediately. Replacing
 the current Track dismisses its chapter index immediately.
 
@@ -3455,6 +3455,16 @@ Reusable widgets should draw from the global theme/palette rather than hard-codi
 
 Contains application-wide presentation infrastructure.
 
+`motion` owns interruptible springs on Qt's animation clock, the fade curve, and
+the common Host widget-animation preference check. Semantic `MOTION` tokens live
+beside the theme's `LAYOUT` tokens. Selectors, switches, popups, the Playback Pane,
+Player height, inline Albums, and collapsible sections share a critically damped
+trajectory. An explicit cancellation discards momentum; retargeting a live
+trajectory preserves it. Fades and Calendar page snapshots use bounded timing
+curves and retain their current composition on interruption. Navigation and
+selection state commit immediately. See
+[ADR-0298](adr/0298-share-interruptible-presentation-motion.md).
+
 `scrolling.install_scrolling` owns the shared wheel and middle-button input policy
 for existing and newly shown Qt scroll areas. The Album grid's bounded easing is
 shared across pages and dialogs. Item views render pixel motion; tables target one
@@ -3468,6 +3478,7 @@ presentation/
 ├── artwork_provider.py
 ├── display.py
 ├── image_color.py
+├── motion.py
 ├── i18n/
 └── theme/
 ```

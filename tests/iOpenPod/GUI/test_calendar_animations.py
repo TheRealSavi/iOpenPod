@@ -55,14 +55,15 @@ def _day_fill(month: MonthGrid, date: QDate) -> QColor:
     return image.pixelColor(60, 70)
 
 
-def _assert_half_blend(actual: QColor, start: QColor, end: QColor) -> None:
+def _assert_blend(actual: QColor, start: QColor, end: QColor, progress: float) -> None:
     for value, before, after in (
         (actual.red(), start.red(), end.red()),
         (actual.green(), start.green(), end.green()),
         (actual.blue(), start.blue(), end.blue()),
         (actual.alpha(), start.alpha(), end.alpha()),
     ):
-        assert value == pytest.approx((before + after) / 2, abs=1)
+        # Retargeting blends already quantized 8-bit colors a second time.
+        assert value == pytest.approx(before + (after - before) * progress, abs=2)
 
 
 @pytest.fixture
@@ -85,17 +86,19 @@ def test_day_highlights_crossfade_and_retarget_without_a_jump(month: MonthGrid) 
     assert _day_fill(month, first) == selected
     assert _day_fill(month, second) == unselected
     fade.setCurrentTime(fade.duration() // 2)
+    progress = float(fade.currentValue())
+    assert 0.75 < progress < 0.98
     before = {day: _day_fill(month, day) for day in (first, second, third)}
-    _assert_half_blend(before[first], selected, unselected)
-    _assert_half_blend(before[second], unselected, selected)
+    _assert_blend(before[first], selected, unselected, progress)
+    _assert_blend(before[second], unselected, selected, progress)
     month.setSelectedDate(third)
     fade = _pause(month, "calendarDaySelectionFade")
     for day, color in before.items():
         assert _day_fill(month, day) == color
     fade.setCurrentTime(fade.duration() // 2)
     for day in (first, second):
-        _assert_half_blend(_day_fill(month, day), before[day], unselected)
-    _assert_half_blend(_day_fill(month, third), unselected, selected)
+        _assert_blend(_day_fill(month, day), before[day], unselected, progress)
+    _assert_blend(_day_fill(month, third), unselected, selected, progress)
     fade.setCurrentTime(fade.duration())
     assert month.selectedDate() == third
     assert _day_fill(month, third) == selected
@@ -170,9 +173,13 @@ def test_content_swipes_in_the_requested_direction(
     animation = _pause(tabs, "calendarContentSlide")
     animation.setCurrentTime(animation.duration() // 2)
     image = swipe.grab().toImage()
-    assert image.pixelColor(image.width() // 4, image.height() // 2) == QColor("blue")
-    assert image.pixelColor(image.width() * 3 // 4, image.height() // 2) == QColor(
+    # The incoming page covers most of the viewport before its soft settle.
+    assert image.pixelColor(image.width() // 20, image.height() // 2) == QColor("blue")
+    assert image.pixelColor(image.width() * 19 // 20, image.height() // 2) == QColor(
         "red"
+    )
+    assert image.pixelColor(image.width() // 2, image.height() // 2) == QColor(
+        "blue" if target else "red"
     )
     animation.setCurrentTime(animation.duration())
     assert not swipe.isVisible()

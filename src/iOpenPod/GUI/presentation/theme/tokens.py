@@ -15,6 +15,23 @@ type Theme = LightTheme | DarkTheme
 
 
 @dataclass(frozen=True, slots=True)
+class MotionTokens:
+    """Settling budgets in milliseconds; spatial response happens much earlier."""
+
+    control_ms: int = 240
+    panel_enter_ms: int = 320
+    panel_exit_ms: int = 220
+    expand_ms: int = 280
+    navigation_ms: int = 280
+    fade_ms: int = 180
+    fade_exit_ms: int = 120
+    artwork_fade_ms: int = 240
+
+
+MOTION = MotionTokens()
+
+
+@dataclass(frozen=True, slots=True)
 class LayoutTokens:
     """Shared spacing and shape values in Qt device-independent logical pixels."""
 
@@ -68,7 +85,7 @@ class LayoutTokens:
     player_play_icon_size: int = 24
     player_volume_minimum_width: int = 64
     player_volume_width: int = 112
-    player_transition_ms: int = 220
+    player_transition_ms: int = MOTION.expand_ms
     now_playing_artwork_maximum_size: int = 480
     now_playing_column_maximum_width: int = 520
     now_playing_maximum_edge_margin: int = 300
@@ -78,10 +95,10 @@ class LayoutTokens:
     playback_pane_width: int = 360
     playback_row_height: int = 64
     playback_row_artwork_size: int = 44
-    playback_pane_animation_ms: int = 180
-    page_fade_animation_ms: int = 180
-    now_playing_page_fade_ms: int = 320
-    selection_group_animation_ms: int = 200
+    playback_pane_animation_ms: int = MOTION.panel_enter_ms
+    page_fade_animation_ms: int = MOTION.fade_ms
+    now_playing_page_fade_ms: int = MOTION.artwork_fade_ms
+    selection_group_animation_ms: int = MOTION.expand_ms
     scroll_animation_ms: int = 140
     scroll_line_height: int = 32
     sync_scan_panel_minimum_width: int = 520
@@ -97,7 +114,7 @@ class LayoutTokens:
     calendar_stacked_breakpoint: int = 900
     calendar_filter_width: int = 260
     calendar_search_width: int = 240
-    calendar_page_slide_ms: int = 280
+    calendar_page_slide_ms: int = MOTION.navigation_ms
     extras_collection_width: int = 960
     extras_visible_rows: int = 6
     date_picker_width: int = 360

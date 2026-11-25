@@ -1,16 +1,27 @@
 """Compact icon-only selectors with the Settings scope switcher's treatment."""
 
 from PySide6.QtCore import (
-    QEasingCurve,
     QEvent,
     QObject,
-    QPropertyAnimation,
     QRectF,
     Qt,
 )
-from PySide6.QtGui import QKeyEvent, QPainter, QPaintEvent, QPalette, QPen, QShowEvent
+from PySide6.QtGui import (
+    QHideEvent,
+    QKeyEvent,
+    QPainter,
+    QPaintEvent,
+    QPalette,
+    QPen,
+    QShowEvent,
+)
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QWidget
 
+from iOpenPod.GUI.presentation.motion import (
+    MOTION,
+    SpringPropertyAnimation,
+    animations_enabled,
+)
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import IconButton
 
@@ -40,9 +51,7 @@ class IconSegmentedControl(QWidget):
         self._selector = _Selector(self)
         self._selector.setObjectName("iconSegmentSelector")
         self._selector.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._animation = QPropertyAnimation(self._selector, b"geometry", self)
-        self._animation.setDuration(LAYOUT.selection_group_animation_ms)
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._animation = SpringPropertyAnimation(self._selector, b"geometry", self)
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         layout = QHBoxLayout(self)
@@ -78,14 +87,23 @@ class IconSegmentedControl(QWidget):
         button = self._group.checkedButton()
         if button is None:
             return
-        self._animation.stop()
         target = button.geometry()
-        if animate and self.isVisible() and target != self._selector.geometry():
-            self._animation.setStartValue(self._selector.geometry())
-            self._animation.setEndValue(target)
-            self._animation.start()
+        if (
+            animate
+            and self.isVisible()
+            and animations_enabled(self)
+            and target != self._selector.geometry()
+        ):
+            self._animation.retarget(
+                self._selector.geometry(), target, MOTION.control_ms
+            )
         else:
+            self._animation.stop()
             self._selector.setGeometry(target)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self.sync_selection(animate=False)
+        super().hideEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if isinstance(event, QKeyEvent) and event.type() == QEvent.Type.KeyPress:

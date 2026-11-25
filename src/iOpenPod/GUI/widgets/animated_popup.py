@@ -2,15 +2,18 @@
 
 from enum import Enum
 
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QCloseEvent, QHideEvent, QMouseEvent, QResizeEvent
-from PySide6.QtWidgets import QFrame, QStyle, QWidget
+from PySide6.QtWidgets import QFrame, QWidget
 
+from iOpenPod.GUI.presentation.motion import (
+    MOTION,
+    SpringPropertyAnimation,
+    animations_enabled,
+)
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
-POPUP_OVERSHOOT_INSET = LAYOUT.space_md
-_POPUP_ENTER_MS = 280
-_POPUP_EXIT_MS = 190
+POPUP_EDGE_INSET = LAYOUT.space_md
 
 
 class PopupDirection(Enum):
@@ -37,7 +40,7 @@ class AnimatedPopup(QFrame):
         self._pressed_trigger = False
         self._target_open = False
         self._finalizing_close = False
-        self.animation = QPropertyAnimation(surface, b"pos", self)
+        self.animation = SpringPropertyAnimation(surface, b"pos", self)
         self.animation.finished.connect(self._animation_finished)
 
     @property
@@ -49,13 +52,11 @@ class AnimatedPopup(QFrame):
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self.surface.resize(
-            event.size().width(), max(1, event.size().height() - POPUP_OVERSHOOT_INSET)
+            event.size().width(), max(1, event.size().height() - POPUP_EDGE_INSET)
         )
 
     def _rest_position(self) -> QPoint:
-        return QPoint(
-            0, POPUP_OVERSHOOT_INSET if self.direction is PopupDirection.UP else 0
-        )
+        return QPoint(0, POPUP_EDGE_INSET if self.direction is PopupDirection.UP else 0)
 
     def _hidden_position(self) -> QPoint:
         return QPoint(
@@ -66,10 +67,9 @@ class AnimatedPopup(QFrame):
         )
 
     def open_at(self, host_pos: QPoint) -> None:
-        self.animation.stop()
         # A hidden widget can defer resizeEvent until show(). Establish the full
         # travel distance before positioning the surface outside the clip.
-        self.surface.resize(self.width(), max(1, self.height() - POPUP_OVERSHOOT_INSET))
+        self.surface.resize(self.width(), max(1, self.height() - POPUP_EDGE_INSET))
         self._target_open = True
         self.move(host_pos)
         if not self.isVisible():
@@ -79,9 +79,7 @@ class AnimatedPopup(QFrame):
                 else self._rest_position()
             )
             self.show()
-        curve = QEasingCurve(QEasingCurve.Type.OutBack)
-        curve.setOvershoot(0.8)
-        self._animate_to(self._rest_position(), _POPUP_ENTER_MS, curve)
+        self._animate_to(self._rest_position(), MOTION.panel_enter_ms)
 
     def toggle(self) -> None:
         if self._target_open:
@@ -100,35 +98,16 @@ class AnimatedPopup(QFrame):
         self.surface.move(self._rest_position())
 
     def _animations_enabled(self) -> bool:
-        return bool(
-            self.style().styleHint(QStyle.StyleHint.SH_Widget_Animate, None, self)
-        )
+        return animations_enabled(self)
 
-    def _animate_to(
-        self, target: QPoint, duration_ms: int, curve: QEasingCurve
-    ) -> None:
+    def _animate_to(self, target: QPoint, duration_ms: int) -> None:
         current = self.surface.pos()
         if current == target or not self._animations_enabled():
+            self.animation.stop()
             self.surface.move(target)
             self._animation_finished()
             return
-        self.animation.setDuration(
-            max(
-                1,
-                min(
-                    duration_ms,
-                    round(
-                        duration_ms
-                        * abs(target.y() - current.y())
-                        / self.surface.height()
-                    ),
-                ),
-            )
-        )
-        self.animation.setEasingCurve(curve)
-        self.animation.setStartValue(current)
-        self.animation.setEndValue(target)
-        self.animation.start()
+        self.animation.retarget(current, target, duration_ms)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self._finalizing_close or not self.isVisible():
@@ -138,20 +117,19 @@ class AnimatedPopup(QFrame):
             event.ignore()
             return
         self._target_open = False
-        self.animation.stop()
         if (
             not self._animations_enabled()
             or self.surface.pos() == self._hidden_position()
         ):
             # Accept this close directly. Closing again from a synchronous
             # finished handler would reenter an ignored closeEvent.
+            self.animation.stop()
             super().closeEvent(event)
             return
         event.ignore()
         self._animate_to(
             self._hidden_position(),
-            _POPUP_EXIT_MS,
-            QEasingCurve(QEasingCurve.Type.InCubic),
+            MOTION.panel_exit_ms,
         )
 
     def _animation_finished(self) -> None:

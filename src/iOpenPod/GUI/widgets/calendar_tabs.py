@@ -2,7 +2,6 @@
 
 from PySide6.QtCore import (
     QAbstractAnimation,
-    QEasingCurve,
     QEvent,
     QObject,
     QPoint,
@@ -15,6 +14,12 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QPainter, QPaintEvent, QPalette, QPen, QPixmap, QShowEvent
 from PySide6.QtWidgets import QStyle, QStyleOptionTab, QTabBar, QTabWidget, QWidget
 
+from iOpenPod.GUI.presentation.motion import (
+    MOTION,
+    SpringAnimation,
+    animations_enabled,
+    fade_curve,
+)
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 
@@ -25,10 +30,8 @@ class _CalendarTabBar(QTabBar):
         super().__init__(parent)
         self.setDrawBase(False)
         self._selector = QRectF()
-        self._animation = QVariantAnimation(self)
+        self._animation = SpringAnimation(self)
         self._animation.setObjectName("calendarTabSelectionSlide")
-        self._animation.setDuration(LAYOUT.selection_group_animation_ms)
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self._animation.valueChanged.connect(self._advance)
         self.currentChanged.connect(lambda: self._move_selector(animate=True))
 
@@ -39,18 +42,16 @@ class _CalendarTabBar(QTabBar):
         )
 
     def _move_selector(self, *, animate: bool) -> None:
-        self._animation.stop()
         target = self._target()
         if (
             animate
             and self.isVisible()
             and not self._selector.isEmpty()
-            and self.style().styleHint(QStyle.StyleHint.SH_Widget_Animate, None, self)
+            and animations_enabled(self)
         ):
-            self._animation.setStartValue(self._selector)
-            self._animation.setEndValue(target)
-            self._animation.start()
+            self._animation.retarget(self._selector, target, MOTION.control_ms)
         else:
+            self._animation.stop()
             self._selector = target
             self.update()
 
@@ -150,7 +151,7 @@ class _ContentSwipe(QWidget):
         self._animation = QVariantAnimation(self)
         self._animation.setObjectName("calendarContentSlide")
         self._animation.setDuration(LAYOUT.calendar_page_slide_ms)
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._animation.setEasingCurve(fade_curve())
         self._animation.setStartValue(0.0)
         self._animation.setEndValue(1.0)
         self._animation.valueChanged.connect(self._advance)
@@ -236,9 +237,7 @@ class CalendarTabs(QTabWidget):
             previous is None
             or current is None
             or not self.isVisible()
-            or not self.style().styleHint(
-                QStyle.StyleHint.SH_Widget_Animate, None, self
-            )
+            or not animations_enabled(self)
         ):
             self._swipe.cancel()
             return

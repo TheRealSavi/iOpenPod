@@ -12,7 +12,7 @@ from PySide6.QtCore import (
     QTimer,
     QVariantAnimation,
 )
-from PySide6.QtGui import QColor, QEnterEvent, QPalette, QPixmap
+from PySide6.QtGui import QColor, QEnterEvent, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QGraphicsOpacityEffect, QTabWidget, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
@@ -499,6 +499,8 @@ def test_replacements_stay_visible_and_appearance_fades_resume_from_current_opac
 ):
     parent = QWidget()
     preview = SettingsPreview(parent)
+    parent.show()
+    APPLICATION.processEvents()
     animation = preview.findChild(QPropertyAnimation)
     opacity = preview.graphicsEffect()
     assert animation is not None and isinstance(opacity, QGraphicsOpacityEffect)
@@ -569,13 +571,61 @@ def test_leaving_row_fades_gradually_and_keeps_image_until_finished(
     _settle()
     assert preview.example is None
     animation.setCurrentTime(animation.duration() // 3)
-    assert 0.65 < opacity.opacity() < 0.85
+    assert 0.70 < opacity.opacity() < 0.80
     assert image.frame() == original and preview.accessibleName() == title
     animation.setCurrentTime(2 * animation.duration() // 3)
-    assert 0.20 < opacity.opacity() < 0.35
+    assert 0.20 < opacity.opacity() < 0.30
     assert image.frame() == original and preview.accessibleName() == title
     animation.setCurrentTime(animation.duration())
     assert opacity.opacity() == 0.0 and preview.accessibleName() == ""
+
+
+def test_first_hover_renders_intermediate_opacity_on_the_settings_page(
+    page: SettingsPage,
+) -> None:
+    tab = _appearance(page)
+    preview = tab.preview
+    animation = preview.findChild(QPropertyAnimation)
+    assert animation is not None
+    # Observe the composed page: the image's own frame omits the opacity effect.
+    region = preview.geometry().translated(
+        tab.viewport().mapTo(page, tab.viewport().rect().topLeft())
+    )
+
+    def composed_frame() -> QImage:
+        # This fixture is a standalone transparent Settings page. Supply the
+        # Window background that the application shell normally paints behind it.
+        pixmap = page.grab(region)
+        frame = QImage(pixmap.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        frame.setDevicePixelRatio(pixmap.devicePixelRatio())
+        background = page.palette().color(QPalette.ColorRole.Window)
+        background.setAlpha(255)
+        frame.fill(background)
+        painter = QPainter(frame)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.end()
+        return frame
+
+    blank = composed_frame()
+    _enter(tab.findChildren(SettingRow)[1])
+    assert animation.state() == QAbstractAnimation.State.Running
+    animation.pause()
+    animation.setCurrentTime(0)
+    assert composed_frame() == blank
+    animation.setCurrentTime(animation.duration() // 4)
+    middle = composed_frame()
+    animation.setCurrentTime(animation.duration())
+    full = composed_frame()
+    assert middle != blank and middle != full
+    center = middle.rect().center()
+    opacity = animation.easingCurve().valueForProgress(0.25)
+    for channel in ("red", "green", "blue"):
+        background = getattr(blank.pixelColor(center), channel)()
+        foreground = getattr(full.pixelColor(center), channel)()
+        actual = getattr(middle.pixelColor(center), channel)()
+        assert actual == pytest.approx(
+            background * (1 - opacity) + foreground * opacity, abs=2
+        )
 
 
 def test_image_crossfade_preserves_coverage_and_continues_from_interrupted_frame() -> (
@@ -584,6 +634,8 @@ def test_image_crossfade_preserves_coverage_and_continues_from_interrupted_frame
     parent = QWidget()
     image = SettingsExampleImage(parent)
     image.resize(200, 200)
+    parent.show()
+    APPLICATION.processEvents()
     animation = image.findChild(QVariantAnimation, "settingsImageCrossfade")
     assert animation is not None
     red, blue, green = (QPixmap(200, 200) for _ in range(3))
@@ -595,11 +647,13 @@ def test_image_crossfade_preserves_coverage_and_continues_from_interrupted_frame
     image.set_image(blue, animate=True)
     assert image.frame() == start
     animation.setCurrentTime(animation.duration() // 2)
+    progress = float(animation.currentValue())
+    assert progress == pytest.approx(0.5)
     middle = image.frame()
     pixel = middle.pixelColor(middle.rect().center())
     assert pixel.alpha() >= 254
-    assert pixel.red() == pytest.approx(128, abs=2)
-    assert pixel.blue() == pytest.approx(128, abs=2)
+    assert pixel.red() == pytest.approx(255 * (1 - progress), abs=2)
+    assert pixel.blue() == pytest.approx(255 * progress, abs=2)
     assert pixel.green() == 0
 
     image.set_image(green, animate=True)
@@ -608,9 +662,9 @@ def test_image_crossfade_preserves_coverage_and_continues_from_interrupted_frame
     interrupted = image.frame()
     pixel = interrupted.pixelColor(interrupted.rect().center())
     assert pixel.alpha() >= 253
-    assert pixel.red() == pytest.approx(64, abs=2)
-    assert pixel.blue() == pytest.approx(64, abs=2)
-    assert pixel.green() == pytest.approx(128, abs=2)
+    assert pixel.red() == pytest.approx(255 * (1 - progress) ** 2, abs=2)
+    assert pixel.blue() == pytest.approx(255 * progress * (1 - progress), abs=2)
+    assert pixel.green() == pytest.approx(255 * progress, abs=2)
     animation.setCurrentTime(animation.duration())
     final = image.frame()
     assert final.pixelColor(final.rect().center()) == QColor(0, 255, 0)
@@ -665,6 +719,8 @@ def test_crossfade_blends_transparent_margins_of_differently_shaped_images() -> 
     parent = QWidget()
     image = SettingsExampleImage(parent)
     image.resize(200, 200)
+    parent.show()
+    APPLICATION.processEvents()
     animation = image.findChild(QVariantAnimation, "settingsImageCrossfade")
     assert animation is not None
     wide, tall = QPixmap(200, 100), QPixmap(100, 200)
@@ -673,14 +729,15 @@ def test_crossfade_blends_transparent_margins_of_differently_shaped_images() -> 
     image.set_image(wide, animate=False)
     image.set_image(tall, animate=True)
     animation.setCurrentTime(animation.duration() // 2)
+    progress = float(animation.currentValue())
     frame = image.frame()
     dpr = frame.devicePixelRatio()
     assert frame.pixelColor(round(100 * dpr), round(100 * dpr)).alpha() == 255
     assert frame.pixelColor(round(25 * dpr), round(100 * dpr)).alpha() == pytest.approx(
-        128, abs=1
+        255 * (1 - progress), abs=1
     )
     assert frame.pixelColor(round(100 * dpr), round(25 * dpr)).alpha() == pytest.approx(
-        128, abs=1
+        255 * progress, abs=1
     )
     assert frame.pixelColor(round(25 * dpr), round(25 * dpr)).alpha() == 0
     animation.setCurrentTime(animation.duration())

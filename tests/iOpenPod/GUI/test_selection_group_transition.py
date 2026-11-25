@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
+from tests.iOpenPod.GUI.motion_test_support import disable_motion
 
 from iOpenPod.app.core.settings.service import SettingsService
 from iOpenPod.app.core.settings.stores import DeviceSettingsStore, GlobalSettingsStore
@@ -150,6 +151,16 @@ def test_rapid_toggle_reverses_from_current_frame(grid: EqualizedGridView) -> No
     assert not _overlay(grid).isVisible()
 
 
+def test_disabled_motion_commits_the_group_without_an_overlay(
+    grid: EqualizedGridView,
+) -> None:
+    disable_motion(grid)
+    _toggle(grid)
+    assert grid.model().index(0, 0).data(SelectionGroupingRole.EXPANDED) is False
+    assert not _overlay(grid).isVisible()
+    assert _animation(grid).state() == QAbstractAnimation.State.Stopped
+
+
 def test_keyboard_toggle_preserves_header_focus_for_reversal(
     grid: EqualizedGridView,
 ) -> None:
@@ -254,3 +265,42 @@ def test_large_single_group_animates_across_scrollbar_changes(
     assert model.rowCount() == 1_001
     animation.setCurrentTime(animation.duration())
     assert not _overlay(grid).isVisible()
+
+
+def test_deep_group_keeps_a_frame_while_batched_layout_reaches_its_header(
+    grid: EqualizedGridView,
+) -> None:
+    model = grid.model()
+    assert isinstance(model, SelectionGroupingProxyModel)
+    source = model.sourceModel()
+    assert isinstance(source, QStandardItemModel)
+    source.clear()
+    for state in (
+        Qt.CheckState.Checked,
+        Qt.CheckState.PartiallyChecked,
+        Qt.CheckState.Unchecked,
+    ):
+        for row in range(300):
+            item = QStandardItem(f"Card {state.value} {row}")
+            item.setCheckable(True)
+            item.setCheckState(state)
+            source.appendRow(item)
+    grid.setLayoutMode(QListView.LayoutMode.Batched)
+    grid.setBatchSize(64)
+    grid.doItemsLayout()
+    QTest.qWait(50)
+    batch_size = grid.batchSize()
+    header = model.index(301, 0)
+    grid.scrollTo(header, QListView.ScrollHint.PositionAtTop)
+    QTest.qWait(50)
+    assert grid.visualRect(header).top() == 0
+    QTest.mouseClick(
+        grid.viewport(), Qt.MouseButton.LeftButton, pos=grid.visualRect(header).center()
+    )
+    for _ in range(8):
+        APPLICATION.processEvents()
+        assert _overlay(grid).isVisible()
+    assert _animation(grid).state() == QAbstractAnimation.State.Running
+    _animation(grid).setCurrentTime(_animation(grid).duration())
+    assert grid.visualRect(model.index(301, 0)).isValid()
+    assert grid.batchSize() == batch_size

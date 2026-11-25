@@ -31,10 +31,12 @@ from pytest import MonkeyPatch, mark
 from tests.iOpenPod.GUI.application_shell_test_support import (
     APPLICATION,
     build_context,
+    show_settings,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import (
     tracks as build_tracks,
 )
+from tests.iOpenPod.GUI.motion_test_support import disable_motion
 from tests.iOpenPod.playback_test_support import FakePlaybackBackend
 
 from iOpenPod.app.core.settings.definitions import (
@@ -52,6 +54,7 @@ from iOpenPod.GUI.navigation import PageId
 from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets import player_bar as player_bar_module
+from iOpenPod.GUI.widgets.playback_pane import PlaybackPaneHost
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 from iOpenPod.GUI.widgets.toggle_switch import ToggleSwitch
@@ -622,6 +625,53 @@ def test_playback_pane_animates_inside_its_final_reserved_layout() -> None:
         context.shutdown()
 
 
+def test_playback_pane_finishes_closing_when_the_window_is_hidden() -> None:
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        host = window.findChild(PlaybackPaneHost)
+        assert host is not None
+        animation = host.findChild(QPropertyAnimation)
+        assert animation is not None
+        host.set_open(True)
+        animation.setCurrentTime(animation.duration())
+        host.set_open(False)
+        animation.setCurrentTime(animation.duration() // 3)
+        window.hide()
+        assert animation.state() == QAbstractAnimation.State.Stopped
+        assert host.isHidden()
+        window.show()
+        APPLICATION.processEvents()
+        assert not host.isVisible()
+    finally:
+        window.close()
+        context.shutdown()
+
+
+def test_playback_pane_respects_disabled_host_motion() -> None:
+    context = build_context()
+    window = MainWindow(context, auto_discover=False)
+    try:
+        window.show()
+        APPLICATION.processEvents()
+        host = window.findChild(PlaybackPaneHost)
+        pane = window.findChild(QWidget, "playbackPane")
+        assert host is not None and pane is not None
+        disable_motion(host)
+        host.set_open(True)
+        animation = host.findChild(QPropertyAnimation)
+        assert animation is not None
+        assert host.isVisible() and pane.x() == 0
+        assert animation.state() == QAbstractAnimation.State.Stopped
+        host.set_open(False)
+        assert host.isHidden() and pane.isHidden()
+    finally:
+        window.close()
+        context.shutdown()
+
+
 def test_player_remains_centered_and_controls_breathe_at_supported_widths() -> None:
     context = build_context()
     window = MainWindow(context, auto_discover=False)
@@ -863,6 +913,7 @@ def test_player_auto_minimize_setting_applies_live_and_on_startup(
         APPLICATION.processEvents()
         player = window.findChild(PlayerBar)
         surface = window.findChild(QWidget, "nowPlayingSurface")
+        show_settings(window)
         settings = window.findChild(SettingsPage)
         assert player is not None and surface is not None and settings is not None
         appearance = settings.findChild(QScrollArea, "appearanceSettingsScroll")

@@ -43,7 +43,7 @@ from iOpenPod.app.playback.chapters import chapter_at
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.animated_popup import (
-    POPUP_OVERSHOOT_INSET,
+    POPUP_EDGE_INSET,
     AnimatedPopup,
     PopupDirection,
 )
@@ -251,12 +251,12 @@ class ChapterIndexPopup(AnimatedPopup):
             row_height * len(chapters) if chapters else self._empty.sizeHint().height()
         )
         height = min(
-            LAYOUT.chapter_popup_maximum_height + POPUP_OVERSHOOT_INSET,
+            LAYOUT.chapter_popup_maximum_height + POPUP_EDGE_INSET,
             screen.height(),
             content_height
             + self._heading.sizeHint().height()
             + 4 * LAYOUT.space_sm
-            + POPUP_OVERSHOOT_INSET,
+            + POPUP_EDGE_INSET,
         )
         anchor = self._trigger.mapToGlobal(
             QPoint(self._trigger.width() // 2, self._trigger.height())

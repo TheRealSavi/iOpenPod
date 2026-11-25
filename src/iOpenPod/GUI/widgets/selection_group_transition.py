@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import (
-    QEasingCurve,
+    QAbstractAnimation,
     QEvent,
     QModelIndex,
     QObject,
@@ -11,13 +11,17 @@ from PySide6.QtCore import (
     QRect,
     Qt,
     QTimer,
-    QVariantAnimation,
 )
 from PySide6.QtGui import QKeyEvent, QPainter, QPaintEvent, QPixmap, QResizeEvent
-from PySide6.QtWidgets import QAbstractItemView, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QListView,
+    QStyleOptionViewItem,
+    QWidget,
+)
 
 from iOpenPod.app.models.selection_grouping import SelectionGroupingRole
-from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.presentation.motion import MOTION, SpringAnimation, animations_enabled
 
 
 @dataclass(slots=True)
@@ -51,12 +55,12 @@ class SelectionGroupTransition(QObject):
         self._model = view.model()
         self._group: object = None
         self._pending: _PendingSlide | None = None
+        self._batch_size: int | None = None
         self._layout_timer = QTimer(self)
         self._layout_timer.setSingleShot(True)
         self._layout_timer.timeout.connect(self._prepare_slide)
-        self._animation = QVariantAnimation(self)
+        self._animation = SpringAnimation(self)
         self._animation.setObjectName("selectionGroupAnimation")
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self._animation.valueChanged.connect(self._advance)
         self._animation.finished.connect(self.cancel)
         view.installEventFilter(self)
@@ -81,7 +85,10 @@ class SelectionGroupTransition(QObject):
         )
         current = self._overlay.reveal if reversing else 0
         if reversing:
-            self._animation.stop()
+            # Freeze the captured frame while a batched layout prepares the
+            # reverse. Pausing retains spring velocity; stopping would lose it.
+            if self._animation.state() == QAbstractAnimation.State.Running:
+                self._animation.pause()
         else:
             self.cancel()
 
@@ -94,6 +101,7 @@ class SelectionGroupTransition(QObject):
         )
         animate = (
             view.isVisible()
+            and animations_enabled(view)
             and model is self._model
             and header.top() >= 0
             and region.height() > 0
@@ -102,6 +110,24 @@ class SelectionGroupTransition(QObject):
             view.viewport().grab(region) if animate and not reversing else QPixmap()
         )
         extent = self._section_height(index) if expanded and animate else 0
+        if (
+            animate
+            and isinstance(view, QListView)
+            and view.layoutMode() == QListView.LayoutMode.Batched
+        ):
+            self._batch_size = view.batchSize()
+            option = QStyleOptionViewItem()
+            option.initFrom(view)
+            option.widget = view
+            cell = view.itemDelegate().sizeHint(option, QModelIndex())
+            columns = max(1, view.viewport().width() // max(1, cell.width()))
+            visible_rows = view.viewport().height() // max(1, cell.height()) + 2
+            # A deep header must survive the reset's first batch along with the
+            # cards below it. Keep distant, offscreen rows in later batches.
+            needed = row + 1 + visible_rows * columns
+            view.setBatchSize(
+                max(self._batch_size, ((needed + columns - 1) // columns) * columns)
+            )
         self._changing = True
         try:
             changed = model.setData(index, not expanded, SelectionGroupingRole.EXPANDED)
@@ -149,8 +175,13 @@ class SelectionGroupTransition(QObject):
                 self._overlay.show()
             self._layout_timer.start(0)
             return
-        # Scroll-range clamping can move the header. Never animate stale geometry.
-        if header != pending.header:
+        # Scroll-range clamping can move the header. Width alone can change as
+        # the first collapse removes a scrollbar; it does not move the slide's
+        # anchor and must not discard the first interaction.
+        if (
+            header.topLeft() != pending.header.topLeft()
+            or header.height() != pending.header.height()
+        ):
             self.cancel()
             return
         self._pending = None
@@ -171,25 +202,18 @@ class SelectionGroupTransition(QObject):
             self._group = pending.group
 
         target = 0 if pending.expanded else self._overlay.extent
+        self._restore_batch_size()
         if current == target:
             self.cancel()
             return
         self._overlay.reveal = current
         self._overlay.show()
         self._overlay.raise_()
-        self._animation.setDuration(
-            max(
-                1,
-                round(
-                    LAYOUT.selection_group_animation_ms
-                    * abs(target - current)
-                    / max(1, self._overlay.extent)
-                ),
-            )
+        self._animation.retarget(
+            current,
+            target,
+            MOTION.panel_exit_ms if pending.expanded else MOTION.expand_ms,
         )
-        self._animation.setStartValue(current)
-        self._animation.setEndValue(target)
-        self._animation.start()
 
     def cancel(self, *_args: object) -> None:
         """Reveal the authoritative view when its contents or geometry change."""
@@ -199,10 +223,16 @@ class SelectionGroupTransition(QObject):
         self._pending = None
         self._layout_timer.stop()
         self._animation.stop()
+        self._restore_batch_size()
         self._overlay.hide()
         self._overlay.expanded = QPixmap()
         self._overlay.collapsed = QPixmap()
         self._group = None
+
+    def _restore_batch_size(self) -> None:
+        if self._batch_size is not None and isinstance(self._view, QListView):
+            self._view.setBatchSize(self._batch_size)
+            self._batch_size = None
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if (

@@ -1,16 +1,15 @@
 """Accessible Host/iPod selector with a sliding, palette-aware selection."""
 
 from PySide6.QtCore import (
-    QEasingCurve,
     QEvent,
     QObject,
-    QPropertyAnimation,
     QRectF,
     QSize,
     Qt,
     Signal,
 )
 from PySide6.QtGui import (
+    QHideEvent,
     QKeyEvent,
     QPainter,
     QPaintEvent,
@@ -22,6 +21,11 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QPushButton, QWidget
 
 from iOpenPod.GUI.presentation.icons import glyph_icon
+from iOpenPod.GUI.presentation.motion import (
+    MOTION,
+    SpringPropertyAnimation,
+    animations_enabled,
+)
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 
@@ -49,9 +53,7 @@ class SettingsScopeSwitcher(QWidget):
         self._selector = _Selector(self)
         self._selector.setObjectName("settingsScopeSelector")
         self._selector.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._animation = QPropertyAnimation(self._selector, b"geometry", self)
-        self._animation.setDuration(LAYOUT.selection_group_animation_ms)
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._animation = SpringPropertyAnimation(self._selector, b"geometry", self)
         self._host = QPushButton(self)
         self._host.setObjectName("hostSettingsButton")
         self._device = QPushButton(self)
@@ -97,14 +99,23 @@ class SettingsScopeSwitcher(QWidget):
         self.deviceSelected.emit(index == 1)
 
     def _move_selector(self, *, animate: bool) -> None:
-        self._animation.stop()
         target = (self._device if self.device_selected else self._host).geometry()
-        if animate and self.isVisible():
-            self._animation.setStartValue(self._selector.geometry())
-            self._animation.setEndValue(target)
-            self._animation.start()
+        if (
+            animate
+            and self.isVisible()
+            and animations_enabled(self)
+            and target != self._selector.geometry()
+        ):
+            self._animation.retarget(
+                self._selector.geometry(), target, MOTION.control_ms
+            )
         else:
+            self._animation.stop()
             self._selector.setGeometry(target)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._move_selector(animate=False)
+        super().hideEvent(event)
 
     def retranslate_ui(self) -> None:
         self.setAccessibleName(self.tr("Settings scope"))

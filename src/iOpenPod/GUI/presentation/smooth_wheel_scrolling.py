@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from iOpenPod.GUI.presentation.motion import animations_enabled
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 _WHEEL_NOTCH = 120
@@ -61,6 +62,7 @@ class SmoothWheelScrolling(QObject):
             QEvent.Type.KeyPress,
             QEvent.Type.MouseButtonPress,
             QEvent.Type.Resize,
+            QEvent.Type.StyleChange,
         }:
             self.cancel()
         return False
@@ -162,6 +164,12 @@ class SmoothWheelScrolling(QObject):
             return False
         if round(target) == current:
             # Retain fractional high-resolution wheel travel for the next event.
+            event.accept()
+            return True
+        # QTreeView's own hint reflects its expand/collapse setting, not wheel
+        # motion. The viewport carries the Host style without that override.
+        if not animations_enabled(view.viewport(), style=view.style()):
+            self._advance(target)
             event.accept()
             return True
         # Reconfiguring a stopped QVariantAnimation can emit interpolated values

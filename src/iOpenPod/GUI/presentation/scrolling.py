@@ -51,8 +51,10 @@ def install_scrolling(application: QApplication) -> ApplicationScrollFilter:
     scroll_filter.setObjectName(_OBJECT_NAME)
     application.installEventFilter(scroll_filter)
     for widget in application.allWidgets():
-        if isinstance(widget, QAbstractScrollArea) and not isinstance(
-            widget, QHeaderView
+        if (
+            isinstance(widget, QAbstractScrollArea)
+            and not isinstance(widget, QHeaderView)
+            and widget.isVisible()
         ):
             _wheel_scrolling(widget)
     return scroll_filter

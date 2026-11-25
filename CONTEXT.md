@@ -14,6 +14,11 @@ then beyond it.
 
 ## Current stage
 
+GUI transitions share restrained, interruptible motion. Selectors and panels settle
+without a decorative bounce; quick reversals retain momentum. Fades reveal the new
+state promptly, and the Host's widget-animation preference also applies to Settings,
+expanding sections, and discrete wheel scrolling. See ADR-0298.
+
 Bootloader **2.1.0** supports the expanded OS slot introduced with Mod Platform
 Version **0.3.0-dev**: 16 MiB on disk and a 4 MiB Mod Memory Region. Native
 overlap-copy/BSS tests pass at full capacity. The app bundles this loader with

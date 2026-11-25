@@ -4,7 +4,7 @@ from dataclasses import replace
 from html import escape
 
 import pytest
-from PySide6.QtCore import QEasingCurve, QEvent, QPoint, Qt
+from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtGui import QHelpEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -19,6 +19,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build
 from tests.iOpenPod.playback_test_support import FakePlaybackBackend
 
 from iOpenPod.GUI.main_window import MainWindow
+from iOpenPod.GUI.presentation.motion import MOTION
 from iOpenPod.GUI.widgets.animated_popup import AnimatedPopup, PopupDirection
 from iOpenPod.GUI.widgets.chapter_index import ChapterIndexPopup
 from iOpenPod.GUI.widgets.player_bar import PlayerBar
@@ -48,7 +49,9 @@ def _track() -> Track:
     )
 
 
-def test_chapter_index_bounces_down_and_reverses_interrupted_transitions() -> None:
+def test_chapter_index_settles_without_bounce_and_reverses_interrupted_transitions() -> (
+    None
+):
     context = build_context()
     window = MainWindow(context, auto_discover=False)
     try:
@@ -65,9 +68,7 @@ def test_chapter_index_bounces_down_and_reverses_interrupted_transitions() -> No
         animation = popup.animation
         surface = popup.surface
         assert popup.direction is PopupDirection.DOWN
-        assert animation.duration() == 280
-        assert animation.easingCurve().type() is QEasingCurve.Type.OutBack
-        assert animation.easingCurve().overshoot() == 0.8
+        assert animation.duration() == MOTION.panel_enter_ms
         start, rest = animation.startValue(), animation.endValue()
         host_pos = popup.pos()
         assert start == QPoint(0, -surface.height())
@@ -79,14 +80,13 @@ def test_chapter_index_bounces_down_and_reverses_interrupted_transitions() -> No
         assert start.y() < surface.y() < rest.y()
         assert popup.pos() == host_pos
         animation.setCurrentTime(animation.duration() * 3 // 4)
-        assert surface.y() > rest.y()  # The downward entrance overshoots, then settles.
+        assert start.y() < surface.y() <= rest.y()
         _finish_chapter_animation(popup)
         assert surface.pos() == rest
 
         button.click()
         assert popup.isVisible() and not popup.is_open
-        assert animation.duration() == 190
-        assert animation.easingCurve().type() is QEasingCurve.Type.InCubic
+        assert animation.duration() == MOTION.panel_exit_ms
         assert animation.endValue() == start
         animation.setCurrentTime(animation.duration() // 2)
         exiting_at = surface.pos()

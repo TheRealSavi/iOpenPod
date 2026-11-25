@@ -1,7 +1,7 @@
 """Reveal one Album panel inside the existing virtualized card grid."""
 
 from PySide6.QtCore import (
-    QEasingCurve,
+    QAbstractAnimation,
     QEvent,
     QModelIndex,
     QObject,
@@ -9,13 +9,12 @@ from PySide6.QtCore import (
     QPointF,
     Qt,
     QTimer,
-    QVariantAnimation,
 )
 from PySide6.QtGui import QKeyEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem, QWidget
 
 from iOpenPod.GUI.delegates.inline_album_delegate import InlineAlbumDelegate
-from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
+from iOpenPod.GUI.presentation.motion import MOTION, SpringAnimation, animations_enabled
 from iOpenPod.GUI.widgets.equalized_grid import EqualizedGridView
 from iOpenPod.GUI.widgets.inline_album_panel import InlineAlbumPanel
 
@@ -49,10 +48,11 @@ class InlineAlbumExpansion(QObject):
         self._layout_timer = QTimer(self)
         self._layout_timer.setSingleShot(True)
         self._layout_timer.timeout.connect(self._resize)
-        self._animation = QVariantAnimation(self)
+        self._batch_restore_timer = QTimer(self)
+        self._batch_restore_timer.setSingleShot(True)
+        self._batch_restore_timer.timeout.connect(self._restore_batch_size)
+        self._animation = SpringAnimation(self)
         self._animation.setObjectName("inlineAlbumAnimation")
-        self._animation.setDuration(LAYOUT.selection_group_animation_ms)
-        self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self._animation.valueChanged.connect(self._advance)
         self._animation.finished.connect(self._finished)
         panel.closeRequested.connect(self.close)
@@ -84,7 +84,6 @@ class InlineAlbumExpansion(QObject):
     def open(self, index: QModelIndex) -> None:
         if not self._enabled or not index.isValid():
             return
-        self._animation.stop()
         if self._index != index:
             self.reset()
             self._index = QPersistentModelIndex(index)
@@ -96,6 +95,9 @@ class InlineAlbumExpansion(QObject):
             self._view.viewport().width()
         )
         self._panel.show()
+        # Establish the visible batch before Qt's first clock tick. A preceding
+        # reset may have queued layout with the ordinary, much smaller budget.
+        self._advance(self._height)
         self._animate_to(self._target_height)
 
     def close(self) -> None:
@@ -106,18 +108,29 @@ class InlineAlbumExpansion(QObject):
         self._animate_to(0)
 
     def reset(self, *_args: object) -> None:
+        needs_layout = self._height != 0
         self._animation.stop()
         self._layout_timer.stop()
         self._index = QPersistentModelIndex()
         self._height = 0
         self._target_height = 0
         self._closing = False
-        self._restore_batch_size()
         self._delegate.configure_expansion(-1, -1, 0)
         self._clip.hide()
-        self._view.scheduleDelayedItemsLayout()
+        # The final zero-height frame already laid out the visible Albums. A
+        # second reset with the restored batch budget would briefly erase them.
+        if needs_layout:
+            self._view.scheduleDelayedItemsLayout()
+        self._batch_restore_timer.start(0)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self._view and event.type() == QEvent.Type.Hide:
+            self._animation.stop()
+            if self._closing:
+                self.reset()
+            elif self._index.isValid():
+                self._advance(self._target_height)
+                self._batch_restore_timer.start(0)
         if watched is self._clip and isinstance(event, QWheelEvent):
             # The mouse boundary also blocks wheel propagation. Forward only
             # wheel input left unhandled by the Track table to the smooth grid
@@ -160,28 +173,32 @@ class InlineAlbumExpansion(QObject):
     def _resize(self) -> None:
         if not self._index.isValid():
             return
-        if self._closing:
-            self.reset()
-            return
-        self._animation.stop()
         self._target_height = self._panel.preferred_height(
             self._view.viewport().width()
         )
+        if self._animation.state() != QAbstractAnimation.State.Stopped:
+            target = 0 if self._closing else self._target_height
+            # Scrollbar/layout changes often leave the destination unchanged.
+            # Keep their current time and velocity, including while closing.
+            if target != self._animation.endValue():
+                self._animate_to(target)
+            self._advance(self._height)
+            return
         self._advance(self._target_height)
-        self._restore_batch_size()
+        self._batch_restore_timer.start(0)
 
     def _animate_to(self, height: int) -> None:
-        self._animation.stop()
-        # Stopped animations retain their old time. Reconfiguring their endpoints
-        # can emit that time's value and briefly reveal a fully expanded panel.
-        blocked = self._animation.blockSignals(True)
-        try:
-            self._animation.setStartValue(self._height)
-            self._animation.setEndValue(height)
-            self._animation.setCurrentTime(0)
-        finally:
-            self._animation.blockSignals(blocked)
-        self._animation.start()
+        self._batch_restore_timer.stop()
+        if not self._view.isVisible() or not animations_enabled(self._view):
+            self._animation.stop()
+            self._advance(height)
+            self._finished()
+            return
+        self._animation.retarget(
+            self._height,
+            height,
+            MOTION.expand_ms if height > self._height else MOTION.panel_exit_ms,
+        )
 
     def _advance(self, value: object) -> None:
         if not isinstance(value, (int, float)) or not self._index.isValid():
@@ -239,7 +256,10 @@ class InlineAlbumExpansion(QObject):
         self._clip.raise_()
 
     def _finished(self) -> None:
-        self._restore_batch_size()
+        # QListView can finish the last layout batch on its next event-loop turn.
+        # Keep its visible-row budget until that turn, including a direct jump to
+        # the endpoint after a delayed frame. Reopening cancels this restoration.
+        self._batch_restore_timer.start(0)
         if self._height == 0:
             self.reset()
         else:

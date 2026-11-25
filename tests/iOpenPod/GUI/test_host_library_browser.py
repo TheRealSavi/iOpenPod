@@ -7,9 +7,10 @@ from time import monotonic
 
 import pytest
 from PIL import Image
+from PySide6.QtCore import QAbstractAnimation, Qt, QVariantAnimation
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QStackedWidget, QToolButton
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
+from PySide6.QtWidgets import QStackedWidget, QToolButton, QWidget
+from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.artwork_controller import ArtworkController
 from iOpenPod.app.core.settings.definitions import (
@@ -46,6 +47,55 @@ class _DeviceArtworkLoader:
     def load_artwork(self, request: ArtworkRequest) -> ArtworkImage | None:
         self.requests.append(request)
         return None
+
+
+@pytest.mark.parametrize("page_id", (PageId.ALBUMS, PageId.ARTISTS))
+def test_first_selection_group_toggle_animates_in_host_browser(page_id: PageId) -> None:
+    context = build_context()
+    parent = QStackedWidget()
+    provider = ArtworkPixmapProvider(context.artwork_controller)
+    browser = HostLibraryBrowser(
+        context.settings,
+        context.theme_manager,
+        provider,
+        LibraryWorkspace(),
+        parent,
+        SyncSelection(),
+    )
+    try:
+        browser.track_model.reset_tracks(
+            tuple(
+                Track(i + 1, "Song", f"Artist {i:03}", f"Album {i:03}", 180_000)
+                for i in range(100)
+            )
+        )
+        page = browser.page(page_id)
+        parent.addWidget(page)
+        parent.setCurrentWidget(page)
+        parent.resize(1100, 820)
+        parent.show()
+        QTest.qWait(50)
+        grid = next(g for g in page.findChildren(EqualizedGridView) if g.isVisible())
+        animation = grid.findChild(QVariantAnimation, "selectionGroupAnimation")
+        overlay = grid.findChild(QWidget, "selectionGroupSlide")
+        assert animation is not None and overlay is not None
+        for _ in range(2):
+            header = grid.visualRect(grid.model().index(0, 0))
+            QTest.mouseClick(
+                grid.viewport(), Qt.MouseButton.LeftButton, pos=header.center()
+            )
+            APPLICATION.processEvents()
+            assert overlay.isVisible()
+            assert animation.state() == QAbstractAnimation.State.Running
+            assert overlay.y() == header.bottom() + 1
+            animation.setCurrentTime(animation.duration())
+            assert not overlay.isVisible()
+    finally:
+        browser.shutdown()
+        provider.shutdown()
+        parent.close()
+        parent.deleteLater()
+        context.shutdown()
 
 
 @pytest.mark.parametrize("selection_mode", [False, True])

@@ -3,10 +3,17 @@
 from collections.abc import Iterator
 
 import pytest
-from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QVariantAnimation
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QEvent,
+    QObject,
+    QPoint,
+    Qt,
+    QVariantAnimation,
+)
 from PySide6.QtGui import QContextMenuEvent
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QWidget
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
 
 from iOpenPod.app.context import AppContext
@@ -63,6 +70,71 @@ def _page(context: AppContext) -> LibraryPage:
     page.show()
     QTest.qWait(50)
     return page
+
+
+def test_scrollbar_layout_does_not_finish_an_album_reveal(context: AppContext) -> None:
+    context.track_model.reset_tracks(
+        tuple(Track(i + 1, "Song", "Artist", f"Album {i}", 180_000) for i in range(6))
+    )
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
+    )
+    page = _page(context)
+    try:
+        grid = page.findChild(AlbumGridView)
+        animation = page.findChild(QVariantAnimation, "inlineAlbumAnimation")
+        expansion = page.findChild(InlineAlbumExpansion)
+        clip = page.findChild(QWidget, "inlineAlbumReveal")
+        assert grid is not None and animation is not None and expansion is not None
+        assert clip is not None
+        for _ in range(2):
+            grid.clicked.emit(grid.model().index(0, 0))
+            animation.setCurrentTime(32)
+            before = animation.currentValue()
+            height = clip.height()
+            # Opening adds a scrollbar; closing removes it. Its deferred viewport
+            # resize may arrive during the next reveal without changing its target.
+            APPLICATION.processEvents()
+            assert animation.state() == QAbstractAnimation.State.Running
+            assert animation.currentTime() == 32
+            assert animation.currentValue() == before
+            assert clip.isVisible() and clip.height() == height
+            animation.setCurrentTime(animation.duration())
+            expansion.close()
+            animation.setCurrentTime(animation.duration())
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize("closing", (False, True))
+def test_resize_preserves_an_in_progress_album_transition(
+    context: AppContext, closing: bool
+) -> None:
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
+    )
+    page = _page(context)
+    try:
+        grid = page.findChild(AlbumGridView)
+        animation = page.findChild(QVariantAnimation, "inlineAlbumAnimation")
+        expansion = page.findChild(InlineAlbumExpansion)
+        clip = page.findChild(QWidget, "inlineAlbumReveal")
+        assert grid is not None and animation is not None and expansion is not None
+        assert clip is not None
+        grid.clicked.emit(grid.model().index(0, 0))
+        if closing:
+            animation.setCurrentTime(animation.duration())
+            expansion.close()
+        animation.setCurrentTime(32)
+        height = animation.currentValue()
+        page.resize(1000, 820)
+        APPLICATION.processEvents()
+        assert animation.state() == QAbstractAnimation.State.Running
+        assert clip.isVisible() and clip.height() == height
+        animation.setCurrentTime(animation.duration())
+        assert clip.isVisible() is not closing
+    finally:
+        page.close()
 
 
 @pytest.mark.parametrize("saved", (False, True))
@@ -189,7 +261,14 @@ def test_deep_scrolled_album_stays_laid_out_and_reveals_visible_contents(
         grid.clicked.emit(index)
         # The zero-height first frame must not expose old/default clip geometry.
         assert not clip.isVisible()
-        QTest.qWait(300)
+        # Check the rendered path and final scroll adjustment independently of
+        # machine load and the motion system's settling budget.
+        animation.pause()
+        APPLICATION.processEvents()
+        assert grid.visualRect(index).isValid()
+        for elapsed in range(16, animation.duration() + 16, 16):
+            animation.setCurrentTime(min(elapsed, animation.duration()))
+            APPLICATION.processEvents()
 
         assert frames and all(valid and visible for valid, visible in frames)
         assert panel.isVisible()
@@ -198,6 +277,11 @@ def test_deep_scrolled_album_stays_laid_out_and_reveals_visible_contents(
         assert grid.verticalScrollBar().value() >= position_before
         assert grid.visualRect(index).top() >= 0
         assert grid.model().index(300, 0).data(AlbumRole.TITLE) == "Album 300"
+        panel.closeRequested.emit()
+        animation.setCurrentTime(animation.duration())
+        APPLICATION.processEvents()
+        assert not panel.isVisible()
+        assert grid.visualRect(index).isValid()
     finally:
         page.close()
 
@@ -227,6 +311,41 @@ def test_resizing_during_collapse_finishes_closed(context: AppContext) -> None:
         page.resize(1050, 820)
         QTest.qWait(50)
         assert not panel.isVisible()
+    finally:
+        page.close()
+
+
+def test_deep_album_keeps_its_layout_when_the_clock_skips_frames(
+    context: AppContext,
+) -> None:
+    context.track_model.reset_tracks(
+        tuple(
+            Track(i + 1, "Song", "Artist", f"Album {i:03}", 180_000) for i in range(500)
+        )
+    )
+    context.settings.set_global(
+        IPOD_LIBRARY_VIEW_MODE, IPodLibraryViewMode.ITUNES_11.value
+    )
+    page = _page(context)
+    try:
+        grid = page.findChild(AlbumGridView)
+        expansion = page.findChild(InlineAlbumExpansion)
+        animation = page.findChild(QVariantAnimation, "inlineAlbumAnimation")
+        assert grid is not None and expansion is not None and animation is not None
+        index = grid.model().index(300, 0)
+        grid.scrollTo(index)
+        QTest.qWait(80)
+        batch_size = grid.batchSize()
+        grid.clicked.emit(index)
+        APPLICATION.processEvents()
+        assert grid.visualRect(index).isValid()
+        animation.setCurrentTime(animation.duration())
+        # Finish and immediately close before the final layout batch is delivered.
+        expansion.close()
+        animation.setCurrentTime(animation.duration())
+        APPLICATION.processEvents()
+        assert grid.visualRect(index).isValid()
+        assert grid.batchSize() == batch_size
     finally:
         page.close()
 

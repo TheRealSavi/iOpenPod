@@ -2,8 +2,9 @@
 
 from PySide6.QtCore import QElapsedTimer, QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QColor, QHideEvent, QImage, QPainter, QPaintEvent, QShowEvent
-from PySide6.QtWidgets import QStyle, QWidget
+from PySide6.QtWidgets import QWidget
 
+from iOpenPod.GUI.presentation.motion import animations_enabled
 from iOpenPod.GUI.presentation.now_playing_background import (
     ArtworkBackgroundAnimation,
     now_playing_background,
@@ -51,9 +52,7 @@ class NowPlayingBackdrop(QWidget):
         self.update()
 
     def _animations_enabled(self) -> bool:
-        return bool(
-            self.style().styleHint(QStyle.StyleHint.SH_Widget_Animate, None, self)
-        )
+        return animations_enabled(self)
 
     def _can_animate(self) -> bool:
         return (

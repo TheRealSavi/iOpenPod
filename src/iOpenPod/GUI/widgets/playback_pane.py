@@ -2,12 +2,10 @@
 
 from PySide6.QtCore import (
     QCoreApplication,
-    QEasingCurve,
     QEvent,
     QModelIndex,
     QPersistentModelIndex,
     QPoint,
-    QPropertyAnimation,
     QRect,
     QRectF,
     QSize,
@@ -61,6 +59,11 @@ from iOpenPod.GUI.presentation.artwork import (
     paint_artwork_placeholder,
 )
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.motion import (
+    MOTION,
+    SpringPropertyAnimation,
+    animations_enabled,
+)
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.presentation.track_drag_preview import (
@@ -702,7 +705,7 @@ class PlaybackPaneHost(QFrame):
         pane.setParent(self)
         pane.hide()
 
-        self._animation = QPropertyAnimation(pane, b"pos", self)
+        self._animation = SpringPropertyAnimation(pane, b"pos", self)
         self._animation.finished.connect(self._animation_finished)
         self.hide()
 
@@ -716,11 +719,11 @@ class PlaybackPaneHost(QFrame):
                 self._pane.resize(self.size())
                 self._pane.move(self.width(), 0)
                 self._pane.show()
-            self._animate_to(0, QEasingCurve.Type.OutCubic)
+            self._animate_to(0, MOTION.panel_enter_ms)
             return
         if self.isHidden():
             return
-        self._animate_to(self.width(), QEasingCurve.Type.InCubic)
+        self._animate_to(self.width(), MOTION.panel_exit_ms)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -730,28 +733,27 @@ class PlaybackPaneHost(QFrame):
     def _animate_to(
         self,
         target_x: int,
-        easing: QEasingCurve.Type,
+        duration_ms: int,
     ) -> None:
         current = self._pane.pos()
         target = QPoint(target_x, 0)
-        self._animation.stop()
-        if current == target:
+        if current == target or not self.isVisible() or not animations_enabled(self):
+            self._animation.stop()
+            self._pane.move(target)
             self._animation_finished()
             return
-        distance = abs(target_x - current.x())
-        duration = max(
-            1,
-            round(
-                LAYOUT.playback_pane_animation_ms
-                * distance
-                / LAYOUT.playback_pane_width
-            ),
-        )
-        self._animation.setDuration(duration)
-        self._animation.setEasingCurve(easing)
-        self._animation.setStartValue(current)
-        self._animation.setEndValue(target)
-        self._animation.start()
+        self._animation.retarget(current, target, duration_ms)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._animation.stop()
+        self._pane.move(0 if self._target_open else self.width(), 0)
+        if not self._target_open:
+            # An ancestor can hide during dismissal. Commit our own hidden
+            # state too, or restoring the window leaves an empty reserved rail.
+            self._pane.hide()
+            if not self.isHidden():
+                self.hide()
+        super().hideEvent(event)
 
     def _animation_finished(self) -> None:
         if self._target_open:

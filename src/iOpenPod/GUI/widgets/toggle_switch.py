@@ -2,25 +2,23 @@
 
 from PySide6.QtCore import (
     QAbstractAnimation,
-    QEasingCurve,
     QPoint,
     QPointF,
     QRectF,
     QSignalBlocker,
     QSize,
     Qt,
-    QVariantAnimation,
 )
-from PySide6.QtGui import QPainter, QPaintEvent, QPalette, QPen
-from PySide6.QtWidgets import QCheckBox, QStyle, QWidget
+from PySide6.QtGui import QHideEvent, QPainter, QPaintEvent, QPalette, QPen
+from PySide6.QtWidgets import QCheckBox, QWidget
 
+from iOpenPod.GUI.presentation.motion import MOTION, SpringAnimation, animations_enabled
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 
 _TRACK_WIDTH = 42
 _TRACK_HEIGHT = 24
 _THUMB_INSET = 3
 _FOCUS_GAP = 3
-_SLIDE_MS = 140
 
 
 class ToggleSwitch(QCheckBox):
@@ -30,9 +28,7 @@ class ToggleSwitch(QCheckBox):
         super().__init__(parent)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
-        self._slide = QVariantAnimation(self)
-        self._slide.setDuration(_SLIDE_MS)
-        self._slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._slide = SpringAnimation(self)
         self._slide.valueChanged.connect(self._repaint_on_slide)
         self.toggled.connect(self._slide_thumb)
 
@@ -53,19 +49,21 @@ class ToggleSwitch(QCheckBox):
                 self.setChecked(checked)
 
     def _thumb_position(self, fallback: bool) -> float:
-        if self._slide.state() == QAbstractAnimation.State.Running:
+        if self._slide.state() != QAbstractAnimation.State.Stopped:
             return float(self._slide.currentValue())
         return float(fallback)
 
     def _slide_thumb(self, checked: bool) -> None:
         start = self._thumb_position(not checked)
+        if self.isVisible() and animations_enabled(self):
+            self._slide.retarget(start, float(checked), MOTION.control_ms)
+        else:
+            self._slide.stop()
+        self.update()
+
+    def hideEvent(self, event: QHideEvent) -> None:
         self._slide.stop()
-        if self.isVisible() and self.style().styleHint(
-            QStyle.StyleHint.SH_Widget_Animate, None, self
-        ):
-            self._slide.setStartValue(start)
-            self._slide.setEndValue(float(checked))
-            self._slide.start()
+        super().hideEvent(event)
 
     def hitButton(self, pos: QPoint) -> bool:
         return self.rect().contains(pos)

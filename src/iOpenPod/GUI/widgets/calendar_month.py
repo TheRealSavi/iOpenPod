@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import (
     QDate,
-    QEasingCurve,
     QEvent,
     QLocale,
     QPoint,
@@ -33,12 +32,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QStyle,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
+from iOpenPod.GUI.presentation.motion import MOTION, animations_enabled, fade_curve
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.themed_buttons import (
     ActionButton,
@@ -88,8 +87,8 @@ class MonthGrid(QCalendarWidget):
         self._selection_target = today.toJulianDay()
         self._selection_fade = QVariantAnimation(self)
         self._selection_fade.setObjectName("calendarDaySelectionFade")
-        self._selection_fade.setDuration(LAYOUT.selection_group_animation_ms)
-        self._selection_fade.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._selection_fade.setDuration(MOTION.fade_ms)
+        self._selection_fade.setEasingCurve(fade_curve())
         self._selection_fade.setStartValue(0.0)
         self._selection_fade.setEndValue(1.0)
         self._selection_fade.valueChanged.connect(self._advance_selection)
@@ -114,9 +113,7 @@ class MonthGrid(QCalendarWidget):
 
     def _selection_changed(self) -> None:
         self._selection_fade.stop()
-        if not self.isVisible() or not self.style().styleHint(
-            QStyle.StyleHint.SH_Widget_Animate, None, self
-        ):
+        if not self.isVisible() or not animations_enabled(self):
             self._finish_selection()
             return
         # Retarget from every currently visible highlight, including a partly

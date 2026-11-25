@@ -61,7 +61,9 @@ def test_fade_blends_then_releases_frame_and_allows_input(page: _ColorPage) -> N
     assert page.grab().toImage().pixelColor(20, 20) == QColor("red")
     animation.setCurrentTime(animation.duration() // 2)
     color = page.grab().toImage().pixelColor(20, 20)
-    assert 125 <= color.red() <= 130 and 125 <= color.blue() <= 130
+    # Most of the incoming page is readable by halfway, with a soft tail left.
+    assert 0 < color.red() < 64 and 191 < color.blue() < 255
+    assert color.red() + color.blue() == pytest.approx(255, abs=1)
     animation.setCurrentTime(animation.duration())
     assert not fade.isVisible()
     assert page.grab().toImage().pixelColor(20, 20) == QColor("blue")

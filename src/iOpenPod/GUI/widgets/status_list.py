@@ -29,15 +29,15 @@ from iOpenPod.app.core.status import ApplicationStatus, StatusMessage
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.animated_popup import (
-    POPUP_OVERSHOOT_INSET,
+    POPUP_EDGE_INSET,
     AnimatedPopup,
     PopupDirection,
 )
 from iOpenPod.GUI.widgets.status_controls import StatusControls
 from iOpenPod.GUI.widgets.themed_buttons import IconButton, IconButtonKind
 
-# Leave room for the entrance curve's small overshoot above the final panel.
-_POPUP_TOP_INSET = POPUP_OVERSHOOT_INSET
+# Keep the existing transparent breathing room around the clipped surface.
+_POPUP_TOP_INSET = POPUP_EDGE_INSET
 
 
 class _StatusSurface(QFrame):

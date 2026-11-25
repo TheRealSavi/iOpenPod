@@ -23,6 +23,7 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QHideEvent,
     QKeyEvent,
     QMouseEvent,
     QPainter,
@@ -37,7 +38,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QSizePolicy,
     QSlider,
-    QStyle,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -49,6 +49,11 @@ from iOpenPod.app.models.library_drag import TrackSelectionMimeData, dropped_tra
 from iOpenPod.app.playback.artwork import artwork_time_at, playback_artwork_times
 from iOpenPod.app.playback.chapters import chapter_at, playback_chapters
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.motion import (
+    MOTION,
+    SpringPropertyAnimation,
+    animations_enabled,
+)
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.presentation.track_drag_preview import (
@@ -461,13 +466,12 @@ class PlayerBar(QFrame):
         self._mute_fade.setDuration(_MUTE_FADE_DURATION_MS)
         self._mute_fade.setEasingCurve(QEasingCurve.Type.InOutSine)
         self._mute_fade.finished.connect(self._mute_fade_finished)
-        self._height_animation = QPropertyAnimation(
+        self._height_animation = SpringPropertyAnimation(
             self,
             b"animated_height",
             self,
         )
         self._height_animation.setObjectName("playerHeightAnimation")
-        self._height_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self._height_animation.finished.connect(self._height_animation_finished)
         artwork_provider.cleared.connect(self._refresh_artwork_times)
         self.set_track(None)
@@ -1139,31 +1143,29 @@ class PlayerBar(QFrame):
             self._set_animated_height(player_height)
 
     def _animate_height(self, target_height: int) -> None:
-        self._height_animation.stop()
         current_height = self.height()
         self._target_height = target_height
         if (
             current_height == target_height
             or not self.isVisible()
-            or not self.style().styleHint(
-                QStyle.StyleHint.SH_Widget_Animate,
-                None,
-                self,
-            )
+            or not animations_enabled(self)
         ):
+            self._height_animation.stop()
             self._set_animated_height(target_height)
             return
 
-        distance = abs(target_height - current_height)
-        full_distance = self._active_height - LAYOUT.player_idle_height
-        duration = max(
-            1,
-            round(LAYOUT.player_transition_ms * distance / full_distance),
+        self._height_animation.retarget(
+            current_height,
+            target_height,
+            MOTION.expand_ms
+            if target_height > current_height
+            else MOTION.panel_exit_ms,
         )
-        self._height_animation.setDuration(duration)
-        self._height_animation.setStartValue(current_height)
-        self._height_animation.setEndValue(target_height)
-        self._height_animation.start()
 
     def _height_animation_finished(self) -> None:
         self._set_animated_height(self._target_height)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._height_animation.stop()
+        self._height_animation_finished()
+        super().hideEvent(event)

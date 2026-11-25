@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION
+from tests.iOpenPod.GUI.motion_test_support import disable_motion
 
 from iOpenPod.GUI.presentation.scrolling import install_scrolling
 from iOpenPod.GUI.presentation.smooth_wheel_scrolling import SmoothWheelScrolling
@@ -103,6 +104,16 @@ def test_table_wheel_animates_one_row_per_notch(
     _finish(table)
     assert bar.value() == 40
     assert table.rowViewportPosition(1) == 0
+
+
+def test_disabled_motion_keeps_whole_row_wheel_steps_immediate(
+    table: QTableView,
+) -> None:
+    disable_motion(table)
+    assert _wheel(table).isAccepted()
+    assert table.verticalScrollBar().value() == 40
+    assert table.rowViewportPosition(1) == 0
+    assert _animation(table).state() == QAbstractAnimation.State.Stopped
 
 
 @pytest.mark.parametrize("over_scrollbar", (False, True))

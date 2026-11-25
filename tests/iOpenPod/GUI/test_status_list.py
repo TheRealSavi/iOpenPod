@@ -1,6 +1,6 @@
 """All active statuses remain inspectable while the shared status text rotates."""
 
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, Qt
+from PySide6.QtCore import QPoint, QPropertyAnimation, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFrame, QLabel, QListWidget, QMainWindow
@@ -53,7 +53,6 @@ def test_status_popup_slides_up_and_down_with_distinct_curves() -> None:
             initial_image.pixelColor(popup.width() // 2, popup.height() // 2).alpha()
             == 0
         )
-        assert animation.easingCurve().type() == QEasingCurve.Type.OutBack
         animation.setCurrentTime(animation.duration() // 3)
         assert popup.pos() == host_pos
         assert rest.y() < surface.y() < start.y()
@@ -72,7 +71,6 @@ def test_status_popup_slides_up_and_down_with_distinct_curves() -> None:
         assert popup.isVisible()
         assert animation.startValue() == rest
         assert animation.endValue() == start
-        assert animation.easingCurve().type() == QEasingCurve.Type.InCubic
         animation.setCurrentTime(animation.duration() // 2)
         assert popup.pos() == host_pos
         _finish_popup_animation(popup)

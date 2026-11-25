@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from iOpenPod.GUI.presentation.i18n.workflow import workflow_text
+from iOpenPod.GUI.presentation.motion import animations_enabled
 from iOpenPod.GUI.presentation.settings_illustrations import (
     SettingExample,
     has_setting_image,
@@ -72,6 +73,7 @@ class SettingsExampleImage(QWidget):
     def set_image(self, image: QPixmap, *, animate: bool) -> None:
         if image.cacheKey() == self._image.cacheKey():
             return
+        animate = animate and self.isVisible() and animations_enabled(self)
         # Flatten an interrupted blend, retaining exactly the visible composition.
         previous = self.frame() if animate and not self._image.isNull() else QImage()
         self._crossfade.stop()
@@ -88,8 +90,14 @@ class SettingsExampleImage(QWidget):
             self.update()
 
     def _finish_crossfade(self) -> None:
+        self._progress = 1.0
         self._previous = QImage()
         self.update()
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._crossfade.stop()
+        self._finish_crossfade()
+        super().hideEvent(event)
 
     def sizeHint(self) -> QSize:
         return QSize(640, 360)
@@ -241,6 +249,10 @@ class SettingsPreview(QWidget):
 
     def _animate(self, opacity: float) -> None:
         self._fade.stop()
+        if not self.isVisible() or not animations_enabled(self):
+            self._opacity.setOpacity(opacity)
+            self._finished()
+            return
         self._fade.setEasingCurve(
             QEasingCurve.Type.InOutSine
             if opacity == 0.0
@@ -250,6 +262,10 @@ class SettingsPreview(QWidget):
         self._fade.setEndValue(opacity)
         self._fade.setDuration(300)
         self._fade.start()
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self.clear()
+        super().hideEvent(event)
 
     def _finished(self) -> None:
         if self._pending is None and self._opacity.opacity() == 0.0:
