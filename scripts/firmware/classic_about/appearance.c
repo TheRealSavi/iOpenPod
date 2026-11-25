@@ -4,49 +4,15 @@
  */
 #include <stdint.h>
 #include "appearance_resources.h"
+#include "preference.h"
 
 static uint32_t active;
 static uint32_t selected;
 static uint32_t save_error;
 static uint32_t selection_cache_mode;
-struct path { uint16_t volume; char text[258]; };
-static const struct path preference_path = {0, "iPod_Control\\Device\\iOPAppearance"};
-struct preference { uint32_t magic, mode, complement; };
-#define PREF_MAGIC 0x31504f49u /* IOP1, schema 1 */
-
-static int transfer(struct preference *record, int writing)
-{
-    void *handle;
-    uint32_t count = 0;
-    typedef int (*open_fn)(const struct path *, uint32_t, uint32_t, void **);
-    typedef int (*io_fn)(void *, void *, uint32_t, uint32_t, uint32_t *);
-    typedef int (*close_fn)(void *);
-    if (((open_fn)0x0804f784u)(&preference_path, 0x64617461u, writing ? 2 : 1, &handle))
-        return 0;
-    int result = ((io_fn)(writing ? 0x0804ff68u : 0x0804f838u))(
-        handle, record, sizeof(*record), writing ? 1 : 0, &count);
-    ((close_fn)0x0804f6e4u)(handle);
-    return !result && count == sizeof(*record);
-}
-
-static int read_mode(uint32_t *mode)
-{
-    struct preference record;
-    if (!transfer(&record, 0) || record.magic != PREF_MAGIC || record.mode > 2 ||
-        record.complement != ~record.mode)
-        return 0;
-    *mode = record.mode;
-    return 1;
-}
-
-static int save_mode(uint32_t mode)
-{
-    struct preference record = {PREF_MAGIC, mode, ~mode};
-    uint32_t confirmed;
-    /* Apple discards flush/close error returns. Read-back is an additional
-     * consistency check, not a guarantee against a later power loss. */
-    return transfer(&record, 1) && read_mode(&confirmed) && confirmed == mode;
-}
+static const struct setting_file preference = {
+    0x31504f49u, 2, {0, "iPod_Control\\Device\\iOPAppearance"}
+};
 
 void iop_appearance_apply(uint32_t mode)
 {
@@ -97,7 +63,7 @@ static uint32_t resolved_mode(void)
 void iop_appearance_load(void)
 {
     selected = 0;
-    read_mode(&selected);
+    iop_read_setting(&preference, &selected);
     iop_appearance_apply(resolved_mode());
     save_error = 0;
 }
@@ -164,7 +130,7 @@ int iop_appearance_action(void *controller, const char *action, uint32_t argumen
     }
     if (argument == 0xdeadbeefu) return 1;
     uint32_t next = selected == 2 ? 0 : selected + 1;
-    save_error = !save_mode(next);
+    save_error = !iop_save_setting(&preference, next);
     if (!save_error) {
         selected = next;
         iop_appearance_apply(resolved_mode());

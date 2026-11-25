@@ -129,6 +129,7 @@ def native_patches(
     long_audio: bool = False,
     photo_zoom: bool = False,
     title_bar_clock: bool = False,
+    mono_audio: bool = False,
 ) -> Iterator[NativePatch]:
     """The explicit, ordered hook recipe for the selected built-in mods."""
     # r4 retains the original DRAM source. Reach the appended PIC bootstrap.
@@ -303,11 +304,19 @@ def native_patches(
             bytes.fromhex("0030a0e3"),  # mov r3,#0
             "allow unsigned eapp manifests through the native game reader",
         )
-    if dark_mode:
+    if mono_audio:
+        yield NativePatch(
+            0x22007ED0,
+            bytes.fromhex("5460c4e5fe83bde8"),
+            struct.pack("<II", 0xE51FF004, symbols["iop_mono_mix_finish"]),
+            "fold final stereo PCM after all mixer voices and before output handoff",
+        )
+    if dark_mode or mono_audio:
+        settings = "iop_mono" if mono_audio else "iop_appearance"
         for address, original, replacement in (
-            (0x089A3BF4, 0x0821DAF4, "iop_appearance_action"),
-            (0x089A7C3C, 0x0821DAF4, "iop_appearance_action"),
-            (0x08997B60, 0x081E11F4, "iop_appearance_property"),
+            (0x089A3BF4, 0x0821DAF4, f"{settings}_action"),
+            (0x089A7C3C, 0x0821DAF4, f"{settings}_action"),
+            (0x08997B60, 0x081E11F4, f"{settings}_property"),
         ):
             yield NativePatch(
                 address,
@@ -315,8 +324,15 @@ def native_patches(
                 struct.pack("<I", symbols[replacement]),
                 replacement,
             )
+        load = "iop_mono_preferences" if mono_audio else "iop_preferences_hook"
+        yield NativePatch(
+            0x08058808,
+            arm_call(0x08058808, 0x0809C69C),
+            arm_call(0x08058808, symbols[load]),
+            load,
+        )
+    if dark_mode:
         for address, original, replacement in (
-            (0x08058808, 0x0809C69C, "iop_preferences_hook"),
             (0x0817E320, 0x0817D6E8, "iop_appearance_clock_tick"),
             (0x0825AE9C, 0x08069A5C, "iop_appearance_fill"),
             (0x082872A8, 0x08259B28, "iop_appearance_text"),

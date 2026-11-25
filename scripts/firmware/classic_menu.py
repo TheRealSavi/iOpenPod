@@ -51,6 +51,7 @@ def included_mods(
     long_audio: bool = False,
     photo_zoom: bool = False,
     title_bar_clock: bool = False,
+    mono_audio: bool = False,
 ) -> tuple[IncludedMod, ...]:
     result = [
         IncludedMod("org.iopenpod.version-string", "Mod Version String"),
@@ -93,6 +94,8 @@ def included_mods(
         result.append(
             IncludedMod("org.iopenpod.title-bar-clock", "Title Bar Clock", "0.1.1-dev")
         )
+    if mono_audio:
+        result.append(IncludedMod("org.iopenpod.mono-audio", "Mono Audio", "0.1.1-dev"))
     return tuple(result)
 
 
@@ -105,6 +108,7 @@ def mod_records(
     long_audio: bool = False,
     photo_zoom: bool = False,
     title_bar_clock: bool = False,
+    mono_audio: bool = False,
 ) -> list[dict[str, str]]:
     return [
         asdict(mod)
@@ -116,6 +120,7 @@ def mod_records(
             long_audio=long_audio,
             photo_zoom=photo_zoom,
             title_bar_clock=title_bar_clock,
+            mono_audio=mono_audio,
         )
     ]
 

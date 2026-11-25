@@ -84,6 +84,11 @@ TextView fits the measured time, keeping the preceding status indicator five
 pixels away without a fixed-width clock reservation. See the
 [layout inventory and native checks](../../docs/research/classic-title-bar-clock-2026-11-19.md).
 
+The optional `--mono-audio` mod adds **Settings → Mono Audio** below Sound Check.
+Its default is Off. The common final stereo mixer applies the saved preference to
+headphone, analog dock and USB dock playback. See the
+[route trace and ARM probe](../../docs/research/classic-mono-audio.md).
+
 ### Reproduce a release
 
 Use the pinned prepared `osos.bin` (10,634,496 bytes, SHA-256

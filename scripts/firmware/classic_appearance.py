@@ -12,12 +12,9 @@ from functools import partial
 
 from .classic_bitmaps import RGB, Bitmap, pack565, unpack565
 from .classic_deltas import encode_xor_delta
-from .classic_menu import (
-    MenuResources,
-    event,
-    serialized_string,
-)
-from .classic_resources import blocks, pack_blocks, put, stock_resource_locations, u32
+from .classic_menu import MenuResources
+from .classic_resources import stock_resource_locations
+from .classic_settings import add_settings_toggle
 
 BASE: RGB = (18, 24, 31)
 RAISED: RGB = (31, 41, 52)
@@ -307,109 +304,18 @@ def settings_resources(menu: MenuResources) -> None:
     menu.added["Str ", AUTO] = b"Auto\0"
     menu.added["Str ", TITLE] = b"Appearance\0"
     menu.added["Str ", SAVE_ERROR] = b"Not saved\0"
-    menu.added["SORC", TITLE_SOURCE] = pack_blocks(
-        [
-            (0x534F5243, struct.pack("<III", 0x80, TITLE, 1)),
-            (0x534F5243, struct.pack("<III", 0x8900, VALUE, 10)),
-        ]
+    add_settings_toggle(
+        menu,
+        title="Appearance",
+        title_id=TITLE,
+        source_id=TITLE_SOURCE,
+        row_id=ROW,
+        value_id=VALUE,
+        after=0x0DAD0C72,
+        action_name="iOpenPod_Appearance_Toggle",
+        preview_name="iOpenPod_Appearance_Preview",
+        image_binding=(0x8900, PREVIEW_IMAGE),
     )
-    original = blocks(menu.stock["ITEM", 65])
-    prototype = next(body for _, body in original if u32(body, 0x30) == 0x0DAD0C76)
-    if len(prototype) != 152:
-        raise ValueError("Settings toggle prototype changed")
-    row = bytearray(prototype)
-    put(row, 0x30, ROW)
-    put(row, 0x68, TITLE_SOURCE)
-    updated: list[tuple[int, bytes]] = []
-    for kind, body in original:
-        updated.append((kind, body))
-        if u32(body, 0x30) == 0x0DAD0C72:
-            updated.append((0, bytes(row)))
-    if len(updated) != len(original) + 1:
-        raise ValueError("Settings Brightness anchor changed")
-    menu.added["ITEM", 65] = pack_blocks(updated)
-    menu.replacements.add(("ITEM", 65))
-    screen = 0x0DAD0C6A
-    events = menu.stock["CEVT", screen]
-    action = (
-        serialized_string(f"list.pid.{ROW}.chosen")
-        + b"1"
-        + serialized_string("iOpenPod_Appearance_Toggle")
-        + struct.pack("<I", 0)
-    )
-    preview_name = "iOpenPod_Appearance_Preview"
-    preview = settings_preview(menu)
-    menu.names[preview_name] = preview
-    menu.added["CEVT", screen] = (
-        struct.pack("<I", u32(events, 0) + 2)
-        + events[4:]
-        + action
-        + event(
-            f"list.pid.{ROW}.delayedselected", "navigator.SwitchLayout", (preview_name,)
-        )
-    )
-    menu.replacements.add(("CEVT", screen))
-
-
-def settings_preview(menu: MenuResources) -> int:
-    """Clone Apple's Brightness preview with appearance-specific bindings."""
-    template, layout, screen = 0x0DAD0C39, 0x0DAD0C84, 0x0DAD0C6A
-    preview, preview_view = menu.allocate(), menu.allocate()
-    title_source = menu.source("Appearance")
-    original = bytearray(menu.stock["VLyt", template])
-    put(original, 0x24, title_source)
-    sources: dict[int, int] = {}
-    for view_id, property_id in ((0x0DAD0C30, PREVIEW_IMAGE), (0x0DAD0C31, VALUE)):
-        source = menu.allocate()
-        sources[view_id] = source
-        menu.added["SORC", source] = pack_blocks(
-            [(0x534F5243, struct.pack("<III", 0x8900, property_id, 1))]
-        )
-    views: list[tuple[int, bytes]] = []
-    for view_id, options in blocks(bytes(original)):
-        if view_id in sources:
-            options = pack_blocks(
-                [
-                    (
-                        kind,
-                        struct.pack("<I", sources[view_id])
-                        if kind == 0x534F5243
-                        else body,
-                    )
-                    for kind, body in blocks(options)
-                ]
-            )
-        views.append((view_id, options))
-    menu.added["VLyt", preview_view] = pack_blocks(views)
-    menu.added["TEVT", preview_view] = menu.stock["TEVT", template]
-    layouts: list[tuple[int, bytes]] = []
-    for kind, original_body in blocks(menu.stock["SLyt", layout]):
-        body = bytearray(original_body)
-        instances: list[tuple[int, bytes]] = []
-        for instance_kind, original_instance in blocks(
-            menu.stock["SSin", u32(body, 0)]
-        ):
-            instance = bytearray(original_instance)
-            old_id, new_id = u32(instance, 0), menu.allocate()
-            put(instance, 0, new_id)
-            for offset in (4, 8):
-                if u32(instance, offset) == template:
-                    put(instance, offset, preview_view)
-            for binding_kind in ("VCrv", "VCvs"):
-                if (binding_kind, old_id) in menu.stock:
-                    menu.added[binding_kind, new_id] = menu.stock[binding_kind, old_id]
-            instances.append((instance_kind, bytes(instance)))
-        instance_list = menu.allocate()
-        menu.added["SSin", instance_list] = pack_blocks(instances)
-        put(body, 0, instance_list)
-        layouts.append((kind, bytes(body)))
-    menu.added["SLyt", preview] = pack_blocks(layouts)
-    menu.added["SEVT", preview] = menu.stock["SEVT", layout]
-    variants = blocks(menu.stock["SLst", screen])
-    kind, variant = next((k, bytearray(v)) for k, v in variants if u32(v, 0) == layout)
-    put(variant, 0, preview)
-    menu.added["SLst", screen] = pack_blocks([*variants, (kind, bytes(variant))])
-    menu.replacements.add(("SLst", screen))
     # An anti-aliased coverage mask, rendered in Apple's native icon color.
     size = 80
     pixels = bytearray()
@@ -425,7 +331,6 @@ def settings_preview(menu: MenuResources) -> int:
     menu.added["BMap", MOON] = (
         struct.pack("<4H5I", 8, 0, size, 8, 0, 0, size, size, len(pixels)) + pixels
     )
-    return preview
 
 
 def emit_appearance_header(raw: bytes) -> str:

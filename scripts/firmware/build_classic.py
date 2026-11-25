@@ -33,6 +33,8 @@ from .classic_menu import (
     menu_resources,
     mod_records,
 )
+from .classic_mono import ICON_PATH as MONO_ICON_PATH
+from .classic_mono import mono_resources
 from .classic_patches import apply_patches, native_patches
 from .classic_preview_artwork import preview_artwork_resources
 from .classic_resources import blocks, pack_blocks, put, u32
@@ -106,6 +108,7 @@ def build(
     long_audio: bool = False,
     photo_zoom: bool = False,
     title_bar_clock: bool = False,
+    mono_audio: bool = False,
     mod_sources: tuple[Path, ...] = (),
 ) -> bytes:
     if artwork_diagnostics and not (now_playing_artwork and bootloader_report):
@@ -126,6 +129,7 @@ def build(
             long_audio=long_audio,
             photo_zoom=photo_zoom,
             title_bar_clock=title_bar_clock,
+            mono_audio=mono_audio,
         ),
     )
     if dark_mode:
@@ -133,6 +137,8 @@ def build(
     if now_playing_artwork:
         preview_artwork_resources(menu)
     output.mkdir(parents=True, exist_ok=False)
+    if mono_audio:
+        (output / "mono_resources.h").write_text(mono_resources(menu), encoding="ascii")
     if title_bar_clock:
         (output / "title_clock_layouts.h").write_text(
             title_clock_resources(menu), encoding="ascii"
@@ -165,6 +171,10 @@ def build(
         + ((source / "artwork_trace.c",) if artwork_diagnostics else ())
         if now_playing_artwork
         else ()
+    )
+    settings_sources = (source / "preference.c",) if dark_mode or mono_audio else ()
+    mono_sources = (
+        (source / "mono_audio.c", source / "mono_mix.S") if mono_audio else ()
     )
     audio_sources = (source / "long_audio.c",) if long_audio else ()
     photo_sources = (source / "photo_zoom.c",) if photo_zoom else ()
@@ -204,13 +214,14 @@ def build(
         "-nostdlib",
         *(["-DIOP_BOOT_REPORT=1"] if bootloader_report else []),
         *(["-DIOP_ARTWORK_DIAGNOSTICS=1"] if artwork_diagnostics else []),
+        *(["-DIOP_DARK_MODE=1"] if dark_mode else []),
         "-I",
         str(output),
         f"-Wl,-T,{source / 'payload.lds'},-Map,{output / 'payload.map'}",
         f"-Wl,--defsym=IOP_MOD_BASE={MOD_BASE},--defsym=IOP_MOD_MEMORY_BYTES={MOD_MEMORY_BYTES}",
         str(source / "entry.S"),
         str(source / "payload.c"),
-        *(str(path) for path in appearance_sources),
+        *(str(path) for path in settings_sources + mono_sources + appearance_sources),
         *(str(path) for path in artwork_sources),
         *(str(path) for path in report_sources),
         *(str(path) for path in audio_sources),
@@ -259,6 +270,7 @@ def build(
             long_audio=long_audio,
             photo_zoom=photo_zoom,
             title_bar_clock=title_bar_clock,
+            mono_audio=mono_audio,
             now_playing_artwork=now_playing_artwork,
             artwork_diagnostics=artwork_diagnostics,
         ),
@@ -291,6 +303,7 @@ def build(
             long_audio=long_audio,
             photo_zoom=photo_zoom,
             title_bar_clock=title_bar_clock,
+            mono_audio=mono_audio,
         ),
         "appearance": {
             "enabled": dark_mode,
@@ -326,6 +339,14 @@ def build(
                 source / "entry.S",
                 source / "payload.c",
                 source / "payload.lds",
+                *settings_sources,
+                *([source / "preference.h"] if settings_sources else []),
+                *mono_sources,
+                *(
+                    [Path(__file__).with_name("classic_mono.py"), MONO_ICON_PATH]
+                    if mono_audio
+                    else []
+                ),
                 *appearance_sources,
                 *artwork_sources,
                 *report_sources,
@@ -345,6 +366,7 @@ def build(
                 Path(__file__),
                 Path(__file__).with_name("classic_menu.py"),
                 MOD_PREVIEW_IMAGE,
+                Path(__file__).with_name("classic_settings.py"),
                 Path(__file__).with_name("classic_patches.py"),
                 Path(__file__).with_name("classic_target.py"),
                 Path(__file__).with_name("classic_preview_artwork.py"),
@@ -428,6 +450,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Keep the title and local time visible on full-width bars",
     )
+    parser.add_argument(
+        "--mono-audio",
+        action="store_true",
+        help="Add the system-wide Mono Audio setting",
+    )
     args = parser.parse_args()
     from iOpenPod.app.firmware.classic_shared import (
         compose_shared_firmware,
@@ -447,6 +474,7 @@ if __name__ == "__main__":
         long_audio=args.long_audio,
         photo_zoom=args.photo_zoom,
         title_bar_clock=args.title_bar_clock,
+        mono_audio=args.mono_audio,
         mod_sources=tuple(args.mod_source),
     )
     common_os = wrap_shared_os(prepared[HEADER_BYTES:])
@@ -468,6 +496,7 @@ if __name__ == "__main__":
                     long_audio=args.long_audio,
                     photo_zoom=args.photo_zoom,
                     title_bar_clock=args.title_bar_clock,
+                    mono_audio=args.mono_audio,
                 ),
                 "families": [24, 33, 35, 38],
                 "device_crypto_required": False,
