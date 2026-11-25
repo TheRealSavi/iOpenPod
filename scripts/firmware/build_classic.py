@@ -26,7 +26,13 @@ from .classic_appearance import (
     settings_resources,
 )
 from .classic_deltas import encode_xor_delta
-from .classic_menu import emit_menu_header, included_mods, menu_resources, mod_records
+from .classic_menu import (
+    MOD_PREVIEW_IMAGE,
+    emit_menu_header,
+    included_mods,
+    menu_resources,
+    mod_records,
+)
 from .classic_patches import apply_patches, native_patches
 from .classic_preview_artwork import preview_artwork_resources
 from .classic_resources import blocks, pack_blocks, put, u32
@@ -338,6 +344,7 @@ def build(
                 ),
                 Path(__file__),
                 Path(__file__).with_name("classic_menu.py"),
+                MOD_PREVIEW_IMAGE,
                 Path(__file__).with_name("classic_patches.py"),
                 Path(__file__).with_name("classic_target.py"),
                 Path(__file__).with_name("classic_preview_artwork.py"),

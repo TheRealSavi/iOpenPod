@@ -8,6 +8,9 @@ Input offsets refer to the hash-qualified prepared 2.0.5 OS in build_classic.py.
 
 import struct
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+from PIL import Image
 
 from .classic_resources import (
     RESOURCE_SCRATCH_BYTES,
@@ -28,6 +31,8 @@ MOD_ITEMS = 0x0CF00012
 MOD_ENTRY = 0x0CF00013
 MOD_SCREEN_NAME = "iOpenPod_Mods_Screen"
 MOD_LAYOUT_NAME = "iOpenPod_Mods_Layout"
+MOD_PREVIEW_NAME = "iOpenPod_Mods_Preview"
+MOD_PREVIEW_IMAGE = Path(__file__).with_name("classic_about") / "mods_gear.png"
 
 
 @dataclass(frozen=True)
@@ -53,7 +58,7 @@ def included_mods(
     ]
     if homebrew_eapps:
         result.append(IncludedMod("org.iopenpod.homebrew", "Unsigned Game Manifests"))
-    result.append(IncludedMod("org.iopenpod.mod-menu", "Mod Menu"))
+    result.append(IncludedMod("org.iopenpod.mod-menu", "Mod Menu", "0.1.2-dev"))
     result.append(IncludedMod("org.iopenpod.mod-memory", "Expanded Mod Memory"))
     if dark_mode:
         result.append(
@@ -120,10 +125,12 @@ def serialized_string(value: str) -> bytes:
     return struct.pack("<I", len(encoded)) + encoded
 
 
-def event(name: str, action: str, arguments: tuple[str, ...] = ()) -> bytes:
+def event(
+    name: str, action: str, arguments: tuple[str, ...] = (), *, native_flag: bool = True
+) -> bytes:
     return (
         serialized_string(name)
-        + b"1"
+        + (b"1" if native_flag else b"0")
         + serialized_string("")
         + struct.pack("<I", 1)
         + serialized_string(action)
@@ -198,6 +205,89 @@ class MenuResources:
             raise ValueError("Native Mods list must have one title and one item table")
         self.added["SLyt", MOD_LAYOUT] = pack_blocks(layout)
 
+    def add_preview_layout(
+        self, screen: int, layout: int, preview: int, template: int, replacement: int
+    ) -> None:
+        """Register a native screen variant with its own template or view layout."""
+        layouts: list[tuple[int, bytes]] = []
+        for kind, original_body in blocks(self.stock["SLyt", layout]):
+            body = bytearray(original_body)
+            instances: list[tuple[int, bytes]] = []
+            for instance_kind, original in blocks(self.stock["SSin", u32(body, 0)]):
+                instance = bytearray(original)
+                old_id, new_id = u32(instance, 0), self.allocate()
+                put(instance, 0, new_id)
+                for offset in (4, 8):
+                    if u32(instance, offset) == template:
+                        put(instance, offset, replacement)
+                for binding in ("VCrv", "VCvs"):
+                    if (binding, old_id) in self.stock:
+                        self.added[binding, new_id] = self.stock[binding, old_id]
+                instances.append((instance_kind, bytes(instance)))
+            instance_list = self.allocate()
+            self.added["SSin", instance_list] = pack_blocks(instances)
+            put(body, 0, instance_list)
+            layouts.append((kind, bytes(body)))
+        self.added["SLyt", preview] = pack_blocks(layouts)
+        self.added["SEVT", preview] = self.stock["SEVT", layout]
+        key = "SLst", screen
+        variants = blocks(self.added.get(key, self.stock[key]))
+        kind, variant = next(
+            (k, bytearray(v)) for k, v in variants if u32(v, 0) == layout
+        )
+        put(variant, 0, preview)
+        self.added[key] = pack_blocks([*variants, (kind, bytes(variant))])
+
+
+def _mods_gear_bitmap() -> bytes:
+    with Image.open(MOD_PREVIEW_IMAGE) as image:
+        if image.mode != "P" or image.size != (142, 87):
+            raise ValueError(
+                "Expected an indexed gear in the native Games preview frame"
+            )
+        image.apply_transparency()
+        palette = image.getpalette("BGRA")
+        if palette is None:
+            raise ValueError("Missing Mods preview palette")
+        pixels = struct.pack("<I", len(palette) // 4) + bytes(palette) + image.tobytes()
+        width, height = image.size
+    return (
+        struct.pack("<4H5I", 0x64, 0, width, 8, 0, 0, height, width, len(pixels))
+        + pixels
+    )
+
+
+def add_mods_preview(menu: MenuResources) -> None:
+    games_layout, games_template, games_view_layout = 0x0DAD01DC, 0x0DAD019C, 0x0DAD01A0
+    preview, mods_view_layout = menu.allocate(), menu.allocate()
+    bitmap, source = menu.allocate(), menu.allocate()
+    menu.added["BMap", bitmap] = _mods_gear_bitmap()
+    menu.added["IMAG", bitmap] = struct.pack("<I", bitmap)
+    menu.added["SORC", source] = pack_blocks(
+        [(0x534F5243, struct.pack("<3I", 0x80, bitmap, 1))]
+    )
+    # ROM iteration indexes children of stock templates, including appended children.
+    # Give each immutable bitmap its own child so a cached dice image is never reused.
+    children = blocks(menu.stock["View", games_template])
+    kind, image_view = next((k, bytearray(v)) for k, v in children if k == 0x696D6167)
+    gear_child = menu.allocate()
+    put(image_view, 0x30, gear_child)
+    put(image_view, 0x74, source)
+    children.append((kind, bytes(image_view)))
+    menu.added["View", games_template] = pack_blocks(children)
+    for layout, show_gear in ((games_view_layout, False), (mods_view_layout, True)):
+        visibility: list[tuple[int, bytes]] = []
+        for _, child in children:
+            child_id = u32(child, 0x30)
+            visible = show_gear if child_id == gear_child else not show_gear
+            visibility.append((child_id, pack_blocks([(1005, bytes([visible]))])))
+        menu.added["VLyt", layout] = pack_blocks(visibility)
+    menu.added["TEVT", mods_view_layout] = menu.stock["TEVT", games_view_layout]
+    menu.add_preview_layout(
+        EXTRAS_SCREEN, games_layout, preview, games_view_layout, mods_view_layout
+    )
+    menu.names[MOD_PREVIEW_NAME] = preview
+
 
 def menu_resources(raw: bytes, mods: tuple[IncludedMod, ...]) -> MenuResources:
     resources = MenuResources(stock_resources(raw))
@@ -241,8 +331,7 @@ def menu_resources(raw: bytes, mods: tuple[IncludedMod, ...]) -> MenuResources:
         + event("button.menu.up", "navigator.PopTopScreen")
         + event("button.menu.pressandhold", "navigator.PopToMainScreen")
     )
-    # Retain every original Extras row and event in its original order. The
-    # native default layout clears an unrelated item's delayed preview.
+    add_mods_preview(resources)
     added["ITEM", EXTRAS_ITEMS] = pack_blocks(
         [
             *blocks(stock["ITEM", EXTRAS_ITEMS]),
@@ -261,7 +350,8 @@ def menu_resources(raw: bytes, mods: tuple[IncludedMod, ...]) -> MenuResources:
         + event(
             f"list.pid.{MOD_ENTRY}.delayedselected",
             "navigator.SwitchLayout",
-            ("Extras_Screen_Default",),
+            (MOD_PREVIEW_NAME,),
+            native_flag=False,  # All nine stock Extras highlight events use ASCII zero.
         )
     )
     return resources

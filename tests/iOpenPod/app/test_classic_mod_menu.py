@@ -3,6 +3,8 @@
 import struct
 
 import pytest
+from PIL import Image
+from scripts.firmware.classic_bitmaps import Bitmap
 from scripts.firmware.classic_menu import (
     EXTRAS_ITEMS,
     EXTRAS_SCREEN,
@@ -10,6 +12,8 @@ from scripts.firmware.classic_menu import (
     MOD_ITEMS,
     MOD_LAYOUT,
     MOD_LAYOUT_NAME,
+    MOD_PREVIEW_IMAGE,
+    MOD_PREVIEW_NAME,
     MOD_SCREEN,
     MOD_SCREEN_NAME,
     MenuResources,
@@ -97,8 +101,69 @@ def test_extras_keeps_original_entries_and_routes_to_mods(menu: MenuResources) -
         ("navigator.PushScreen", [MOD_SCREEN_NAME, MOD_LAYOUT_NAME, "foregroundpush"])
     ]
     assert events[f"list.pid.{MOD_ENTRY}.delayedselected"] == [
-        ("navigator.SwitchLayout", ["Extras_Screen_Default"])
+        ("navigator.SwitchLayout", [MOD_PREVIEW_NAME])
     ]
+    games_event = b"list.pid.229442001.delayedselected"
+    mods_event = f"list.pid.{MOD_ENTRY}.delayedselected".encode()
+    assert games_event + b"0" in menu.stock["CEVT", EXTRAS_SCREEN]
+    assert mods_event + b"0" in menu.added["CEVT", EXTRAS_SCREEN]
+
+
+def test_highlighting_mods_resolves_its_own_gear_in_the_games_frame(
+    menu: MenuResources,
+) -> None:
+    preview = menu.names[MOD_PREVIEW_NAME]
+    variants = blocks(menu.added["SLst", EXTRAS_SCREEN])
+    assert variants[:-1] == blocks(menu.stock["SLst", EXTRAS_SCREEN])
+    assert u32(variants[-1][1], 0) == preview
+    games = 0x0DAD01DC
+    assert menu.added["SEVT", preview] == menu.stock["SEVT", games]
+    [(_, layout)] = blocks(menu.added["SLyt", preview])
+    instances = blocks(menu.added["SSin", u32(layout, 0)])
+    [(_, stock_layout)] = blocks(menu.stock["SLyt", games])
+    stock_instances = blocks(menu.stock["SSin", u32(stock_layout, 0)])
+    assert len(instances) == len(stock_instances) == 4
+    for (_, current), (_, original) in zip(instances, stock_instances, strict=True):
+        new_id, old_id = u32(current, 0), u32(original, 0)
+        assert new_id != old_id
+        for binding in ("VCrv", "VCvs"):
+            assert menu.added.get((binding, new_id)) == menu.stock.get(
+                (binding, old_id)
+            )
+        assert current[4:8] == original[4:8]
+        assert current[12:] == original[12:]
+    assert [v[8:12] for _, v in instances[:-1]] == [
+        v[8:12] for _, v in stock_instances[:-1]
+    ]
+    template = u32(instances[-1][1], 4)
+    # On a ROM bank the native template/child iterators visit only directory IDs.
+    assert ("TMLT", template) in menu.stock
+    stock_children = blocks(menu.stock["View", template])
+    children = blocks(menu.added["View", template])
+    assert children[:-1] == stock_children
+    (kind, view) = children[-1]
+    dice = dict(stock_children)[kind]
+    gear_child = u32(view, 0x30)
+    assert kind == 0x696D6167 and gear_child != u32(dice, 0x30)
+    for last, visible in ((stock_instances[-1][1], False), (instances[-1][1], True)):
+        options = dict(blocks(menu.added["VLyt", u32(last, 8)]))
+        for _, child in children:
+            child_id = u32(child, 0x30)
+            assert dict(blocks(options[child_id]))[1005] == bytes(
+                [(child_id == gear_child) == visible]
+            )
+    assert (
+        view[:0x30] + view[0x34:0x74] + view[0x78:]
+        == dice[:0x30] + dice[0x34:0x74] + dice[0x78:]
+    )
+    [(source_kind, source)] = blocks(menu.added["SORC", u32(view, 0x74)])
+    service, image_id, destination = struct.unpack("<3I", source)
+    assert (source_kind, service, destination) == (0x534F5243, 0x80, 1)
+    bitmap_id = u32(menu.added["IMAG", image_id], 0)
+    gear = Bitmap.parse(menu.added["BMap", bitmap_id])
+    with Image.open(MOD_PREVIEW_IMAGE) as image:
+        assert (gear.width, gear.height) == image.size == (142, 87)
+        assert gear.rgba() == image.convert("RGBA").tobytes()
 
 
 @pytest.mark.parametrize("homebrew", [True, False])
@@ -141,10 +206,11 @@ def test_layout_reuses_native_views_and_binds_new_title_and_rows(
         "button.menu.up": [("navigator.PopTopScreen", [])],
         "button.menu.pressandhold": [("navigator.PopToMainScreen", [])],
     }
-    # Only two stock resources are extended; Notes and Settings retain theirs.
     assert menu.added.keys() & menu.stock.keys() == {
         ("ITEM", EXTRAS_ITEMS),
         ("CEVT", EXTRAS_SCREEN),
+        ("SLst", EXTRAS_SCREEN),
+        ("View", 0x0DAD019C),
     }
 
 

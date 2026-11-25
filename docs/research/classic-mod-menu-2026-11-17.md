@@ -78,3 +78,46 @@ The ARM probe adapts allocation, resource-name services and visibility indexing.
 It does not emulate the complete UI or render the screen. Physical verification
 of Extras → Mods, scrolling and back navigation remains outstanding. This
 increment built and bundled the release; it did not write to a connected iPod.
+
+## Mods preview in 0.12.1-dev
+
+Highlighting Mods now selects `iOpenPod_Mods_Preview` through the same
+`delayedselected` event used by the stock Extras rows. Pressing the center
+button still pushes the Mods list. The preview clones the Games screen layout
+(`SLyt 0x0dad01dc`) with private instance IDs. Its private template keeps the
+image frame from `View 0x0dad019c` and omits the Games count. Its image source
+resolves a private `IMAG` and indexed `BMap` containing the 142 × 87 gear asset.
+
+Resource tests trace the highlighted row to the gear, compare its decoded RGBA
+pixels with the source PNG, and check the stock Extras entries and variants.
+The compiled ARM initialization probe installed all 131 resources in the full
+build. With a test resource provider returning the embedded bitmap, the native
+BitmapView at `0x08100020` and blitter at `0x08259568` rendered the gear on
+light and dark backgrounds. Every RGB channel was within two levels of the
+composited PNG, including the antialiased edges and transparent center. Two
+builds reproduced the bundled image byte for byte. An on-device visual check
+remains open.
+
+## Blank gear on hardware in 0.12.1-dev
+
+The 0.12.1-dev preview was blank on the user's iPod. The earlier pixel test
+supplied the gear directly to BitmapView. It missed the step that makes the
+image child available to the screen. On a ROM bank, the native template and
+child registries enumerate IDs from the original directory. A private `View`
+can be fetched by ID, but its children never enter that index. The native
+registration loop at `0x08194df0` indexed the stock dice and skipped the
+0.12.1-dev gear child `0x0cf00050`.
+
+In 0.12.2-dev the gear is a separate image child appended to the stock Games
+template. The Games layout shows the dice and count. The Mods layout shows the
+gear in the same frame. Both layouts set visibility for every child so that
+returning to Games restores its preview. The Mods highlight event uses the
+same flag as the nine stock Extras highlight events.
+
+The firmware lab's `scripts/probe_classic_menu_previews.py` executes the
+compiled installer, native ROM iterators, child registration, resource-service
+lookup and bitmap drawing code. Its child-index check fails on 0.12.1-dev.
+With 0.12.2-dev the probe resolves the correct images for Games, Mods and
+Games again, and renders the gear and Mono Audio icon on light and dark
+backgrounds. It supplies the heap, name and index slots, and reads visibility
+from the active layouts. Physical display verification of 0.12.2-dev is pending.

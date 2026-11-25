@@ -281,8 +281,10 @@ Physical game launch is still untested.
 records stored in both build manifests. It lists the independent version string,
 About row, unsigned game manifests, and menu itself. A control build without
 `--homebrew-eapps` omits that mod from the list as well as omitting its patch.
-Rows are read-only. Stock Extras entries/events remain intact; the new page reuses
-the native full-width list, title and navigation behavior.
+Rows are read-only. The stock Games template also owns the gear image child,
+so the native ROM iterator registers it. Highlighting Mods makes the gear
+visible in the preview pane. Returning to Games restores the dice and count.
+Pressing the center button on Mods opens the native full-width list.
 
 Resource cloning and event encoding adapt the GPL-3.0-only UI compiler in
 [osos-lab](https://github.com/lgreitis/osos-lab/tree/d2c8e357d58591bdaa70bb6be9da191f489554a6/patching/ui).
