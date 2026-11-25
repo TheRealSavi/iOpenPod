@@ -271,6 +271,32 @@ class FilesystemSession:
     def read(self, path: DevicePath, *, max_bytes: int | None = None) -> bytes:
         return self.read_snapshot(path, max_bytes=max_bytes).data
 
+    def request_page_cache_eviction(self, path: DevicePath) -> bool:
+        """Advise the Host to discard cached pages for a pinned device file.
+
+        Return whether the Host accepted the request. Eviction is best effort.
+        """
+        observation = self._revalidate()
+        advise: Callable[[int, int, int, int], None] | None = getattr(
+            os, "posix_fadvise", None
+        )
+        discard: int | None = getattr(os, "POSIX_FADV_DONTNEED", None)
+        if advise is None or discard is None:
+            return False
+        target = resolve_device_path(
+            self._root, path, observation.volume.capabilities, require_leaf=True
+        )
+        with open_read_no_follow(target) as source:
+            self._revalidate()
+            try:
+                advise(source.fileno(), 0, 0, discard)
+            except OSError:
+                accepted = False
+            else:
+                accepted = True
+        self._revalidate()
+        return accepted
+
     def read_with_tool(
         self,
         path: DevicePath,

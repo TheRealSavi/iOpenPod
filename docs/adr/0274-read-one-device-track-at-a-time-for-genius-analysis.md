@@ -65,3 +65,29 @@ BPM.
 The decision applies to every device, regardless of storage type.
 
 Peak device PCM memory is unchanged: two device Tracks in flight, as before.
+
+## Amendment: measured effect by storage type (2026-11-16)
+
+The decision is unchanged. Two statements above about its evidence are corrected
+by isolated measurements of this one change; see the
+[read concurrency investigation](../research/genius-device-read-concurrency-2026-11-16.md).
+
+- Flash storage did not slow as much as the hard drive. Repeating the flash
+  measurement gave 12.7 and 14.7 MB/s for two readers, not 9.8–10.4 MB/s. In cold
+  analysis of the same Tracks on that iPod (Eli), one reader averaged 183.4 seconds
+  under Linux BFQ, and two readers ranged from 180.4 to 219.9 seconds. Under
+  mq-deadline, one reader took about 1% longer than two. John's cold analysis on
+  another flash-modified iPod showed no change. The earlier 50% throughput gain
+  did not reproduce.
+- The measured hard-drive gain was larger on the fuller of the two drives. With
+  BFQ, cold analysis took 41% less time on an iPod classic holding 61 GB and
+  19% less on one holding 1.1 GB. The fuller drive also took 42% less time
+  under mq-deadline. Differences in seek distance could explain part of the gap.
+
+The cold Sync comparison above, about 6,000 seconds against 3,054, does not
+isolate this decision. The earlier figure was not logged, the later build included
+ADR-0271 to ADR-0273, and that iPod's drive returned read errors during both Syncs.
+
+The decision still applies to every device. The measured hard drives benefited,
+the tested flash devices showed smaller or negligible effects, and Storage cannot
+reliably identify an iPod's underlying storage type.
