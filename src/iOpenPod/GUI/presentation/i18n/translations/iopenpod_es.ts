@@ -10101,6 +10101,10 @@ El firmware completo está incluido con iOpenPod y funciona sin conexión. La in
 <context>
     <name>StartPage</name>
     <message>
+        <source>Loading %1…</source>
+        <translation>Cargando %1…</translation>
+    </message>
+    <message>
         <source>Choose Device</source>
         <translation>Elegir dispositivo</translation>
     </message>

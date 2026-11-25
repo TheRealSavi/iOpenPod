@@ -1127,6 +1127,7 @@ QRadioButton[onboardingChoice="true"]::indicator:disabled {{
 }}
 
 QProgressDialog#libraryExportProgress QProgressBar,
+QProgressBar#deviceLoadingProgress,
 QProgressBar#syncScanProgress,
 QProgressBar#syncExecutionOverallProgress,
 QProgressBar#syncExecutionProgress,
@@ -1141,6 +1142,7 @@ QProgressBar#syncPreparationProgress {{
 }}
 
 QProgressDialog#libraryExportProgress QProgressBar::chunk,
+QProgressBar#deviceLoadingProgress::chunk,
 QProgressBar#syncScanProgress::chunk,
 QProgressBar#syncExecutionOverallProgress::chunk,
 QProgressBar#syncExecutionProgress::chunk,

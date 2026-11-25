@@ -5,7 +5,14 @@ from threading import Event
 
 import pytest
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLabel, QListWidget, QPushButton, QStackedWidget
+from PySide6.QtWidgets import (
+    QLabel,
+    QListWidget,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QStackedWidget,
+)
 from tests.iOpenPod.app.test_device_controller import (
     _device_root,  # pyright: ignore[reportPrivateUsage]
     _ObservedPlatform,  # pyright: ignore[reportPrivateUsage]
@@ -35,11 +42,22 @@ def test_window_restores_remembered_ipod_without_opening_picker(
     context = build_context(device_coordinator=DeviceCoordinator(Storage(platform)))
     context.settings.set_global(LAST_SELECTED_IPOD_VOLUME_ID, "remembered-volume")
     window = MainWindow(context)
+    progress = window.findChild(QProgressBar, "deviceLoadingProgress")
+    assert progress is not None
+    loading: list[str] = []
+
+    def record_loading() -> None:
+        if progress.isVisible():
+            loading.append(progress.accessibleName())
+
+    context.device_controller.loadingChanged.connect(record_loading)
     try:
         window.show()
         _wait_until(lambda: context.device_controller.active_ipod is not None)
         assert context.device_controller.active_ipod is not None
         assert context.device_controller.active_ipod.display_name == "Remembered iPod"
+        assert loading == ["Loading Remembered iPod…"]
+        assert not progress.isVisible()
         pages = window.findChild(QStackedWidget, "pageStack")
         assert pages is not None and isinstance(pages.currentWidget(), LibraryPage)
         picker = window.findChild(DevicePickerDialog)
@@ -115,15 +133,20 @@ def test_picker_waits_for_a_choice_when_remembered_ipod_connects_after_launch(
         context.shutdown()
 
 
-def test_picker_accepts_a_selection_during_automatic_discovery(tmp_path: Path) -> None:
+@pytest.mark.parametrize("disconnect", [False, True])
+def test_picker_accepts_a_selection_during_automatic_discovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disconnect: bool
+) -> None:
     platform = _ObservedPlatform()
-    platform.add_volume(_device_root(tmp_path / "chosen"), label="Chosen iPod")
+    root = _device_root(tmp_path / "chosen")
+    platform.add_volume(root, label="Chosen iPod")
     coordinator = DeviceCoordinator(Storage(platform))
     coordinator.discover_devices()
     context = build_context(device_coordinator=coordinator)
     window = MainWindow(context)
     release = Event()
     platform.release = release
+    warnings: list[str] = []
     try:
         window.show()
         sidebar = window.findChild(Sidebar)
@@ -137,13 +160,36 @@ def test_picker_accepts_a_selection_during_automatic_discovery(tmp_path: Path) -
             if button.text() == "Use This iPod"
         )
         assert use.isEnabled()
+        progress = window.findChild(QProgressBar, "deviceLoadingProgress")
+        choose = window.findChild(QPushButton, "startChooseDevice")
+        title = window.findChild(QLabel, "startTitle")
+        assert progress is not None and choose is not None and title is not None
+        assert not progress.isVisible()
+
+        def warning(_parent: object, caption: str, _detail: str) -> None:
+            assert not progress.isVisible()
+            warnings.append(caption)
+
+        monkeypatch.setattr(QMessageBox, "warning", warning)
         use.click()
         assert not picker.isVisible()
         assert context.device_controller.active_ipod is None
+        assert progress.isVisible() and not choose.isVisible()
+        assert progress.minimum() == progress.maximum() == 0
+        assert title.text() == progress.accessibleName() == "Loading Chosen iPod…"
+        if disconnect:
+            platform.disconnect(root)
         release.set()
         _wait_until(lambda: not context.device_controller.busy)
         active = context.device_controller.active_ipod
-        assert active is not None and active.display_name == "Chosen iPod"
+        assert not progress.isVisible()
+        if disconnect:
+            assert active is None and warnings == ["Could Not Load iPod"]
+            assert choose.isVisible() and choose.isEnabled()
+            assert title.text() == "Welcome to iOpenPod"
+        else:
+            assert active is not None and active.display_name == "Chosen iPod"
+            assert not warnings
     finally:
         release.set()
         window.close()

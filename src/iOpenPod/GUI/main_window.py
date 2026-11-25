@@ -566,7 +566,7 @@ class MainWindow(QMainWindow):
         )
         exit_fullscreen.setAutoRepeat(False)
         exit_fullscreen.activated.connect(self._exit_synesthesia_fullscreen)
-        self._start_page = StartPage(self._pages)
+        self._start_page = StartPage(self._pages, theme=context.theme_manager)
         self._start_page.chooseDeviceRequested.connect(self._open_device_picker)
         self._start_page.set_busy(
             context.device_controller.busy and not context.device_controller.searching
@@ -799,6 +799,7 @@ class MainWindow(QMainWindow):
             self._device_discovery_changed
         )
         context.device_controller.activeIPodChanged.connect(self._active_ipod_changed)
+        context.device_controller.loadingChanged.connect(self._device_loading_changed)
         context.device_controller.busyChanged.connect(self._device_busy_changed)
         context.device_controller.searchingChanged.connect(
             self._device_picker.set_searching
@@ -848,6 +849,8 @@ class MainWindow(QMainWindow):
             navigation.set_device_discovery(context.device_controller.discovery)
             navigation.set_active_ipod(context.device_controller.active_ipod)
         self._monitor_normalization(context.device_controller.active_ipod)
+        if context.device_controller.loading_candidate_id is not None:
+            self._device_loading_changed()
         for navigation in self._navigation_surfaces:
             navigation.set_eject_available(
                 context.device_controller.device_writes_allowed
@@ -949,17 +952,14 @@ class MainWindow(QMainWindow):
         count = self._context.track_model.track_count
         count_text = track_count_text(count)
         active_ipod = self._context.device_controller.active_ipod
+        if self._context.device_controller.loading_candidate_id is not None:
+            return self.tr("Loading iPod…")
         if active_ipod is not None:
             message = (
                 self.tr("%1 · %2")
                 .replace("%1", count_text)
                 .replace("%2", active_ipod.profile.display_name)
             )
-        elif (
-            self._context.device_controller.busy
-            and not self._context.device_controller.searching
-        ):
-            message = self.tr("Loading iPod…")
         else:
             candidate_count = len(self._context.device_controller.discovery.candidates)
             devices = device_count_text(candidate_count)
@@ -2054,6 +2054,8 @@ class MainWindow(QMainWindow):
 
     def _open_device_picker(self) -> None:
         controller = self._context.device_controller
+        if controller.loading_candidate_id is not None:
+            return
         self._device_picker.set_discovery(controller.discovery)
         self._device_picker.set_searching(controller.searching)
         self._device_picker.set_search_error(controller.discovery_error)
@@ -2584,17 +2586,31 @@ class MainWindow(QMainWindow):
             self._show_page(PageId.ALBUMS.value)
         self.retranslate_ui()
 
-    def _device_busy_changed(self, busy: bool) -> None:
-        self._start_page.set_busy(
-            busy and not self._context.device_controller.searching
-        )
-        self._device_summary_page.set_busy(
-            busy and not self._context.device_controller.searching
-        )
-        for navigation in self._navigation_surfaces:
-            navigation.set_device_busy(
-                busy and not self._context.device_controller.searching
+    def _device_loading_changed(self) -> None:
+        controller = self._context.device_controller
+        identifier = controller.loading_candidate_id
+        if identifier is None:
+            self._start_page.set_loading_device(None)
+        else:
+            candidate = controller.discovery.candidate(identifier)
+            self._start_page.set_loading_device(
+                candidate.display_name if candidate is not None else "iPod",
+                candidate.profile.product_image
+                if candidate is not None and candidate.profile is not None
+                else "iPodGeneric.png",
             )
+            self._show_page(PageId.START.value)
+        self._device_busy_changed(controller.busy)
+
+    def _device_busy_changed(self, busy: bool) -> None:
+        controller = self._context.device_controller
+        device_busy = controller.loading_candidate_id is not None or (
+            busy and not controller.searching
+        )
+        self._start_page.set_busy(device_busy)
+        self._device_summary_page.set_busy(device_busy)
+        for navigation in self._navigation_surfaces:
+            navigation.set_device_busy(device_busy)
         self._device_picker.set_busy(busy)
         self._refresh_sync_availability()
         self.retranslate_ui()

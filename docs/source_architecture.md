@@ -3078,10 +3078,13 @@ The GUI should remain a consumer of application state and services rather than t
 
 `StartPage` is the initial route without an Active iPod and the return route when
 the Active iPod is cleared. Its primary **Choose Device** action emits the same
-Device Picker intent as the navigation surfaces. Loading an iPod while this page
-is current opens Albums. Device discovery leaves the action available; selection
-and other exclusive device work use the existing busy state. Settings and other
-explicit navigation remain available, and Sync recovery retains its workspace.
+Device Picker intent as the navigation surfaces. Once a selection is accepted,
+the page shows the Device Candidate's name and product image with an indeterminate
+progress bar, including while an in-flight discovery pass finishes. A remembered
+selection uses the same presentation. Loading an iPod while this page is current
+opens Albums. A failed load restores the welcome action. Discovery alone leaves
+the action available. Settings and other explicit navigation remain available,
+and Sync recovery retains its workspace.
 
 The Host-only Library setting **Navigation style** switches immediately between
 `Sidebar` and `CompactTopBar`, retaining the current page and selected Playlist.

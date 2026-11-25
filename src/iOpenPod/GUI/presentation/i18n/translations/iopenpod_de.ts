@@ -10101,6 +10101,10 @@ Die vollständige Firmware ist in iOpenPod enthalten und funktioniert offline. D
 <context>
     <name>StartPage</name>
     <message>
+        <source>Loading %1…</source>
+        <translation>%1 wird geladen…</translation>
+    </message>
+    <message>
         <source>Choose Device</source>
         <translation>Gerät auswählen</translation>
     </message>

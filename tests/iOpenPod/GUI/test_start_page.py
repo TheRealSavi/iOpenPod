@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QLabel, QPushButton, QStackedWidget
+from PySide6.QtWidgets import QLabel, QProgressBar, QPushButton, QStackedWidget
 from tests.iOpenPod.app.test_device_controller import (
     _device_root,  # pyright: ignore[reportPrivateUsage]
     _wait_until,  # pyright: ignore[reportPrivateUsage]
@@ -190,29 +190,38 @@ def test_selected_device_leaves_start_page_and_disconnect_returns(
     context.settings.set_global(NAVIGATION_STYLE, style.value)
     window = MainWindow(context, auto_discover=False)
     try:
+        window.show()
         stack = window.findChild(QStackedWidget, "pageStack")
         page = window.findChild(StartPage)
         choose = window.findChild(ActionButton, "startChooseDevice")
         assert stack is not None and page is not None and choose is not None
         _assert_library_navigation(window, connected=False)
         controller = context.device_controller
+        progress = window.findChild(QProgressBar, "deviceLoadingProgress")
+        assert progress is not None
         controller.refresh_devices()
         assert choose.isEnabled()  # Discovery leaves the picker available.
+        assert not progress.isVisible()
         _wait_until(lambda: not controller.busy)
         controller.select_device(controller.discovery.candidates[0].id.value)
-        assert not choose.isEnabled()
+        assert (
+            progress.isVisible() and progress.accessibleName() == "Loading Test iPod…"
+        )
+        assert not choose.isVisible() and not choose.isEnabled()
         _wait_until(lambda: not controller.busy)
         loaded = controller.active_ipod
         assert loaded is not None
         assert stack.currentWidget() is not page
         assert isinstance(stack.currentWidget(), LibraryPage)
+        assert not progress.isVisible()
         _assert_library_navigation(window, connected=True)
         platform.disconnect(root)
         controller.refresh_devices()
         _wait_until(lambda: not controller.busy)
         assert controller.active_ipod is None
         assert stack.currentWidget() is page
-        assert choose.isEnabled()
+        assert choose.isVisible() and choose.isEnabled()
+        assert not progress.isVisible()
         _assert_library_navigation(window, connected=False)
     finally:
         window.close()
