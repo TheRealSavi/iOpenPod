@@ -362,3 +362,4 @@ What becomes easier, harder, required, or prohibited?
 - [ADR-0296: Use bundled libusb with platform access setup](0296-use-bundled-libusb-with-platform-access-setup.md)
 - [ADR-0297: Authorize Windows Volume opens with a native helper](0297-authorize-windows-volume-opens-with-a-native-helper.md)
 - [ADR-0299: Show launch progress before desktop composition](0299-show-launch-progress-before-desktop-composition.md)
+- [ADR-0300: Restore the remembered iPod only at launch](0300-restore-the-remembered-ipod-only-at-launch.md)

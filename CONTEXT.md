@@ -885,16 +885,16 @@ and every SQLite-capable profile can use the built-in Library projection without
 device-supplied postprocess commands. See ADR-0115.
 `DeviceController` runs discovery and selection outside the Qt GUI thread and
 publishes immutable results to the shared library models. If a previous Volume
-Identity is saved, startup makes one background discovery pass to restore that iPod.
+Identity is saved, startup makes one background discovery pass and restores that
+iPod when exactly one eligible Device Candidate matches.
 On Windows, macOS, and Linux, opening the Device Picker starts discovery immediately
 and repeats it two seconds after each pass while the picker stays open. Closing it
 stops further picker passes. Searching feedback stays inside the picker, and
 unchanged observations preserve the Active iPod and Library Draft. Native
 event-driven connection monitoring remains separate future work. See ADR-0069 and
-ADR-0071. After a successful selection, it stores the selected Volume Identity in
-global settings. Discovery automatically restores that choice only when exactly one
-matching Device Candidate is ready; the connection-scoped Device Candidate ID is
-never persisted.
+ADR-0071. Later connections appear in the picker and require explicit selection,
+including after a manual Refresh (ADR-0300). A successful selection saves the
+stable Volume Identity in global settings for the next launch.
 The GUI first opens a modal folder dialog that stages Host Media Library folders and
 their recursive, per-media-type scan settings. Explicit selections may use symbolic
 links. A per-folder Follow symbolic links option, disabled by default, also permits
@@ -1720,8 +1720,8 @@ them through narrow interfaces.
    Profile with Device Capabilities.
 5. The GUI presents Device Candidates in the Device Picker.
 6. The user selects one candidate as the Active iPod, or iOpenPod restores the
-   previous selection when exactly one ready candidate has the remembered Volume
-   Identity.
+   previous selection when startup discovery finds exactly one eligible candidate
+   with the remembered Volume Identity.
 7. On a write-safe Volume, iOpenPod analyzes, atomically repairs, and verifies stale
    or missing identity metadata; read-only Volumes with an existing Library remain
    loadable with an issue. Before metadata repair, an absent Library can be

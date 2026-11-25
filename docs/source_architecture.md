@@ -2867,12 +2867,14 @@ ADR-0220's cross-connection probe reuse.
 discovery, device reads, and parsing through an owned single-worker `QThreadPool`,
 then applies immutable results to Qt models through queued signals on the GUI
 thread. It also persists the Volume Identity after a successful selection and chains
-an exact remembered match from discovery into the same background selection path.
+an exact remembered match from startup discovery into the same background selection path.
 Widgets depend on this adapter and never receive a Mount Point or Filesystem Session.
 
 When global settings contain a previously selected Volume Identity, startup runs one
 background discovery pass and attempts the ordinary selection workflow for an exact,
-ready match. This pass does not start polling while the Device Picker is closed.
+ready match. Later connections, including reconnections after ejection, require
+the user to choose a Device Candidate. Opening the picker, polling, and manual
+Refresh only update discovery results (ADR-0300).
 
 Device Picker visibility owns automatic discovery on all three operating systems.
 Opening the picker starts a pass; the controller schedules the next pass two seconds
@@ -3727,7 +3729,7 @@ Connected iPods flow through the system like this:
                 ↓
 5. Device Picker presents candidates to the user
                 ↓
-6. User selects one Active iPod, or iOpenPod restores the remembered selection
+6. User selects one Active iPod, or startup discovery restores the remembered selection
                 ↓
 7. iOpenPod opens a Storage Filesystem Session
                 ↓

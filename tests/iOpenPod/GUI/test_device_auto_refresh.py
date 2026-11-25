@@ -78,6 +78,43 @@ def test_picker_search_status_is_delayed_without_description() -> None:
         picker.close()
 
 
+def test_picker_waits_for_a_choice_when_remembered_ipod_connects_after_launch(
+    tmp_path: Path,
+) -> None:
+    platform = _ObservedPlatform()
+    context = build_context(device_coordinator=DeviceCoordinator(Storage(platform)))
+    context.settings.set_global(LAST_SELECTED_IPOD_VOLUME_ID, "remembered")
+    controller = context.device_controller
+    window = MainWindow(context)
+    try:
+        window.show()
+        _wait_until(lambda: platform.scans == 1 and not controller.busy)
+        platform.add_volume(
+            _device_root(tmp_path / "device"), volume_id="remembered", label="Desk iPod"
+        )
+        picker = window.findChild(DevicePickerDialog)
+        choose = window.findChild(QPushButton, "startChooseDevice")
+        assert picker is not None and choose is not None
+        choose.click()
+        _wait_until(
+            lambda: bool(controller.discovery.candidates) and not controller.busy
+        )
+        assert picker.isVisible()
+        assert controller.active_ipod is None
+        use = next(
+            button
+            for button in picker.findChildren(QPushButton)
+            if button.text() == "Use This iPod"
+        )
+        use.click()
+        _wait_until(lambda: not controller.busy)
+        assert controller.active_ipod is not None
+        assert controller.active_ipod.display_name == "Desk iPod"
+    finally:
+        window.close()
+        context.shutdown()
+
+
 def test_picker_accepts_a_selection_during_automatic_discovery(tmp_path: Path) -> None:
     platform = _ObservedPlatform()
     platform.add_volume(_device_root(tmp_path / "chosen"), label="Chosen iPod")

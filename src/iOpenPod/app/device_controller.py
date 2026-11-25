@@ -93,6 +93,7 @@ class DeviceController(QObject):
 
     discoveryChanged = Signal(object)
     activeIPodChanged = Signal(object)
+    loadingChanged = Signal()
     busyChanged = Signal(bool)
     searchingChanged = Signal(bool)
     discoveryErrorChanged = Signal(str)
@@ -132,14 +133,13 @@ class DeviceController(QObject):
         self._selection_cancelled = Event()
         self._next_token = 0
         self._active_token: int | None = None
-        self._pending_automatic_selection: DeviceCandidateId | None = None
-        self._requested_selection: DeviceCandidateId | None = None
+        self._loading_candidate_id: DeviceCandidateId | None = None
         self._work_items: dict[int, _DeviceWork] = {}
         self._searching = False
         self._discovery_error = ""
         self._automatic_discovery = False
-        self._restore_without_picker = False
-        self._automatic_selection_attempts: set[DeviceCandidateId] = set()
+        self._startup_restore_checked = False
+        self._startup_volume: VolumeId | None = None
         self._auto_refresh_enabled = False
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -189,6 +189,11 @@ class DeviceController(QObject):
         return self._active_ipod
 
     @property
+    def loading_candidate_id(self) -> DeviceCandidateId | None:
+        """The selection waiting for discovery or currently loading."""
+        return self._loading_candidate_id
+
+    @property
     def busy(self) -> bool:
         return self._busy
 
@@ -211,13 +216,17 @@ class DeviceController(QObject):
     def restore_previous_device(self) -> None:
         """Look for the remembered iPod once at startup without opening the picker."""
 
-        if not self._settings.get(LAST_SELECTED_IPOD_VOLUME_ID):
+        if self._startup_restore_checked:
+            return
+        self._startup_restore_checked = True
+        saved_volume = self._settings.get(LAST_SELECTED_IPOD_VOLUME_ID)
+        if not saved_volume:
             return
         self._begin(
             DeviceOperation.DISCOVER,
             lambda: self._coordinator.discover_devices(refresh_known=False),
             automatic=True,
-            restore_without_picker=True,
+            startup_volume=VolumeId(saved_volume),
         )
 
     def stop_auto_refresh(self) -> None:
@@ -225,8 +234,6 @@ class DeviceController(QObject):
 
         self._auto_refresh_enabled = False
         self._refresh_timer.stop()
-        if not self._restore_without_picker:
-            self._pending_automatic_selection = None
 
     @Slot()
     def _refresh_automatically(self) -> None:
@@ -349,15 +356,7 @@ class DeviceController(QObject):
             or active is None
         ):
             return False
-        identifier = active.candidate.id
-        self._selection_cancelled.clear()
-        self._replace_active_ipod(None, force_model_reset=True)
-        self._begin(
-            DeviceOperation.SELECT,
-            lambda: self._coordinator.select_device(
-                identifier, cancelled=self._selection_cancelled
-            ),
-        )
+        self.select_device(active.candidate.id.value)
         return True
 
     @Slot()
@@ -368,19 +367,25 @@ class DeviceController(QObject):
 
     @Slot(str)
     def select_device(self, candidate_id: str) -> None:
-        if self._closed or self._read_only_operation_count:
+        if (
+            self._closed
+            or self._read_only_operation_count
+            or (self._busy and not self._searching)
+        ):
             return
-        if self._busy:
-            if self._searching:
-                # An explicit choice survives closing the picker and takes
-                # precedence over restoring a remembered Volume.
-                self._requested_selection = DeviceCandidateId(candidate_id)
-            return
-        self._pending_automatic_selection = None
-        self._replace_active_ipod(None, force_model_reset=True)
         identifier = DeviceCandidateId(candidate_id)
+        if self._busy:
+            # Finish discovery before loading the choice, even if the picker closes.
+            self._set_loading_candidate(identifier)
+            return
+        self._start_selection(identifier)
+
+    def _start_selection(self, identifier: DeviceCandidateId) -> None:
+        self._set_busy(True)
+        self._set_loading_candidate(identifier)
+        self._replace_active_ipod(None, force_model_reset=True)
         self._selection_cancelled.clear()
-        self._begin(
+        self._run_worker(
             DeviceOperation.SELECT,
             lambda: self._coordinator.select_device(
                 identifier, cancelled=self._selection_cancelled
@@ -413,8 +418,7 @@ class DeviceController(QObject):
         self._closed = True
         self._selection_cancelled.set()
         self._refresh_timer.stop()
-        self._pending_automatic_selection = None
-        self._requested_selection = None
+        self._set_loading_candidate(None)
         if writes_were_allowed:
             self.deviceWritesAllowedChanged.emit(False)
         self._thread_pool.clear()
@@ -430,15 +434,18 @@ class DeviceController(QObject):
         work: Callable[[], object],
         *,
         automatic: bool = False,
-        restore_without_picker: bool = False,
+        startup_volume: VolumeId | None = None,
     ) -> None:
         if self._busy or self._closed:
             return
-        if operation is DeviceOperation.DISCOVER:
-            self._pending_automatic_selection = None
-        self._refresh_timer.stop()
         self._automatic_discovery = automatic
-        self._restore_without_picker = restore_without_picker
+        self._startup_volume = startup_volume
+        self._run_worker(operation, work)
+
+    def _run_worker(
+        self, operation: DeviceOperation, work: Callable[[], object]
+    ) -> None:
+        self._refresh_timer.stop()
         self._set_searching(operation is DeviceOperation.DISCOVER)
         self._next_token += 1
         token = self._next_token
@@ -485,18 +492,16 @@ class DeviceController(QObject):
             self._set_discovery_error(
                 "\n".join(issue.detail for issue in result.issues)
             )
-            self._automatic_selection_attempts.intersection_update(
-                candidate.id for candidate in result.candidates
-            )
             active = self._coordinator.active_ipod
             if active is None:
                 self._replace_active_ipod(None)
-                remembered = self._remembered_candidate_id()
-                if not self._automatic_discovery or (
-                    (self._auto_refresh_enabled or self._restore_without_picker)
-                    and remembered not in self._automatic_selection_attempts
+                if (
+                    self._startup_volume is not None
+                    and self._loading_candidate_id is None
                 ):
-                    self._pending_automatic_selection = remembered
+                    self._set_loading_candidate(
+                        self._coordinator.candidate_id_for_volume(self._startup_volume)
+                    )
             elif self._active_ipod is not None and active is not self._active_ipod:
                 self._active_ipod = active
                 self.activeIPodChanged.emit(active)
@@ -508,6 +513,7 @@ class DeviceController(QObject):
             self.discoveryChanged.emit(self._discovery)
             self.set_recovery_required(False)
             self._replace_active_ipod(result)
+            self._set_loading_candidate(None)
             if self._coordinator.sync_cleanup_path:
                 self.cleanupAvailable.emit(self._coordinator.sync_cleanup_path)
             active_volume_id = self._coordinator.active_volume_id
@@ -535,6 +541,8 @@ class DeviceController(QObject):
     ) -> None:
         if self._closed or token != self._active_token:
             return
+        if operation == DeviceOperation.SELECT:
+            self._set_loading_candidate(None)
         if operation == DeviceOperation.SAVE_SETTINGS:
             message = (
                 exception_text(error) if isinstance(error, Exception) else str(error)
@@ -558,7 +566,6 @@ class DeviceController(QObject):
                 self.recoveryRequired.emit(error.recovery_path)
             return
         if isinstance(error, SyncRecoveryRequiredError):
-            self._pending_automatic_selection = None
             self._replace_active_ipod(None)
             self.set_recovery_required(True)
             self.recoveryRequired.emit(error.recovery_path)
@@ -595,21 +602,23 @@ class DeviceController(QObject):
         self._work_items.pop(token, None)
         if token != self._active_token:
             return
+        requested = self._loading_candidate_id if self._searching else None
         self._active_token = None
-        self._set_busy(False)
         self._set_searching(False)
-        requested = self._requested_selection
-        self._requested_selection = None
-        remembered = self._pending_automatic_selection
-        self._pending_automatic_selection = None
-        self._restore_without_picker = False
-        if requested is not None:
-            self.select_device(requested.value)
-        elif remembered is not None and not self._closed:
-            self._automatic_selection_attempts.add(remembered)
-            self.select_device(remembered.value)
+        self._startup_volume = None
+        if requested is not None and not self._closed:
+            # Keep the reservation across discovery and loading. Publishing idle
+            # here lets a pending reader reserve the previous Active iPod.
+            self._start_selection(requested)
+            return
+        self._set_busy(False)
         if not self._busy:
             self._schedule_refresh()
+
+    def _set_loading_candidate(self, identifier: DeviceCandidateId | None) -> None:
+        if self._loading_candidate_id != identifier:
+            self._loading_candidate_id = identifier
+            self.loadingChanged.emit()
 
     def _set_searching(self, searching: bool) -> None:
         if searching != self._searching:
@@ -620,12 +629,6 @@ class DeviceController(QObject):
         if message != self._discovery_error:
             self._discovery_error = message
             self.discoveryErrorChanged.emit(message)
-
-    def _remembered_candidate_id(self) -> DeviceCandidateId | None:
-        value = self._settings.get(LAST_SELECTED_IPOD_VOLUME_ID)
-        if not value:
-            return None
-        return self._coordinator.candidate_id_for_volume(VolumeId(value))
 
     def _replace_active_ipod(
         self,

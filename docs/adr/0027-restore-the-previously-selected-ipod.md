@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-09
+- Restoration trigger amended by [ADR-0300](0300-restore-the-remembered-ipod-only-at-launch.md).
 
 ## Context
 

@@ -4,6 +4,7 @@
 - Date: 2026-09-24
 - Extends: ADR-0011 and ADR-0027
 - Startup trigger amended by ADR-0071
+- Picker restoration and retry policy superseded by [ADR-0300](0300-restore-the-remembered-ipod-only-at-launch.md).
 
 The Device Picker should show newly connected iPods without a manual Refresh on
 Windows, macOS, and Linux. The Original iOpenPod's scanner establishes the mounted-

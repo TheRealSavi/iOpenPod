@@ -276,9 +276,12 @@ def test_auto_refresh_finds_connections_and_expires_disconnections(
         assert tracks.rowCount() == 0
 
         platform.reconnect(root)
-        _wait_until(lambda: controller.active_ipod is not None and not controller.busy)
-        assert controller.active_ipod is not None
-        assert controller.active_ipod.candidate.id != candidate.id
+        _wait_until(
+            lambda: bool(controller.discovery.candidates) and not controller.busy
+        )
+        assert controller.discovery.candidates[0].id != candidate.id
+        assert controller.active_ipod is None
+        assert tracks.rowCount() == 0
         assert all(thread != get_ident() for thread in platform.scan_threads)
     finally:
         controller.shutdown()
@@ -354,7 +357,7 @@ def test_slow_auto_scan_does_not_overlap_or_queue_refreshes() -> None:
 
 
 @pytest.mark.usefixtures("fast_refresh")
-def test_closing_picker_during_scan_stops_polling_and_remembered_selection(
+def test_reopening_picker_resumes_polling_and_leaves_selection_to_the_user(
     tmp_path: Path,
 ) -> None:
     platform = _ObservedPlatform()
@@ -376,7 +379,9 @@ def test_closing_picker_during_scan_stops_polling_and_remembered_selection(
         assert platform.scans == 1
         assert controller.active_ipod is None
         controller.start_auto_refresh()
-        _wait_until(lambda: controller.active_ipod is not None and not controller.busy)
+        _wait_until(lambda: platform.scans >= 2 and not controller.busy)
+        assert len(controller.discovery.candidates) == 1
+        assert controller.active_ipod is None
     finally:
         release.set()
         controller.shutdown()
@@ -429,6 +434,8 @@ def test_explicit_selection_during_discovery_takes_precedence_over_restore(
     controller = DeviceController(coordinator, TrackTableModel(), settings)
     failures: list[DeviceOperationFailure] = []
     controller.operationFailed.connect(failures.append)
+    busy: list[bool] = []
+    controller.busyChanged.connect(busy.append)
     release = Event()
     platform.release = release
     try:
@@ -439,6 +446,7 @@ def test_explicit_selection_during_discovery_takes_precedence_over_restore(
             platform.disconnect(chosen_root)
         release.set()
         _wait_until(lambda: not controller.busy)
+        assert busy == [True, False]
         if disconnect:
             assert controller.active_ipod is None
             assert [failure.operation for failure in failures] == [
@@ -480,7 +488,7 @@ def test_auto_scan_recovers_from_errors_without_modal_failures() -> None:
 
 
 @pytest.mark.usefixtures("fast_refresh")
-def test_failed_remembered_selection_is_not_retried_every_poll(tmp_path: Path) -> None:
+def test_failed_startup_selection_can_be_retried_explicitly(tmp_path: Path) -> None:
     platform = _ObservedPlatform()
     root = _device_root(tmp_path / "device")
     platform.add_volume(root, volume_id="remembered")
@@ -495,14 +503,20 @@ def test_failed_remembered_selection_is_not_retried_every_poll(tmp_path: Path) -
     failures: list[object] = []
     controller.operationFailed.connect(failures.append)
     try:
-        controller.start_auto_refresh()
+        controller.restore_previous_device()
         _wait_until(lambda: bool(failures) and not controller.busy)
+        controller.start_auto_refresh()
         scan_count = platform.scans
         _wait_until(lambda: platform.scans >= scan_count + 2 and not controller.busy)
         assert controller.active_ipod is None
         assert len(failures) == 1
+        controller.stop_auto_refresh()
         database.write_bytes(_itunesdb())
         controller.refresh_devices()
+        _wait_until(lambda: not controller.busy)
+        assert controller.active_ipod is None
+        assert len(failures) == 1
+        controller.select_device(controller.discovery.candidates[0].id.value)
         _wait_until(lambda: controller.active_ipod is not None and not controller.busy)
     finally:
         controller.shutdown()
@@ -759,7 +773,7 @@ def test_controller_remembers_and_automatically_reselects_the_last_ipod(
         settings,
     )
     try:
-        restored.refresh_devices()
+        restored.restore_previous_device()
         _wait_until(lambda: not restored.busy)
 
         assert restored.active_ipod is not None
@@ -772,7 +786,7 @@ def test_controller_remembers_and_automatically_reselects_the_last_ipod(
 def test_controller_does_not_auto_select_a_different_connected_ipod(
     tmp_path: Path,
 ) -> None:
-    platform = VirtualStoragePlatform()
+    platform = _ObservedPlatform()
     root = _device_root(tmp_path / "other-device")
     platform.add_volume(
         root,
@@ -789,10 +803,17 @@ def test_controller_does_not_auto_select_a_different_connected_ipod(
     )
 
     try:
-        controller.refresh_devices()
+        controller.restore_previous_device()
         _wait_until(lambda: not controller.busy)
 
         assert len(controller.discovery.candidates) == 1
+        assert controller.active_ipod is None
+        platform.add_volume(
+            _device_root(tmp_path / "late-ipod"), volume_id="missing-ipod-volume"
+        )
+        controller.restore_previous_device()
+        _wait_until(lambda: not controller.busy)
+        assert platform.scans == 1
         assert controller.active_ipod is None
     finally:
         controller.shutdown()

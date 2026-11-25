@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-24
 - Amends: ADR-0069's startup trigger
+- Later connections require explicit selection under [ADR-0300](0300-restore-the-remembered-ipod-only-at-launch.md).
 
 ## Context
 
