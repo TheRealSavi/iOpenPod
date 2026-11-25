@@ -42,7 +42,7 @@ from iOpenPod.GUI.widgets.playlist_artwork_banner import PlaylistArtworkBanner
 from iOpenPod.GUI.widgets.playlist_tree import PlaylistTree
 from iOpenPod.GUI.widgets.search_field import SearchField
 from iOpenPod.GUI.widgets.sidebar import Sidebar
-from iOpenPod.GUI.widgets.themed_buttons import ActionButton
+from iOpenPod.GUI.widgets.themed_buttons import ActionButton, NavigationButton
 from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iPodDB.library import LibrarySnapshot, Playlist, PlaylistKind, Track
 from iPodDB.library.genius import (
@@ -416,6 +416,26 @@ def test_sidebar_exposes_capable_devices_and_actual_captured_data() -> None:
         assert not sidebar.page_available(PageId.GENIUS)
         sidebar.set_active_ipod(replace(current, profile=old))
         assert sidebar.page_available(PageId.GENIUS)
+    finally:
+        sidebar.deleteLater()
+
+
+def test_sidebar_places_podcasts_directly_above_genius() -> None:
+    sidebar = Sidebar()
+    try:
+        sidebar.set_active_ipod(active())
+        navigation = sidebar.findChild(QWidget, "sidebarNavigation")
+        assert navigation is not None
+        layout = navigation.layout()
+        assert layout is not None
+        buttons = {
+            button.property("pageId"): button
+            for button in navigation.findChildren(NavigationButton)
+        }
+        podcasts = buttons[PageId.PODCASTS.value]
+        genius = buttons[PageId.GENIUS.value]
+        assert not podcasts.isHidden() and not genius.isHidden()
+        assert layout.indexOf(podcasts) + 1 == layout.indexOf(genius)
     finally:
         sidebar.deleteLater()
 
