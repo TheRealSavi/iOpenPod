@@ -1,4 +1,4 @@
-"""Behavioral tests for the Track table's contextual column controls."""
+"""Behavioral tests for the Track table and its contextual column controls."""
 
 from math import ceil
 from typing import Any, ClassVar
@@ -10,6 +10,8 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QMenu,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
 )
 from pytest import MonkeyPatch
 
@@ -126,6 +128,26 @@ class _TestTrackTable(TrackTable):
         self._artwork_provider.shutdown()
         self._artwork_controller.shutdown()
         return super().close()
+
+
+@pytest.mark.parametrize(("rating", "stars"), [(40, "★★"), (100, "★★★★★")])
+def test_rating_stars_are_left_aligned(rating: int, stars: str) -> None:
+    table = _track_table(
+        tracks=(Track(1, "Title", "Artist", "Album", 0, rating=rating),)
+    )
+
+    try:
+        index = table.model().index(0, TrackColumn.RATING)
+        delegate = table.itemDelegateForIndex(index)
+        assert isinstance(delegate, QStyledItemDelegate)
+        option = QStyleOptionViewItem()
+        table.initViewItemOption(option)
+        delegate.initStyleOption(option, index)
+
+        assert option.text == stars
+        assert option.displayAlignment & Qt.AlignmentFlag.AlignLeft
+    finally:
+        table.close()
 
 
 def test_column_menu_matches_the_original_task_oriented_structure() -> None:

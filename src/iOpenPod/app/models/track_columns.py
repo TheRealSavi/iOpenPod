@@ -520,7 +520,7 @@ def _build_column_definitions() -> tuple[TrackColumnDefinition, ...]:
         _column(
             "Plays", lambda track: track.play_count, _format_count, right_aligned=True
         ),
-        _column("Rating", lambda track: track.rating, rating_stars, right_aligned=True),
+        _column("Rating", lambda track: track.rating, rating_stars),
         _column("Album Artist", lambda track: track.album_artist),
         _column("Composer", lambda track: track.metadata.composer),
         _column("Comment", lambda track: track.metadata.comment),
