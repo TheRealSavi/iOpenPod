@@ -6434,6 +6434,10 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
         <translation>Aktuelle Wiedergabe schließen</translation>
     </message>
     <message>
+        <source>Hide Queue</source>
+        <translation>Warteschlange ausblenden</translation>
+    </message>
+    <message>
         <source>Previous Track</source>
         <translation>Vorheriger Titel</translation>
     </message>
@@ -6460,6 +6464,10 @@ Der Kalender ist schreibgeschützt, da die Unterstützung für die Bearbeitung m
     <message>
         <source>Untitled Chapter</source>
         <translation>Unbenanntes Kapitel</translation>
+    </message>
+    <message>
+        <source>Show Queue</source>
+        <translation>Warteschlange anzeigen</translation>
     </message>
     <message>
         <source>Close Now Playing (Esc)</source>

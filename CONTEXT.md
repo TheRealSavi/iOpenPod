@@ -1520,7 +1520,10 @@ Clicking the Player artwork for an audio Track opens Now Playing across the app'
 temporarily hiding navigation, the Player bar, and the status bar. Its two columns
 show larger shadowed artwork with Title, Artist, Album, a scrubber and the existing
 Previous, Play/Pause and Next actions on the left, and the pending Playback Queue
-on the right. Opening and closing crossfade the entire content area over 320 ms.
+on the right. A top-right Queue toggle slides the Queue through the right edge
+and centers the playback controls while it is hidden. The page retains that
+visibility choice when reopened, without changing playback or pending entries.
+Opening and closing crossfade the entire content area over 320 ms.
 The background magnifies and heavily blurs the current artwork, boosts its color
 saturation, and preserves readable theme text. Its color fields flow slowly, with smooth
 crossfades when artwork changes. Motion stops while hidden or minimized and follows

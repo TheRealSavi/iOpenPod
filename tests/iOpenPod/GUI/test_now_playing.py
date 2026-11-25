@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from dataclasses import replace
 
 import pytest
-from PySide6.QtCore import QPoint, Qt, QTimer, QVariantAnimation
+from PySide6.QtCore import QAbstractAnimation, QPoint, Qt, QTimer, QVariantAnimation
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.motion_test_support import disable_motion
 from tests.iOpenPod.playback_test_support import FakePlaybackBackend
 
 from iOpenPod.app.artwork_controller import ArtworkController
@@ -34,6 +35,7 @@ from iOpenPod.app.playback_controller import PlaybackController
 from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.pages.now_playing_page import NowPlayingPage
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.motion import SpringAnimation
 from iOpenPod.GUI.presentation.now_playing_background import now_playing_background
 from iOpenPod.GUI.presentation.theme.tokens import (
     DARK_TOKENS,
@@ -285,6 +287,151 @@ def test_queue_reorder_remove_and_clear_preserve_current_entry(
     assert controller.queue_model.rowCount() == 0
     assert controller.current_entry_id == entry and controller.playing
     assert _child(page, QLabel, "nowPlayingQueueEmpty").isVisible()
+
+
+def test_queue_toggle_slides_from_right_and_preserves_live_playback(
+    player: tuple[
+        NowPlayingPage, PlaybackController, FakePlaybackBackend, _ArtworkProvider
+    ],
+) -> None:
+    page, controller, _backend, _provider = player
+    controller.play_now((_track(), _track(2), _track(3)))
+    toggle = _child(page, IconButton, "nowPlayingQueueToggle")
+    queue = _child(page, QWidget, "nowPlayingQueue")
+    controls = _child(page, QWidget, "nowPlayingControls")
+    listing = _child(page, PlaybackQueueView, "nowPlayingQueueView")
+    animation = page.findChild(SpringAnimation, "nowPlayingQueueAnimation")
+    assert animation is not None
+    page.activateWindow()
+    listing.setFocus()
+    APPLICATION.processEvents()
+    assert listing.hasFocus()
+    queue_geometry, player_geometry = queue.geometry(), controls.geometry()
+    entry, pending = controller.current_entry_id, controller.queue_model.entries
+    assert toggle.isChecked() and toggle.accessibleName() == "Hide Queue"
+    assert toggle.x() > page.width() // 2
+
+    toggle.click()
+    animation.pause()
+    assert toggle.hasFocus()
+    assert queue.geometry() == queue_geometry
+    animation.setCurrentTime(animation.duration() // 4)
+    assert queue_geometry.x() < queue.x() < page.width()
+    assert controls.x() > player_geometry.x()
+    assert queue.width() == queue_geometry.width()
+    animation.setCurrentTime(animation.duration())
+    assert queue.isHidden() and queue.x() == page.width()
+    assert abs(controls.geometry().center().x() - page.rect().center().x()) <= 1
+    assert not toggle.isChecked() and toggle.accessibleName() == "Show Queue"
+    assert toggle.toolTip() == "Show Queue"
+    assert controller.current_entry_id == entry and controller.playing
+    assert controller.queue_model.entries == pending
+
+    # Playback and its shared model keep advancing while the panel is hidden.
+    controller.next()
+    assert controller.current_track == _track(2)
+    toggle.click()
+    animation.pause()
+    assert queue.isVisible() and queue.x() == page.width()
+    animation.setCurrentTime(animation.duration() // 4)
+    assert queue_geometry.x() < queue.x() < page.width()
+    animation.setCurrentTime(animation.duration())
+    assert queue.geometry() == queue_geometry
+    assert controls.geometry() == player_geometry
+    assert listing.model() is controller.queue_model
+    assert controller.queue_model.entries == pending[1:]
+    assert toggle.isChecked() and toggle.accessibleName() == "Hide Queue"
+
+
+def test_queue_slide_reverses_without_jumping(
+    player: tuple[
+        NowPlayingPage, PlaybackController, FakePlaybackBackend, _ArtworkProvider
+    ],
+) -> None:
+    page, _controller, _backend, _provider = player
+    toggle = _child(page, IconButton, "nowPlayingQueueToggle")
+    queue = _child(page, QWidget, "nowPlayingQueue")
+    controls = _child(page, QWidget, "nowPlayingControls")
+    animation = page.findChild(SpringAnimation, "nowPlayingQueueAnimation")
+    assert animation is not None
+    original = queue.geometry(), controls.geometry()
+    toggle.click()
+    animation.pause()
+    animation.setCurrentTime(animation.duration() // 5)
+    partial = queue.geometry(), controls.geometry()
+    assert partial != original
+    toggle.click()
+    animation.pause()
+    assert (queue.geometry(), controls.geometry()) == partial
+    animation.setCurrentTime(animation.duration() // 5)
+    partial = queue.geometry(), controls.geometry()
+    toggle.click()
+    animation.pause()
+    assert (queue.geometry(), controls.geometry()) == partial
+    animation.setCurrentTime(animation.duration())
+    assert queue.isHidden() and queue.x() == page.width()
+    toggle.click()
+    animation.pause()
+    animation.setCurrentTime(animation.duration())
+    assert (queue.geometry(), controls.geometry()) == original
+
+
+@pytest.mark.parametrize("visible", (False, True))
+@pytest.mark.parametrize("interrupt", ("resize", "hide"))
+def test_queue_slide_settles_on_resize_or_leaving_page(
+    player: tuple[
+        NowPlayingPage, PlaybackController, FakePlaybackBackend, _ArtworkProvider
+    ],
+    visible: bool,
+    interrupt: str,
+) -> None:
+    page, _controller, _backend, _provider = player
+    toggle = _child(page, IconButton, "nowPlayingQueueToggle")
+    queue = _child(page, QWidget, "nowPlayingQueue")
+    animation = page.findChild(SpringAnimation, "nowPlayingQueueAnimation")
+    assert animation is not None
+    if visible:
+        toggle.click()
+        animation.setCurrentTime(animation.duration())
+    toggle.click()
+    animation.pause()
+    animation.setCurrentTime(animation.duration() // 4)
+    if interrupt == "resize":
+        page.resize(960, 620)
+    else:
+        page.hide()
+    APPLICATION.processEvents()
+    assert animation.state() == QAbstractAnimation.State.Stopped
+    page.show()
+    APPLICATION.processEvents()
+    assert toggle.isChecked() == visible
+    assert queue.isVisible() == visible
+    if visible:
+        assert page.rect().contains(queue.geometry())
+    else:
+        assert queue.x() == page.width()
+        controls = _child(page, QWidget, "nowPlayingControls")
+        assert abs(controls.geometry().center().x() - page.rect().center().x()) <= 1
+
+
+def test_queue_toggle_respects_disabled_motion(
+    player: tuple[
+        NowPlayingPage, PlaybackController, FakePlaybackBackend, _ArtworkProvider
+    ],
+) -> None:
+    page, _controller, _backend, _provider = player
+    disable_motion(page)
+    toggle = _child(page, IconButton, "nowPlayingQueueToggle")
+    queue = _child(page, QWidget, "nowPlayingQueue")
+    animation = page.findChild(SpringAnimation, "nowPlayingQueueAnimation")
+    assert animation is not None
+    original = queue.geometry()
+    toggle.click()
+    assert queue.isHidden() and queue.x() == page.width()
+    assert animation.state() == QAbstractAnimation.State.Stopped
+    toggle.click()
+    assert queue.isVisible() and queue.geometry() == original
+    assert animation.state() == QAbstractAnimation.State.Stopped
 
 
 def _background_pixel(page: QWidget) -> QColor:

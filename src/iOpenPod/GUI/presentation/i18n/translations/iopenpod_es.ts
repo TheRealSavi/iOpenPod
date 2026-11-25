@@ -6434,6 +6434,10 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
         <translation>Cerrar reproducción actual</translation>
     </message>
     <message>
+        <source>Hide Queue</source>
+        <translation>Ocultar cola</translation>
+    </message>
+    <message>
         <source>Previous Track</source>
         <translation>Pista anterior</translation>
     </message>
@@ -6460,6 +6464,10 @@ El calendario es de solo lectura porque no se ha podido confirmar la compatibili
     <message>
         <source>Untitled Chapter</source>
         <translation>Capítulo sin título</translation>
+    </message>
+    <message>
+        <source>Show Queue</source>
+        <translation>Mostrar cola</translation>
     </message>
     <message>
         <source>Close Now Playing (Esc)</source>

@@ -3348,6 +3348,13 @@ the pending `PlaybackQueueView` and chapter-aware `SeekSlider` with the regular
 Player presentation. It observes current Track, playing state, position and exact
 Artwork Display Time through existing controller and provider interfaces.
 
+Its top-right Queue toggle owns only page-local visibility. The Queue slides
+through the right window edge while the playback controls move between their
+left column and the center. Both positions follow one interruptible shared spring;
+the existing Queue view stays attached to its live model. Resizing or leaving the
+page settles the requested state, and disabled Host widget animation applies it
+immediately. Reopening the page retains that visibility choice.
+
 For a semantic video Track, the same shell stack selects `VideoPlayerPage` instead.
 It presents aspect-preserving native video with controller-owned transport, volume,
 Chapter navigation and error retry. Close and Escape restore the shell without

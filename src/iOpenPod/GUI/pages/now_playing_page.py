@@ -11,6 +11,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QHideEvent,
     QImage,
     QKeySequence,
     QResizeEvent,
@@ -18,11 +19,11 @@ from PySide6.QtGui import (
     QShowEvent,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLayout,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -32,6 +33,7 @@ from iOpenPod.app.playback.artwork import artwork_time_at, playback_artwork_time
 from iOpenPod.app.playback.chapters import chapter_at, playback_chapters
 from iOpenPod.app.playback_controller import PlaybackController
 from iOpenPod.GUI.presentation.artwork_provider import ArtworkPixmapProvider
+from iOpenPod.GUI.presentation.motion import MOTION, SpringAnimation, animations_enabled
 from iOpenPod.GUI.presentation.theme.manager import ThemeManager
 from iOpenPod.GUI.presentation.theme.tokens import LAYOUT
 from iOpenPod.GUI.widgets.artwork_view import ArtworkView
@@ -71,6 +73,7 @@ class NowPlayingPage(QWidget):
         self._artwork_key: tuple[int, int | None] = (0, None)
         self._backdrop = NowPlayingBackdrop(theme_manager.tokens, self)
         self._background_cache_key: int | None = None
+        self._queue_reveal = 1.0
 
         self._layout = QVBoxLayout(self)
         # Artwork adapts to available space; its last size must not become a
@@ -91,16 +94,28 @@ class NowPlayingPage(QWidget):
         self._close.clicked.connect(self.closeRequested.emit)
         header.addWidget(self._close)
         header.addStretch()
+        self._queue_toggle = IconButton(
+            "playlist",
+            self.tr("Hide Queue"),
+            self,
+            checkable=True,
+            kind=IconButtonKind.QUIET,
+        )
+        self._queue_toggle.setObjectName("nowPlayingQueueToggle")
+        self._queue_toggle.setFixedSize(
+            LAYOUT.minimum_touch_target, LAYOUT.minimum_touch_target
+        )
+        self._queue_toggle.setChecked(True)
+        header.addWidget(self._queue_toggle)
         self._layout.addLayout(header)
 
-        self._columns = QHBoxLayout()
-        self._columns.setSpacing(LAYOUT.space_xl * 2)
+        # The layout reserves the body; its siblings can travel all the way to
+        # the page edge, beyond the layout's normal content margins.
+        self._content = QWidget(self)
+        self._layout.addWidget(self._content, 1)
         self._player = QWidget(self)
         self._player.setObjectName("nowPlayingControls")
         self._player.setMinimumWidth(0)
-        self._player.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
         self._player.setMaximumWidth(LAYOUT.now_playing_column_maximum_width)
         left = QVBoxLayout(self._player)
         left.setContentsMargins(0, 0, 0, 0)
@@ -183,7 +198,6 @@ class NowPlayingPage(QWidget):
             transport.addWidget(button)
         transport.addStretch()
         left.addWidget(self._transport, alignment=Qt.AlignmentFlag.AlignHCenter)
-        self._columns.addWidget(self._player, 5, Qt.AlignmentFlag.AlignVCenter)
 
         self._queue = QWidget(self)
         self._queue.setObjectName("nowPlayingQueue")
@@ -220,9 +234,12 @@ class NowPlayingPage(QWidget):
         self._empty.setWordWrap(True)
         self._empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._queue_view.viewport().installEventFilter(self)
-        self._player.installEventFilter(self)
-        self._columns.addWidget(self._queue, 5)
-        self._layout.addLayout(self._columns, 1)
+        self._content.installEventFilter(self)
+        self._queue_animation = SpringAnimation(self)
+        self._queue_animation.setObjectName("nowPlayingQueueAnimation")
+        self._queue_animation.valueChanged.connect(self._animate_queue)
+        self._queue_animation.finished.connect(self._finish_queue_transition)
+        self._queue_toggle.toggled.connect(self._set_queue_visible)
 
         self._previous.clicked.connect(controller.previous)
         self._play.clicked.connect(controller.toggle_play_pause)
@@ -375,9 +392,48 @@ class NowPlayingPage(QWidget):
         self._clear.setEnabled(count > 0)
         self._empty.setVisible(count == 0)
 
+    def _refresh_queue_toggle(self) -> None:
+        name = (
+            self.tr("Hide Queue")
+            if self._queue_toggle.isChecked()
+            else self.tr("Show Queue")
+        )
+        self._queue_toggle.setAccessibleName(name)
+        self._queue_toggle.setToolTip(name)
+
+    def _set_queue_visible(self, visible: bool) -> None:
+        self._refresh_queue_toggle()
+        if not visible:
+            focus = QApplication.focusWidget()
+            if focus is not None and (
+                focus is self._queue or self._queue.isAncestorOf(focus)
+            ):
+                self._queue_toggle.setFocus(Qt.FocusReason.OtherFocusReason)
+        if not self.isVisible() or not animations_enabled(self):
+            self._finish_queue_transition()
+            return
+        self._queue.show()
+        self._queue_animation.retarget(
+            self._queue_reveal,
+            1.0 if visible else 0.0,
+            MOTION.panel_enter_ms if visible else MOTION.panel_exit_ms,
+        )
+
+    def _animate_queue(self, value: float) -> None:
+        self._queue_reveal = value
+        self._layout_playback()
+
+    def _finish_queue_transition(self) -> None:
+        self._queue_animation.stop()
+        visible = self._queue_toggle.isChecked()
+        self._queue_reveal = 1.0 if visible else 0.0
+        self._layout_playback()
+        self._queue.setVisible(visible)
+
     def retranslate_ui(self) -> None:
         self._close.setAccessibleName(self.tr("Close Now Playing"))
         self._close.setToolTip(self.tr("Close Now Playing (Esc)"))
+        self._refresh_queue_toggle()
         self._queue_title.setText(self.tr("Queue"))
         self._clear.setText(self.tr("Clear Queue"))
         self._empty.setText(self.tr("Queue is empty"))
@@ -425,36 +481,37 @@ class NowPlayingPage(QWidget):
         if event.type() in {
             QEvent.Type.FontChange,
             QEvent.Type.StyleChange,
-        } and hasattr(self, "_transport"):
-            self._fit_artwork()
+        } and hasattr(self, "_queue_animation"):
+            self._finish_queue_transition()
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
-        self._fit_artwork()
+        self._finish_queue_transition()
         self._refresh_shadow()
         self._refresh_background()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._backdrop.setGeometry(self.rect())
-        self._fit_artwork()
+        self._finish_queue_transition()
         self._refresh_shadow()
 
-    def _fit_artwork(self) -> None:
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._finish_queue_transition()
+        super().hideEvent(event)
+
+    def _layout_playback(self) -> None:
         # The two columns remain side by side at the app's desktop minimum size.
         minimum_gap = LAYOUT.space_lg if self.width() < 1000 else LAYOUT.space_xl * 2
         margins = self._layout.contentsMargins()
-        content_width = self.width() - margins.left() - margins.right()
-        column_width = LAYOUT.now_playing_column_maximum_width
+        content = self._content.geometry()
+        column_width = min(
+            LAYOUT.now_playing_column_maximum_width,
+            max(0, (content.width() - minimum_gap) // 2),
+        )
         inset = min(
             LAYOUT.now_playing_maximum_edge_margin - margins.left(),
-            max(0, (content_width - column_width * 2 - minimum_gap) // 2),
-        )
-        self._columns.setContentsMargins(inset, 0, inset, 0)
-        # Once the outer margins reach their cap, all extra width belongs in
-        # the middle, keeping each column anchored to its own window edge.
-        self._columns.setSpacing(
-            max(minimum_gap, content_width - inset * 2 - column_width * 2)
+            max(0, (content.width() - column_width * 2 - minimum_gap) // 2),
         )
         available_height = self.height() - (
             self._close.height()
@@ -469,7 +526,7 @@ class NowPlayingPage(QWidget):
         side = max(
             48,
             min(
-                self._player.width() - LAYOUT.space_md * 2,
+                column_width - LAYOUT.space_md * 2,
                 available_height,
                 LAYOUT.now_playing_artwork_maximum_size,
             ),
@@ -477,10 +534,29 @@ class NowPlayingPage(QWidget):
         self._artwork.setFixedSize(side, side)
         for widget in (self._metadata, self._timeline, self._transport):
             widget.setFixedWidth(side)
+        player_height = min(content.height(), self._player.sizeHint().height())
+        centered_x = content.x() + (content.width() - column_width) / 2
+        open_x = content.x() + inset
+        self._player.setGeometry(
+            round(centered_x + (open_x - centered_x) * self._queue_reveal),
+            content.y() + (content.height() - player_height) // 2,
+            column_width,
+            player_height,
+        )
+        queue_x = content.x() + content.width() - inset - column_width
+        self._queue.setGeometry(
+            round(self.width() + (queue_x - self.width()) * self._queue_reveal),
+            content.y(),
+            column_width,
+            content.height(),
+        )
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self._player and event.type() == QEvent.Type.Resize:
-            self._fit_artwork()
+        if watched is self._content and event.type() in {
+            QEvent.Type.Resize,
+            QEvent.Type.Move,
+        }:
+            self._finish_queue_transition()
         if (
             watched is self._queue_view.viewport()
             and event.type() == QEvent.Type.Resize
