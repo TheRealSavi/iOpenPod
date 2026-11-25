@@ -110,17 +110,18 @@ the new fingerprint, and cache association occurs only after Storage verifies
 publication. Audio replacement or unverified file changes never receive that
 association. See ADR-0076 and ADR-0120.
 
-## Amendment: key retained device profiles by persistent facts (2026-11-15)
+## Amendment: reuse Genius Audio Profiles for retained Tracks after reconnection (2026-11-15)
 
-A retained device profile's cache key uses the Physical Device ID, Volume ID,
-persistent database Track ID, Device Path, size, and modification time. It omits
-the host-assigned `st_dev` and `st_ino`. FAT filesystems assign inode numbers per
-mount, so keys that included them discarded every retained profile on
-reconnection and forced complete device rereads each Sync. The iPod Media Scan
-analysis cache already uses the same persistent facts (ADR-0065).
+A retained Track's Genius Audio Profile cache key uses the Physical Device ID,
+Volume ID, persistent database Track ID, Device Path, size, and modification
+time. The Host can assign new `st_dev` and `st_ino` values on remount, as
+observed on Linux with FAT. Including them in the key forced Sync to reread
+unchanged Tracks after reconnection. The iPod Media Scan also reuses cached
+analysis based on Track identity, Device Path, size, and modification time
+(ADR-0065).
 
-Within one Filesystem Session, retained device sources are still validated
-against their complete observed file identity, including inode, before and after
-analysis and again before publication. Size and modification time remain a fast
-cache discriminator rather than hostile-change detection, as for the Sync helper.
-Existing inode-bound entries become unused and age out under the normal bounds.
+Within each Filesystem Session, the Application Layer validates retained sources
+against the complete observed file identity, including `st_dev` and `st_ino`,
+before and after analysis and again before publication. Size and modification
+time provide the same fast cache check used by the Sync helper. Entries written
+with the previous key age out under the existing cache limits.

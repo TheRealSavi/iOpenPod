@@ -61,6 +61,8 @@ from storage.testing import VirtualStoragePlatform
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from storage import FileIdentity
+
 
 def _checkpoint() -> None:
     pass
@@ -277,33 +279,40 @@ def test_cache_reuse_never_crosses_device_identity(tmp_path: Path) -> None:
     assert len(decoder.sources) == 2
 
 
-def test_device_cache_survives_reconnection_with_new_inodes(tmp_path: Path) -> None:
+def test_device_cache_survives_remount_and_checks_current_file_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     root, platform, session, snapshot = _device(tmp_path)
     cache = AtomicHostFile(tmp_path / "profiles.json")
     decoder = _Decoder()
     service = GeniusAnalysisService(cache, decoder, profiler=_profile)
     first = service.analyze(snapshot, session, checkpoint=_checkpoint)
     session.close()
-    # FAT assigns inode numbers per mount; model a reconnection that keeps the
-    # file's bytes, size, and modification time but observes a new inode.
-    song = root / "song.mp3"
-    original = song.stat()
-    replacement = root / "song.tmp"
-    shutil.copy2(song, replacement)
-    replacement.replace(song)
-    assert song.stat().st_ino != original.st_ino
-    assert song.stat().st_mtime_ns == original.st_mtime_ns
     platform.add_volume(root, writable=False)
     storage = Storage(platform)
     reconnected = storage.open_session(
         storage.discover().volumes[0], access=AccessMode.READ_ONLY
     )
+    # Model the Host assigning new file identifiers when the same Volume returns.
+    file_identity = reconnected.file_identity
+    inode_offset = 1
+
+    def remounted_identity(path: DevicePath) -> FileIdentity:
+        current = file_identity(path)
+        return replace(
+            current, device=current.device + 1, inode=current.inode + inode_offset
+        )
+
+    monkeypatch.setattr(reconnected, "file_identity", remounted_identity)
     second = GeniusAnalysisService(cache, decoder, profiler=_profile).analyze(
         snapshot, reconnected, checkpoint=_checkpoint
     )
     assert decoder.sources == [DevicePath("song.mp3")]
     assert second.profiles == first.profiles
     second.validate_sources(reconnected, checkpoint=_checkpoint)
+    inode_offset += 1
+    with pytest.raises(ConcurrentModificationError):
+        second.validate_sources(reconnected, checkpoint=_checkpoint)
 
 
 def test_only_uncached_tracks_are_queued_and_reported(tmp_path: Path) -> None:
