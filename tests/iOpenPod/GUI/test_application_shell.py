@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 from tests.iOpenPod.GUI.application_shell_test_support import (
     APPLICATION,
+    show_settings,
 )
 from tests.iOpenPod.GUI.application_shell_test_support import (
     build_context as _context,
@@ -183,6 +184,7 @@ def test_draft_all_changes_setting_controls_review_visibility_immediately(
     context = _context()
     window = MainWindow(context, auto_discover=False)
     try:
+        show_settings(window)
         combo = window.findChild(ToggleSwitch, "draftAllChangesSwitch")
         review = window.findChild(QPushButton, review_name)
         assert combo is not None and review is not None
@@ -541,6 +543,7 @@ def test_shell_contains_persistent_player_sidebar_and_all_routes(
     try:
         sidebar = window.findChild(Sidebar)
         assert sidebar is not None
+        sidebar.pageRequested.emit(PageId.SETTINGS.value)
         sidebar.pageRequested.emit(PageId.ALBUMS.value)
         window.show()
         APPLICATION.processEvents()
@@ -648,6 +651,7 @@ def test_player_position_setting_moves_the_existing_player() -> None:
         APPLICATION.processEvents()
         shell = window.findChild(QWidget, "appShell")
         player = window.findChild(PlayerBar)
+        show_settings(window)
         position_combo = window.findChild(AppComboBox, "playerPositionCombo")
         assert shell is not None
         shell_layout = shell.layout()
@@ -702,6 +706,15 @@ def test_settings_choose_mode_exact_themes_and_colorful_mode() -> None:
     window = MainWindow(context, auto_discover=False)
 
     try:
+        assert window.findChild(SettingsPage) is None
+        navigation = window.findChild(Sidebar)
+        assert navigation is not None
+        navigation.pageRequested.emit(PageId.SETTINGS.value)
+        page = window.findChild(SettingsPage)
+        assert page is not None
+        navigation.pageRequested.emit(PageId.START.value)
+        navigation.pageRequested.emit(PageId.SETTINGS.value)
+        assert window.findChildren(SettingsPage) == [page]
         mode = window.findChild(AppComboBox, "appearanceModeCombo")
         light_theme = window.findChild(AppComboBox, "lightThemeCombo")
         dark_theme = window.findChild(AppComboBox, "darkThemeCombo")
@@ -766,6 +779,7 @@ def test_settings_show_version_and_open_support_links(
     window = MainWindow(context, auto_discover=False)
 
     try:
+        show_settings(window)
         version_row = window.findChild(QWidget, "currentAppVersion")
         assert version_row is not None
         version = version_row.findChild(QLabel, "settingDescription")
@@ -835,6 +849,7 @@ def test_linux_settings_check_and_review_local_udev_rule_uninstall(
     window = MainWindow(context, auto_discover=False)
 
     try:
+        show_settings(window)
         section = window.findChild(QWidget, "linuxHostIntegrationSection")
         check = window.findChild(ActionButton, "checkUdevRule")
         uninstall = window.findChild(ActionButton, "uninstallUdevRule")

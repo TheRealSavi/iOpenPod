@@ -8,7 +8,11 @@ from threading import Event
 import pytest
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel, QPlainTextEdit, QPushButton
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_settings,
+)
 
 from iOpenPod.app import phase_runtime_controller
 from iOpenPod.app.phase_runtime import ManagedPhaseSources
@@ -114,6 +118,7 @@ def test_settings_button_opens_setup_without_starting_installation() -> None:
     context = build_context()
     window = MainWindow(context)
     try:
+        show_settings(window)
         button = window.findChild(QPushButton, "setupPhaseAnalysis")
         assert button is not None
         button.click()

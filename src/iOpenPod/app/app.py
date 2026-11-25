@@ -1,34 +1,34 @@
 """Qt bootstrap for iOpenPod."""
 
+from __future__ import annotations
+
 import logging
 import signal
 import socket
 import sys
-from collections.abc import Callable
-from types import FrameType
+from contextlib import ExitStack
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QCoreApplication, QSocketNotifier, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QSocketNotifier, Qt, QThreadPool, QTimer
 from PySide6.QtWidgets import QApplication
 
-from iOpenPod.app.context import AppContext
 from iOpenPod.app.core.dates import refresh_host_timezone
-from iOpenPod.app.core.settings.definitions import ONBOARDING_COMPLETE
-from iOpenPod.app.core.settings.service import SettingsService
-from iOpenPod.app.playback.system_media import (
-    SystemMediaBridge,
-    create_system_media_session,
-)
+from iOpenPod.app.core.runtime import close_frozen_splash
 from iOpenPod.app.updates.platform import (
     close_update_runtime,
     initialize_update_runtime,
 )
-from iOpenPod.GUI.dialogs.onboarding import OnboardingDialog
-from iOpenPod.GUI.main_window import MainWindow
 from iOpenPod.GUI.presentation.application_icon import application_icon
 from iOpenPod.GUI.presentation.display import configure_display
-from iOpenPod.GUI.presentation.i18n.manager import I18nManager
-from iOpenPod.GUI.presentation.scrolling import install_scrolling
-from storage.host_staging import cleanup_stale_staging
+from iOpenPod.GUI.startup_window import StartupWindow
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from types import FrameType
+
+    from iOpenPod.app.core.settings.service import SettingsService
+    from iOpenPod.GUI.main_window import MainWindow
+    from iOpenPod.GUI.presentation.i18n.manager import I18nManager
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +39,10 @@ def start_ui() -> int:
     """Start iOpenPod and discover connected Device Candidates."""
 
     initialize_update_runtime()
-    cleanup_stale_staging()
     _set_windows_app_user_model_id()
     configure_display()
     application = QApplication(sys.argv)
     _install_host_timezone_refresh(application)
-    install_scrolling(application)
     QCoreApplication.setApplicationName("iOpenPod")
     QCoreApplication.setOrganizationName("iOpenPod")
     from iOpenPod.app.core.version import get_version
@@ -52,44 +50,83 @@ def start_ui() -> int:
     QCoreApplication.setApplicationVersion(get_version())
     application.setDesktopFileName("io.github.therealsavi.iOpenPod")
     application.setWindowIcon(application_icon())
-    context = AppContext.create(application)
+    loading = StartupWindow()
+    with ExitStack() as session:
+        session.callback(close_update_runtime)
+        session.callback(_install_interrupt_handler(application))
+        stages = _open_desktop_session(application, loading, session)
+        failure: Exception | None = None
 
+        def advance() -> None:
+            nonlocal failure
+            if not loading.isVisible():
+                return
+            try:
+                stage = next(stages)
+            except StopIteration:
+                return
+            except Exception as error:
+                # Propagate startup failures through the launcher's crash logger.
+                failure = error
+                application.exit(1)
+                return
+            loading.progress.setValue(stage)
+            QTimer.singleShot(0, loading, advance)
+
+        loading.firstPaint.connect(
+            close_frozen_splash, Qt.ConnectionType.QueuedConnection
+        )
+        loading.firstPaint.connect(advance, Qt.ConnectionType.QueuedConnection)
+        application.aboutToQuit.connect(session.close)
+        loading.show_centered()
+        result = application.exec()
+        if failure is not None:
+            raise failure
+        return result
+
+
+def _open_desktop_session(
+    application: QApplication, loading: StartupWindow, session: ExitStack
+) -> Iterator[int]:
+    """Give Qt an event turn between startup stages, retaining GUI-thread ownership."""
+    from storage.host_staging import cleanup_stale_staging
+
+    # Storage skips live workspaces and serializes cleanup with new staging.
+    QThreadPool.globalInstance().start(cleanup_stale_staging)
+    from iOpenPod.app.context import AppContext
+
+    context = AppContext.create(application)
+    session.callback(context.shutdown)
+    yield 1
+
+    from iOpenPod.app.playback.system_media import (
+        SystemMediaBridge,
+        create_system_media_session,
+    )
     from iOpenPod.app.updates.bootstrap import start_health_handshake
+    from iOpenPod.GUI.main_window import MainWindow
+    from iOpenPod.GUI.presentation.scrolling import install_scrolling
 
     window = MainWindow(context, auto_discover=False, defer_startup=True)
+    session.callback(window.close_app_updates)
+    # Install the global event filter after the widget tree has been constructed.
+    install_scrolling(application)
+    yield 2
     window.show()
-
-    def ready() -> None:
-        _start_interactive_session(window, context.settings, context.i18n_manager)
-
-    start_health_handshake(application, window, ready)
     system_media_bridge = SystemMediaBridge(
         context.playback_controller,
         create_system_media_session(window_id=int(window.winId())),
         application,
         artwork_controller=context.artwork_controller,
     )
-    restore_interrupt_handler = _install_interrupt_handler(application)
-    shutdown_complete = False
+    session.callback(system_media_bridge.close)
+    loading.progress.setValue(3)
+    loading.close()
 
-    def shutdown() -> None:
-        nonlocal shutdown_complete
-        if shutdown_complete:
-            return
-        shutdown_complete = True
-        window.close_app_updates()
-        system_media_bridge.close()
-        context.shutdown()
-        close_update_runtime()
+    def ready() -> None:
+        _start_interactive_session(window, context.settings, context.i18n_manager)
 
-    application.aboutToQuit.connect(shutdown)
-    try:
-        return application.exec()
-    finally:
-        try:
-            shutdown()
-        finally:
-            restore_interrupt_handler()
+    start_health_handshake(application, window, ready)
 
 
 def _install_host_timezone_refresh(application: QApplication) -> None:
@@ -107,6 +144,8 @@ def _start_interactive_session(
     window: MainWindow, settings: SettingsService, i18n_manager: I18nManager
 ) -> None:
     """Offer first-run setup after launch health, before other startup work."""
+    from iOpenPod.app.core.settings.definitions import ONBOARDING_COMPLETE
+    from iOpenPod.GUI.dialogs.onboarding import OnboardingDialog
 
     def resume() -> None:
         window.start_device_discovery()

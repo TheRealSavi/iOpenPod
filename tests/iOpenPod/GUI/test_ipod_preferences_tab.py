@@ -21,7 +21,11 @@ from tests.iOpenPod.app.services.test_device_coordinator import (
 from tests.iOpenPod.app.services.test_ipod_preferences_inspection import (
     _install_preferences,  # pyright: ignore[reportPrivateUsage]
 )
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_settings,
+)
 
 from iOpenPod.app.models.ipod_preferences import (
     IPodPreferenceSection,
@@ -51,6 +55,7 @@ def test_settings_preferences_tab_is_read_only_and_tracks_active_device(
     context = build_context(device_coordinator=coordinator)
     window = MainWindow(context, auto_discover=False)
     try:
+        show_settings(window)
         page = window.findChild(SettingsPage)
         assert page is not None
         view = page.findChild(IPodPreferencesView)

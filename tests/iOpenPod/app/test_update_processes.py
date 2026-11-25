@@ -12,6 +12,22 @@ from iOpenPod.app.updates.processes import ParentProcess, candidate_process
 from iOpenPod.app.updates.processes_windows import WindowsCandidateProcess
 
 
+@pytest.mark.parametrize("arguments, suppressed", [(["--smoke-test"], "1"), ([], None)])
+def test_windows_candidate_only_suppresses_the_diagnostic_splash(
+    monkeypatch: pytest.MonkeyPatch, arguments: list[str], suppressed: str | None
+) -> None:
+    spawn = Mock()
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delenv("PYINSTALLER_SUPPRESS_SPLASH_SCREEN", raising=False)
+    monkeypatch.setattr(
+        "iOpenPod.app.updates.processes_windows.WindowsCandidateProcess", spawn
+    )
+    candidate_process(["iOpenPod.exe", *arguments])
+    assert (
+        spawn.call_args.args[1].get("PYINSTALLER_SUPPRESS_SPLASH_SCREEN") == suppressed
+    )
+
+
 @pytest.mark.parametrize("failure", ["SetInformationJobObject", "CreateProcessW"])
 def test_candidate_start_failure_preserves_native_error_and_closes_job(
     monkeypatch: pytest.MonkeyPatch, failure: str

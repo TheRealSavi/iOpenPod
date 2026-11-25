@@ -24,7 +24,7 @@ if sys.platform == "win32":
     datas += [(str(generated / "storage-access/iOpenPod-storage-access.exe"), "storage-access")]
 if sys.platform != "darwin":
     helper = "iOpenPod-update.exe" if sys.platform == "win32" else "iOpenPod-update"
-    datas += [(str(root / "dist" / helper), "updates")]
+    datas += [(str(Path(DISTPATH) / helper), "updates")]
 for package in ("iOpenPod", "device_registry", "iPodDB", "storage", "tzdata"):
     datas += collect_data_files(
         package,
@@ -63,6 +63,7 @@ if sys.platform == "win32":
     # Media-key adapters intentionally load OS bindings only when needed.
     hiddenimports += collect_submodules("winrt") + [
         "_iopenpod_storage_helper",
+        "pyi_splash",
         "msvcrt",
         "winrt.windows.media",
         "winrt.windows.media.interop",
@@ -113,8 +114,18 @@ if sys.platform == "win32":
         raise ValueError("The expected SoundFile native library was not collected")
     a.datas += [("licenses/libsndfile-build-record.json", str(sndfile.parent / "build-record.json"), "DATA")]
 onefile = sys.platform == "win32"
+splash_inputs = []
+if onefile:
+    splash = Splash(
+        str(root / "src/iOpenPod/assets/icons/icon-128.png"),
+        binaries=a.binaries,
+        datas=a.datas,
+        always_on_top=False,
+        center="active",
+    )
+    splash_inputs = [splash, splash.binaries]
 exe = EXE(
-    pyz, a.scripts, a.binaries if onefile else [], a.datas if onefile else [],
+    pyz, a.scripts, *splash_inputs, a.binaries if onefile else [], a.datas if onefile else [],
     exclude_binaries=not onefile,
     name="iOpenPod",
     console=sys.platform == "linux",

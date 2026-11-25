@@ -1,6 +1,7 @@
 """Explicitly download optional analysis and exercise it from a native candidate."""
 
 import argparse
+import os
 import subprocess
 from pathlib import Path
 
@@ -30,6 +31,7 @@ def main() -> None:
             str(report),
         ],
         cwd=root,
+        env=dict(os.environ, PYINSTALLER_SUPPRESS_SPLASH_SCREEN="1"),
         check=False,
         timeout=1800,
     )

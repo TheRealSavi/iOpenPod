@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel, QLineEdit, QPlainTextEdit, QPushButton
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_settings,
+)
 
 from iOpenPod.app import media_tools_controller
 from iOpenPod.app.core.settings.definitions import FPCALC_PATH
@@ -75,6 +79,7 @@ def test_path_edit_rechecks_the_shared_lookup_in_the_application(
     context = build_context()
     window = MainWindow(context)
     try:
+        show_settings(window)
         edit = window.findChild(QLineEdit, "mediaToolPath_fpcalc")
         assert edit is not None
         selected = str(tmp_path / "custom tools" / "fpcalc")
@@ -266,6 +271,7 @@ def test_startup_prompts_only_for_unavailable_tools_and_settings_reopens(
         _wait(lambda: not controller.busy)
         assert dialog.isVisible() is (not ready)
         dialog.reject()
+        show_settings(window)
         button = window.findChild(QPushButton, "setupMediaTools")
         assert button is not None
         assert button.isHidden() is ready

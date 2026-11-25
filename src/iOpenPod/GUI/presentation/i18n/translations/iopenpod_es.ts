@@ -10114,6 +10114,13 @@ El firmware completo está incluido con iOpenPod y funciona sin conexión. La in
     </message>
 </context>
 <context>
+    <name>StartupWindow</name>
+    <message>
+        <source>Starting iOpenPod…</source>
+        <translation>Iniciando iOpenPod…</translation>
+    </message>
+</context>
+<context>
     <name>StatusListButton</name>
     <message>
         <source>Active statuses (%1)</source>

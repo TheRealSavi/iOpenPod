@@ -9,6 +9,7 @@ from tests.iOpenPod.GUI.application_shell_test_support import (
     APPLICATION,
     build_context,
     show_albums,
+    show_settings,
     tracks,
 )
 
@@ -107,6 +108,7 @@ def test_round_title_bar_switches_live_and_preserves_interaction(
     context.track_model.replace_tracks(tracks(100))
     context.theme_manager.set_mode(mode)
     window = MainWindow(context, auto_discover=False)
+    show_settings(window)
     show_albums(window)
     try:
         window.resize(1100, 760)
@@ -192,6 +194,7 @@ def test_saved_round_title_bar_applies_to_new_headers_and_survives_theme_changes
             assert search is not None and search.property("roundTitleBar") is True
         context.theme_manager.set_mode(AppearanceMode.DARK)
         context.theme_manager.set_dark_theme(DarkTheme.ORIGINAL)
+        show_settings(window)
         page = window.findChild(SettingsPage)
         combo = window.findChild(AppComboBox, "trackTitleBarStyleCombo")
         assert page is not None and combo is not None

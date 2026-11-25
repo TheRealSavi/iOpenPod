@@ -157,14 +157,15 @@ def test_navigation_style_applies_immediately_and_keeps_current_page(
         APPLICATION.processEvents()
         sidebar = window.findChild(Sidebar)
         top_bar = window.findChild(CompactTopBar)
-        combo = window.findChild(AppComboBox, "navigationStyleCombo")
         pages = window.findChild(QStackedWidget, "pageStack")
         player = window.findChild(PlayerBar)
         shell = window.findChild(QWidget, "appShell")
-        assert sidebar is not None and top_bar is not None and combo is not None
+        assert sidebar is not None and top_bar is not None
         assert pages is not None and player is not None and shell is not None
         assert top_bar.isVisible() and not sidebar.isVisible()
         top_bar.pageRequested.emit(PageId.SETTINGS.value)
+        combo = window.findChild(AppComboBox, "navigationStyleCombo")
+        assert combo is not None
         current = pages.currentWidget()
 
         combo.setCurrentIndex(combo.findData(NavigationStyle.SIDEBAR.value))

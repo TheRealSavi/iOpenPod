@@ -143,6 +143,8 @@ jobs:
       - name: Check Windows bundle outside the checkout
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          PYINSTALLER_SUPPRESS_SPLASH_SCREEN: "1"
         run: |
           $executable = (Resolve-Path dist/iOpenPod.exe).Path
           $report = Join-Path $env:RUNNER_TEMP 'frozen-runtime.txt'

@@ -1,11 +1,24 @@
 """Configure native playback and caches for the read-only application bundle."""
 
 import ctypes
+import logging
 import os
 import sys
 from functools import cache
+from importlib import import_module
 from pathlib import Path
 from typing import cast
+
+
+def close_frozen_splash() -> None:
+    """Dismiss the Windows bootloader artwork once Qt or a diagnostic takes over."""
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        try:
+            import_module("pyi_splash").close()
+        except (ImportError, OSError):
+            logging.getLogger(__name__).debug(
+                "Bootloader splash unavailable", exc_info=True
+            )
 
 
 def configure_frozen_runtime() -> None:

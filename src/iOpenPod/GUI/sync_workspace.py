@@ -402,17 +402,21 @@ class SyncWorkspace(QWidget):
         )
         header_layout.addLayout(stage_row)
 
-        self._scan = _ScanPage(self)
-        self._library_stack = QStackedWidget(self)
+        self._content = QStackedWidget(self)
+        self._content.setObjectName("syncWorkspaceContent")
+        self._scan = _ScanPage(self._content)
+        selection_page = QWidget(self._content)
+        selection_page.setObjectName("syncSelectionPage")
+        selection_body = QFrame(selection_page)
+        selection_body.setObjectName("syncSelectionBody")
+        self._library_stack = QStackedWidget(selection_body)
         self._library_stack.setObjectName("syncLibraryStack")
 
         self._library_navigation = _SyncLibraryNavigation(
             self._host_workspace,
             self.selection,
-            self,
+            selection_body,
         )
-        selection_body = QFrame(self)
-        selection_body.setObjectName("syncSelectionBody")
         selection_layout = QHBoxLayout(selection_body)
         selection_layout.setContentsMargins(0, 0, 0, 0)
         selection_layout.setSpacing(0)
@@ -438,16 +442,16 @@ class SyncWorkspace(QWidget):
             self._selection_exit,
             self._review_button,
         )
-        selection_page = QWidget(self)
-        selection_page.setObjectName("syncSelectionPage")
         selection_page_layout = QVBoxLayout(selection_page)
         selection_page_layout.setContentsMargins(0, 0, 0, 0)
         selection_page_layout.setSpacing(0)
         selection_page_layout.addWidget(selection_body, 1)
         selection_page_layout.addWidget(selection_footer)
 
-        self._review = SyncPlanPage(self, theme_manager=theme_manager)
-        self.execution = SyncExecutionPage(self)
+        review_page = QWidget(self._content)
+        review_page.setObjectName("syncReviewPage")
+        self._review = SyncPlanPage(review_page, theme_manager=theme_manager)
+        self.execution = SyncExecutionPage(self._content)
         self._execution_available = False
         self._podcast_count = 0
         self._artwork_repairs_pending = False
@@ -504,8 +508,6 @@ class SyncWorkspace(QWidget):
             review_footer_actions.addWidget(button)
         review_footer_layout.addLayout(review_footer_actions)
         self._review.review_actions.show()
-        review_page = QWidget(self)
-        review_page.setObjectName("syncReviewPage")
         review_layout = QVBoxLayout(review_page)
         review_layout.setContentsMargins(0, 0, 0, 0)
         review_layout.setSpacing(0)
@@ -513,8 +515,6 @@ class SyncWorkspace(QWidget):
         review_layout.addWidget(playlist_review)
         review_layout.addWidget(review_footer)
 
-        self._content = QStackedWidget(self)
-        self._content.setObjectName("syncWorkspaceContent")
         self._content.addWidget(self._scan)
         self._content.addWidget(selection_page)
         self._content.addWidget(review_page)

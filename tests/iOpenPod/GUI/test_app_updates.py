@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QLabel, QPushButton, QWidget
 from tests.iOpenPod.app.test_updates import FakeBackend
 from tests.iOpenPod.GUI.application_shell_test_support import (
     build_context,
+    show_settings,
     tracks,
 )
 
@@ -33,6 +34,7 @@ def test_about_button_checks_again_and_shows_channel_and_result(
     mock_provider(monkeypatch, backend, channel)
     window = MainWindow(context, auto_discover=False)
     try:
+        show_settings(window)
         button = window.findChild(QPushButton, "checkAppUpdates")
         version_row = window.findChild(QWidget, "currentAppVersion")
         assert version_row is not None
@@ -73,6 +75,7 @@ def test_about_unsupported_check_explains_limitation(
     window = MainWindow(context, auto_discover=False)
     try:
         window.check_app_updates()
+        show_settings(window)
         button = window.findChild(QPushButton, "checkAppUpdates")
         version_row = window.findChild(QWidget, "currentAppVersion")
         assert version_row is not None

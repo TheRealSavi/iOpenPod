@@ -67,8 +67,10 @@ and stored under `build/`; the command does not install system software.
 This prevents unrelated installed tools from contributing incompatible DLLs (for
 example, a third-party `icuuc.dll` with symbols different from Windows' ICU API).
 The executable explicitly declares PerMonitorV2 DPI awareness and runs as the
-current user. The bundle omits unused Tcl/Tk and scikit-learn sample/test datasets;
-the analysis runtime remains included. Windows CI checks the embedded executable
+current user. The Windows bootloader displays the application icon during
+extraction using PyInstaller's minimal Tcl/Tk splash resources. Unattended
+launches can set `PYINSTALLER_SUPPRESS_SPLASH_SCREEN=1`. The bundle omits the
+Python Tk binding and scikit-learn sample/test datasets. Windows CI checks the embedded executable
 manifest and collected payload with `scripts/check_windows_bundle.py`.
 Windows uses PyInstaller one-file mode: `dist/iOpenPod.exe` embeds its Python
 runtime, libraries, resources, and notices (ADR-0108). The checker reads the

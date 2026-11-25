@@ -308,7 +308,7 @@ def test_freeze_cli_needs_no_media_tools_or_special_flag(
         ("fpcalc.exe", "User-installed media tool"),
         ("sklearn/datasets/data/sample.csv", "sample datasets"),
         ("sklearn/cluster/tests/test_example.py", "test fixtures"),
-        ("_tcl_data/init.tcl", "Tcl/Tk"),
+        ("_tcl_data/auto.tcl", "Tcl/Tk"),
         ("_tkinter.pyd", "Tcl/Tk"),
         ("media-tools/obsolete.txt", "Obsolete bundled"),
         ("PySide6/plugins/imageformats/qpdf.dll", "Unused Qt component"),
@@ -344,11 +344,20 @@ def test_windows_embedded_payload_rejects_unwanted_files(
     entries = [
         ("python312.dll", str(source), True, "b"),
         ("PySide6/avcodec-61.dll", str(source), True, "b"),
+        ("Splash-00.res", str(source), False, "l"),
+        ("_tcl_data/init.tcl", str(source), True, "x"),
         ("storage-access/iOpenPod-storage-access.exe", str(source), True, "x"),
     ]
     # Qt's FFmpeg playback libraries are allowed; user-installed executables are not.
     writers.CArchiveWriter(str(executable), entries, "python312.dll")
     check_windows_bundle.check_windows_bundle(executable)
+    writers.CArchiveWriter(
+        str(executable),
+        [entry for entry in entries if entry[3] != "l"],
+        "python312.dll",
+    )
+    with pytest.raises(ValueError, match="startup splash"):
+        check_windows_bundle.check_windows_bundle(executable)
     writers.CArchiveWriter(
         str(executable), [*entries, (name, str(source), True, "x")], "python312.dll"
     )

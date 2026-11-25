@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QLabel, QListWidget, QWidget
 from tests.iOpenPod.app.services.test_first_artwork_save import bare_device
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_settings,
+)
 
 from iOpenPod.app.backups.models import (
     BackupCatalog,
@@ -71,6 +75,7 @@ def test_switch_refreshes_all_visible_device_artwork(
             BackupInventory((backup_device,))
         )
         APPLICATION.processEvents()
+        show_settings(window)
         page = window.findChild(SettingsPage)
         sidebar = window.findChild(Sidebar)
         picker = window.findChild(DevicePickerDialog)

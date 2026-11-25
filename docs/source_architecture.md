@@ -2409,6 +2409,12 @@ I18nManager
 
 The GUI can receive this application context or selected dependencies rather than importing global singletons.
 
+The desktop entry point paints a loading window before importing the context and
+main window. Each composition stage runs on the GUI thread. Storage reclaims stale
+Host staging workspaces on a worker. The main window owns the update health
+handshake and constructs Settings on demand. See
+[ADR-0299](adr/0299-show-launch-progress-before-desktop-composition.md).
+
 #### `app/models`
 
 Contains application-facing models.

@@ -75,7 +75,10 @@ def candidate_process(arguments: list[str]) -> CandidateProcess:
     if sys.platform == "win32":
         from .processes_windows import WindowsCandidateProcess
 
-        return WindowsCandidateProcess(arguments, child_environment())
+        environment = child_environment()
+        if arguments[1:] == ["--smoke-test"]:
+            environment["PYINSTALLER_SUPPRESS_SPLASH_SCREEN"] = "1"
+        return WindowsCandidateProcess(arguments, environment)
     return _PosixCandidate(arguments)
 
 

@@ -324,6 +324,10 @@ on. Existing BPM and Host files are preserved. Normal Smart Playlist evaluation,
 optional Rockbox tagging, Library publication, and Sync history use the resulting
 metadata. See ADR-0076 and ADR-0179.
 
+Desktop launches paint a loading window before composing the main window.
+Windows standalone and MSIX builds also show the app icon during extraction.
+Settings loads when first opened. See ADR-0299.
+
 First launch opens a nine-page onboarding dialog before device loading
 and startup prompts. Users choose navigation style, iPod Library View Mode, device
 artwork, then learn about transcoding and the four steps of Sync: opening the

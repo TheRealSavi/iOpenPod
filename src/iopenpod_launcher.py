@@ -11,9 +11,6 @@ from importlib.metadata import version
 from importlib.resources import files
 from pathlib import Path
 
-from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
-from iPodDB.shared.to_json import chunk_to_json
-
 os.environ.setdefault("COPYFILE_DISABLE", "1")
 
 logger = logging.getLogger(__name__)
@@ -67,6 +64,10 @@ def main(
 ) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.smoke_test or args.chunk_browser or args.json_from_itdb:
+        from iOpenPod.app.core.runtime import close_frozen_splash
+
+        close_frozen_splash()
     if args.storage_scsi_access:
         from storage.platform.linux_usb_access import main as open_scsi_access
 
@@ -193,6 +194,9 @@ def run_chunk_browser() -> None:
 def export_itdb_json(
     paths: list[str],
 ) -> None:
+    from iPodDB.iTunesDB.parser.parse_iTunesDB import parse_iTunesDB
+    from iPodDB.shared.to_json import chunk_to_json
+
     itdb_path, output_path = map(Path, paths)
 
     if output_path.is_dir():
@@ -245,16 +249,22 @@ def check_runtime() -> None:
     configure_frozen_runtime()
 
     from iOpenPod.app.app import start_ui
+    from iOpenPod.app.context import AppContext
     from iOpenPod.app.firmware.shared_bootloader import SharedBootloaderBundle
     from iOpenPod.app.firmware.shared_release import bundled_firmware
     from iOpenPod.app.playback.runtime_check import check_playback_runtime
     from iOpenPod.app.synesthesia import DeterministicMusicAnalyzer
+    from iOpenPod.GUI.main_window import MainWindow
+    from iOpenPod.GUI.pages.settings_page import SettingsPage
     from iOpenPod.GUI.presentation.application_icon import application_icon
     from iPodDB.iTunesDB.writer.signature import compute_hashab
 
     # Import the actual startup graph without creating settings or discovering
     # devices. Resource-only checks miss missing application modules in a bundle.
     assert callable(start_ui), "GUI entry point missing"
+    assert (
+        callable(AppContext.create) and callable(MainWindow) and callable(SettingsPage)
+    )
     assert callable(DeterministicMusicAnalyzer), "Deferred analysis backend missing"
     from storage.platform.libusb_runtime import check_runtime as check_usb_runtime
 

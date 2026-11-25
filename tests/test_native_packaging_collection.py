@@ -133,6 +133,7 @@ def test_spec_collects_wasmtime_at_its_runtime_relative_path(
             str(package_app.ROOT / "packaging/iOpenPod.spec"),
             init_globals={
                 "SPECPATH": str(package_app.ROOT / "packaging"),
+                "DISTPATH": str(tmp_path / "dist"),
                 "Analysis": inspect_analysis,
             },
         )

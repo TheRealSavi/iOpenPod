@@ -44,7 +44,15 @@ def check_windows_bundle(executable: Path) -> None:
         issues.append("Unused scikit-learn sample datasets are bundled")
     if any(path.parts[0] == "sklearn" and "tests" in path.parts for path in payload):
         issues.append("Scikit-learn test fixtures are bundled")
-    if any(path.parts[0] in {"_tcl_data", "_tkinter.pyd"} for path in payload):
+    if not any(entry[-1] == "l" for entry in archive.toc.values()):
+        issues.append("Executable does not embed the startup splash")
+    # The bootloader needs init.tcl; the Python Tk binding and full Tcl library
+    # would add unused files to every one-file extraction.
+    if any(
+        path.parts[0] == "_tkinter.pyd"
+        or (path.parts[0] == "_tcl_data" and path.as_posix() != "_tcl_data/init.tcl")
+        for path in payload
+    ):
         issues.append("Unused Tcl/Tk runtime is bundled")
     external_tools = {"ffmpeg.exe", "ffprobe.exe", "fpcalc.exe"}
     issues.extend(

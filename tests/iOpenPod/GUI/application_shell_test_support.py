@@ -63,6 +63,12 @@ def show_albums(window: QWidget) -> None:
     sidebar.pageRequested.emit(PageId.ALBUMS.value)
 
 
+def show_settings(window: QWidget) -> None:
+    sidebar = window.findChild(Sidebar)
+    assert sidebar is not None
+    sidebar.pageRequested.emit(PageId.SETTINGS.value)
+
+
 def build_context(
     *,
     device_coordinator: DeviceCoordinator | None = None,

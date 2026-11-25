@@ -2,8 +2,9 @@
 
 import logging
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
@@ -125,7 +126,6 @@ from iOpenPod.GUI.pages.now_playing_page import NowPlayingPage
 from iOpenPod.GUI.pages.photo_page import PhotoPage
 from iOpenPod.GUI.pages.playlist_page import PlaylistPage
 from iOpenPod.GUI.pages.podcast_page import PodcastPage
-from iOpenPod.GUI.pages.settings_page import SettingsPage
 from iOpenPod.GUI.pages.start_page import StartPage
 from iOpenPod.GUI.pages.synesthesia_page import SynesthesiaPage
 from iOpenPod.GUI.pages.tones_page import TonesPage
@@ -160,6 +160,9 @@ from iOpenPod.GUI.widgets.status_list import StatusListButton
 from iOpenPod.GUI.widgets.track_actions import TrackActions
 from iPodDB.library import MediaKind, Photo, Track, TrackFieldEdit, is_video_track
 from storage import HostPath
+
+if TYPE_CHECKING:
+    from iOpenPod.GUI.pages.settings_page import SettingsPage
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +298,9 @@ class MainWindow(QMainWindow):
         )
         self._photo_provider = PhotoPixmapProvider(context.photo_controller, self)
 
-        shell = QWidget(self)
+        self._shell_pages = QStackedWidget(self)
+        self._shell_pages.setObjectName("shellPages")
+        shell = QWidget(self._shell_pages)
         shell.setObjectName("appShell")
         shell_layout = QVBoxLayout(shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
@@ -325,7 +330,7 @@ class MainWindow(QMainWindow):
         library_layout.setSpacing(0)
 
         self._sidebar = Sidebar(
-            body,
+            self._library_browser,
             playlists=context.library_workspace,
             theme=context.theme_manager,
         )
@@ -353,7 +358,7 @@ class MainWindow(QMainWindow):
         context.library_write_controller.automaticSaveWarning.connect(
             self._show_library_review
         )
-        self._pages = QStackedWidget(body)
+        self._pages = QStackedWidget(self._library_browser)
         self._pages.setObjectName("pageStack")
         self._playback_pane = PlaybackPane(
             context.playback_controller,
@@ -455,39 +460,19 @@ class MainWindow(QMainWindow):
             (MediaKind.MOVIE, MediaKind.TV_SHOW, MediaKind.MUSIC_VIDEO),
             self._pages,
         )
-        self._settings_page = SettingsPage(
-            context.settings,
-            context.theme_manager,
-            context.i18n_manager,
-            self._pages,
-            scrobbling=self._scrobbling,
-            preferences=context.preferences_controller,
-        )
         self._media_tools = MediaToolsController(
             self, find_tool=context.find_media_tool
         )
         self._media_tools_dialog = MediaToolsSetupDialog(self._media_tools, self)
         self._phase_runtime = PhaseRuntimeController(self)
         self._phase_runtime_dialog = PhaseRuntimeSetupDialog(self._phase_runtime, self)
-        self._settings_page.phaseAnalysisSetupRequested.connect(
-            self._phase_runtime_dialog.open
-        )
         self._media_tools_prompt_pending = False
         self._media_tools.checked.connect(self._media_tools_checked)
-        self._media_tools.changed.connect(self._media_tools_status_changed)
-        self._settings_page.mediaToolsRequested.connect(self._open_media_tools)
-        self._settings_page.mediaToolsCheckRequested.connect(self._media_tools.check)
-        self._settings_page.appUpdatesRequested.connect(self._updates.check_now)
-        self._settings_page.onboardingRequested.connect(self._open_onboarding)
-        self._settings_page.chooseIPodRequested.connect(self._open_device_picker)
-        self._updates.changed.connect(self._app_update_status_changed)
-        self._app_update_status_changed()
         for navigation in self._navigation_surfaces:
             navigation.scrobbleRequested.connect(self._scrobble_now)
         self._scrobbling.changed.connect(self._scrobbling_changed)
         for navigation in self._navigation_surfaces:
             navigation.set_scrobble_available(self._scrobbling.can_scrobble)
-        self._settings_page.set_active_ipod(context.device_controller.active_ipod)
         self._device_summary_page = DeviceSummaryPage(
             self._pages,
             theme=context.theme_manager,
@@ -599,7 +584,6 @@ class MainWindow(QMainWindow):
             PageId.MUSIC_VIDEOS: music_videos_page,
             PageId.VIDEOS: videos_page,
             PageId.BACKUPS: self._backup_page,
-            PageId.SETTINGS: self._settings_page,
             PageId.PLAYLISTS: self._playlist_page,
             PageId.GENIUS: self._genius_page,
             PageId.GAMES: self._games_page,
@@ -643,7 +627,6 @@ class MainWindow(QMainWindow):
             self._pages.addWidget(alarms_page)
         self._pages.addWidget(self._backup_page)
         self._pages.addWidget(self._synesthesia_page)
-        self._pages.addWidget(self._settings_page)
         self._pages.addWidget(self._device_summary_page)
         self._pages.addWidget(self._start_page)
 
@@ -670,8 +653,6 @@ class MainWindow(QMainWindow):
         self._workspaces.currentChanged.connect(self._apply_navigation_style)
         self._apply_navigation_style()
         self._normal_shell = shell
-        self._shell_pages = QStackedWidget(self)
-        self._shell_pages.setObjectName("shellPages")
         self._shell_pages.addWidget(shell)
         self._now_playing_page = NowPlayingPage(
             context.playback_controller,
@@ -1317,13 +1298,6 @@ class MainWindow(QMainWindow):
     def check_app_updates(self) -> None:
         self._updates.start()
 
-    def _app_update_status_changed(self) -> None:
-        self._settings_page.set_app_update_status(
-            self._updates.channel,
-            busy=self._updates.busy,
-            message=self._updates.message,
-        )
-
     def close_app_updates(self) -> None:
         self._updates.close()
 
@@ -1403,14 +1377,6 @@ class MainWindow(QMainWindow):
         self._media_tools_prompt_pending = False
         if isinstance(value, MediaToolSetup) and not value.ready:
             self._media_tools_dialog.open()
-
-    def _media_tools_status_changed(self) -> None:
-        self._settings_page.set_media_tools_status(
-            self._media_tools.setup,
-            checking=self._media_tools.checking,
-            busy=self._media_tools.busy,
-            message=self._media_tools.message,
-        )
 
     def _open_media_tools(self) -> None:
         self._media_tools_prompt_pending = False
@@ -1935,8 +1901,54 @@ class MainWindow(QMainWindow):
         )
         self._normalization_changed()
 
+    @cached_property
+    def _settings_page(self) -> "SettingsPage":
+        from iOpenPod.GUI.pages.settings_page import SettingsPage
+
+        context = self._context
+        page = SettingsPage(
+            context.settings,
+            context.theme_manager,
+            context.i18n_manager,
+            self._pages,
+            scrobbling=self._scrobbling,
+            preferences=context.preferences_controller,
+        )
+        page.phaseAnalysisSetupRequested.connect(self._phase_runtime_dialog.open)
+        page.mediaToolsRequested.connect(self._open_media_tools)
+        page.mediaToolsCheckRequested.connect(self._media_tools.check)
+        page.appUpdatesRequested.connect(self._updates.check_now)
+        page.onboardingRequested.connect(self._open_onboarding)
+        page.chooseIPodRequested.connect(self._open_device_picker)
+
+        def update_status() -> None:
+            page.set_app_update_status(
+                self._updates.channel,
+                busy=self._updates.busy,
+                message=self._updates.message,
+            )
+
+        def media_tools_status() -> None:
+            page.set_media_tools_status(
+                self._media_tools.setup,
+                checking=self._media_tools.checking,
+                busy=self._media_tools.busy,
+                message=self._media_tools.message,
+            )
+
+        self._updates.changed.connect(update_status)
+        self._media_tools.changed.connect(media_tools_status)
+        context.device_controller.activeIPodChanged.connect(page.set_active_ipod)
+        page.set_active_ipod(context.device_controller.active_ipod)
+        update_status()
+        media_tools_status()
+        self._pages.addWidget(page)
+        return page
+
     def _show_page(self, page_value: str) -> None:
         page_id = PageId(page_value)
+        if page_id is PageId.SETTINGS:
+            self._page_widgets[page_id] = self._settings_page
         if page_id in (PageId.CALENDAR, PageId.ALARMS, PageId.TONES):
             if page_id not in self._page_widgets:
                 return
@@ -2548,7 +2560,6 @@ class MainWindow(QMainWindow):
 
     def _active_ipod_changed(self, value: object) -> None:
         active_ipod = value if isinstance(value, ActiveIPod) else None
-        self._settings_page.set_active_ipod(active_ipod)
         self._device_summary_page.set_active_ipod(active_ipod)
         self._refresh_device_summary()
         self._genius_page.set_active_ipod(active_ipod)

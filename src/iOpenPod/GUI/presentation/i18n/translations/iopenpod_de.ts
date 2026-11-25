@@ -10114,6 +10114,13 @@ Die vollständige Firmware ist in iOpenPod enthalten und funktioniert offline. D
     </message>
 </context>
 <context>
+    <name>StartupWindow</name>
+    <message>
+        <source>Starting iOpenPod…</source>
+        <translation>iOpenPod wird gestartet…</translation>
+    </message>
+</context>
+<context>
     <name>StatusListButton</name>
     <message>
         <source>Active statuses (%1)</source>

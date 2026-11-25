@@ -20,7 +20,11 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QWidget,
 )
-from tests.iOpenPod.GUI.application_shell_test_support import APPLICATION, build_context
+from tests.iOpenPod.GUI.application_shell_test_support import (
+    APPLICATION,
+    build_context,
+    show_settings,
+)
 
 from iOpenPod.app.app import (
     _start_interactive_session,  # pyright: ignore[reportPrivateUsage]
@@ -340,6 +344,7 @@ def test_about_help_shows_only_help_and_preserves_onboarding(complete: bool) -> 
     window = MainWindow(context, auto_discover=False)
     try:
         window.show()
+        show_settings(window)
         button = window.findChild(ActionButton, "helpSupport")
         assert button is not None and button.text() == "Help and support"
         button.click()
