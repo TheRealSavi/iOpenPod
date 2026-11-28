@@ -221,7 +221,7 @@ class PodcastSearchDialog(QDialog):
         layout.addWidget(self._buttons)
 
         controller.searchFinished.connect(self._search_finished)
-        controller.busyChanged.connect(self._busy_changed)
+        controller.changed.connect(self._availability_changed)
         controller.operationFailed.connect(self._operation_failed)
         controller.operationSucceeded.connect(self._operation_succeeded)
         self.finished.connect(self._clear_login)
@@ -360,14 +360,11 @@ class PodcastSearchDialog(QDialog):
         self._login.clear()
         self._rss_url.clear()
         self._requires_login.setChecked(False)
+        self._status.clear()
 
     def _operation_succeeded(self, operation: object) -> None:
         if self._pending_subscribe and operation is PodcastOperation.SUBSCRIBE:
             self.accept()
-
-    @Slot(bool)
-    def _busy_changed(self, _busy: bool) -> None:
-        self._availability_changed()
 
     @Slot(object)
     def _operation_failed(self, value: object) -> None:
