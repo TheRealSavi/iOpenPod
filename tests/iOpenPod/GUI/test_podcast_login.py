@@ -59,7 +59,38 @@ def test_pasted_credentials_are_masked_and_failed_subscription_can_retry() -> No
         controller.operationSucceeded.emit(PodcastOperation.SUBSCRIBE)
         assert not dialog.isVisible()
         assert not username.text() and not password.text() and not url.text()
+        assert not status.text()
+        dialog.show()
+        assert not status.text()
         assert controller.subscribe_calls == ["https://publisher.test/feed"] * 2
+    finally:
+        dialog.close()
+        theme.close()
+
+
+def test_feed_controls_follow_device_availability_changes() -> None:
+    settings = SettingsService(GlobalSettingsStore(), DeviceSettingsStore())
+    theme = ThemeManager(APPLICATION, settings)
+    controller = PodcastControllerStub(PodcastSnapshot(writable=True))
+    dialog = PodcastSearchDialog(cast("PodcastController", controller), theme)
+    try:
+        dialog.show()
+        toggle = dialog.findChild(QPushButton, "podcastToggleRss")
+        url = dialog.findChild(QLineEdit, "podcastRssUrl")
+        add = dialog.findChild(QPushButton, "podcastAddRss")
+        assert toggle and url and add
+        toggle.click()
+        assert url.isEnabled() and add.isEnabled()
+
+        controller.can_edit = False
+        controller.changed.emit()
+        APPLICATION.processEvents()
+        assert not url.isEnabled() and not add.isEnabled()
+
+        controller.can_edit = True
+        controller.changed.emit()
+        APPLICATION.processEvents()
+        assert url.isEnabled() and add.isEnabled()
     finally:
         dialog.close()
         theme.close()
